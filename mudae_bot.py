@@ -162,29 +162,29 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     return
                             else:
                                 raise ValueError("Waiting time not found.")
-                 raise ValueError("Mudae message not found.")
-             except ValueError as e:
-                 error_count += 1
-                 log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
-                 if error_count >= max_retries:
-                     log_function(f"[{client.muda_name}] Max retries reached for claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
-                     await asyncio.sleep(1800)
-                     error_count = 0
-                 else:
-                     log_function(f"[{client.muda_name}] Claim right check failed. Retrying in 5 seconds.", preset_name, "ERROR")
-                     await asyncio.sleep(5)
-                 continue
-             except Exception as e:
-                 error_count += 1
-                 log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
-                 if error_count >= max_retries:
-                     log_function(f"[{client.muda_name}] Max retries reached for claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
-                     await asyncio.sleep(1800)
-                     error_count = 0
-                 else:
-                     log_function(f"[{client.muda_name}] Claim right check failed. Retrying in 5 seconds.", preset_name, "ERROR")
-                     await asyncio.sleep(5)
-                 continue
+                raise ValueError("Mudae message not found.")
+            except ValueError as e:
+                error_count += 1
+                log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
+                if error_count >= max_retries:
+                    log_function(f"[{client.muda_name}] Max retries reached for claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
+                    await asyncio.sleep(1800)
+                    error_count = 0
+                else:
+                    log_function(f"[{client.muda_name}] Claim right check failed. Retrying in 5 seconds.", preset_name, "ERROR")
+                    await asyncio.sleep(5)
+                continue
+            except Exception as e:
+                error_count += 1
+                log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
+                if error_count >= max_retries:
+                    log_function(f"[{client.muda_name}] Max retries reached for claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
+                    await asyncio.sleep(1800)
+                    error_count = 0
+                else:
+                    log_function(f"[{client.muda_name}] Claim right check failed. Retrying in 5 seconds.", preset_name, "ERROR")
+                    await asyncio.sleep(5)
+                continue
 
     async def check_rolls_left(client, channel, ignore_limit=False, key_mode_only_kakera=False):
         log_function(f"[{client.muda_name}] Checking rolls left...", preset_name, "CHECK")
@@ -222,8 +222,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         else:
                             log_function(f"[{client.muda_name}] Could not parse roll information: {msg.content}", preset_name, "ERROR")
                             raise ValueError(f"Could not parse roll information. Mudae's response was: {msg.content}")
-                 raise ValueError("Mudae did not respond with roll information within the time limit.")
-             except ValueError as e:
+                raise ValueError("Mudae did not respond with roll information within the time limit.")
+            except ValueError as e:
                  error_count += 1
                  log_function(f"[{client.muda_name}] Error ({error_count}/{max_retries}): {e}", preset_name, "ERROR")
                  if error_count >= max_retries:
@@ -232,7 +232,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                      error_count = 0
                  else:
                      await asyncio.sleep(5)
-             except Exception as e:
+            except Exception as e:
                  error_count += 1
                  log_function(f"[{client.muda_name}] Unexpected error ({error_count}/{max_retries}): {e}", preset_name, "ERROR")
                  if error_count >= max_retries:
