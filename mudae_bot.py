@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import sys
 import asyncio
 import discord
@@ -38,6 +37,11 @@ COLORS = {
     "RESET": "\033[36m",    # Cyan
     "ENDC": "\033[0m"      # End Color
 }
+
+# Define claim and kakera emojis at the top level
+CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', '🪐']
+KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL']
+
 
 def color_log(message, preset_name, log_type="INFO"):
     color_code = COLORS.get(log_type.upper(), COLORS["INFO"])
@@ -270,7 +274,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if msg.components:
                     for component in msg.components:
                         for button in component.children:
-                            if button.emoji and button.emoji.name in ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL']:
+                            if button.emoji and button.emoji.name in KAKERA_EMOJIS:
                                 try:
                                     await button.click()
                                     log_function(f"[{client.muda_name}] Claimed Kakera: {embed.author.name}", preset_name, "KAKERA")
@@ -337,7 +341,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if msg.components:
             for component in msg.components:
                 for button in component.children:
-                    if button.emoji and button.emoji.name in ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', '🪐']:
+                    if button.emoji and button.emoji.name in (CLAIM_EMOJIS if not is_kakera else KAKERA_EMOJIS):
                         try:
                             await button.click()
                             log_function(f"[{client.muda_name}] {log_message}: {msg.embeds[0].author.name}", client.preset_name, log_type)
@@ -408,16 +412,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if description:
                 first_line = description.splitlines()[0]
                 if any(kw and kw.lower() in first_line.lower() for kw in client.series_wishlist):
-                    if message.id not in client.series_sniped_messages:
-                        client.series_sniped_messages.add(message.id)
-                        log_function(f"[{client.muda_name}] (Real-time) Series snipe candidate found: {first_line}", client.preset_name, "CLAIM") # Log as CLAIM
-                        await asyncio.sleep(client.series_snipe_delay)
-                        await claim_character(client, message.channel, message)
-                        client.series_snipe_happened = True
-                        await asyncio.sleep(2) # Small delay before checking claim rights after snipe
-                        await check_claim_rights(client, message.channel) # Log claim rights after snipe
-                        await client.process_commands(message)
-                        return
+                    # CHECK FOR CLAIM EMOJIS IN SERIES SNIPE
+                    if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
+                        if message.id not in client.series_sniped_messages:
+                            client.series_sniped_messages.add(message.id)
+                            log_function(f"[{client.muda_name}] (Real-time) Series snipe candidate found: {first_line}", client.preset_name, "CLAIM") # Log as CLAIM
+                            await asyncio.sleep(client.series_snipe_delay)
+                            await claim_character(client, message.channel, message)
+                            client.series_snipe_happened = True
+                            await asyncio.sleep(2) # Small delay before checking claim rights after snipe
+                            await check_claim_rights(client, message.channel) # Log claim rights after snipe
+                            await client.process_commands(message)
+                            return
 
         # --- Real-time NORMAL SNIPING (Channel-Specific!) ---
         if client.snipe_mode and client.wishlist and message.channel.id == client.target_channel_id:
@@ -426,16 +432,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if embed.author and embed.author.name:
                 character_name = embed.author.name
                 if any(wish and wish.lower() in character_name.lower() for wish in client.wishlist):
-                    if message.id not in client.sniped_messages:
-                        client.sniped_messages.add(message.id)
-                        log_function(f"[{client.muda_name}] (Real-time) Snipe candidate found: {character_name}", client.preset_name, "CLAIM") # Log as CLAIM
-                        await asyncio.sleep(client.snipe_delay)
-                        await claim_character(client, message.channel, message)
-                        client.snipe_happened = True
-                        await asyncio.sleep(2) # Small delay before checking claim rights after snipe
-                        await check_claim_rights(client, message.channel) # Log claim rights after snipe
-                        await client.process_commands(message)
-                        return
+                    # CHECK FOR CLAIM EMOJIS IN NORMAL SNIPE
+                    if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
+                        if message.id not in client.sniped_messages:
+                            client.sniped_messages.add(message.id)
+                            log_function(f"[{client.muda_name}] (Real-time) Snipe candidate found: {character_name}", client.preset_name, "CLAIM") # Log as CLAIM
+                            await asyncio.sleep(client.snipe_delay)
+                            await claim_character(client, message.channel, message)
+                            client.snipe_happened = True
+                            await asyncio.sleep(2) # Small delay before checking claim rights after snipe
+                            await check_claim_rights(client, message.channel) # Log claim rights after snipe
+                            await client.process_commands(message)
+                            return
         await client.process_commands(message)
 
 
