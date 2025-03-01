@@ -34,6 +34,7 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
 *   **📊 Real-time Color Console Monitoring - Stay Informed!**  Watch the bot in action with **visually distinct and informative colored logs** right in your console!  Different colors for info, claims, kakera, errors, and more! 👀
 *   **⏱️ Startup Delay - Smoother Bot Entry:** Configure a **startup delay** to give your bot a smoother entry into Discord, potentially reducing rate-limiting risks, especially when running multiple bots! ⏳
 *   **📜 Detailed Logging - Keep Track of Your Treasures!**  Maintain a **record of all bot actions and claimed characters**! Your Mudae history at your fingertips! 📖
+*   **⚙️ Roll Speed Control - Fine-tune your Rolling Pace!**  Adjust the **delay between each roll command** to optimize for speed or reduce potential rate-limiting!  Customize the `roll_speed` setting in your `presets.json`! 💨
 
 ---
 
@@ -67,7 +68,8 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
         "wishlist": ["Nezuko Kamado", "Rem"],       // 📝 List of character names to snipe (case-insensitive)
         "series_snipe_mode": true,                  // 🎬 Enable real-time series sniping? (true/false)
         "series_snipe_delay": 3,                    // ⏳ Delay before claiming series sniped character (seconds)
-        "series_wishlist": ["Demon Slayer", "Re:Zero"] // 📝 List of series keywords to snipe (case-insensitive)
+        "series_wishlist": ["Demon Slayer", "Re:Zero"], // 📝 List of series keywords to snipe (case-insensitive)
+        "roll_speed": 0.3                           // 💨 Delay between each roll command in seconds (adjust for speed/safety)
       },
       "KakeraHunterBot": {   // 🚀 Another awesome preset!
         "token": "YOUR_DISCORD_ACCOUNT_TOKEN_2",
@@ -85,7 +87,8 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
         "wishlist": [],
         "series_snipe_mode": false,
         "series_snipe_delay": 5,
-        "series_wishlist": []
+        "series_wishlist": [],
+        "roll_speed": 0.2                           // 💨  Faster roll speed for this preset
       }
       // ... Add more presets for all your accounts! 🚀🚀🚀
     }
@@ -98,7 +101,7 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
     *   **`prefix`**:  The bot's command prefix.  You likely won't use this much, set it to anything (e.g., `!`, `?`, `.`).
     *   **`channel_id`**:  The **Discord Channel ID** where the bot will operate. **Enable Developer Mode in Discord** (Settings -> Advanced), then **right-click the channel and "Copy ID"**. 💬
     *   **`roll_command`**:  Your preferred **Mudae roll command** (e.g., `wa`, `wg`, `ha`, `hg`, `w`, `h`). 🎲
-    *   **`delay_seconds`**:  **Delay in seconds** between bot actions. **Keep it above 0.8 for safety!**  🐢💨
+    *   **`delay_seconds`**:  **Delay in seconds** between bot actions (like checking claim rights, rolls left, etc.). **Keep it above 0.8 for safety!**  🐢💨
     *   **`mudae_prefix`**:  The **Mudae bot's prefix** (usually `$`). 💰
     *   **`min_kakera`**:  **Minimum kakera value** for claiming characters. `0` to claim everything! 💎
     *   **`key_mode`**:  `true` or `false`. `true` for **Kakera Key Mode** - continuous kakera rolling even when claim rights are down! 🔑
@@ -110,6 +113,11 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
     *   **`series_snipe_mode`**: `true` or `false`. Enable **real-time series sniping** based on your `series_wishlist`. 🎬
     *   **`series_snipe_delay`**: **Delay in seconds** before claiming a series-sniped character. Adjust as needed. ⏳
     *   **`series_wishlist`**:  A **list of series keywords** to snipe characters from. Case-insensitive. Example: `["Demon Slayer", "Re:Zero"]`. 📝
+    *   **`roll_speed`**:  **Delay in seconds between each roll command.**  This setting allows you to control how quickly the bot sends roll commands.
+        *   **Lower values (e.g., `0.1` or `0.2`) will make the bot roll faster.**  This can be useful for quickly using up rolls, but might slightly increase the risk of rate-limiting if set too low.
+        *   **Higher values (e.g., `0.3` or `0.5` and above) will make the bot roll slower.** This can be safer and more "human-like," potentially reducing rate-limiting.
+        *   **Default value is `0.3` seconds.** If you don't include `roll_speed` in your preset, it will use this default.
+        *   **Experiment to find the best `roll_speed`** for your specific needs and server conditions.
 
 4.  **🚀 Run the Bot!** Open your terminal/command prompt, navigate to the bot's folder, and type:
 
