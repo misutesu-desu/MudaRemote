@@ -65,7 +65,7 @@ def print_log(message, preset_name, log_type="INFO"):
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
-            series_snipe_mode, series_snipe_delay, series_wishlist):
+            series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed): # ADD roll_speed parameter
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False)
 
     # Disable discord.py's default logging to console
@@ -88,6 +88,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.muda_name = BOT_NAME
     client.claim_right_available = False
     client.target_channel_id = target_channel_id # Store target_channel_id in client!
+    client.roll_speed = roll_speed # Store roll_speed in client!
 
     # Initialize sniping trackers
     client.sniped_messages = set()
@@ -103,6 +104,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Key Mode: {'Enabled' if key_mode else 'Disabled'}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Snipe Mode: {'Enabled' if snipe_mode else 'Disabled'}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Series Snipe Mode: {'Enabled' if series_snipe_mode else 'Disabled'}", preset_name, "INFO")
+        log_function(f"[{client.muda_name}] Roll Speed: {roll_speed} seconds", preset_name, "INFO") # Log roll speed
         await asyncio.sleep(start_delay)
         await asyncio.sleep(delay_seconds)
         channel = client.get_channel(target_channel_id)
@@ -249,7 +251,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def start_roll_commands(client, channel, rolls_left, ignore_limit=False, key_mode_only_kakera=False):
         for _ in range(rolls_left):
             await channel.send(f"{mudae_prefix}{roll_command}")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(client.roll_speed) # Use roll_speed here
         await asyncio.sleep(4)
         await check_new_characters(client, channel)
         mudae_messages = []
@@ -509,6 +511,7 @@ def select_and_run_preset():
     series_snipe_mode = preset.get("series_snipe_mode", False)
     series_snipe_delay = preset.get("series_snipe_delay", 5)
     series_wishlist = preset.get("series_wishlist", [])
+    roll_speed = preset.get("roll_speed", 0.3) # ADD roll_speed retrieval, default to 0.3 if not present
     threading.Thread(target=run_bot, args=(
         preset["token"],
         preset["prefix"],
@@ -527,7 +530,8 @@ def select_and_run_preset():
         wishlist,
         series_snipe_mode,
         series_snipe_delay,
-        series_wishlist
+        series_wishlist,
+        roll_speed # ADD roll_speed to args
     )).start()
 
 def select_and_run_multiple_presets():
@@ -554,6 +558,7 @@ def select_and_run_multiple_presets():
         series_snipe_mode = preset.get("series_snipe_mode", False)
         series_snipe_delay = preset.get("series_snipe_delay", 5)
         series_wishlist = preset.get("series_wishlist", [])
+        roll_speed = preset.get("roll_speed", 0.3) # ADD roll_speed retrieval, default to 0.3 if not present
         threading.Thread(target=run_bot, args=(
             preset["token"],
             preset["prefix"],
@@ -572,7 +577,8 @@ def select_and_run_multiple_presets():
             wishlist,
             series_snipe_mode,
             series_snipe_delay,
-            series_wishlist
+            series_wishlist,
+            roll_speed # ADD roll_speed to args
         )).start()
 
 if __name__ == "__main__":
