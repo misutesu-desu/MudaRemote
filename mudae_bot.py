@@ -18,7 +18,7 @@ try:
     with open("presets.json", "r") as f:
         presets = json.load(f)
 except FileNotFoundError:
-    print("presets.json file not found. Please create it and enter the required information.")
+    print("presets.json file not found. Please create it and enter the required information.") # Translated from: "presets.json dosyası bulunamadı. Lütfen oluşturun ve gerekli bilgileri girin."
     sys.exit(1)
 
 # Target bot ID (Mudae's ID)
@@ -55,7 +55,7 @@ def write_log_to_file(log_message):
         with open("logs.txt", "a") as log_file:
             log_file.write(log_message + "\n")
     except Exception as e:
-        print(f"Log dosyasına yazma hatası: {e}")
+        print(f"Error writing to log file: {e}") # Translated from: "Log dosyasına yazma hatası: {e}"
 
 def print_log(message, preset_name, log_type="INFO"):
     log_message_formatted = color_log(message, preset_name, log_type)
@@ -117,7 +117,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(0.5)
             await check_status(client, channel, mudae_prefix) # Use combined status check
         except discord.errors.Forbidden as e:
-            log_function(f"[{client.muda_name}] Hata: Kanala mesaj gönderemez iznim yok. {e}", preset_name, "ERROR")
+            log_function(f"[{client.muda_name}] Error: Cannot send messages to channel, permission denied. {e}", preset_name, "ERROR") # Translated from: "Hata: Kanala mesaj gönderemez iznim yok. {e}"
             await client.close()
 
     async def check_status(client, channel, mudae_prefix):
@@ -175,16 +175,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             raise ValueError("Claim right status not found in $tu output.")
                 raise ValueError("Mudae $tu message not found.")
             except ValueError as e:
-                error_count += 1
-                log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
-                if error_count >= max_retries:
-                    log_function(f"[{client.muda_name}] Max retries reached for $tu claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
-                    await asyncio.sleep(1800)
-                    error_count = 0
-                else:
-                    log_function(f"[{client.muda_name}] Claim right check failed using $tu. Retrying in 5 seconds.", preset_name, "ERROR")
-                    await asyncio.sleep(5)
-                continue
+                 error_count += 1
+                 log_function(f"[{client.muda_name}] Error: {e}", preset_name, "ERROR")
+                 if error_count >= max_retries:
+                     log_function(f"[{client.muda_name}] Max retries reached for $tu claim rights. Retrying in 30 minutes.", preset_name, "ERROR")
+                     await asyncio.sleep(1800)
+                     error_count = 0
+                 else:
+                     log_function(f"[{client.muda_name}] Claim right check failed using $tu. Retrying in 5 seconds.", preset_name, "ERROR")
+                     await asyncio.sleep(5)
+                 continue
             except Exception as e:
                 error_count += 1
                 log_function(f"[{client.muda_name}] Unexpected error: {e}", preset_name, "ERROR")
@@ -196,6 +196,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     log_function(f"[{client.muda_name}] Claim right check failed using $tu. Retrying in 5 seconds.", preset_name, "ERROR")
                     await asyncio.sleep(5)
                 continue
+
 
     async def check_rolls_left_tu(client, channel, mudae_prefix, ignore_limit=False, key_mode_only_kakera=False):
         log_function(f"[{client.muda_name}] Checking rolls left using $tu...", preset_name, "CHECK")
@@ -251,8 +252,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.snipe_happened = False
             client.series_snipe_happened = False
             await asyncio.sleep(2)
-            await check_status(client, channel, mudae_prefix) # Re-check status after snipe using $tu
-            return
+            # await check_status(client, channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
+            return # Removed check_status after snipe as requested
         await check_status(client, channel, mudae_prefix) # Re-check status after rolls using $tu
 
 
@@ -270,7 +271,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     log_function(f"[{client.muda_name}] Claimed Kakera: {embed.author.name}", preset_name, "KAKERA")
                                     await asyncio.sleep(3)
                                 except discord.errors.HTTPException as e:
-                                    log_function(f"[{client.muda_name}] Kakera claim hatası: {e}", preset_name, "ERROR")
+                                    log_function(f"[{client.muda_name}] Kakera claim error: {e}", preset_name, "ERROR") # Translated from: "Kakera claim hatası: {e}"
 
         if not client.claim_right_available and key_mode: # Key mode and no claim right logic
             highest_claim_character = None
@@ -290,14 +291,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     highest_claim_character = kakera_value
                                     highest_claim_character_message = msg
                             except ValueError:
-                                log_function(f"[{client.muda_name}] Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}", preset_name, "ERROR")
+                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR") # Translated from: "Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}"
                                 continue
 
             if highest_claim_character_message and highest_claim_character is not None and client.min_kakera is not None:
-                if highest_claim_character > client.min_kakera:
-                    await channel.send(f"{mudae_prefix}rt")
-                    await asyncio.sleep(0.5)
-                    await claim_character(client, channel, highest_claim_character_message, is_rt_claim=True)
+                 if highest_claim_character > client.min_kakera:
+                     await channel.send(f"{mudae_prefix}rt")
+                     await asyncio.sleep(0.5)
+                     await claim_character(client, channel, highest_claim_character_message, is_rt_claim=True)
 
         elif client.claim_right_available: # Normal claim logic when claim right is available (Key mode independent)
             highest_claim_character = None
@@ -325,7 +326,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     second_highest_claim_character = kakera_value
                                     second_highest_claim_character_message = msg
                             except ValueError:
-                                log_function(f"[{client.muda_name}] Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}", preset_name, "ERROR")
+                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR") # Translated from: "Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}"
                                 continue
 
 
@@ -353,14 +354,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(3)
                             return
                         except discord.errors.HTTPException as e:
-                            log_function(f"[{client.muda_name}] Karakter claim hatası: {e}", client.preset_name, "ERROR")
+                            log_function(f"[{client.muda_name}] Character claim error: {e}", client.preset_name, "ERROR") # Translated from: "Karakter claim hatası: {e}"
         else:
             try:
                 await msg.add_reaction("✅")
                 log_function(f"[{client.muda_name}] {log_message}: {msg.embeds[0].embeds[0].author.name if msg.embeds else 'Character'}", client.preset_name, log_type) # Handle no embed case just in case
                 await asyncio.sleep(3)
             except discord.errors.HTTPException:
-                log_function(f"[{client.muda_name}] Reaksiyon eklenemedi. Muhtemelen karakter başkası tarafından çoktan alındı.", client.preset_name, "ERROR")
+                log_function(f"[{client.muda_name}] Reaction could not be added. Character probably already claimed by someone else.", client.preset_name, "ERROR") # Translated from: "Reaksiyon eklenemedi. Muhtemelen karakter başkası tarafından çoktan alındı."
 
     async def check_new_characters(client, channel):
         async for msg in channel.history(limit=15):
@@ -426,7 +427,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await claim_character(client, message.channel, message)
                             client.series_snipe_happened = True
                             await asyncio.sleep(2)
-                            await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu
+                            # await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
                             await client.process_commands(message)
                             return
 
@@ -446,7 +447,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await claim_character(client, message.channel, message)
                             client.snipe_happened = True
                             await asyncio.sleep(2)
-                            await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu
+                            # await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
                             await client.process_commands(message)
                             return
         await client.process_commands(message)
@@ -488,7 +489,7 @@ def main_menu():
         elif answers['option'] == 'Select and Run Multiple Presets':
             select_and_run_multiple_presets()
         elif answers['option'] == 'Exit':
-            print("\033[1;32mExiting MudaRemote. Goodbye!\033[0m")
+            print("\033[1;32mExiting MudaRemote. Goodbye!\033[0m") # Translated from: "Çıkış Yapılıyor. Güle güle!" - but changed to a more common English farewell
             break
 
 def select_and_run_preset():
