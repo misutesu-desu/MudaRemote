@@ -14,9 +14,12 @@
     "snipe_delay": 2,
     "snipe_ignore_min_kakera_reset": false,
     "wishlist": ["Nezuko Kamado", "Rem"],
-    "series_snipe_mode": false,
+    "series_snipe_mode": true,
     "series_snipe_delay": 3,
-    "series_wishlist": ["Demon Slayer"]
+    "series_wishlist": ["Demon Slayer"],
+    "kakera_snipe_mode": false,
+    "kakera_snipe_threshold": 0,
+    "kakera_snipe_delay": 2
   },
   "preset2": {
     "token": "ANOTHER_TOKEN",
@@ -28,14 +31,17 @@
     "min_kakera": 75,
     "key_mode": true,
     "start_delay": 10,
-    "roll_speed": 0.3,
+    "roll_speed": 0.2,
     "snipe_mode": false,
     "snipe_delay": 5,
     "snipe_ignore_min_kakera_reset": true,
     "wishlist": [],
     "series_snipe_mode": true,
     "series_snipe_delay": 2,
-    "series_wishlist": ["Re:Zero", "Fate"]
+    "series_wishlist": ["Re:Zero", "Fate"],
+    "kakera_snipe_mode": true,
+    "kakera_snipe_threshold": 150,
+    "kakera_snipe_delay": 3
   },
   "preset3": {
     "token": "YOUR_THIRD_TOKEN",
@@ -47,13 +53,38 @@
     "min_kakera": 0,
     "key_mode": false,
     "start_delay": 0,
-    "roll_speed": 0.3,
+    "roll_speed": 0.5,
     "snipe_mode": false,
     "snipe_delay": 5,
     "snipe_ignore_min_kakera_reset": false,
     "wishlist": [],
     "series_snipe_mode": false,
     "series_snipe_delay": 5,
-    "series_wishlist": []
+    "series_wishlist": [],
+    "kakera_snipe_mode": false,
+    "kakera_snipe_threshold": 0,
+    "kakera_snipe_delay": 2
+  },
+  "KakeraHunterPreset": {
+    "token": "KAKERA_HUNTER_TOKEN",
+    "prefix": "?",
+    "channel_id": 5566778899,
+    "roll_command": "wg",
+    "delay_seconds": 1.2,
+    "mudae_prefix": "$",
+    "min_kakera": 200,
+    "key_mode": true,
+    "start_delay": 15,
+    "roll_speed": 0.15,
+    "snipe_mode": false,
+    "snipe_delay": 3,
+    "snipe_ignore_min_kakera_reset": false,
+    "wishlist": [],
+    "series_snipe_mode": false,
+    "series_snipe_delay": 5,
+    "series_wishlist": [],
+    "kakera_snipe_mode": true,
+    "kakera_snipe_threshold": 250,
+    "kakera_snipe_delay": 2
   }
 }
