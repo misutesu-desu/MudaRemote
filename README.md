@@ -1,4 +1,4 @@
-# 💖✨ MudaRemote: Enhanced Mudae Auto-Claim Bot ✨💖
+# 💖✨ MudaRemote: Enhanced Mudae Auto-Claim Bot with Kakera Snipe & Maintenance Mode ✨💖
 
 [![Discord TOS Violation - **USE WITH EXTREME CAUTION**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **RISK OF ACCOUNT BAN!** ⚠️
 
@@ -16,12 +16,14 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
 
 ## 🚀 Take Your Mudae Game to the Next Level with MudaRemote! (Responsibly!) 🚀
 
-**MudaRemote** is a powerful, open-source Python bot designed to automate tasks for the popular Mudae Discord bot. Building upon the foundation of the original Mudae Auto-Claim Bot, MudaRemote introduces exciting new features, including **real-time character and series sniping**, enhanced console logging, and more! Streamline your collection, maximize your kakera gains, and dominate the Mudae universe – all while being mindful of Discord's Terms of Service! 🌟
+**MudaRemote** is a powerful, open-source Python bot designed to automate tasks for the popular Mudae Discord bot. Building upon the foundation of the original Mudae Auto-Claim Bot, MudaRemote introduces exciting new features, including **real-time character and series sniping**, **kakera sniping**, automatic **maintenance detection**, enhanced console logging, and more! Streamline your collection, maximize your kakera gains, and dominate the Mudae universe – all while being mindful of Discord's Terms of Service! 🌟
 
 **✨  Key Features That Make MudaRemote Shine: ✨**
 
 *   **🎯 Real-time Character Sniping:**  **INSTANTLY claim characters from your wishlist** as soon as they appear in the Mudae channel! No more missing out on your favorites! 🚀
 *   **🎬 Real-time Series Sniping:**  Target characters from specific anime or game series!  **Add series keywords to your `series_wishlist`**, and MudaRemote will automatically snipe characters belonging to those series in real-time! Perfect for focused collections! 🚀
+*   **💎 Real-time Kakera Sniping:**  **New!** Snipe characters based on their **kakera value!** Set a `kakera_snipe_threshold`, and the bot will automatically claim characters exceeding that value in real-time. Maximize your kakera farming! 💎
+*   **🛠️ Automatic Maintenance Detection & Handling: New!**  The bot **intelligently detects Mudae maintenance messages** and **pauses rolling** to conserve rolls! Rolling automatically resumes after maintenance ends, ensuring efficient bot operation even during server downtimes. 🛠️
 *   **👯‍♀️ Multi-Account Mastery:**  Run **multiple Discord accounts simultaneously**! Manage all your Mudae endeavors from one script! 🚀
 *   **🤖 Fully Automated Rolling & Claiming:**  Sit back and relax! The bot **automatically rolls, detects claimable characters & kakera, and claims them for you!**  ✨
 *   **💎 Kakera-Smart Claiming:**  Set your **minimum `kakera` value**!  The bot intelligently prioritizes claiming characters with **high kakera value** (or claim everything if you want!). 🧠
@@ -69,7 +71,10 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
         "series_snipe_mode": true,                  // 🎬 Enable real-time series sniping? (true/false)
         "series_snipe_delay": 3,                    // ⏳ Delay before claiming series sniped character (seconds)
         "series_wishlist": ["Demon Slayer", "Re:Zero"], // 📝 List of series keywords to snipe (case-insensitive)
-        "roll_speed": 0.3                           // 💨 Delay between each roll command in seconds (adjust for speed/safety)
+        "roll_speed": 0.3,                           // 💨 Delay between each roll command in seconds (adjust for speed/safety)
+        "kakera_snipe_mode": true,                 // 💎 Enable real-time kakera sniping? (true/false) - NEW!
+        "kakera_snipe_threshold": 100,              // 💎 Minimum kakera value to snipe (integer) - NEW!
+        "kakera_snipe_delay": 2                     // ⏳ Delay before claiming kakera snipe (seconds) - NEW!
       },
       "KakeraHunterBot": {   // 🚀 Another awesome preset!
         "token": "YOUR_DISCORD_ACCOUNT_TOKEN_2",
@@ -88,7 +93,10 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
         "series_snipe_mode": false,
         "series_snipe_delay": 5,
         "series_wishlist": [],
-        "roll_speed": 0.2                           // 💨  Faster roll speed for this preset
+        "roll_speed": 0.2,                           // 💨  Faster roll speed for this preset
+        "kakera_snipe_mode": false,                // 💎 Kakera snipe mode disabled for this preset
+        "kakera_snipe_threshold": 0,               // 💎 Kakera snipe threshold - not used when disabled
+        "kakera_snipe_delay": 2                    // ⏳ Kakera snipe delay - not used when disabled
       }
       // ... Add more presets for all your accounts! 🚀🚀🚀
     }
@@ -118,6 +126,9 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
         *   **Higher values (e.g., `0.3` or `0.5` and above) will make the bot roll slower.** This can be safer and more "human-like," potentially reducing rate-limiting.
         *   **Default value is `0.3` seconds.** If you don't include `roll_speed` in your preset, it will use this default.
         *   **Experiment to find the best `roll_speed`** for your specific needs and server conditions.
+    *   **`kakera_snipe_mode`**: `true` or `false`. **Enable real-time Kakera sniping.** When enabled, the bot will snipe characters based on their kakera value. 💎 **NEW!**
+    *   **`kakera_snipe_threshold`**:  **Minimum kakera value to trigger Kakera sniping.**  An integer value.  The bot will only snipe characters with a kakera value equal to or greater than this threshold when `kakera_snipe_mode` is enabled. 💎 **NEW!**
+    *   **`kakera_snipe_delay`**:  **Delay in seconds before claiming a Kakera-sniped character.** Adjust as needed. ⏳ **NEW!**
 
 4.  **🚀 Run the Bot!** Open your terminal/command prompt, navigate to the bot's folder, and type:
 
@@ -178,7 +189,7 @@ This bot is a **SELF-BOT**. Using self-bots is **STRICTLY PROHIBITED** by Discor
 
 5.  **👁️ Monitor the Console:**  Keep an eye on the console for real-time bot activity, logs, and claimed characters! 👀
 
-6.  **📜 Logging:**  Bot activity is logged to the console output. Copy and paste for saving logs if needed. ✍️
+6.  **📜 Logging:**  Bot activity is logged to the console output and to a `logs.txt` file in the same directory as the script. Check `logs.txt` for a persistent record of bot actions. ✍️
 
 ---
 
