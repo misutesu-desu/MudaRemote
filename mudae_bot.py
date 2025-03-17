@@ -18,7 +18,7 @@ try:
     with open("presets.json", "r") as f:
         presets = json.load(f)
 except FileNotFoundError:
-    print("presets.json file not found. Please create it and enter the required information.") # Translated from: "presets.json dosyası bulunamadı. Lütfen oluşturun ve gerekli bilgileri girin."
+    print("presets.json file not found. Please create it and enter the required information.")
     sys.exit(1)
 
 # Target bot ID (Mudae's ID)
@@ -42,7 +42,6 @@ COLORS = {
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', '🪐']
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL']
 
-
 def color_log(message, preset_name, log_type="INFO"):
     color_code = COLORS.get(log_type.upper(), COLORS["INFO"])
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -55,17 +54,17 @@ def write_log_to_file(log_message):
         with open("logs.txt", "a") as log_file:
             log_file.write(log_message + "\n")
     except Exception as e:
-        print(f"Error writing to log file: {e}") # Translated from: "Log dosyasına yazma hatası: {e}"
+        print(f"Error writing to log file: {e}")
 
 def print_log(message, preset_name, log_type="INFO"):
     log_message_formatted = color_log(message, preset_name, log_type)
     write_log_to_file(log_message_formatted)
 
-
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
-            series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed):
+            series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed,
+            kakera_snipe_mode=False, kakera_snipe_threshold=0, kakera_snipe_delay=2):
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False)
 
     # Disable discord.py's default logging to console
@@ -89,12 +88,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
     client.roll_speed = roll_speed
+    # Initialize kakera sniping settings
+    client.kakera_snipe_mode = kakera_snipe_mode
+    client.kakera_snipe_threshold = kakera_snipe_threshold
+    client.kakera_snipe_delay = kakera_snipe_delay
+    # Initialize maintenance mode
+    client.maintenance_mode = False
+    # Initialize rolling flag
+    client.rolling = False
 
     # Initialize sniping trackers
     client.sniped_messages = set()
     client.snipe_happened = False
     client.series_sniped_messages = set()
     client.series_snipe_happened = False
+    client.kakera_sniped_messages = set()
+    client.kakera_snipe_happened = False
 
     @client.event
     async def on_ready():
@@ -104,6 +113,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Key Mode: {'Enabled' if key_mode else 'Disabled'}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Snipe Mode: {'Enabled' if snipe_mode else 'Disabled'}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Series Snipe Mode: {'Enabled' if series_snipe_mode else 'Disabled'}", preset_name, "INFO")
+        log_function(f"[{client.muda_name}] Kakera Snipe Mode: {'Enabled' if client.kakera_snipe_mode else 'Disabled'}", preset_name, "INFO")
+        if client.kakera_snipe_mode:
+            log_function(f"[{client.muda_name}] Kakera Snipe Threshold: {client.kakera_snipe_threshold}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Roll Speed: {roll_speed} seconds", preset_name, "INFO")
         await asyncio.sleep(start_delay)
         await asyncio.sleep(delay_seconds)
@@ -115,9 +127,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(0.5)
             await channel.send(f"{mudae_prefix}daily")
             await asyncio.sleep(0.5)
-            await check_status(client, channel, mudae_prefix) # Use combined status check
+            await check_status(client, channel, mudae_prefix)
         except discord.errors.Forbidden as e:
-            log_function(f"[{client.muda_name}] Error: Cannot send messages to channel, permission denied. {e}", preset_name, "ERROR") # Translated from: "Hata: Kanala mesaj gönderemez iznim yok. {e}"
+            log_function(f"[{client.muda_name}] Error: Cannot send messages to channel, permission denied. {e}", preset_name, "ERROR")
             await client.close()
 
     async def check_status(client, channel, mudae_prefix):
@@ -152,20 +164,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 return
                             else:
                                 raise ValueError("Claim time information could not be parsed from $tu output.")
-                        elif "you can't claim for another" in content_lower:  # Corrected condition
+                        elif "you can't claim for another" in content_lower:
                             client.claim_right_available = False
-                            match_claim_wait = re.search(r"you can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min", content_lower)  # Corrected regex
+                            match_claim_wait = re.search(r"you can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min", content_lower)
                             if match_claim_wait:
-                                hours = int(match_claim_wait.group(1)[:-1]) if match_claim_wait.group(1) else 0  # Parse hours
+                                hours = int(match_claim_wait.group(1)[:-1]) if match_claim_wait.group(1) else 0
                                 minutes = int(match_claim_wait.group(2))
-                                total_seconds = (hours * 60 + minutes) * 60 # Calculate total seconds
-
+                                total_seconds = (hours * 60 + minutes) * 60
                                 if key_mode:
                                     log_function(f"[{client.muda_name}] Claim right not available, but Key Mode is enabled. Rolling for kakera only.", preset_name, "INFO")
                                     await check_rolls_left_tu(client, channel, mudae_prefix, ignore_limit=True, key_mode_only_kakera=True)
                                     return
                                 else:
-                                    log_function(f"[{client.muda_name}] Claim right not available. Will retry in {hours}h {minutes}min.", preset_name, "INFO") # Display correct time
+                                    log_function(f"[{client.muda_name}] Claim right not available. Will retry in {hours}h {minutes}min.", preset_name, "INFO")
                                     await wait_for_reset(total_seconds, delay_seconds, log_function, preset_name)
                                     await check_status(client, channel, mudae_prefix)
                                     return
@@ -196,7 +207,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     log_function(f"[{client.muda_name}] Claim right check failed using $tu. Retrying in 5 seconds.", preset_name, "ERROR")
                     await asyncio.sleep(5)
                 continue
-
 
     async def check_rolls_left_tu(client, channel, mudae_prefix, ignore_limit=False, key_mode_only_kakera=False):
         log_function(f"[{client.muda_name}] Checking rolls left using $tu...", preset_name, "CHECK")
@@ -237,6 +247,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await asyncio.sleep(5)
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit=False, key_mode_only_kakera=False):
+        if client.maintenance_mode:
+            log_function(f"[{client.muda_name}] Roll commands suspended due to maintenance.", preset_name, "RESET")
+            return
+
+        client.rolling = True
         for _ in range(rolls_left):
             await channel.send(f"{mudae_prefix}{roll_command}")
             await asyncio.sleep(client.roll_speed)
@@ -247,15 +262,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if msg.author.id == TARGET_BOT_ID:
                 mudae_messages.append(msg)
         await handle_mudae_messages(client, channel, mudae_messages, ignore_limit, key_mode_only_kakera)
+        client.rolling = False
         await asyncio.sleep(2)
-        if client.snipe_happened or client.series_snipe_happened:
+        if client.snipe_happened or client.series_snipe_happened or client.kakera_snipe_happened:
             client.snipe_happened = False
             client.series_snipe_happened = False
+            client.kakera_snipe_happened = False
             await asyncio.sleep(2)
-            # await check_status(client, channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
-            return # Removed check_status after snipe as requested
-        await check_status(client, channel, mudae_prefix) # Re-check status after rolls using $tu
-
+            return
+        await check_status(client, channel, mudae_prefix)
 
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit=False, key_mode_only_kakera=False):
         # Kakera claim logic - always execute regardless of claim rights
@@ -271,7 +286,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     log_function(f"[{client.muda_name}] Claimed Kakera: {embed.author.name}", preset_name, "KAKERA")
                                     await asyncio.sleep(3)
                                 except discord.errors.HTTPException as e:
-                                    log_function(f"[{client.muda_name}] Kakera claim error: {e}", preset_name, "ERROR") # Translated from: "Kakera claim hatası: {e}"
+                                    log_function(f"[{client.muda_name}] Kakera claim error: {e}", preset_name, "ERROR")
 
         if not client.claim_right_available and key_mode: # Key mode and no claim right logic
             highest_claim_character = None
@@ -291,7 +306,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     highest_claim_character = kakera_value
                                     highest_claim_character_message = msg
                             except ValueError:
-                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR") # Translated from: "Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}"
+                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR")
                                 continue
 
             if highest_claim_character_message and highest_claim_character is not None and client.min_kakera is not None:
@@ -326,9 +341,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     second_highest_claim_character = kakera_value
                                     second_highest_claim_character_message = msg
                             except ValueError:
-                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR") # Translated from: "Kakera değeri tam sayıya dönüştürülemedi: {kakera_string}"
+                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", preset_name, "ERROR")
                                 continue
-
 
             if highest_claim_character_message:
                 await claim_character(client, channel, highest_claim_character_message)
@@ -337,7 +351,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await channel.send(f"{mudae_prefix}rt")
                         await asyncio.sleep(0.5)
                         await claim_character(client, channel, second_highest_claim_character_message, is_rt_claim=True)
-
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
         log_message = "Claimed Kakera" if is_kakera else "Claimed Character"
@@ -354,14 +367,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(3)
                             return
                         except discord.errors.HTTPException as e:
-                            log_function(f"[{client.muda_name}] Character claim error: {e}", client.preset_name, "ERROR") # Translated from: "Karakter claim hatası: {e}"
+                            log_function(f"[{client.muda_name}] Character claim error: {e}", client.preset_name, "ERROR")
         else:
             try:
                 await msg.add_reaction("✅")
-                log_function(f"[{client.muda_name}] {log_message}: {msg.embeds[0].embeds[0].author.name if msg.embeds else 'Character'}", client.preset_name, log_type) # Handle no embed case just in case
+                log_function(f"[{client.muda_name}] {log_message}: {msg.embeds[0].author.name if msg.embeds else 'Character'}", client.preset_name, log_type)
                 await asyncio.sleep(3)
             except discord.errors.HTTPException:
-                log_function(f"[{client.muda_name}] Reaction could not be added. Character probably already claimed by someone else.", client.preset_name, "ERROR") # Translated from: "Reaksiyon eklenemedi. Muhtemelen karakter başkası tarafından çoktan alındı."
+                log_function(f"[{client.muda_name}] Reaction could not be added. Character probably already claimed by someone else.", client.preset_name, "ERROR")
 
     async def check_new_characters(client, channel):
         async for msg in channel.history(limit=15):
@@ -369,9 +382,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if msg.embeds:
                     embed = msg.embeds[0]
                     match = re.search(r"Claims: \#(\d+)", embed.description or "")
-                    # if match: # Removed "New character" log
-                    #     claims_value = int(match.group(1))
-                    #     log_function(f"[{client.muda_name}] New character: {embed.author.name} (Claims: #{claims_value})", client.preset_name, "INFO") # Removed log
                     pass
 
     async def wait_for_reset(seconds, delay_seconds, log_function, preset_name):
@@ -399,6 +409,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if message.author.id != TARGET_BOT_ID:
             await client.process_commands(message)
             return
+
+        if "maintenance" in message.content.lower():
+            if not client.maintenance_mode:
+                client.maintenance_mode = True
+                log_function(f"[{client.muda_name}] Maintenance detected!", client.preset_name, "RESET")
+                log_function(f"[{client.muda_name}] Roll commands suspended for 30 minutes.", client.preset_name, "RESET")
+                await asyncio.sleep(30 * 60)
+                client.maintenance_mode = False
+                log_function(f"[{client.muda_name}] Maintenance period over. Resuming roll commands.", client.preset_name, "RESET")
+            await client.process_commands(message)
+            return
+
         if message.embeds:
             if not message.embeds:
                 await client.process_commands(message)
@@ -407,54 +429,78 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await client.process_commands(message)
             return
 
-        if not client.claim_right_available and not client.series_snipe_mode and not client.snipe_mode:
+        if not client.claim_right_available and not client.series_snipe_mode and not client.snipe_mode and not client.kakera_snipe_mode:
             await client.process_commands(message)
             return
 
-        # --- Real-time SERIES SNIPING (Channel-Specific!) ---
-        if client.series_snipe_mode and client.series_wishlist and message.channel.id == client.target_channel_id:
-            embed = message.embeds[0]
-            description = embed.description or ""
-            if description:
-                first_line = description.splitlines()[0]
-                if any(kw and kw.lower() in first_line.lower() for kw in client.series_wishlist):
-                    # CHECK FOR CLAIM EMOJIS IN SERIES SNIPE
-                    if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
-                        if message.id not in client.series_sniped_messages:
-                            client.series_sniped_messages.add(message.id)
-                            log_function(f"[{client.muda_name}] (Real-time) Series snipe candidate found: {first_line}", client.preset_name, "CLAIM")
-                            await asyncio.sleep(client.series_snipe_delay)
-                            await claim_character(client, message.channel, message)
-                            client.series_snipe_happened = True
-                            await asyncio.sleep(2)
-                            # await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
-                            await client.process_commands(message)
-                            return
+        if not client.rolling:
+            # --- Real-time SERIES SNIPING (Channel-Specific!) ---
+            if client.series_snipe_mode and client.series_wishlist and message.channel.id == client.target_channel_id:
+                embed = message.embeds[0]
+                description = embed.description or ""
+                if description:
+                    first_line = description.splitlines()[0]
+                    if any(kw and kw.lower() in first_line.lower() for kw in client.series_wishlist):
+                        if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
+                            if message.id not in client.series_sniped_messages:
+                                client.series_sniped_messages.add(message.id)
+                                log_function(f"[{client.muda_name}] (Real-time) Series snipe candidate found: {first_line}", client.preset_name, "CLAIM")
+                                await asyncio.sleep(client.series_snipe_delay)
+                                await claim_character(client, message.channel, message)
+                                client.series_snipe_happened = True
+                                await asyncio.sleep(2)
+                                await client.process_commands(message)
+                                return
 
-        # --- Real-time NORMAL SNIPING (Channel-Specific!) ---
-        if client.snipe_mode and client.wishlist and message.channel.id == client.target_channel_id:
-            embed = message.embeds[0]
-            character_name = None
-            if embed.author and embed.author.name:
-                character_name = embed.author.name
-                if any(wish and wish.lower() in character_name.lower() for wish in client.wishlist):
-                    # CHECK FOR CLAIM EMOJIS IN NORMAL SNIPE
-                    if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
-                        if message.id not in client.sniped_messages:
-                            client.sniped_messages.add(message.id)
-                            log_function(f"[{client.muda_name}] (Real-time) Snipe candidate found: {character_name}", client.preset_name, "CLAIM")
-                            await asyncio.sleep(client.snipe_delay)
-                            await claim_character(client, message.channel, message)
-                            client.snipe_happened = True
-                            await asyncio.sleep(2)
-                            # await check_status(client, message.channel, mudae_prefix) # Re-check status after snipe using $tu - Removed as requested
-                            await client.process_commands(message)
-                            return
+            # --- Real-time NORMAL SNIPING (Channel-Specific!) ---
+            if client.snipe_mode and client.wishlist and message.channel.id == client.target_channel_id:
+                embed = message.embeds[0]
+                character_name = None
+                if embed.author and embed.author.name:
+                    character_name = embed.author.name
+                    if any(wish and wish.lower() in character_name.lower() for wish in client.wishlist):
+                        if any(button.emoji and button.emoji.name in CLAIM_EMOJIS for comp in message.components for button in comp.children):
+                            if message.id not in client.sniped_messages:
+                                client.sniped_messages.add(message.id)
+                                log_function(f"[{client.muda_name}] (Real-time) Snipe candidate found: {character_name}", client.preset_name, "CLAIM")
+                                await asyncio.sleep(client.snipe_delay)
+                                await claim_character(client, message.channel, message)
+                                client.snipe_happened = True
+                                await asyncio.sleep(2)
+                                await client.process_commands(message)
+                                return
+
+            # --- Real-time KAKERA SNIPING (Channel-Specific!) ---
+            if client.kakera_snipe_mode and message.channel.id == client.target_channel_id:
+                embed = message.embeds[0]
+                if embed.color:
+                    if embed.color.value in [16751916, 1360437]:
+                        description = embed.description or ""
+                        match = re.search(r"\*\*([\d,]+)\*\*<:kakera:", description)
+                        if match:
+                            kakera_string = match.group(1)
+                            kakera_string_no_commas = kakera_string.replace(",", "")
+                            try:
+                                kakera_value = int(kakera_string_no_commas)
+                                if kakera_value >= client.kakera_snipe_threshold:
+                                    if message.id not in client.kakera_sniped_messages:
+                                        client.kakera_sniped_messages.add(message.id)
+                                        character_name = "Unknown Character"
+                                        if embed.author and embed.author.name:
+                                            character_name = embed.author.name
+                                        log_function(f"[{client.muda_name}] (Real-time) Kakera snipe candidate found: {character_name} - Kakera Value: {kakera_value}", client.preset_name, "CLAIM")
+                                        await asyncio.sleep(client.kakera_snipe_delay)
+                                        await claim_character(client, message.channel, message)
+                                        client.kakera_snipe_happened = True
+                                        await asyncio.sleep(2)
+                                        await client.process_commands(message)
+                                        return
+                            except ValueError:
+                                log_function(f"[{client.muda_name}] Kakera value could not be converted to integer: {kakera_string}", client.preset_name, "ERROR")
+
         await client.process_commands(message)
 
-
     client.run(token)
-
 
 def show_banner():
     banner = r"""
@@ -464,7 +510,6 @@ def show_banner():
  | |\/| | |  | | |  | |/ /\ \ |  _  /|  __| | |\/| | |  | | | |  |  __|
  | |  | | |__| | |__| / ____ \| | \ \| |____| |  | | |__| | | |  | |____
  |_|  |_|\____/|_____/_/    \_\_|  \_\______|_|  |_|\____/  |_|  |______|
-
 
                                                                          """
     print("\033[1;36m" + banner + "\033[0m")
@@ -489,7 +534,7 @@ def main_menu():
         elif answers['option'] == 'Select and Run Multiple Presets':
             select_and_run_multiple_presets()
         elif answers['option'] == 'Exit':
-            print("\033[1;32mExiting MudaRemote. Goodbye!\033[0m") # Translated from: "Çıkış Yapılıyor. Güle güle!" - but changed to a more common English farewell
+            print("\033[1;32mExiting MudaRemote. Goodbye!\033[0m")
             break
 
 def select_and_run_preset():
@@ -516,6 +561,9 @@ def select_and_run_preset():
     series_snipe_delay = preset.get("series_snipe_delay", 5)
     series_wishlist = preset.get("series_wishlist", [])
     roll_speed = preset.get("roll_speed", 0.3)
+    kakera_snipe_mode = preset.get("kakera_snipe_mode", False)
+    kakera_snipe_threshold = preset.get("kakera_snipe_threshold", 0)
+    kakera_snipe_delay = preset.get("kakera_snipe_delay", 2)
     threading.Thread(target=run_bot, args=(
         preset["token"],
         preset["prefix"],
@@ -535,7 +583,10 @@ def select_and_run_preset():
         series_snipe_mode,
         series_snipe_delay,
         series_wishlist,
-        roll_speed
+        roll_speed,
+        kakera_snipe_mode,
+        kakera_snipe_threshold,
+        kakera_snipe_delay
     )).start()
 
 def select_and_run_multiple_presets():
@@ -563,6 +614,9 @@ def select_and_run_multiple_presets():
         series_snipe_delay = preset.get("series_snipe_delay", 5)
         series_wishlist = preset.get("series_wishlist", [])
         roll_speed = preset.get("roll_speed", 0.3)
+        kakera_snipe_mode = preset.get("kakera_snipe_mode", False)
+        kakera_snipe_threshold = preset.get("kakera_snipe_threshold", 0)
+        kakera_snipe_delay = preset.get("kakera_snipe_delay", 2)
         threading.Thread(target=run_bot, args=(
             preset["token"],
             preset["prefix"],
@@ -582,7 +636,10 @@ def select_and_run_multiple_presets():
             series_snipe_mode,
             series_snipe_delay,
             series_wishlist,
-            roll_speed
+            roll_speed,
+            kakera_snipe_mode,
+            kakera_snipe_threshold,
+            kakera_snipe_delay
         )).start()
 
 if __name__ == "__main__":
