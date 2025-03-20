@@ -23,7 +23,7 @@ MudaRemote is a Python self-bot to automate Mudae tasks. It offers real-time sni
 *   **🔄 Auto Roll Reset Detection:** Waits for roll resets.
 *   **✅ Claim Rights Check:**  Efficient claiming.
 *   **⏱️ Customizable Delays:** Mimic human behavior.
-*   **🔑 Key Mode:** Relentless kakera rolling.
+*   **🔑 Key Mode: Relentless Kakera Rolling, Even Without Claim Rights!** When enabled, the bot will continuously roll for kakera, **even when you have no claim rights left**.  This allows you to maximize kakera gain, regardless of claim availability.
 *   **🗂️ Preset Config:**  Manage multiple accounts easily.
 *   **📊 Real-time Console Logging:**  Clear, colored console output.
 *   **⚙️ Roll Speed Control:** Adjust rolling pace.
@@ -45,7 +45,7 @@ MudaRemote is a Python self-bot to automate Mudae tasks. It offers real-time sni
         "delay_seconds": 1,             // ⏳ Delay (seconds, >0.8 for safety)
         "mudae_prefix": "$",            // 💰 Mudae prefix ($)
         "min_kakera": 50,               // 💎 Min kakera to claim (0 for all)
-        "key_mode": false,              // 🔑 Key Mode (kakera focus)
+        "key_mode": false,              // 🔑 Key Mode: Roll for kakera even without claim rights.  Set to `true` to enable relentless kakera rolling.
         "wishlist": ["Character Name"], // 📝 Wishlist for sniping
         "series_wishlist": ["Series Name"], // 🎬 Series Wishlist for sniping
         "kakera_snipe_threshold": 100   // 💎 Min kakera for kakera sniping
