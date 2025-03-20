@@ -1,4 +1,4 @@
-# ✨ MudaRemote: Minimal Mudae Auto-Claim Bot ✨
+# ✨ MudaRemote: Mudae Auto-Claim Bot ✨
 
 [![Discord TOS Violation - **USE CAUTIOUSLY**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **ACCOUNT BAN RISK!** ⚠️
 
