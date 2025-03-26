@@ -213,35 +213,56 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         error_count = 0
         max_retries = 5
         while True:
-            async for msg in channel.history(limit=2):
-                if msg.author.id == TARGET_BOT_ID and "$tu" in msg.content.lower():
-                    content_lower = msg.content.lower()
-                    match_rolls = re.search(r"you have \*\*(\d+)\*\* rolls? left", content_lower)
-                    if match_rolls:
-                        rolls_left = int(match_rolls.group(1))
-                        reset_match = re.search(r"next rolls? reset in \*\*(\d+)\*\* min", content_lower)
-                        reset_time = int(reset_match.group(1)) if reset_match else 0
-                        if not reset_match:
-                            log_function(f"[{client.muda_name}] Warning: Could not parse roll reset time from $tu output.", preset_name, "ERROR")
-                        if rolls_left == 0:
-                            log_function(f"[{client.muda_name}] No rolls left. Reset in {reset_time} min.", preset_name, "RESET")
-                            await wait_for_rolls_reset(reset_time, delay_seconds, log_function, preset_name)
-                            await check_status(client, channel, mudae_prefix)
-                            return
-                        else:
-                            log_function(f"[{client.muda_name}] Rolls left: {rolls_left}", preset_name, "INFO")
-                            await start_roll_commands(client, channel, rolls_left, ignore_limit, key_mode_only_kakera)
-                            return
+            # Try to find the most recent $tu response from Mudae
+            tu_message = None
+            async for msg in channel.history(limit=5): # Check more messages if needed
+                if msg.author.id == TARGET_BOT_ID and "$tu" in msg.content.lower() and "you have" in msg.content.lower():
+                    tu_message = msg
+                    break # Found the relevant message
+
+            if tu_message:
+                content_lower = tu_message.content.lower()
+                # Updated regex to handle optional text like "(+++X** $mk)" before "left"
+                match_rolls = re.search(r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left", content_lower)
+
+                if match_rolls:
+                    rolls_left = int(match_rolls.group(1))
+                    reset_match = re.search(r"next rolls? reset in \*\*(\d+)\*\* min", content_lower)
+                    reset_time = int(reset_match.group(1)) if reset_match else 0
+                    if not reset_match:
+                        log_function(f"[{client.muda_name}] Warning: Could not parse roll reset time from $tu output.", preset_name, "ERROR")
+
+                    if rolls_left == 0:
+                        log_function(f"[{client.muda_name}] No rolls left. Reset in {reset_time} min.", preset_name, "RESET")
+                        await wait_for_rolls_reset(reset_time, delay_seconds, log_function, preset_name)
+                        await check_status(client, channel, mudae_prefix)
+                        return
                     else:
-                        raise ValueError(f"Could not parse roll information from $tu output: {msg.content}")
+                        log_function(f"[{client.muda_name}] Rolls left: {rolls_left}", preset_name, "INFO")
+                        await start_roll_commands(client, channel, rolls_left, ignore_limit, key_mode_only_kakera)
+                        return
+                else:
+                    # If the regex failed on the found message, log the specific message
+                    log_function(f"[{client.muda_name}] Error: Could not parse roll information from $tu output: {tu_message.content}", preset_name, "ERROR")
+                    # Fall through to retry logic
+            else:
+                 # If no suitable message was found in history
+                 log_function(f"[{client.muda_name}] Error: Could not find recent $tu response containing roll info.", preset_name, "ERROR")
+                 # Fall through to retry logic
+
+            # Retry logic
             error_count += 1
-            log_function(f"[{client.muda_name}] Error ({error_count}/{max_retries}): Could not find recent $tu response.", preset_name, "ERROR")
+            log_function(f"[{client.muda_name}] Roll check failed using $tu ({error_count}/{max_retries}). Retrying in 5 seconds.", preset_name, "ERROR")
             if error_count >= max_retries:
-                log_function(f"[{client.muda_name}] Max retries reached. Retrying in 30 minutes.", preset_name, "ERROR")
+                log_function(f"[{client.muda_name}] Max retries reached for $tu rolls check. Retrying in 30 minutes.", preset_name, "ERROR")
                 await asyncio.sleep(1800)
-                error_count = 0
+                error_count = 0 # Reset error count after long wait
+                await channel.send(f"{mudae_prefix}tu") # Send tu again before restarting loop
+                await asyncio.sleep(2) # Wait for potential response
             else:
                 await asyncio.sleep(5)
+            # Continue loop to retry fetching/parsing
+
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit=False, key_mode_only_kakera=False):
         """Execute roll commands and handle responses."""
