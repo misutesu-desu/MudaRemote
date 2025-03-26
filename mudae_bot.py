@@ -216,11 +216,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Try to find the most recent $tu response from Mudae
             tu_message = None
             async for msg in channel.history(limit=5): # Check more messages if needed
-                # --- DÜZELTME BAŞLANGICI ---
+                # --- CORRECTION START ---
                 # Check if it's from Mudae and contains the roll count phrase.
-                # KALDIRILDI: "$tu" in msg.content.lower() kontrolü, çünkü Mudae'nin cevabında bu yok.
+                # REMOVED: "$tu" in msg.content.lower() check, because Mudae's response doesn't contain it.
                 if msg.author.id == TARGET_BOT_ID and "you have" in msg.content.lower():
-                # --- DÜZELTME SONU ---
+                # --- CORRECTION END ---
                     tu_message = msg
                     break # Found the relevant message
 
