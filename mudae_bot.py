@@ -18,7 +18,7 @@ try:
     with open("presets.json", "r") as f:
         presets = json.load(f)
 except FileNotFoundError:
-    print("presets.json file not found. Please create it and enter the required information.")
+    print("presets.json dosyası bulunamadı. Lütfen oluşturun ve gerekli bilgileri girin.")
     sys.exit(1)
 
 # Target bot ID (Mudae's ID)
