@@ -181,7 +181,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if msg.author.id == TARGET_BOT_ID and "claim reset" in msg.content.lower(): # Identify Mudae's $tu response
                         content_lower = msg.content.lower()
                         # --- Claim Right Check from $tu output ---
-                        if "you can claim" in content_lower: # Simpler check
+                        if "you __can__ claim" in content_lower: # Simpler check
                             client.claim_right_available = True
                             # Try to parse remaining claim time for logging/logic
                             match_claim = re.search(r"next claim reset .*?\*\*(\d+h)?\s*(\d+)\*\* min", content_lower)
