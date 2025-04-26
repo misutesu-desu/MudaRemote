@@ -6,6 +6,7 @@ import re
 import json
 import threading
 import datetime
+from datetime import timezone # Ensure timezone is imported
 import inquirer
 import logging
 
@@ -27,9 +28,6 @@ except json.JSONDecodeError:
 
 # Target bot ID (Mudae's ID)
 TARGET_BOT_ID = 432610292342587392
-
-# Log list (Not used anymore, logs are directly written to file and console)
-# log_list = [] # Kept commented out for reference
 
 # ANSI color codes
 COLORS = {
@@ -59,7 +57,7 @@ def write_log_to_file(log_message):
     """Appends a log message to the logs.txt file."""
     try:
         # Ensure logs.txt exists, create if not
-        with open("logs.txt", "a") as log_file:
+        with open("logs.txt", "a", encoding='utf-8') as log_file: # Specify encoding
             log_file.write(log_message + "\n")
     except Exception as e:
         # Fallback to print error to console if file writing fails
@@ -157,12 +155,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         log_function(f"[{client.muda_name}] Initial delay of {start_delay} seconds...", preset_name, "INFO")
         await asyncio.sleep(start_delay)
-        # Removed initial delay_seconds sleep here, it's handled within wait_for_reset logic
 
         try:
             log_function(f"[{client.muda_name}] Sending initial commands...", preset_name, "INFO")
             await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1")
-            await asyncio.sleep(1.0) # Slightly increased delay
+            await asyncio.sleep(1.0)
             await channel.send(f"{client.mudae_prefix}dk")
             await asyncio.sleep(1.0)
             await channel.send(f"{client.mudae_prefix}daily")
@@ -178,7 +175,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     # --- MODIFIED check_status FUNCTION ---
     async def check_status(client, channel, mudae_prefix):
         """Checks claim rights and rolls using $tu and proceeds."""
-        # Use client.preset_name, client.key_mode, client.delay_seconds directly
         log_function(f"[{client.muda_name}] Checking claim rights and rolls using {mudae_prefix}tu...", client.preset_name, "CHECK")
         error_count = 0
         max_retries = 5
@@ -232,18 +228,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 else:
                                     log_function(f"[{client.muda_name}] Claim right not available. Reset in {hours}h {minutes}min. Waiting...", client.preset_name, "RESET")
                                     await wait_for_reset(total_seconds, client.delay_seconds, log_function, client.preset_name) # Use client.delay_seconds
-                                    # --- MODIFICATION START ---
                                     log_function(f"[{client.muda_name}] Wait complete. Re-checking status...", client.preset_name, "CHECK")
                                     await check_status(client, channel, mudae_prefix) # Call check_status again to restart the cycle
-                                    # --- MODIFICATION END ---
                             else:
                                 log_function(f"[{client.muda_name}] Claim unavailable, but couldn't parse wait time. Retrying status check shortly.", client.preset_name, "ERROR")
                                 await asyncio.sleep(60)
-                                # Do not return here, let the outer while loop retry sending $tu
                                 continue # Go to the next iteration of the while True loop to retry $tu
 
-                            # This return is now reached *after* the recursive call to check_status completes
-                            # or if key_mode logic finished.
                             return # Exit this specific call frame of check_status
 
                         else:
@@ -263,7 +254,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 else:
                     log_function(f"[{client.muda_name}] Retrying status check in 5 seconds.", client.preset_name, "ERROR")
                     await asyncio.sleep(5)
-                # Continue the while loop to retry check_status
                 continue # Explicitly continue the loop
 
             except Exception as e: # Catch other potential errors
@@ -276,7 +266,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 else:
                     log_function(f"[{client.muda_name}] Retrying status check in 10 seconds.", client.preset_name, "ERROR")
                     await asyncio.sleep(10)
-                # Continue the while loop to retry check_status
                 continue # Explicitly continue the loop
     # --- END OF MODIFIED FUNCTION ---
 
@@ -292,14 +281,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             try:
                 # Try to find the most recent $tu response from Mudae in history
                 async for msg in channel.history(limit=5): # Check recent messages
-                    # Check if it's from Mudae and contains the roll count phrase.
                     if msg.author.id == TARGET_BOT_ID and "you have" in msg.content.lower() and "rolls left" in msg.content.lower():
                         tu_message = msg
                         break # Found the relevant message
 
                 if tu_message:
                     content_lower = tu_message.content.lower()
-                    # Updated regex to handle optional text like "(+X $mk)" before "left"
                     match_rolls = re.search(r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left", content_lower)
 
                     if match_rolls:
@@ -311,78 +298,82 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                         if rolls_left == 0:
                             log_function(f"[{client.muda_name}] No rolls left. Reset in {reset_time} min.", preset_name, "RESET")
-                            await wait_for_rolls_reset(reset_time, client.delay_seconds, log_function, preset_name) # Use client.delay_seconds
-                            # After waiting, re-check the overall status ($tu) which will then check rolls again.
+                            await wait_for_rolls_reset(reset_time, client.delay_seconds, log_function, preset_name)
                             await check_status(client, channel, mudae_prefix)
                             return # Exit check_rolls_left_tu
                         else:
                             log_function(f"[{client.muda_name}] Rolls left: {rolls_left}", preset_name, "INFO")
-                            # Proceed to rolling
                             await start_roll_commands(client, channel, rolls_left, ignore_limit, key_mode_only_kakera)
                             return # Exit check_rolls_left_tu successfully
                     else:
-                        # If the regex failed on the found message, log the specific message
                         log_function(f"[{client.muda_name}] Error: Could not parse roll information from likely $tu output: {tu_message.content}", preset_name, "ERROR")
-                        # Fall through to retry logic below
+
                 else:
-                    # If no suitable message was found in history
                     log_function(f"[{client.muda_name}] Error: Could not find recent Mudae response containing roll info.", preset_name, "ERROR")
-                    # Fall through to retry logic below
 
             except Exception as e:
                  log_function(f"[{client.muda_name}] Unexpected error during roll check: {e}", preset_name, "ERROR")
-                 # Fall through to retry logic below
 
-
-            # Retry logic (if message not found, parsing failed, or unexpected error)
+            # Retry logic
             error_count += 1
             log_function(f"[{client.muda_name}] Roll check failed ({error_count}/{max_retries}). Retrying in 5 seconds.", preset_name, "ERROR")
             if error_count >= max_retries:
                 log_function(f"[{client.muda_name}] Max retries reached for rolls check. Retrying status check in 30 minutes.", preset_name, "ERROR")
                 await asyncio.sleep(1800)
-                error_count = 0 # Reset error count after long wait
-                await channel.send(f"{mudae_prefix}tu") # Send tu again before restarting loop
-                await asyncio.sleep(2) # Wait for potential response
-                # Loop will restart and try check_rolls_left_tu again
+                error_count = 0
+                await channel.send(f"{mudae_prefix}tu")
+                await asyncio.sleep(2)
             else:
                 await asyncio.sleep(5)
-            # Continue the while loop to retry fetching/parsing
+            continue # Continue the while loop to retry
 
     # --- END OF CORRECTED FUNCTION ---
 
-
+    # <<< START OF CHANGE >>>
     async def start_roll_commands(client, channel, rolls_left, ignore_limit=False, key_mode_only_kakera=False):
         """Sends roll commands and handles the resulting messages."""
         log_function(f"[{client.muda_name}] Starting {rolls_left} rolls...", client.preset_name, "INFO")
+        # --- FIX: Record time before sending rolls ---
+        start_time = datetime.datetime.now(datetime.timezone.utc)
         rolled_messages_ids = set() # Keep track of message IDs we initiated rolls for
+
         for i in range(rolls_left):
             try:
                 sent_msg = await channel.send(f"{client.mudae_prefix}{roll_command}")
                 rolled_messages_ids.add(sent_msg.id) # Store the ID of the command message
-                # log_function(f"[{client.muda_name}] Roll {i+1}/{rolls_left} sent.", preset_name, "INFO") # Optional: verbose logging
                 await asyncio.sleep(client.roll_speed)
             except discord.errors.HTTPException as e:
                 log_function(f"[{client.muda_name}] Error sending roll command: {e}. Skipping roll.", client.preset_name, "ERROR")
                 await asyncio.sleep(1) # Wait a bit before next attempt
 
-        log_function(f"[{client.muda_name}] Finished sending rolls. Waiting briefly for Mudae...", client.preset_name, "INFO")
-        await asyncio.sleep(5) # Increased wait time after finishing rolls
+        # Log the start time for debugging
+        log_function(f"[{client.muda_name}] Finished sending rolls. Waiting briefly for Mudae... (Rolls started after: {start_time.isoformat()})", client.preset_name, "INFO")
+        await asyncio.sleep(5) # Wait time after finishing rolls
 
         # Fetch recent messages to process
         mudae_messages_to_process = []
+        fetch_limit = rolls_left * 2 + 10 # Keep a reasonable fetch limit
+        processed_count = 0
         try:
-            async for msg in channel.history(limit=rolls_left * 2 + 10, oldest_first=False): # Fetch more messages
+            # --- FIX: Use 'after=start_time' to filter messages ---
+            async for msg in channel.history(limit=fetch_limit, after=start_time, oldest_first=False):
+                processed_count += 1
                 # Ensure it's from Mudae and likely a character roll embed
                 if msg.author.id == TARGET_BOT_ID and msg.embeds:
                      # Basic check if it's a character embed (has author name)
                      if msg.embeds[0].author and msg.embeds[0].author.name:
                          mudae_messages_to_process.append(msg)
 
-            log_function(f"[{client.muda_name}] Processing {len(mudae_messages_to_process)} potential character messages.", client.preset_name, "INFO")
+            # --- OPTIONAL IMPROVEMENT: Process in roll order ---
+            # Reverse the list so the first roll appears first in the list to process
+            mudae_messages_to_process.reverse()
+
+            # --- Updated Log Message ---
+            log_function(f"[{client.muda_name}] Fetched {processed_count} messages since start time. Processing {len(mudae_messages_to_process)} potential character messages from this batch.", client.preset_name, "INFO")
             if mudae_messages_to_process:
                  await handle_mudae_messages(client, channel, mudae_messages_to_process, ignore_limit, key_mode_only_kakera)
             else:
-                 log_function(f"[{client.muda_name}] No character messages found to process after rolling.", client.preset_name, "INFO")
+                 log_function(f"[{client.muda_name}] No relevant character messages found to process after rolling.", client.preset_name, "INFO")
 
         except Exception as e:
             log_function(f"[{client.muda_name}] Error fetching/processing messages after rolling: {e}", client.preset_name, "ERROR")
@@ -394,19 +385,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Snipe occurred, re-checking status.", client.preset_name, "INFO")
             client.snipe_happened = False
             client.series_snipe_happened = False
-            # Short delay before the crucial status check after snipe
             await asyncio.sleep(1)
             await check_status(client, channel, client.mudae_prefix)
         else:
             log_function(f"[{client.muda_name}] Rolls complete, re-checking status.", client.preset_name, "INFO")
-            # Short delay before the status check after normal rolls
             await asyncio.sleep(1)
             await check_status(client, channel, client.mudae_prefix)
+    # <<< END OF CHANGE >>>
 
 
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit=False, key_mode_only_kakera=False):
         """Processes a list of Mudae messages for claiming kakera and characters."""
-        # Separate lists for potential claims
         kakera_claims = []
         character_claims = [] # Includes wishlist and high-value characters
         wishlist_claims = []
@@ -449,7 +438,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             # Claim Logic: Prioritize wishlist, then high kakera
             if can_claim_this:
-                # Check for normal claim button
                 has_claim_button = False
                 if msg.components:
                      for component in msg.components:
@@ -457,22 +445,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                              if hasattr(button.emoji, 'name') and button.emoji.name in CLAIM_EMOJIS:
                                  has_claim_button = True
                                  break
-                if not has_claim_button and not is_wishlist: # If no claim button and not wishlist, skip character claim consideration for this msg
+                if not has_claim_button and not is_wishlist:
                     continue
 
 
-                # If it's on the wishlist (and has a claim button or is rt target)
                 if is_wishlist:
-                    # If we have normal claim right OR it's key mode (for RT)
                     if client.claim_right_available or key_mode_only_kakera:
-                        wishlist_claims.append((msg, char_name, kakera_value)) # Store msg, name, value
+                        wishlist_claims.append((msg, char_name, kakera_value))
                         log_function(f"[{client.muda_name}] Wishlist character found: {embed.author.name} (Value: {kakera_value})", client.preset_name, "INFO")
-                    # No 'else' needed, if no claim right and not key mode, it's ignored
 
-                # If it's not wishlist, check kakera value (and requires claim button)
                 elif has_claim_button and kakera_value >= min_kak_value:
                     character_claims.append((msg, char_name, kakera_value))
-                    # log_function(f"[{client.muda_name}] High value character found: {embed.author.name} (Value: {kakera_value})", client.preset_name, "INFO") # Optional verbose log
+
 
         # --- Second Pass: Execute Claims based on priority ---
 
@@ -487,15 +471,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Prioritize Wishlist for Normal Claim
         if client.claim_right_available and wishlist_claims:
-            # Claim the first wishlist item found (simplest approach)
             msg_to_claim, name, value = wishlist_claims[0]
             log_function(f"[{client.muda_name}] Prioritizing wishlist claim: {name}", client.preset_name, "CLAIM")
             await claim_character(client, channel, msg_to_claim, is_kakera=False)
             claimed_normally = True
-            client.claim_right_available = False # Assume claim right is used
-            # Remove claimed item from potential RT list
+            client.claim_right_available = False
             character_claims = [(m, n, v) for m, n, v in character_claims if m.id != msg_to_claim.id]
-            wishlist_claims.pop(0) # Remove the claimed one
+            wishlist_claims.pop(0)
 
         # Normal Claim for Highest Value (if no wishlist claimed yet)
         if client.claim_right_available and not claimed_normally and character_claims:
@@ -504,29 +486,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Claiming highest value character: {name} (Value: {value})", client.preset_name, "CLAIM")
             await claim_character(client, channel, msg_to_claim, is_kakera=False)
             claimed_normally = True
-            client.claim_right_available = False # Assume claim right is used
-            character_claims.pop(0) # Remove claimed item
-            # Remove claimed item from potential RT wishlist list too
+            client.claim_right_available = False
+            character_claims.pop(0)
             wishlist_claims = [(m, n, v) for m, n, v in wishlist_claims if m.id != msg_to_claim.id]
 
 
-        # RT Claim Logic (only if a normal claim didn't happen OR key_mode is active without claim right)
-        # Original logic: RT possible if normal claim happened OR key_mode active without claim right
-        can_rt = claimed_normally or key_mode_only_kakera # Can RT if normal claim used, or if key_mode active when claim wasn't available
+        # RT Claim Logic
+        can_rt = claimed_normally or key_mode_only_kakera
 
         if can_rt:
-            # Combine remaining wishlist and high-value characters for RT consideration
             potential_rt_targets = wishlist_claims + character_claims
-            potential_rt_targets.sort(key=lambda item: item[2], reverse=True) # Sort remaining by value
+            potential_rt_targets.sort(key=lambda item: item[2], reverse=True)
 
             if potential_rt_targets:
                 msg_to_rt_claim, name, value = potential_rt_targets[0]
-                # Check if RT is actually worth it (must meet min_kakera threshold even for wishlist in RT)
-                if value >= client.min_kakera: # Use non-ignored threshold for RT
+                if value >= client.min_kakera:
                     log_function(f"[{client.muda_name}] Attempting RT claim for: {name} (Value: {value})", client.preset_name, "CLAIM")
                     try:
                         await channel.send(f"{client.mudae_prefix}rt")
-                        await asyncio.sleep(0.7) # Wait slightly longer after rt command
+                        await asyncio.sleep(0.7)
                         await claim_character(client, channel, msg_to_rt_claim, is_rt_claim=True)
                         claimed_rt = True
                     except Exception as e:
@@ -557,40 +535,33 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_message = "Attempting character claim"
 
-        # Try clicking buttons first (more reliable)
         button_clicked = False
         if msg.components:
             for component in msg.components:
                 for button in component.children:
-                    # Check if emoji exists and is in the target list
                     if hasattr(button.emoji, 'name') and button.emoji and button.emoji.name in button_emojis:
                         try:
                             log_function(f"{log_prefix} {log_message}{log_suffix} (via button)", client.preset_name, log_type)
                             await button.click()
                             button_clicked = True
-                            await asyncio.sleep(1.5) # Wait after click
-                            return # Successfully clicked
+                            await asyncio.sleep(1.5)
+                            return
                         except discord.errors.NotFound:
                             log_function(f"{log_prefix} Button interaction failed (NotFound - likely already claimed/expired){log_suffix}", client.preset_name, "ERROR")
-                            return # Don't try reaction if button failed this way
+                            return
                         except discord.errors.HTTPException as e:
                             log_function(f"{log_prefix} Button click failed (HTTPException {e.status}){log_suffix}", client.preset_name, "ERROR")
-                            # Potentially try reaction as fallback if button click fails? Risky.
-                            # For now, just log error and return.
                             return
                         except Exception as e:
                              log_function(f"{log_prefix} Unexpected error clicking button{log_suffix}: {e}", client.preset_name, "ERROR")
-                             return # Stop claim attempt on unexpected error
+                             return
 
-        # Fallback to reaction if no suitable button was found or clicked (and not kakera)
-        # Avoid reaction fallback for kakera as it doesn't work
         if not button_clicked and not is_kakera:
             log_function(f"{log_prefix} No claim button found/clicked for {character_name}. Attempting reaction fallback.", client.preset_name, "INFO")
             try:
-                # Using a common claim emoji like heart
                 await msg.add_reaction("💖")
                 log_function(f"{log_prefix} {log_message}{log_suffix} (via reaction 💖)", client.preset_name, log_type)
-                await asyncio.sleep(1.5) # Wait after reaction
+                await asyncio.sleep(1.5)
             except discord.errors.Forbidden:
                  log_function(f"{log_prefix} Reaction claim failed (Forbidden - check permissions){log_suffix}", client.preset_name, "ERROR")
             except discord.errors.NotFound:
@@ -603,20 +574,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def check_new_characters(client, channel):
         """Placeholder function, original logic seemed redundant."""
-        # Original logic checked for "#claims" but didn't use the info.
-        # Kept the function structure in case future logic needs it.
-        # log_function(f"[{client.muda_name}] Checking for new characters (Placeholder)", client.preset_name, "DEBUG") # Optional debug log
         pass
 
 
     async def wait_for_reset(seconds_to_wait, base_delay_seconds, log_function, preset_name):
         """Waits until the next claim reset, adding the base delay."""
         if seconds_to_wait <= 0:
-            seconds_to_wait = 1 # Ensure at least a minimal wait
+            seconds_to_wait = 1
 
-        # Add the base delay configured for the preset
         total_wait = seconds_to_wait + base_delay_seconds
-
         wait_end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
 
         log_function(f"[{client.muda_name}] Waiting for claim reset. Wait time: {seconds_to_wait}s + {base_delay_seconds}s delay = {total_wait:.2f}s. Resuming at ~{wait_end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
@@ -627,19 +593,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def wait_for_rolls_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
         """Waits until the next roll reset, adding the base delay."""
         now = datetime.datetime.now()
-        # Calculate seconds until the next roll reset minute mark
         seconds_until_reset = (reset_time_minutes * 60) - (now.second)
         if seconds_until_reset < 0:
-            # This handles cases where the reset is slightly in the past due to execution time
-             seconds_until_reset += (reset_time_minutes * 60) # Wait for the next cycle
+             seconds_until_reset += (reset_time_minutes * 60)
 
-        # Ensure minimum wait time if calculation is off
         if seconds_until_reset <= 0:
-             seconds_until_reset = (reset_time_minutes * 60) if reset_time_minutes > 0 else 60 # Wait full minutes or 1 min default
+             seconds_until_reset = (reset_time_minutes * 60) if reset_time_minutes > 0 else 60
 
-        # Add the base delay configured for the preset
         total_wait = seconds_until_reset + base_delay_seconds
-
         wait_end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
 
         log_function(f"[{client.muda_name}] Waiting for rolls reset ({reset_time_minutes} min cycle). Wait time: {seconds_until_reset}s + {base_delay_seconds}s delay = {total_wait:.2f}s. Resuming at ~{wait_end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
@@ -649,64 +610,51 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_message(message):
-        # Ignore messages not from Mudae or not in the target channel
         if message.author.id != TARGET_BOT_ID or message.channel.id != client.target_channel_id:
-            # Allow processing commands from the bot owner/users if needed
             await client.process_commands(message)
             return
 
-        # Ignore messages without embeds (likely not character rolls)
         if not message.embeds:
-            # Allow processing commands (e.g., if Mudae sends text responses)
-            # await client.process_commands(message) # Decide if needed
             return
 
-        # --- Real-time SNIPING Logic ---
-        # Check only if snipe modes are enabled and wishlists exist
-
         embed = message.embeds[0]
-        process_further = True # Flag to decide if normal command processing should happen
+        process_further = True
 
         # 1. Series Sniping Check
         if client.series_snipe_mode and client.series_wishlist:
             description = embed.description or ""
             if description:
-                first_line = description.splitlines()[0].lower() # Lowercase for comparison
-                # Check if any series keyword is in the first line
+                first_line = description.splitlines()[0].lower()
                 if any(kw in first_line for kw in client.series_wishlist):
-                    # Check if claimable (has a claim button)
                     if any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
                         if message.id not in client.series_sniped_messages:
                             client.series_sniped_messages.add(message.id)
-                            series_name = embed.author.name if embed.author else description.splitlines()[0] # Get series name for log
+                            series_name = embed.author.name if embed.author else description.splitlines()[0]
                             log_function(f"[{client.muda_name}] (SNIPE) Series match: {series_name}. Waiting {client.series_snipe_delay}s", client.preset_name, "CLAIM")
                             await asyncio.sleep(client.series_snipe_delay)
                             await claim_character(client, message.channel, message)
-                            client.series_snipe_happened = True # Signal that a snipe happened
-                            process_further = False # Stop processing this message further
+                            client.series_snipe_happened = True
+                            process_further = False
 
 
         # 2. Normal Character Sniping Check (only if series snipe didn't happen)
         if process_further and client.snipe_mode and client.wishlist:
             if embed.author and embed.author.name:
                 character_name_lower = embed.author.name.lower()
-                # Check if character name is in the wishlist (substring match)
-                is_snipe_target = any(wish == character_name_lower for wish in client.wishlist) # Exact match first
-                if not is_snipe_target: # Fallback to substring check
+                is_snipe_target = any(wish == character_name_lower for wish in client.wishlist)
+                if not is_snipe_target:
                      is_snipe_target = any(wish in character_name_lower for wish in client.wishlist if len(wish) > 2)
 
                 if is_snipe_target:
-                    # Check if claimable (has a claim button)
                     if any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
                         if message.id not in client.sniped_messages:
                             client.sniped_messages.add(message.id)
                             log_function(f"[{client.muda_name}] (SNIPE) Wishlist match: {embed.author.name}. Waiting {client.snipe_delay}s", client.preset_name, "CLAIM")
                             await asyncio.sleep(client.snipe_delay)
                             await claim_character(client, message.channel, message)
-                            client.snipe_happened = True # Signal that a snipe happened
-                            process_further = False # Stop processing this message further
+                            client.snipe_happened = True
+                            process_further = False
 
-        # Process other bot commands if the message wasn't handled by snipe logic
         if process_further:
             await client.process_commands(message)
 
@@ -764,7 +712,6 @@ def validate_preset(preset_name, preset_data):
          print(f"\033[91mWarning in preset '{preset_name}': 'snipe_mode' should be true or false.\033[0m")
     if "wishlist" in preset_data and not isinstance(preset_data["wishlist"], list):
          print(f"\033[91mWarning in preset '{preset_name}': 'wishlist' should be a list (e.g., [\"Char1\", \"Char2\"]).\033[0m")
-    # Add similar checks for series snipe, roll_speed etc. if needed
 
     return True
 
@@ -888,15 +835,17 @@ def main_menu():
              break
         except Exception as e:
             print(f"\033[91mAn error occurred in the main menu: {e}\033[0m")
-            # Optionally wait before showing menu again
             # time.sleep(2)
 
 if __name__ == "__main__":
-    # Ensure logs.txt exists at startup (optional, write_log_to_file handles it too)
+    # Ensure logs.txt exists at startup and set encoding
     try:
-        with open("logs.txt", "a") as f:
+        with open("logs.txt", "a", encoding='utf-8') as f: # Specify encoding
             f.write(f"\n--- MudaRemote Log Start: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     except Exception as e:
          print(f"\033[91mCould not initialize log file: {e}\033[0m")
+
+    # Ensure stdout uses UTF-8 for potential non-ASCII preset names or logs
+    # sys.stdout.reconfigure(encoding='utf-8') # Uncomment if needed, can cause issues in some terminals
 
     main_menu()
