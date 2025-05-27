@@ -73,7 +73,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_snipe_mode_preset, kakera_snipe_threshold_preset, # kakera_snipe_delay_preset REMOVED
             enable_reactive_self_snipe_preset): 
 
-    client = commands.Bot(command_prefix=///////////////////////////////, chunk_guilds_at_startup=False)
+    client = commands.Bot(chunk_guilds_at_startup=False, self_bot=True)
 
     discord_logger = logging.getLogger('discord') 
     discord_logger.propagate = False
