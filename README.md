@@ -17,15 +17,18 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
     *   **Wishlist Sniping:** Claims characters from your wishlist when rolled by *others*, using a configurable delay (`snipe_delay`).
     *   **Series Sniping:** Claims characters from your series wishlist when rolled by *others*, using a configurable delay (`series_snipe_delay`).
     *   **Kakera Value Sniping:** Claims characters based purely on their kakera value (if above `kakera_snipe_threshold`) when rolled by *others*, using `snipe_delay`. This triggers if the character isn't already a wishlist/series match.
-*   **⚡ Reactive Self-Roll Sniping (Configurable):**
+*   **😴 Snipe-Only Mode (Configurable per Preset):**
+    *   Set `rolling: false` in a preset to have that bot instance *only* listen for and execute external snipes.
+    *   In this mode, the bot will not send any roll commands, initial setup commands, or perform status checks for rolls/claims. Ideal for dedicated sniping accounts.
+*   **⚡ Reactive Self-Roll Sniping (Configurable, if Rolling Enabled):**
     *   Instantly (no delay) claims characters from your *own* rolls if they match your wishlist, series wishlist, or `kakera_snipe_threshold` (if `kakera_snipe_mode` is active).
     *   This action interrupts the current rolling batch to secure the claim.
-    *   Can be toggled on/off with `reactive_snipe_on_own_rolls`.
-*   **👯 Multi-Account Support:** Manage and run multiple bot instances simultaneously via presets.
-*   **🤖 Automated Rolling & General Claiming:** Handles your rolling commands and makes general claims based on `min_kakera` after rolls are complete (if no reactive snipe occurred).
-*   **🥇 Intelligent Claim Logic:** Utilizes `$rt` for a potential second claim after a successful primary claim or when in Key Mode.
-*   **🔄 Auto Roll & Claim Reset Detection:** Monitors and waits for Mudae's reset timers to optimize actions.
-*   **🔑 Key Mode:** Enables continuous rolling specifically for kakera collection, even when your main character claim rights are on cooldown.
+    *   Can be toggled on/off with `reactive_snipe_on_own_rolls`. (Only active if `rolling: true`).
+*   **👯 Multi-Account Support:** Manage and run multiple bot instances simultaneously via presets, each with its own configuration (including rolling/snipe-only mode).
+*   **🤖 Automated Rolling & General Claiming (if Rolling Enabled):** Handles your rolling commands and makes general claims based on `min_kakera` after rolls are complete.
+*   **🥇 Intelligent Claim Logic (if Rolling Enabled):** Utilizes `$rt` for a potential second claim after a successful primary claim or when in Key Mode.
+*   **🔄 Auto Roll & Claim Reset Detection (if Rolling Enabled):** Monitors and waits for Mudae's reset timers to optimize actions.
+*   **🔑 Key Mode (if Rolling Enabled):** Enables continuous rolling specifically for kakera collection, even when your main character claim rights are on cooldown.
 *   **⏱️ Customizable Delays & Roll Speed:** Adjust general action delays and the speed of rolling commands.
 *   **🗂️ Easy Preset Configuration:** Manage all settings for different accounts/scenarios via a `presets.json` file.
 *   **📊 Console Logging:** Clear, color-coded real-time output of bot actions and status.
@@ -57,37 +60,41 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
     // --- REQUIRED SETTINGS ---
     "token": "YOUR_DISCORD_ACCOUNT_TOKEN", // Your Discord account token. KEEP THIS EXTREMELY SECRET!
     "channel_id": 123456789012345678,     // ID of the Discord channel for Mudae commands.
-    "roll_command": "wa",                  // Your preferred Mudae roll command (e.g., wa, hg, w, ma).
-    "delay_seconds": 1,                    // General delay (seconds) between some bot actions (e.g., after $tu before parsing).
+    "roll_command": "wa",                  // Your preferred Mudae roll command (e.g., wa, hg, w, ma). Only used if "rolling" is true.
+    "delay_seconds": 1,                    // General delay (seconds) between some bot actions (e.g., after $tu before parsing). Only used if "rolling" is true.
     "mudae_prefix": "$",                   // The prefix Mudae uses in your server (usually "$").
-    "min_kakera": 50,                      // Minimum kakera value for general (post-roll batch) character claims.
+    "min_kakera": 50,                      // Minimum kakera value for general (post-roll batch) character claims. Only used if "rolling" is true.
 
-    // --- OPTIONAL SETTINGS (Defaults shown if not specified) ---
-    "key_mode": false,                     // (Default: false) If true, rolls for kakera even if no character claim right is available.
+    // --- CORE OPERATIONAL MODE ---
+    "rolling": true,                       // (Default: true) If true, bot performs rolling, claiming, $tu checks, etc. 
+                                           // If false, bot enters SNIPE-ONLY mode: no rolling, no $tu checks, only listens for external snipes.
+
+    // --- OPTIONAL SETTINGS (Some depend on "rolling: true") ---
+    "key_mode": false,                     // (Default: false) If true AND "rolling" is true, rolls for kakera even if no character claim right is available.
     "start_delay": 0,                      // (Default: 0) Delay (seconds) before the bot starts after being selected in the menu.
-    "roll_speed": 0.4,                     // (Default: 0.4) Delay (seconds) between individual roll commands sent by the bot.
+    "roll_speed": 0.4,                     // (Default: 0.4) Delay (seconds) between individual roll commands. Only used if "rolling" is true.
 
-    // External Sniping Settings (for characters rolled by OTHERS)
+    // External Sniping Settings (for characters rolled by OTHERS - Always active if configured, regardless of "rolling" status)
     "snipe_mode": true,                    // (Default: false) Enable external wishlist sniping.
-    "wishlist": ["Character Name 1", "Character Name 2"], // List of character names for sniping (both external and reactive self-roll).
+    "wishlist": ["Character Name 1", "Character Name 2"], // List of character names for sniping.
     "snipe_delay": 2,                      // (Default: 2) Delay (seconds) before claiming an external wishlist snipe AND external kakera value snipe.
     
     "series_snipe_mode": true,             // (Default: false) Enable external series sniping.
-    "series_wishlist": ["Series Name 1"],  // List of series names for sniping (both external and reactive self-roll).
+    "series_wishlist": ["Series Name 1"],  // List of series names for sniping.
     "series_snipe_delay": 3,               // (Default: 3) Delay (seconds) before claiming an external series snipe.
 
-    // Reactive Sniping Settings (for characters from YOUR OWN rolls)
+    // Reactive Sniping Settings (for characters from YOUR OWN rolls - Only active if "rolling: true")
     "reactive_snipe_on_own_rolls": true,   // (Default: true) Enable/disable INSTANT reactive heart claims during YOUR OWN rolls.
                                            // If true, uses wishlist, series_wishlist, and kakera_snipe_threshold (if kakera_snipe_mode is true) as criteria.
                                            // If false, all claims for own rolls happen after the roll batch is complete.
 
     // Kakera Threshold Settings (used for BOTH reactive self-roll AND external kakera value snipes)
     "kakera_snipe_mode": true,             // (Default: false) If true, enables `kakera_snipe_threshold` as a criterion for:
-                                           //    1. INSTANT reactive heart claims during own rolls (if reactive_snipe_on_own_rolls is true).
+                                           //    1. INSTANT reactive heart claims during own rolls (if "rolling" AND reactive_snipe_on_own_rolls are true).
                                            //    2. DELAYED external kakera value-only heart snipes (uses `snipe_delay`).
     "kakera_snipe_threshold": 100,         // (Default: 0) Minimum kakera value to trigger claims mentioned above if `kakera_snipe_mode` is true.
     
-    // Other
+    // Other (Only active if "rolling: true")
     "snipe_ignore_min_kakera_reset": false // (Default: false) If true, for post-roll general claims, min_kakera is effectively 0 if your claim reset is <1hr away.
                                            // This does NOT affect reactive sniping or external kakera value sniping thresholds.
   }
@@ -138,4 +145,4 @@ Contributions are welcome! Feel free to report issues, suggest features, or subm
 **Happy (and Cautious!) Mudae-ing!** 😉
 
 ---
-**License:** [MIT License](LICENSE) 
+**License:** [MIT License](LICENSE)
