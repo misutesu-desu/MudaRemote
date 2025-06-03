@@ -20,7 +20,9 @@
     "reactive_snipe_on_own_rolls": true,
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 150,
-    "snipe_ignore_min_kakera_reset": false
+    "snipe_ignore_min_kakera_reset": false,
+    "kakera_reaction_snipe_mode": true,      // New
+    "kakera_reaction_snipe_delay": 0.75     // New
   },
   "Preset_2_Kakera_Focus_KeyMode": {
     "token": "YOUR_DISCORD_TOKEN_2",
@@ -43,7 +45,9 @@
     "reactive_snipe_on_own_rolls": true,
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 80,
-    "snipe_ignore_min_kakera_reset": true
+    "snipe_ignore_min_kakera_reset": true,
+    "kakera_reaction_snipe_mode": true,      // New
+    "kakera_reaction_snipe_delay": 0.75     // New
   },
   "Preset_3_Casual_Roller": {
     "token": "YOUR_DISCORD_TOKEN_3",
@@ -66,7 +70,9 @@
     "reactive_snipe_on_own_rolls": false,
     "kakera_snipe_mode": false,
     "kakera_snipe_threshold": 0,
-    "snipe_ignore_min_kakera_reset": false
+    "snipe_ignore_min_kakera_reset": false,
+    "kakera_reaction_snipe_mode": false,     // New
+    "kakera_reaction_snipe_delay": 0.75     // New
   },
   "Preset_4_Aggressive_HighValue_Sniping": {
     "token": "YOUR_DISCORD_TOKEN_4",
@@ -89,7 +95,9 @@
     "reactive_snipe_on_own_rolls": true,
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 250,
-    "snipe_ignore_min_kakera_reset": true
+    "snipe_ignore_min_kakera_reset": true,
+    "kakera_reaction_snipe_mode": true,      // New
+    "kakera_reaction_snipe_delay": 0.5      // New (example of different delay)
   },
   "Preset_5_Snipe_Only_Dedicated": {
     "token": "YOUR_DISCORD_TOKEN_5",
@@ -109,9 +117,11 @@
     "series_snipe_mode": true,
     "series_wishlist": ["Chainsaw Man", "Darling in the FranXX"],
     "series_snipe_delay": 1.5,
-    "reactive_snipe_on_own_rolls": false,
+    "reactive_snipe_on_own_rolls": false, 
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 200,
-    "snipe_ignore_min_kakera_reset": false
+    "snipe_ignore_min_kakera_reset": false,
+    "kakera_reaction_snipe_mode": true,      // New
+    "kakera_reaction_snipe_delay": 1.0      // New (example of different delay)
   }
 }
