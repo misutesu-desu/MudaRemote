@@ -21,8 +21,8 @@
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 150,
     "snipe_ignore_min_kakera_reset": false,
-    "kakera_reaction_snipe_mode": true,      // New
-    "kakera_reaction_snipe_delay": 0.75     // New
+    "kakera_reaction_snipe_mode": true,
+    "kakera_reaction_snipe_delay": 0.75
   },
   "Preset_2_Kakera_Focus_KeyMode": {
     "token": "YOUR_DISCORD_TOKEN_2",
@@ -46,8 +46,8 @@
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 80,
     "snipe_ignore_min_kakera_reset": true,
-    "kakera_reaction_snipe_mode": true,      // New
-    "kakera_reaction_snipe_delay": 0.75     // New
+    "kakera_reaction_snipe_mode": true,
+    "kakera_reaction_snipe_delay": 0.75
   },
   "Preset_3_Casual_Roller": {
     "token": "YOUR_DISCORD_TOKEN_3",
@@ -71,8 +71,8 @@
     "kakera_snipe_mode": false,
     "kakera_snipe_threshold": 0,
     "snipe_ignore_min_kakera_reset": false,
-    "kakera_reaction_snipe_mode": false,     // New
-    "kakera_reaction_snipe_delay": 0.75     // New
+    "kakera_reaction_snipe_mode": false,
+    "kakera_reaction_snipe_delay": 0.75
   },
   "Preset_4_Aggressive_HighValue_Sniping": {
     "token": "YOUR_DISCORD_TOKEN_4",
@@ -96,8 +96,8 @@
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 250,
     "snipe_ignore_min_kakera_reset": true,
-    "kakera_reaction_snipe_mode": true,      // New
-    "kakera_reaction_snipe_delay": 0.5      // New (example of different delay)
+    "kakera_reaction_snipe_mode": true,
+    "kakera_reaction_snipe_delay": 0.5
   },
   "Preset_5_Snipe_Only_Dedicated": {
     "token": "YOUR_DISCORD_TOKEN_5",
@@ -121,7 +121,7 @@
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 200,
     "snipe_ignore_min_kakera_reset": false,
-    "kakera_reaction_snipe_mode": true,      // New
-    "kakera_reaction_snipe_delay": 1.0      // New (example of different delay)
+    "kakera_reaction_snipe_mode": true,
+    "kakera_reaction_snipe_delay": 1.0
   }
 }
