@@ -16,7 +16,7 @@ BOT_NAME = "MudaRemote"
 # Load presets from JSON file
 presets = {}
 try:
-    with open("presets.json", "r", encoding="utf-8") as f: # Added encoding="utf-8"
+    with open("presets.json", "r", encoding="utf-8") as f:
         presets = json.load(f)
 except FileNotFoundError:
     print("presets.json file not found. Please create it and enter the necessary information.")
@@ -217,7 +217,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claim_reset_proceed = False
         lang_log_suffix = ""
 
-        # MODIFIED REGEXES: Added \.? after min
         match_can_claim_en = re.search(r"you __can__ claim.*?next claim reset .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
         match_can_claim_pt = re.search(r"você __pode__ se casar agora mesmo!.*?a próxima reinicialização é em .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
         match_cant_claim_en = re.search(r"can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
@@ -271,26 +270,47 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         rolls_left = 0; reset_time_r = 0; lang_log_suffix_rolls = ""; parsed_rolls_info = False
 
-        # MODIFIED REGEX: Added \.? after min in the optional reset group
-        match_rolls_en = re.search(r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left.*?(?:next rolls? reset in \*\*(\d+)\*\* min\.?)?", content_lower, re.DOTALL)
-        match_rolls_pt = re.search(r"você tem \*\*(\d+)\*\* rolls? restantes\.?.*?(?:a próxima reinicialização é em \*\*(\d+)\*\* min\.?)?", content_lower, re.DOTALL)
+        # MODIFIED REGEXES: Restructured to make the optional reset part more robustly captured.
+        # The separator (like period, space, newline) is now part of the optional group.
+        match_rolls_en = re.search(
+            r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left"  # Group 1 for rolls_left
+            r"(?:"                                             # Start of optional non-capturing group for reset info
+                r"[.\s\n]*?"                                   # Non-greedy separator (dot, whitespace, newline)
+                r"next rolls? reset in \*\*(\d+)\*\* min\.?"   # Group 2 for reset_minutes
+            r")?",                                             # End of optional non-capturing group
+            content_lower,
+            re.DOTALL
+        )
+        match_rolls_pt = re.search(
+            r"você tem \*\*(\d+)\*\* rolls? restantes\.?"      # Group 1 for rolls_left
+            r"(?:"                                            # Start of optional non-capturing group for reset info
+                r"[.\s\n]*?"                                  # Non-greedy separator
+                r"a próxima reinicialização é em \*\*(\d+)\*\* min\.?"  # Group 2 for reset_minutes
+            r")?",                                            # End of optional non-capturing group
+            content_lower,
+            re.DOTALL
+        )
 
         roll_match_obj = None; reset_minutes_str = None
 
         if match_rolls_en:
-            roll_match_obj = match_rolls_en; rolls_left = int(roll_match_obj.group(1))
-            reset_minutes_str = roll_match_obj.group(2); lang_log_suffix_rolls = " (EN)"; parsed_rolls_info = True
+            roll_match_obj = match_rolls_en # Assign the match object
+            rolls_left = int(roll_match_obj.group(1))
+            reset_minutes_str = roll_match_obj.group(2) # This is group 2 from the modified regex
+            lang_log_suffix_rolls = " (EN)"; parsed_rolls_info = True
         elif match_rolls_pt:
-            roll_match_obj = match_rolls_pt; rolls_left = int(roll_match_obj.group(1))
-            reset_minutes_str = roll_match_obj.group(2); lang_log_suffix_rolls = " (PT)"; parsed_rolls_info = True
+            roll_match_obj = match_rolls_pt # Assign the match object
+            rolls_left = int(roll_match_obj.group(1))
+            reset_minutes_str = roll_match_obj.group(2) # This is group 2 from the modified regex
+            lang_log_suffix_rolls = " (PT)"; parsed_rolls_info = True
 
         if parsed_rolls_info:
-            if reset_minutes_str:
+            if reset_minutes_str: # This checks if group(2) captured something
                 try: reset_time_r = int(reset_minutes_str)
                 except ValueError: log_function(f"[{client.muda_name}] Warn: Roll reset time parse fail (value error).{lang_log_suffix_rolls}", preset_name, "ERROR"); reset_time_r = 0
-            # This 'else' block is where the original warning came from.
-            # If reset_minutes_str is None (because the regex group didn't match), this will be hit.
-            else: log_function(f"[{client.muda_name}] Warn: Roll reset time phrase not found in $tu.{lang_log_suffix_rolls}", preset_name, "WARN"); reset_time_r = 0 # Changed ERROR to WARN for consistency, as it proceeds
+            else: # reset_minutes_str is None (optional group for reset time didn't match)
+                log_function(f"[{client.muda_name}] Warn: Roll reset time phrase not found in $tu.{lang_log_suffix_rolls}", preset_name, "WARN")
+                reset_time_r = 0
 
             if rolls_left == 0:
                 log_function(f"[{client.muda_name}] No rolls. Reset: {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "RESET")
