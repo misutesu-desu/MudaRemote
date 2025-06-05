@@ -372,7 +372,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 for comp in msg.components:
                     for btn in comp.children:
                         if hasattr(btn.emoji,'name') and btn.emoji.name in KAKERA_EMOJIS: kakera_claims.append(msg); break
-            if client.claim_right_available or key_mode_only_kakera_param:
+            if client.claim_right_available or key_mode_only_kakera_param: # key_mode_only_kakera_param allows populating for RT even if claim is off
                 char_n=msg.embeds[0].author.name.lower(); desc=msg.embeds[0].description or ""; k_v=0
                 match_k=re.search(r"\*\*([\d,]+)\*\*<:kakera:",desc);
                 if match_k:
@@ -395,15 +395,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] (Post) Gen. HV: {n} ({v})", preset_name, "CLAIM")
             if await claim_character(client,channel,msg_c,is_kakera=False): claimed_post=True;client.claim_right_available=False;msg_claimed_id=msg_c.id
 
+        # RT logic: Only consider RT if a claim was made OR if it's key_mode and claim is not available (key_mode_only_kakera_param)
         if key_mode_only_kakera_param or claimed_post:
             rt_targets=[i for i in wl_claims_post if i[0].id!=msg_claimed_id] + [i for i in char_claims_post if i[0].id!=msg_claimed_id]
-            rt_targets.sort(key=lambda x:x[2],reverse=True)
+            rt_targets.sort(key=lambda x:x[2],reverse=True) # Sort by kakera value, highest first
             if rt_targets:
-                msg_rt,n_rt,v_rt=rt_targets[0]
-                if v_rt >= min_kak_post:
-                    log_function(f"[{client.muda_name}] (Post) RT: {n_rt} ({v_rt})", preset_name, "CLAIM")
-                    try: await channel.send(f"{client.mudae_prefix}rt"); await asyncio.sleep(0.7); await claim_character(client,channel,msg_rt,is_rt_claim=True)
-                    except Exception as e: log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
+                msg_rt,n_rt,v_rt=rt_targets[0] # Get the best available character for RT
+                
+                # MODIFIED: RT decision strictly uses client.min_kakera
+                if v_rt >= client.min_kakera:
+                    log_function(f"[{client.muda_name}] (Post) RT: {n_rt} ({v_rt}) vs MinKakRT: {client.min_kakera}", preset_name, "CLAIM")
+                    try: 
+                        await channel.send(f"{client.mudae_prefix}rt"); await asyncio.sleep(0.7)
+                        await claim_character(client,channel,msg_rt,is_rt_claim=True)
+                    except Exception as e: 
+                        log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
+                # Log if RT was skipped due to this stricter check, but would have passed the general min_kak_post
+                elif v_rt >= min_kak_post : # This implies it met general (potentially 0) threshold but not strict RT threshold
+                     log_function(f"[{client.muda_name}] (Post) RT Skipped: {n_rt} ({v_rt}) < MinKakRT: {client.min_kakera} (but was >= Gen. Post-Roll MinKak: {min_kak_post})", preset_name, "INFO")
+
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
         if not msg or not msg.embeds: log_function(f"[{client.muda_name}] Invalid msg to claim_character.", preset_name, "ERROR"); return False
@@ -541,8 +551,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
                     await claim_character(client, message.channel, message, is_kakera=True)
 
-        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further:
-            if embed.author and embed.author.name:
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further: #This part is for self-roll kakera reaction
+            # Check if it's a character embed and kakera is present
+            if embed.author and embed.author.name: # Ensure it's a character embed
                 desc = embed.description or ""; k_val=0
                 match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
                 if match_k:
@@ -551,14 +562,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
 
+                # Click kakera if:
+                # 1. Kakera button is present.
+                # 2. EITHER kakera_snipe_mode_active is OFF (meaning click any kakera)
+                # 3. OR kakera_snipe_mode_active is ON AND k_val meets the threshold
+                # 4. OR kakera_snipe_threshold is 0 (meaning click any kakera if mode is on)
                 should_click_kakera = kakera_button_present and \
                                       (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
 
                 if should_click_kakera:
                     if await claim_character(client, message.channel, message, is_kakera=True):
-                        pass
+                        pass # Kakera claimed
 
-        if process_further and client.rolling_enabled:
+        if process_further and client.rolling_enabled: # Only process commands if rolling is enabled for this bot
             await client.process_commands(message)
 
 
