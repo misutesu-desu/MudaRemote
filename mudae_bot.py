@@ -489,7 +489,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
 
         if process_further:
-            if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
+            # FIX: Added 'and not client.is_actively_rolling' to prevent external series snipe during own rolls
+            if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages and not client.is_actively_rolling:
                 desc = embed.description or "";
                 if desc:
                     first_line = desc.splitlines()[0].lower()
@@ -500,7 +501,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(client.series_snipe_delay)
                             if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
 
-            if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages:
+            # FIX: Added 'and not client.is_actively_rolling' to prevent external character snipe during own rolls
+            if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages and not client.is_actively_rolling:
                 if embed.author and embed.author.name:
                     char_name_l = embed.author.name.lower()
                     is_snipe_ext = any(w == char_name_l for w in client.wishlist)
@@ -511,7 +513,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(client.snipe_delay)
                             if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
 
-            if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages:
+            # FIX: Added 'and not client.is_actively_rolling' to prevent external kakera snipe during own rolls
+            if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages and not client.is_actively_rolling:
                 if embed.author and embed.author.name:
                     desc = embed.description or ""; k_val=0
                     match_k_ext = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
@@ -527,8 +530,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if await claim_character(client, message.channel, message):
                                 client.snipe_happened = True
                                 process_further = False
-
-            if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
+            
+            # FIX: Added 'and not client.is_actively_rolling' to prevent external kakera reaction snipe during own rolls
+            if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and not client.is_actively_rolling:
                 has_kakera_button_for_external_snipe = False
                 if message.components:
                     for comp in message.components:
