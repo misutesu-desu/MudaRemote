@@ -190,7 +190,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower_check = msg.content.lower()
-                    is_tu_message_en = ("rolls left" in content_lower_check and \
+                    # FIX: Changed "rolls left" to "roll left" to catch both singular and plural forms.
+                    is_tu_message_en = ("roll left" in content_lower_check and \
                                        ("you __can__ claim" in content_lower_check or "can't claim for another" in content_lower_check))
                     is_tu_message_pt = (("roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) and \
                                        ("você __pode__ se casar agora mesmo!" in content_lower_check or "calma aí, falta um tempo antes que você possa se casar novamente" in content_lower_check))
@@ -199,8 +200,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response.", preset_name, "INFO")
                         break
+                    # FIX: Changed "rolls left" to "roll left" here as well for the fallback check.
                     elif client.user.name.lower() in content_lower_check.splitlines()[0].lower() and \
-                         ("rolls left" in content_lower_check or "roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) :
+                         ("roll left" in content_lower_check or "roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) :
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response (user name match).", preset_name, "INFO")
                         break
