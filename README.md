@@ -122,23 +122,25 @@ Self-bots require your Discord account token. **This token grants full access to
 4.  Paste the following code snippet into the console and press Enter:
     ```javascript
     window.webpackChunkdiscord_app.push([
-      [Math.random()],
-      {},
-      req => {
-        if (!req.c) return;
-        for (const m of Object.keys(req.c)
-          .map(x => req.c[x].exports)
-          .filter(x => x)) {
-          if (m.default && m.default.getToken !== undefined) {
-            return copy(m.default.getToken());
-          }
-          if (m.getToken !== undefined) {
-            return copy(m.getToken());
-          }
-        }
-      },
+    	[Symbol()],
+    	{},
+    	req => {
+    		if (!req.c) return;
+    		for (let m of Object.values(req.c)) {
+    			try {
+    				if (!m.exports || m.exports === window) continue;
+    				if (m.exports?.getToken) return copy(m.exports.getToken());
+    				for (let ex in m.exports) {
+    					if (m.exports?.[ex]?.getToken && m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return copy(m.exports[ex].getToken());
+    				}
+    			} catch {}
+    		}
+    	},
     ]);
-    console.log('%cToken copied to clipboard!', 'font-size: 18px; color: lightgreen; font-weight: bold;');
+
+    window.webpackChunkdiscord_app.pop();
+    console.log('%cWorked!', 'font-size: 50px');
+    console.log(`%cYou now have your token in the clipboard!`, 'font-size: 16px');
     ```
 5.  Your token will be copied to your clipboard. Carefully paste it into the `"token"` field in your `presets.json` file.
 
