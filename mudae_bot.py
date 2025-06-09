@@ -206,6 +206,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_function(f"[{client.muda_name}] Snipe-Only Mode active. No initial commands sent. Listening for snipes...", preset_name, "INFO")
 
+    # ----- THIS IS THE UPDATED FUNCTION -----
     async def check_status(client, channel, mudae_prefix):
         """
         Sends '$tu' and reliably finds and parses Mudae's response to determine
@@ -226,13 +227,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=15):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower = msg.content.lower()
-                    # NEW, ROBUST CHECK: A valid $tu response must be directed at the user.
-                    if content_lower.startswith(client.user.name.lower()):
-                        # It must also contain keywords related to status.
-                        if "claim reset" in content_lower or "rolls reset" in content_lower or "can't claim for another" in content_lower or "rolls left" in content_lower:
+
+                    # --- MODIFIED & IMPROVED IDENTIFICATION LOGIC ---
+                    # Get the bot's display name (nickname or username) in the server.
+                    user_display_name_lower = channel.guild.me.display_name.lower()
+
+                    # Check if the message starts with the user's name, and is followed by
+                    # a non-alphanumeric character (like a comma, colon, or space) or is the end of the message.
+                    # This prevents false positives (e.g., user "Bot" matching a message for "Bot2").
+                    is_message_for_user = False
+                    if content_lower.startswith(user_display_name_lower):
+                        if len(content_lower) == len(user_display_name_lower):
+                            is_message_for_user = True  # Message is just the name.
+                        else:
+                            char_after_name = content_lower[len(user_display_name_lower)]
+                            if not char_after_name.isalnum():
+                                is_message_for_user = True
+                    
+                    # A valid $tu response must be directed at the user AND contain status keywords.
+                    if is_message_for_user:
+                        keywords = ["claim reset", "rolls reset", "can't claim for another", "rolls left", "you can claim"]
+                        if any(keyword in content_lower for keyword in keywords):
                             tu_message_content = msg.content
                             log_function(f"[{client.muda_name}] Found a valid $tu response.", preset_name, "INFO")
                             break # Exit the history loop once a valid message is found
+                    # --- END OF MODIFIED LOGIC ---
 
             if not tu_message_content:
                 error_count += 1
