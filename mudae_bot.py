@@ -190,10 +190,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower_check = msg.content.lower()
-                    # UYGULANAN DEĞİŞİKLİK: 'rolls' kelimesindeki 's' opsiyonel yapıldı (rolls? left).
-                    is_tu_message_en = ("roll?s left" in content_lower_check and \
+                    is_tu_message_en = ("rolls left" in content_lower_check and \
                                        ("you __can__ claim" in content_lower_check or "can't claim for another" in content_lower_check))
-                    is_tu_message_pt = (("roll?s restantes" in content_lower_check) and \
+                    is_tu_message_pt = (("roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) and \
                                        ("você __pode__ se casar agora mesmo!" in content_lower_check or "calma aí, falta um tempo antes que você possa se casar novamente" in content_lower_check))
 
                     if is_tu_message_en or is_tu_message_pt:
@@ -201,7 +200,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] Found $tu response.", preset_name, "INFO")
                         break
                     elif client.user.name.lower() in content_lower_check.splitlines()[0].lower() and \
-                         ("roll?s left" in content_lower_check or "roll?s restantes" in content_lower_check) :
+                         ("rolls left" in content_lower_check or "roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) :
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response (user name match).", preset_name, "INFO")
                         break
@@ -271,7 +270,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         rolls_left = 0; reset_time_r = 0; lang_log_suffix_rolls = ""; parsed_rolls_info = False
 
-        # UYGULANAN DEĞİŞİKLİK: 'rolls' kelimesindeki 's' opsiyonel yapıldı (rolls? left).
+        # MODIFIED REGEXES: Restructured to make the optional reset part more robustly captured.
+        # The separator (like period, space, newline) is now part of the optional group.
         match_rolls_en = re.search(
             r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left"  # Group 1 for rolls_left
             r"(?:"                                             # Start of optional non-capturing group for reset info
@@ -281,7 +281,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             content_lower,
             re.DOTALL
         )
-        # UYGULANAN DEĞİŞİKLİK: 'rolls' kelimesindeki 's' opsiyonel yapıldı (rolls? restantes).
         match_rolls_pt = re.search(
             r"você tem \*\*(\d+)\*\* rolls? restantes\.?"      # Group 1 for rolls_left
             r"(?:"                                            # Start of optional non-capturing group for reset info
@@ -319,9 +318,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await wait_for_rolls_reset(reset_time_r, client.delay_seconds, log_function, preset_name)
                 await check_status(client, channel, mudae_prefix); return
             else:
-                # UYGULANAN DEĞİŞİKLİK: 'roll/rolls' kelimesini dinamik olarak loglamak.
-                roll_text = "roll" if rolls_left == 1 else "rolls"
-                log_function(f"[{client.muda_name}] {rolls_left} {roll_text} left. Next reset in {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "INFO")
+                log_function(f"[{client.muda_name}] Rolls left: {rolls_left}. Next reset in {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "INFO")
                 await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
                 return
         else:
@@ -330,9 +327,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
-        # UYGULANAN DEĞİŞİKLİK: 'roll/rolls' kelimesini dinamik olarak loglamak.
-        roll_text = "roll" if rolls_left == 1 else "rolls"
-        log_text = f"Starting {rolls_left} {roll_text}"
+        log_text = f"Starting {rolls_left} rolls"
         if client.enable_reactive_self_snipe: log_text += " (Reactive Snipe ON)"
         else: log_text += " (Reactive Snipe OFF)"
         log_function(f"[{client.muda_name}] {log_text}", client.preset_name, "INFO")
