@@ -477,16 +477,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Claim wait done.", preset_name, "RESET")
 
     async def wait_for_rolls_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
+        """
+        Waits until the next clock minute after a roll reset is guaranteed to be over.
+        This corrects for Mudae's truncated timer display and aligns with the hourly reset.
+        """
+        now = datetime.datetime.now()
+
+        # Handle cases where the reset time is invalid or not found.
         actual_reset_time_minutes = reset_time_minutes
-        if reset_time_minutes <= 0 :
-            actual_reset_time_minutes = 60
+        if reset_time_minutes <= 0:
+            actual_reset_time_minutes = 60 # Default to a full hour if time is invalid
             log_function(f"[{client.muda_name}] Invalid roll reset time ({reset_time_minutes}m), using default {actual_reset_time_minutes}m.", preset_name, "WARN")
 
-        wait_seconds_duration = actual_reset_time_minutes * 60
-        total_wait = wait_seconds_duration + base_delay_seconds + 15
+        # The logic is identical to wait_for_reset. We find a "safe" time and align it.
+        seconds_to_wait = actual_reset_time_minutes * 60
+        time_safely_after_reset = now + datetime.timedelta(seconds=(seconds_to_wait + 60))
+
+        # Roll resets also happen at the top of the hour, which is also the top of a minute.
+        # Aligning to the minute is the correct approach here as well.
+        target_reset_minute = time_safely_after_reset.replace(second=0, microsecond=0)
+        target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
+
+        total_wait = (target_wakeup_time - now).total_seconds()
+
+        if total_wait <= 0:
+            total_wait = base_delay_seconds + 1 # Fallback to a short wait
+
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
         log_function(f"[{client.muda_name}] Wait rolls reset (~{actual_reset_time_minutes}m). Total: {total_wait:.2f}s. Resume ~{end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
-        await asyncio.sleep(total_wait); log_function(f"[{client.muda_name}] Roll wait done.", preset_name, "RESET")
+        await asyncio.sleep(total_wait)
+        log_function(f"[{client.muda_name}] Roll wait done.", preset_name, "RESET")
 
 
     @client.event
