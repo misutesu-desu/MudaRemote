@@ -9,6 +9,7 @@ import datetime
 from datetime import timezone # Ensure timezone is imported
 import inquirer
 import logging
+import time # Added for auto-restart delay
 
 # Global bot name
 BOT_NAME = "MudaRemote"
@@ -401,14 +402,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_targets.sort(key=lambda x:x[2],reverse=True) # Sort by kakera value, highest first
             if rt_targets:
                 msg_rt,n_rt,v_rt=rt_targets[0] # Get the best available character for RT
-                
+
                 # MODIFIED: RT decision strictly uses client.min_kakera
                 if v_rt >= client.min_kakera:
                     log_function(f"[{client.muda_name}] (Post) RT: {n_rt} ({v_rt}) vs MinKakRT: {client.min_kakera}", preset_name, "CLAIM")
-                    try: 
+                    try:
                         await channel.send(f"{client.mudae_prefix}rt"); await asyncio.sleep(0.7)
                         await claim_character(client,channel,msg_rt,is_rt_claim=True)
-                    except Exception as e: 
+                    except Exception as e:
                         log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
                 # Log if RT was skipped due to this stricter check, but would have passed the general min_kak_post
                 elif v_rt >= min_kak_post : # This implies it met general (potentially 0) threshold but not strict RT threshold
@@ -530,7 +531,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if await claim_character(client, message.channel, message):
                                 client.snipe_happened = True
                                 process_further = False
-            
+
             # FIX: Added 'and not client.is_actively_rolling' to prevent external kakera reaction snipe during own rolls
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and not client.is_actively_rolling:
                 has_kakera_button_for_external_snipe = False
@@ -586,33 +587,61 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     except discord.errors.LoginFailure: log_function(f"[{BOT_NAME}] LoginFail '{preset_name}'. Check token.", preset_name, "ERROR")
     except Exception as e: log_function(f"[{BOT_NAME}] Unexp Err '{preset_name}': {e}", preset_name, "ERROR")
 
+def bot_lifecycle_wrapper(preset_name, preset_data):
+    """
+    Manages the lifecycle of a single bot instance, restarting it on crashes
+    like network disconnects. This function is intended to be the target of a thread.
+    """
+    key_mode=preset_data.get("key_mode",False); start_delay=preset_data.get("start_delay",0)
+    snipe_mode=preset_data.get("snipe_mode",False); snipe_delay=preset_data.get("snipe_delay",2)
+    snipe_ignore_min_kakera_reset=preset_data.get("snipe_ignore_min_kakera_reset",False)
+    wishlist=preset_data.get("wishlist",[]); series_snipe_mode=preset_data.get("series_snipe_mode",False)
+    series_snipe_delay=preset_data.get("series_snipe_delay",3); series_wishlist=preset_data.get("series_wishlist",[])
+    roll_speed=preset_data.get("roll_speed",0.4)
+    kakera_snipe_mode_preset=preset_data.get("kakera_snipe_mode",False)
+    kakera_snipe_threshold_preset=preset_data.get("kakera_snipe_threshold",0)
+    enable_reactive_self_snipe_preset = preset_data.get("reactive_snipe_on_own_rolls", True)
+    rolling_enabled_preset = preset_data.get("rolling", True)
+    kakera_reaction_snipe_mode_p = preset_data.get("kakera_reaction_snipe_mode", False)
+    kakera_reaction_snipe_delay_p = preset_data.get("kakera_reaction_snipe_delay", 0.75)
+
+    restart_delay = 60  # Wait 60 seconds before restarting a crashed bot.
+
+    while True:
+        # The run_bot function contains its own top-level try-except block.
+        # When an error (like a network disconnect) occurs, it logs the error
+        # and then the function finishes. This loop will then catch that it has
+        # finished, log a restart message, wait, and start it again.
+        run_bot(
+            preset_data["token"], preset_data["prefix"], preset_data["channel_id"],
+            preset_data["roll_command"], preset_data["min_kakera"], preset_data["delay_seconds"],
+            preset_data["mudae_prefix"], print_log, preset_name, key_mode, start_delay,
+            snipe_mode, snipe_delay, snipe_ignore_min_kakera_reset, wishlist,
+            series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed,
+            kakera_snipe_mode_preset, kakera_snipe_threshold_preset,
+            enable_reactive_self_snipe_preset, rolling_enabled_preset,
+            kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p
+        )
+
+        # This code is reached after run_bot completes (likely due to a crash).
+        print_log(f"Bot instance for '{preset_name}' has stopped. Restarting in {restart_delay} seconds...", preset_name, "RESET")
+        time.sleep(restart_delay)
+
+
 def start_preset_thread(preset_name, preset_data):
-     if not validate_preset(preset_name, preset_data): print(f"\033[91mSkip preset '{preset_name}' (config err).\033[0m"); return None
-     print(f"\033[92mStarting bot for preset: {preset_name}\033[0m")
-     key_mode=preset_data.get("key_mode",False); start_delay=preset_data.get("start_delay",0)
-     snipe_mode=preset_data.get("snipe_mode",False); snipe_delay=preset_data.get("snipe_delay",2)
-     snipe_ignore_min_kakera_reset=preset_data.get("snipe_ignore_min_kakera_reset",False)
-     wishlist=preset_data.get("wishlist",[]); series_snipe_mode=preset_data.get("series_snipe_mode",False)
-     series_snipe_delay=preset_data.get("series_snipe_delay",3); series_wishlist=preset_data.get("series_wishlist",[])
-     roll_speed=preset_data.get("roll_speed",0.4)
-     kakera_snipe_mode_preset=preset_data.get("kakera_snipe_mode",False)
-     kakera_snipe_threshold_preset=preset_data.get("kakera_snipe_threshold",0)
-     enable_reactive_self_snipe_preset = preset_data.get("reactive_snipe_on_own_rolls", True)
-     rolling_enabled_preset = preset_data.get("rolling", True)
-     kakera_reaction_snipe_mode_p = preset_data.get("kakera_reaction_snipe_mode", False)
-     kakera_reaction_snipe_delay_p = preset_data.get("kakera_reaction_snipe_delay", 0.75)
+     """
+     Spawns a new manager thread for a given preset.
+     The manager thread will handle the bot's lifecycle, including auto-restarting on crashes.
+     """
+     if not validate_preset(preset_name, preset_data):
+         print(f"\033[91mSkip preset '{preset_name}' (config err).\033[0m"); return None
 
+     print(f"\033[92mSpawning manager thread for preset: {preset_name}\033[0m")
 
-     thread = threading.Thread(target=run_bot, args=(
-         preset_data["token"], preset_data["prefix"], preset_data["channel_id"],
-         preset_data["roll_command"], preset_data["min_kakera"], preset_data["delay_seconds"],
-         preset_data["mudae_prefix"], print_log, preset_name, key_mode, start_delay,
-         snipe_mode, snipe_delay, snipe_ignore_min_kakera_reset, wishlist,
-         series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed,
-         kakera_snipe_mode_preset, kakera_snipe_threshold_preset,
-         enable_reactive_self_snipe_preset, rolling_enabled_preset,
-         kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p
-     ), daemon=True); thread.start(); return thread
+     # The target is the new wrapper function, which contains the restart loop.
+     thread = threading.Thread(target=bot_lifecycle_wrapper, args=(preset_name, preset_data), daemon=True)
+     thread.start()
+     return thread
 
 def show_banner():
     banner = r"""
