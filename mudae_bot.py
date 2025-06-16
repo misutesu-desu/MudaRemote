@@ -191,17 +191,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower_check = msg.content.lower()
-                    is_tu_message_en = ("rolls left" in content_lower_check and \
-                                       ("you __can__ claim" in content_lower_check or "can't claim for another" in content_lower_check))
-                    is_tu_message_pt = (("roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) and \
-                                       ("você __pode__ se casar agora mesmo!" in content_lower_check or "calma aí, falta um tempo antes que você possa se casar novamente" in content_lower_check))
+
+                    # MODIFIED: Using robust regex to check for singular or plural "roll(s)"
+                    roll_check_en = re.search(r"\brolls?\s+left\b", content_lower_check)
+                    claim_check_en = ("you __can__ claim" in content_lower_check or "can't claim for another" in content_lower_check)
+                    is_tu_message_en = roll_check_en and claim_check_en
+
+                    roll_check_pt = re.search(r"\brolls?\s+restantes\b", content_lower_check)
+                    claim_check_pt = ("você __pode__ se casar agora mesmo!" in content_lower_check or "calma aí, falta um tempo antes que você possa se casar novamente" in content_lower_check)
+                    is_tu_message_pt = roll_check_pt and claim_check_pt
 
                     if is_tu_message_en or is_tu_message_pt:
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response.", preset_name, "INFO")
                         break
-                    elif client.user.name.lower() in content_lower_check.splitlines()[0].lower() and \
-                         ("rolls left" in content_lower_check or "roll restantes" in content_lower_check or "rolls restantes" in content_lower_check) :
+                    
+                    # MODIFIED: Also using the regex in the fallback check for consistency
+                    elif client.user.name.lower() in content_lower_check.splitlines()[0].lower() and (roll_check_en or roll_check_pt):
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response (user name match).", preset_name, "INFO")
                         break
@@ -443,37 +449,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         elif not btn_clicked_ok: log_function(f"{log_px} No btn for {log_action_desc} on {char_name}", preset_name, "INFO")
         return False
 
-    # ==============================================================================
-    # == CORRECTED TIMER LOGIC STARTS HERE
-    # ==============================================================================
-
     async def wait_for_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
-        """
-        Calculates the precise time to wake up by targeting the 'top of the minute'
-        when the claim reset actually occurs. This is more accurate than waiting for a
-        literal duration.
-        """
         now = datetime.datetime.now()
-
-        # Calculate the approximate time in the future when the reset will happen.
-        # e.g., if it's 23:43 and Mudae says "18 min", this will be ~00:01.
         estimated_reset_time = now + datetime.timedelta(minutes=reset_time_minutes)
-
-        # The actual reset happens at the top of that future minute.
-        # We truncate the seconds and microseconds to get the precise moment.
-        # e.g., if estimated_reset_time is 00:01:50, this becomes 00:01:00.
         target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
-
-        # The bot should wake up at this precise time, plus its configured delay.
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
-
-        # Calculate the actual sleep duration needed to get from now to our precise target.
         total_wait = (target_wakeup_time - now).total_seconds()
-
-        # Safety check to prevent negative sleep times in edge cases.
         if total_wait <= 0:
             total_wait = base_delay_seconds + 1 # Fallback to a short wait
-
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
         log_function(f"[{client.muda_name}] Wait claim reset. Total: {total_wait:.2f}s. Resume ~{end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
         await asyncio.sleep(total_wait)
@@ -481,36 +464,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
 
     async def wait_for_rolls_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
-        """
-        Calculates the precise time for the roll reset by targeting the 'top of the minute',
-        which aligns with how Mudae's hourly resets work.
-        """
         now = datetime.datetime.now()
-
-        # Handle cases where the reset time is invalid or not found.
         actual_reset_time_minutes = reset_time_minutes
         if reset_time_minutes <= 0:
             actual_reset_time_minutes = 60 # Default to a full hour if time is invalid
             log_function(f"[{client.muda_name}] Invalid roll reset time ({reset_time_minutes}m), using default {actual_reset_time_minutes}m.", preset_name, "WARN")
-
-        # The logic is identical to wait_for_reset. We find the future minute and align to it.
         estimated_reset_time = now + datetime.timedelta(minutes=actual_reset_time_minutes)
         target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
-
         total_wait = (target_wakeup_time - now).total_seconds()
-
         if total_wait <= 0:
             total_wait = base_delay_seconds + 1 # Fallback to a short wait
-
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
         log_function(f"[{client.muda_name}] Wait rolls reset (~{actual_reset_time_minutes}m). Total: {total_wait:.2f}s. Resume ~{end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
         await asyncio.sleep(total_wait)
         log_function(f"[{client.muda_name}] Roll wait done.", preset_name, "RESET")
-
-    # ==============================================================================
-    # == CORRECTED TIMER LOGIC ENDS HERE
-    # ==============================================================================
 
     @client.event
     async def on_message(message):
@@ -540,7 +508,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
 
         if process_further:
-            # FIX: Added 'and not client.is_actively_rolling' to prevent external series snipe during own rolls
             if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages and not client.is_actively_rolling:
                 desc = embed.description or "";
                 if desc:
@@ -552,7 +519,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(client.series_snipe_delay)
                             if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
 
-            # FIX: Added 'and not client.is_actively_rolling' to prevent external character snipe during own rolls
             if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages and not client.is_actively_rolling:
                 if embed.author and embed.author.name:
                     char_name_l = embed.author.name.lower()
@@ -564,7 +530,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(client.snipe_delay)
                             if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
 
-            # FIX: Added 'and not client.is_actively_rolling' to prevent external kakera snipe during own rolls
             if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages and not client.is_actively_rolling:
                 if embed.author and embed.author.name:
                     desc = embed.description or ""; k_val=0
@@ -582,7 +547,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 client.snipe_happened = True
                                 process_further = False
 
-            # FIX: Added 'and not client.is_actively_rolling' to prevent external kakera reaction snipe during own rolls
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and not client.is_actively_rolling:
                 has_kakera_button_for_external_snipe = False
                 if message.components:
@@ -607,7 +571,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await claim_character(client, message.channel, message, is_kakera=True)
 
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further: #This part is for self-roll kakera reaction
-            # Check if it's a character embed and kakera is present
             if embed.author and embed.author.name: # Ensure it's a character embed
                 desc = embed.description or ""; k_val=0
                 match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
@@ -616,12 +579,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     except ValueError: pass
 
                 kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
-
-                # Click kakera if:
-                # 1. Kakera button is present.
-                # 2. EITHER kakera_snipe_mode_active is OFF (meaning click any kakera)
-                # 3. OR kakera_snipe_mode_active is ON AND k_val meets the threshold
-                # 4. OR kakera_snipe_threshold is 0 (meaning click any kakera if mode is on)
                 should_click_kakera = kakera_button_present and \
                                       (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
 
@@ -638,10 +595,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     except Exception as e: log_function(f"[{BOT_NAME}] Unexp Err '{preset_name}': {e}", preset_name, "ERROR")
 
 def bot_lifecycle_wrapper(preset_name, preset_data):
-    """
-    Manages the lifecycle of a single bot instance, restarting it on crashes
-    like network disconnects. This function is intended to be the target of a thread.
-    """
     key_mode=preset_data.get("key_mode",False); start_delay=preset_data.get("start_delay",0)
     snipe_mode=preset_data.get("snipe_mode",False); snipe_delay=preset_data.get("snipe_delay",2)
     snipe_ignore_min_kakera_reset=preset_data.get("snipe_ignore_min_kakera_reset",False)
@@ -655,13 +608,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     kakera_reaction_snipe_mode_p = preset_data.get("kakera_reaction_snipe_mode", False)
     kakera_reaction_snipe_delay_p = preset_data.get("kakera_reaction_snipe_delay", 0.75)
 
-    restart_delay = 60  # Wait 60 seconds before restarting a crashed bot.
-
+    restart_delay = 60
     while True:
-        # The run_bot function contains its own top-level try-except block.
-        # When an error (like a network disconnect) occurs, it logs the error
-        # and then the function finishes. This loop will then catch that it has
-        # finished, log a restart message, wait, and start it again.
         run_bot(
             preset_data["token"], preset_data["prefix"], preset_data["channel_id"],
             preset_data["roll_command"], preset_data["min_kakera"], preset_data["delay_seconds"],
@@ -672,23 +620,14 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
             enable_reactive_self_snipe_preset, rolling_enabled_preset,
             kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p
         )
-
-        # This code is reached after run_bot completes (likely due to a crash).
         print_log(f"Bot instance for '{preset_name}' has stopped. Restarting in {restart_delay} seconds...", preset_name, "RESET")
         time.sleep(restart_delay)
 
 
 def start_preset_thread(preset_name, preset_data):
-     """
-     Spawns a new manager thread for a given preset.
-     The manager thread will handle the bot's lifecycle, including auto-restarting on crashes.
-     """
      if not validate_preset(preset_name, preset_data):
          print(f"\033[91mSkip preset '{preset_name}' (config err).\033[0m"); return None
-
      print(f"\033[92mSpawning manager thread for preset: {preset_name}\033[0m")
-
-     # The target is the new wrapper function, which contains the restart loop.
      thread = threading.Thread(target=bot_lifecycle_wrapper, args=(preset_name, preset_data), daemon=True)
      thread.start()
      return thread
@@ -710,14 +649,11 @@ def validate_preset(preset_name, preset_data):
     if miss_k: print(f"\033[91mErr '{preset_name}': Missing: {','.join(miss_k)}\033[0m"); return False
     if not isinstance(preset_data["token"],str) or not preset_data["token"]: print(f"\033[91mErr '{preset_name}': 'token' bad.\033[0m"); return False
     if not isinstance(preset_data["channel_id"],int): print(f"\033[91mErr '{preset_name}': 'channel_id' bad.\033[0m"); return False
-
     if not isinstance(preset_data["min_kakera"],int) or preset_data["min_kakera"]<0: print(f"\033[91mErr '{preset_name}': 'min_kakera' bad (number >= 0).\033[0m"); return False
     if not isinstance(preset_data["delay_seconds"],(int,float)) or preset_data["delay_seconds"]<0: print(f"\033[91mErr '{preset_name}': 'delay_seconds' bad (number >= 0).\033[0m"); return False
-
     if "rolling" in preset_data and not isinstance(preset_data["rolling"], bool):
         print(f"\033[91mErr '{preset_name}': 'rolling' field, if present, must be a boolean (true or false).\033[0m")
         return False
-
     if "key_mode" in preset_data and not isinstance(preset_data["key_mode"],bool): print(f"\033[91mWarn '{preset_name}': 'key_mode' should be boolean.\033[0m")
     if "start_delay" in preset_data and (not isinstance(preset_data["start_delay"],(int,float)) or preset_data["start_delay"]<0): print(f"\033[91mWarn '{preset_name}': 'start_delay' should be number >=0.\033[0m")
     if "snipe_mode" in preset_data and not isinstance(preset_data["snipe_mode"],bool): print(f"\033[91mWarn '{preset_name}': 'snipe_mode' should be boolean.\033[0m")
@@ -727,12 +663,10 @@ def validate_preset(preset_name, preset_data):
     if "kakera_snipe_threshold" in preset_data and (not isinstance(preset_data["kakera_snipe_threshold"],int) or preset_data["kakera_snipe_threshold"]<0): print(f"\033[91mWarn '{preset_name}': 'kakera_snipe_threshold' should be non-neg int.\033[0m")
     if "reactive_snipe_on_own_rolls" in preset_data and not isinstance(preset_data["reactive_snipe_on_own_rolls"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'reactive_snipe_on_own_rolls' should be true or false.\033[0m")
-
     if "kakera_reaction_snipe_mode" in preset_data and not isinstance(preset_data["kakera_reaction_snipe_mode"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'kakera_reaction_snipe_mode' should be true or false.\033[0m")
     if "kakera_reaction_snipe_delay" in preset_data and (not isinstance(preset_data["kakera_reaction_snipe_delay"], (int, float)) or preset_data["kakera_reaction_snipe_delay"] < 0):
         print(f"\033[91mWarn in preset '{preset_name}': 'kakera_reaction_snipe_delay' should be a non-negative number.\033[0m")
-
     return True
 
 def main_menu():
