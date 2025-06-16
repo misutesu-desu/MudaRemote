@@ -244,7 +244,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] KeyMode on. Check rolls.", preset_name, "INFO"); claim_reset_proceed = True
             else:
                 log_function(f"[{client.muda_name}] Wait claim reset...", preset_name, "RESET")
-                await wait_for_reset((h * 60 + m) * 60, client.delay_seconds, log_function, preset_name)
+                await wait_for_reset((h * 60 + m), client.delay_seconds, log_function, preset_name) # Pass minutes directly
                 await check_status(client, channel, mudae_prefix); return
         else:
             log_function(f"[{client.muda_name}] Ambiguous/Unknown claim status in $tu. Assume No. Check rolls.", preset_name, "WARN")
@@ -443,23 +443,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         elif not btn_clicked_ok: log_function(f"{log_px} No btn for {log_action_desc} on {char_name}", preset_name, "INFO")
         return False
 
-    async def wait_for_reset(seconds_to_wait, base_delay_seconds, log_function, preset_name):
+    # ==============================================================================
+    # == CORRECTED TIMER LOGIC STARTS HERE
+    # ==============================================================================
+
+    async def wait_for_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
         """
-        Waits until the next clock minute after a reset is guaranteed to be over.
-        This corrects for Mudae's truncated timer display (e.g., "59 min").
+        Calculates the precise time to wake up by targeting the 'top of the minute'
+        when the claim reset actually occurs. This is more accurate than waiting for a
+        literal duration.
         """
         now = datetime.datetime.now()
 
-        # Mudae's timer is truncated. Add 60 seconds to the minimum wait time to find a point
-        # in time that is *guaranteed* to be after the actual reset.
-        # For example, if Mudae says "59 min", the real time is up to 59:59.
-        # Waiting (59*60 + 60) seconds ensures we are past the 60-minute mark.
-        time_safely_after_reset = now + datetime.timedelta(seconds=(seconds_to_wait + 60))
+        # Calculate the approximate time in the future when the reset will happen.
+        # e.g., if it's 23:43 and Mudae says "18 min", this will be ~00:01.
+        estimated_reset_time = now + datetime.timedelta(minutes=reset_time_minutes)
 
-        # The actual reset happens at the top of a minute. By finding the top of the minute
-        # for our "safe" time, we find the exact clock minute the reset occurred on.
-        # e.g., if safe time is 15:00:25, this becomes 15:00:00.
-        target_reset_minute = time_safely_after_reset.replace(second=0, microsecond=0)
+        # The actual reset happens at the top of that future minute.
+        # We truncate the seconds and microseconds to get the precise moment.
+        # e.g., if estimated_reset_time is 00:01:50, this becomes 00:01:00.
+        target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
 
         # The bot should wake up at this precise time, plus its configured delay.
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
@@ -476,10 +479,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await asyncio.sleep(total_wait)
         log_function(f"[{client.muda_name}] Claim wait done.", preset_name, "RESET")
 
+
     async def wait_for_rolls_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
         """
-        Waits until the next clock minute after a roll reset is guaranteed to be over.
-        This corrects for Mudae's truncated timer display and aligns with the hourly reset.
+        Calculates the precise time for the roll reset by targeting the 'top of the minute',
+        which aligns with how Mudae's hourly resets work.
         """
         now = datetime.datetime.now()
 
@@ -489,13 +493,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             actual_reset_time_minutes = 60 # Default to a full hour if time is invalid
             log_function(f"[{client.muda_name}] Invalid roll reset time ({reset_time_minutes}m), using default {actual_reset_time_minutes}m.", preset_name, "WARN")
 
-        # The logic is identical to wait_for_reset. We find a "safe" time and align it.
-        seconds_to_wait = actual_reset_time_minutes * 60
-        time_safely_after_reset = now + datetime.timedelta(seconds=(seconds_to_wait + 60))
-
-        # Roll resets also happen at the top of the hour, which is also the top of a minute.
-        # Aligning to the minute is the correct approach here as well.
-        target_reset_minute = time_safely_after_reset.replace(second=0, microsecond=0)
+        # The logic is identical to wait_for_reset. We find the future minute and align to it.
+        estimated_reset_time = now + datetime.timedelta(minutes=actual_reset_time_minutes)
+        target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
 
         total_wait = (target_wakeup_time - now).total_seconds()
@@ -508,6 +508,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await asyncio.sleep(total_wait)
         log_function(f"[{client.muda_name}] Roll wait done.", preset_name, "RESET")
 
+    # ==============================================================================
+    # == CORRECTED TIMER LOGIC ENDS HERE
+    # ==============================================================================
 
     @client.event
     async def on_message(message):
@@ -736,7 +739,7 @@ def main_menu():
     show_banner(); active_threads = []
     while True:
         active_threads = [t for t in active_threads if t.is_alive()]
-        questions = [inquirer.List('option',message=f"Select ({len(active_threads)} bots run):",choices=['Select and Run Preset','Select and Run Multiple Presets','Exit'])]
+        questions = [inquirer.List('option',message=f"Select ({len(active_threads)} bots running):",choices=['Select and Run Preset','Select and Run Multiple Presets','Exit'])]
         try:
             answers = inquirer.prompt(questions)
             if not answers: print("\nExiting..."); break
@@ -744,24 +747,24 @@ def main_menu():
             if option == 'Select and Run Preset':
                 preset_list = list(presets.keys())
                 if not preset_list: print("\033[91mNo presets in presets.json.\033[0m"); continue
-                preset_answers = inquirer.prompt([inquirer.List('preset',message="Select preset:",choices=preset_list)])
+                preset_answers = inquirer.prompt([inquirer.List('preset',message="Select a preset to run:",choices=preset_list)])
                 if preset_answers:
                     thread = start_preset_thread(preset_answers['preset'], presets[preset_answers['preset']])
                     if thread: active_threads.append(thread)
             elif option == 'Select and Run Multiple Presets':
                 preset_list = list(presets.keys())
                 if not preset_list: print("\033[91mNo presets in presets.json.\033[0m"); continue
-                multi_preset_answers = inquirer.prompt([inquirer.Checkbox('presets',message="Select presets (Space, Enter):",choices=preset_list)])
+                multi_preset_answers = inquirer.prompt([inquirer.Checkbox('presets',message="Select presets to run (use Spacebar, then Enter):",choices=preset_list)])
                 if multi_preset_answers:
                     for preset_name in multi_preset_answers['presets']:
                         thread = start_preset_thread(preset_name, presets[preset_name])
                         if thread: active_threads.append(thread)
             elif option == 'Exit': print("\033[1;32mExiting MudaRemote...\033[0m"); break
-        except KeyboardInterrupt: print("\nCtrl+C. Exiting..."); break
-        except Exception as e: print(f"\033[91mMenu error: {e}\033[0m")
+        except KeyboardInterrupt: print("\nCtrl+C detected. Exiting..."); break
+        except Exception as e: print(f"\033[91mAn error occurred in the main menu: {e}\033[0m")
 
 if __name__ == "__main__":
     try:
         with open("logs.txt", "a", encoding='utf-8') as f: f.write(f"\n--- MudaRemote Log Start: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-    except Exception as e: print(f"\033[91mLog file init error: {e}\033[0m")
+    except Exception as e: print(f"\033[91mCould not initialize log file: {e}\033[0m")
     main_menu()
