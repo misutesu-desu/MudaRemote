@@ -211,6 +211,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_function(f"[{client.muda_name}] Snipe-Only Mode active. No initial commands will be sent. No status checks performed. Listening for snipes...", preset_name, "INFO")
 
+    # --- START OF REPLACEMENT BLOCK 1 ---
     async def check_status(client, channel, mudae_prefix):
         log_function(f"[{client.muda_name}] Checking $tu (rolling enabled)...", client.preset_name, "CHECK")
         error_count = 0; max_retries = 5
@@ -227,10 +228,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     claim_check_en = ("you __can__ claim" in content_lower_check or "can't claim for another" in content_lower_check)
                     is_tu_message_en = roll_check_en and claim_check_en
                     
+                    # --- MODIFICATION START ---
+                    # Loosened the PT checks to be more reliable
                     roll_check_pt = re.search(r"\brolls?.*?\s+restantes\b", content_lower_check)
                     claim_check_pt_can = re.search(r"pode se casar agora mesmo!", content_lower_check)
                     claim_check_pt_cant = re.search(r"falta um tempo antes que você possa se casar novamente", content_lower_check)
                     is_tu_message_pt = roll_check_pt and (claim_check_pt_can or claim_check_pt_cant)
+                    # --- MODIFICATION END ---
+
 
                     if is_tu_message_en or is_tu_message_pt:
                         tu_message_content = msg.content
@@ -255,7 +260,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         lang_log_suffix = ""
 
         match_can_claim_en = re.search(r"you __can__ claim.*?next claim reset .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
+        # --- MODIFICATION START ---
+        # Made regex more flexible, ignoring username prefix and underline markdown
         match_can_claim_pt = re.search(r"pode se casar agora mesmo!.*?a próxima reinicialização é em .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
+        # --- MODIFICATION END ---
         match_cant_claim_en = re.search(r"can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
         match_cant_claim_pt = re.search(r"calma aí, falta um tempo antes que você possa se casar novamente \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
 
@@ -299,7 +307,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await check_status(client, channel, mudae_prefix)
         return
 
-    # --- THIS IS THE UPDATED FUNCTION ---
+    # --- START OF REPLACEMENT BLOCK 2 ---
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         log_function(f"[{client.muda_name}] Parsing rolls from $tu (rolling enabled)...", preset_name, "CHECK")
@@ -307,51 +315,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         rolls_left = 0; reset_time_r = 0; lang_log_suffix_rolls = ""; parsed_rolls_info = False
 
-        # Updated Regex to capture both standard and optional $us rolls
-        # Group 1: Standard rolls. Group 2: Optional $us rolls. Group 3: Optional reset time.
         match_rolls_en = re.search(
-            r"you have \*\*(\d+)\*\* rolls?.*?"          # Group 1: Standard rolls
-            r"(?:\(\+\*\*(\d+)\*\* \$us\))?"             # Group 2 (Optional): $us rolls
-            r".*?left"                                  # Matches until the word "left"
+            r"you have \*\*(\d+)\*\* rolls?(?: \(.+?\))? left"
             r"(?:"
                 r"[.\s\n]*?"
-                r"next rolls? reset in \*\*(\d+)\*\* min\.?" # Group 3 (Optional): Reset time
+                r"next rolls? reset in \*\*(\d+)\*\* min\.?"
             r")?",
             content_lower,
             re.DOTALL
         )
+        # --- MODIFICATION START ---
+        # Updated regex to handle optional text like "(+1$mk)" based on your old code
         match_rolls_pt = re.search(
-            r"você tem \*\*(\d+)\*\* rolls?.*?"      # Group 1: Standard rolls
-            r"(?:\(\+\*\*(\d+)\*\* \$us\))?"         # Group 2 (Optional): $us rolls
-            r".*?restantes\.?"                      # Matches until the word "restantes"
+            r"você tem \*\*(\d+)\*\* rolls?(?: \(.+?\))? restantes\.?"
             r"(?:"
                 r"[.\s\n]*?"
-                r"a próxima reinicialização é em \*\*(\d+)\*\* min\.?" # Group 3 (Optional): Reset time
+                r"a próxima reinicialização é em \*\*(\d+)\*\* min\.?"
             r")?",
             content_lower,
             re.DOTALL
         )
+        # --- MODIFICATION END ---
 
-        roll_match_obj = None
+        roll_match_obj = None; reset_minutes_str = None
 
         if match_rolls_en:
             roll_match_obj = match_rolls_en
-            lang_log_suffix_rolls = " (EN)"
-            parsed_rolls_info = True
+            rolls_left = int(roll_match_obj.group(1))
+            reset_minutes_str = roll_match_obj.group(2)
+            lang_log_suffix_rolls = " (EN)"; parsed_rolls_info = True
         elif match_rolls_pt:
             roll_match_obj = match_rolls_pt
-            lang_log_suffix_rolls = " (PT)"
-            parsed_rolls_info = True
+            rolls_left = int(roll_match_obj.group(1))
+            reset_minutes_str = roll_match_obj.group(2)
+            lang_log_suffix_rolls = " (PT)"; parsed_rolls_info = True
 
         if parsed_rolls_info:
-            # Logic to sum standard and $us rolls
-            standard_rolls = int(roll_match_obj.group(1))
-            us_rolls_str = roll_match_obj.group(2) # This will be None if not found
-            us_rolls = int(us_rolls_str) if us_rolls_str else 0
-            rolls_left = standard_rolls + us_rolls
-
-            reset_minutes_str = roll_match_obj.group(3) # Reset time is now in group 3
-
             if reset_minutes_str:
                 try: reset_time_r = int(reset_minutes_str)
                 except ValueError: log_function(f"[{client.muda_name}] Warn: Roll reset time parse fail (value error).{lang_log_suffix_rolls}", preset_name, "ERROR"); reset_time_r = 0
@@ -365,14 +364,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await wait_for_rolls_reset(reset_time_r, client.delay_seconds, log_function, preset_name)
                 await check_status(client, channel, mudae_prefix); return
             else:
-                # Improved logging
-                log_function(f"[{client.muda_name}] Rolls found -> Standard: {standard_rolls}, $us: {us_rolls}, Total: {rolls_left}. Next reset in {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "INFO")
+                log_function(f"[{client.muda_name}] Rolls left: {rolls_left}. Next reset in {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "INFO")
                 await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
                 return
         else:
             log_function(f"[{client.muda_name}] CRITICAL: Roll parse fail from $tu. Re-check status.", preset_name, "ERROR")
             await asyncio.sleep(30); await check_status(client, channel, mudae_prefix); return
-    # --- END OF UPDATED FUNCTION ---
+    # --- END OF REPLACEMENT BLOCKS ---
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         log_text = f"Starting {rolls_left} rolls"
@@ -545,6 +543,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
                                 await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
 
+        # MODIFIED: Wrapped the entire external snipe block.
         if process_further and not client.is_actively_rolling:
             if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
                 desc = embed.description or "";
@@ -585,6 +584,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 client.snipe_happened = True
                                 process_further = False
             
+            # MODIFIED: Removed the redundant 'and not client.is_actively_rolling' as the parent if-statement now handles it.
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 has_kakera_button_for_external_snipe = False
                 if message.components:
