@@ -182,7 +182,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_function(f"[{client.muda_name}] Snipe-Only Mode active. No initial commands will be sent. No status checks performed. Listening for snipes...", preset_name, "INFO")
 
-    # --- CORRECTED FUNCTION 1 ---
     async def check_status(client, channel, mudae_prefix):
         log_function(f"[{client.muda_name}] Checking $tu (rolling enabled)...", client.preset_name, "CHECK")
         error_count = 0; max_retries = 5
@@ -194,15 +193,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower = msg.content.lower()
-
-                    # More flexible regex to identify the message, allowing any text between rolls and left.
                     has_rolls_info_en = re.search(r"rolls?.*left", content_lower)
                     has_rolls_info_pt = re.search(r"rolls?.*restantes", content_lower)
-                    
-                    # More flexible regex to identify claim status
                     has_claim_info_en = re.search(r"you __can__ claim|can't claim for another", content_lower)
                     has_claim_info_pt = re.search(r"pode se casar agora mesmo!|falta um tempo antes que você possa se casar novamente", content_lower)
-
                     if (has_rolls_info_en and has_claim_info_en) or \
                        (has_rolls_info_pt and has_claim_info_pt):
                         tu_message_content = msg.content
@@ -270,7 +264,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await check_status(client, channel, mudae_prefix)
         return
 
-    # --- CORRECTED FUNCTION 2 ---
+    # --- CORRECTED FUNCTION ---
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         log_function(f"[{client.muda_name}] Parsing rolls from $tu (rolling enabled)...", preset_name, "CHECK")
@@ -281,38 +275,40 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         lang_log_suffix_rolls = ""
         parsed_rolls_info = False
 
-        # Regex updated to optionally handle both $us and $mk parts.
-        base_regex = r" \*\*(\d+)\*\* rolls?(?:\s*\(\+\*\*(\d+)\*\* \$us\))?(?:\s*\(\+[\d,]+ \$mk\))? left"
-        reset_regex = r"next rolls? reset in \*\*(\d+)\*\* min\.?"
+        # More robust, two-step parsing logic
+        # 1. Broadly capture the roll line
+        main_match_en = re.search(r"you have \*\*(\d+)\*\* rolls?(.*?)left", content_lower)
+        main_match_pt = re.search(r"você tem \*\*(\d+)\*\* rolls?(.*?)restantes", content_lower)
 
-        match_rolls_en = re.search(r"you have" + base_regex + r"(?:[.\s\n]*?" + reset_regex + r")?", content_lower, re.DOTALL)
-        match_rolls_pt = re.search(r"você tem" + base_regex.replace("left", "restantes") + r"(?:[.\s\n]*?" + reset_regex + r")?", content_lower, re.DOTALL)
-
-        roll_match_obj = None
-        if match_rolls_en:
-            roll_match_obj = match_rolls_en
+        main_match = None
+        if main_match_en:
+            main_match = main_match_en
             lang_log_suffix_rolls = " (EN)"
             parsed_rolls_info = True
-        elif match_rolls_pt:
-            roll_match_obj = match_rolls_pt
+        elif main_match_pt:
+            main_match = main_match_pt
             lang_log_suffix_rolls = " (PT)"
             parsed_rolls_info = True
 
         if parsed_rolls_info:
-            rolls_left = int(roll_match_obj.group(1))
-            if roll_match_obj.group(2):
-                us_rolls_left = int(roll_match_obj.group(2))
+            rolls_left = int(main_match.group(1))
             
-            reset_minutes_str = roll_match_obj.group(3) if len(roll_match_obj.groups()) > 2 and roll_match_obj.group(3) else None
+            # 2. Specifically search for $us rolls inside the captured middle part
+            middle_text = main_match.group(2)
+            us_match = re.search(r"\(\+\*\*(\d+)\*\* \$us\)", middle_text)
+            if us_match:
+                us_rolls_left = int(us_match.group(1))
 
-            if reset_minutes_str:
-                try: reset_time_r = int(reset_minutes_str)
-                except ValueError:
-                    log_function(f"[{client.muda_name}] Warn: Roll reset time parse fail.{lang_log_suffix_rolls}", preset_name, "ERROR"); reset_time_r = 0
+            # Parse reset time from the full message content for reliability
+            reset_match = re.search(r"next rolls? reset in \*\*(\d+)\*\* min", content_lower)
+            if reset_match:
+                reset_time_r = int(reset_match.group(1))
             else:
-                log_function(f"[{client.muda_name}] Warn: Roll reset time not found.{lang_log_suffix_rolls}", preset_name, "WARN"); reset_time_r = 0
-
+                log_function(f"[{client.muda_name}] Warn: Roll reset time not found.{lang_log_suffix_rolls}", preset_name, "WARN");
+                reset_time_r = 0
+            
             total_rolls = rolls_left + us_rolls_left
+
             if total_rolls == 0:
                 log_function(f"[{client.muda_name}] No rolls. Reset: {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "RESET")
                 if reset_time_r <= 0:
@@ -661,5 +657,5 @@ def main_menu():
 if __name__ == "__main__":
     try:
         with open("logs.txt", "a", encoding='utf-8') as f: f.write(f"\n--- MudaRemote Log Start: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-    except Exception as e: print(f"\03-3[91mCould not initialize log file: {e}\033[0m")
+    except Exception as e: print(f"\033[91mCould not initialize log file: {e}\033[0m")
     main_menu()
