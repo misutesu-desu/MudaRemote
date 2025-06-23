@@ -108,34 +108,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_reaction_sniped_messages = set()
 
     async def health_monitor_task():
-        """A background task that monitors the gateway connection.
-        If the connection is lost for a sustained period, it forces the bot
-        to shut down, allowing the main lifecycle wrapper to restart it.
-        """
         unhealthy_streak = 0
-        max_streak = 3  # After 3 failed checks, restart
-
+        max_streak = 3 
         while not client.is_closed():
             await asyncio.sleep(60)
             if client.latency == float('inf'):
                 unhealthy_streak += 1
-                log_function(
-                    f"[{client.muda_name}] Health Check: Gateway disconnected (Streak: {unhealthy_streak}/{max_streak}).",
-                    preset_name, "WARN"
-                )
+                log_function(f"[{client.muda_name}] Health Check: Gateway disconnected (Streak: {unhealthy_streak}/{max_streak}).", preset_name, "WARN")
             else:
                 if unhealthy_streak > 0:
-                    log_function(
-                        f"[{client.muda_name}] Health Check: Gateway reconnected. Latency: {client.latency * 1000:.0f}ms.",
-                        preset_name, "INFO"
-                    )
+                    log_function(f"[{client.muda_name}] Health Check: Gateway reconnected. Latency: {client.latency * 1000:.0f}ms.", preset_name, "INFO")
                 unhealthy_streak = 0
-
             if unhealthy_streak >= max_streak:
-                log_function(
-                    f"[{client.muda_name}] Health Check: Gateway disconnected for {max_streak} consecutive minutes. Forcing shutdown.",
-                    preset_name, "ERROR"
-                )
+                log_function(f"[{client.muda_name}] Health Check: Gateway disconnected for {max_streak} consecutive minutes. Forcing shutdown.", preset_name, "ERROR")
                 await client.close()
                 return
 
@@ -145,32 +130,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.loop.create_task(health_monitor_task())
         log_function(f"[{client.muda_name}] Target Channel: {target_channel_id}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Rolling Enabled: {'On' if client.rolling_enabled else 'Off (SNIPE-ONLY MODE)'}", preset_name, "INFO")
-
         if client.rolling_enabled:
             log_function(f"[{client.muda_name}] Delay: {delay_seconds}s", preset_name, "INFO")
             log_function(f"[{client.muda_name}] Key Mode: {'On' if key_mode else 'Off'}", preset_name, "INFO")
-
         log_function(f"[{client.muda_name}] Start Delay: {start_delay}s", preset_name, "INFO")
-
         log_function(f"[{client.muda_name}] Ext. WL Snipe: {'On' if snipe_mode else 'Off'}", preset_name, "INFO")
         if snipe_mode:
             log_function(f"[{client.muda_name}]   Ext. WL Snipe Delay: {snipe_delay}s", preset_name, "INFO")
             log_function(f"[{client.muda_name}] Wishlist (Size): {len(client.wishlist)}", preset_name, "INFO")
-
         log_function(f"[{client.muda_name}] Ext. Series Snipe: {'On' if series_snipe_mode else 'Off'}", preset_name, "INFO")
         if series_snipe_mode:
             log_function(f"[{client.muda_name}]   Ext. Series Snipe Delay: {series_snipe_delay}s", preset_name, "INFO")
             log_function(f"[{client.muda_name}] Series WL (Size): {len(client.series_wishlist)}", preset_name, "INFO")
-
         log_function(f"[{client.muda_name}] Ext. Kakera Value Snipe: {'On' if client.kakera_snipe_mode_active else 'Off'}", preset_name, "INFO")
         if client.kakera_snipe_mode_active:
             log_function(f"[{client.muda_name}]   Ext. Kakera Val. Threshold: {client.kakera_snipe_threshold}", preset_name, "INFO")
             log_function(f"[{client.muda_name}]   Ext. Kakera Val. Snipe Delay: {client.snipe_delay}s (uses general snipe_delay)", preset_name, "INFO")
-
         log_function(f"[{client.muda_name}] Ext. Kakera Reaction Snipe: {'On' if client.kakera_reaction_snipe_mode_active else 'Off'}", preset_name, "INFO")
         if client.kakera_reaction_snipe_mode_active:
             log_function(f"[{client.muda_name}]   Ext. Kakera React. Snipe Delay: {client.kakera_reaction_snipe_delay_value}s", preset_name, "INFO")
-
         if client.rolling_enabled:
             log_function(f"[{client.muda_name}] Reactive Self-Roll Snipe: {'On' if client.enable_reactive_self_snipe else 'Off'}", preset_name, "INFO")
             if client.enable_reactive_self_snipe:
@@ -178,27 +156,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Roll Speed: {roll_speed}s", preset_name, "INFO")
             log_function(f"[{client.muda_name}] Min Kakera (General Post-Roll): {client.min_kakera}", preset_name, "INFO")
             log_function(f"[{client.muda_name}] $tu claim ignore_min_kakera_reset: {snipe_ignore_min_kakera_reset}", preset_name, "INFO")
-
         channel = client.get_channel(target_channel_id)
         if not channel: log_function(f"[{client.muda_name}] Err: No channel {target_channel_id}", preset_name, "ERROR"); await client.close(); return
         if not isinstance(channel, discord.TextChannel): log_function(f"[{client.muda_name}] Err: Not text channel {target_channel_id}", preset_name, "ERROR"); await client.close(); return
-
         can_send = channel.permissions_for(channel.guild.me).send_messages
         can_read_history = channel.permissions_for(channel.guild.me).read_message_history
         can_react = channel.permissions_for(channel.guild.me).add_reactions
-
         if not can_read_history: log_function(f"[{client.muda_name}] Err: No history perm in {channel.name}", preset_name, "ERROR"); await client.close(); return
         if not can_react: log_function(f"[{client.muda_name}] Warn: No reaction perm in {channel.name}", preset_name, "ERROR")
-
         if client.rolling_enabled:
             if not can_send: log_function(f"[{client.muda_name}] Err: No send perm in {channel.name} (Rolling Enabled)", preset_name, "ERROR"); await client.close(); return
         else:
              if not can_send: log_function(f"[{client.muda_name}] Warn: No send perm in {channel.name} (Snipe-Only Mode, fallback react might be affected if it uses commands)", preset_name, "INFO")
-
-
         log_function(f"[{client.muda_name}] Initial delay: {start_delay}s...", preset_name, "INFO")
         await asyncio.sleep(start_delay)
-
         if client.rolling_enabled:
             try:
                 log_function(f"[{client.muda_name}] Initial commands (rolling enabled)...", preset_name, "INFO")
@@ -211,7 +182,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_function(f"[{client.muda_name}] Snipe-Only Mode active. No initial commands will be sent. No status checks performed. Listening for snipes...", preset_name, "INFO")
 
-    # --- CORRECTED FUNCTION BLOCK ---
+    # --- CORRECTED FUNCTION 1 ---
     async def check_status(client, channel, mudae_prefix):
         log_function(f"[{client.muda_name}] Checking $tu (rolling enabled)...", client.preset_name, "CHECK")
         error_count = 0; max_retries = 5
@@ -224,23 +195,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     content_lower = msg.content.lower()
 
-                    # More robust identification using regex for key phrases.
-                    # This handles variations like "claim right now!" etc.
+                    # More flexible regex to identify the message, allowing any text between rolls and left.
                     has_rolls_info_en = re.search(r"rolls?.*left", content_lower)
                     has_rolls_info_pt = re.search(r"rolls?.*restantes", content_lower)
-
+                    
+                    # More flexible regex to identify claim status
                     has_claim_info_en = re.search(r"you __can__ claim|can't claim for another", content_lower)
                     has_claim_info_pt = re.search(r"pode se casar agora mesmo!|falta um tempo antes que você possa se casar novamente", content_lower)
 
-                    # A message is considered a valid $tu response if it contains both roll and claim information.
                     if (has_rolls_info_en and has_claim_info_en) or \
                        (has_rolls_info_pt and has_claim_info_pt):
-                        
                         tu_message_content = msg.content
                         log_function(f"[{client.muda_name}] Found $tu response.", preset_name, "INFO")
-                        break # Exit the history loop, we found our message
+                        break
             
-            # If we finished the loop and didn't find the message
             if not tu_message_content:
                 error_count += 1
                 log_function(f"[{client.muda_name}] Err $tu ({error_count}/{max_retries}): Response not found/identified.", preset_name, "ERROR")
@@ -251,11 +219,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 else:
                     log_function(f"[{client.muda_name}] Retry $tu in 7s.", preset_name, "ERROR")
                     await asyncio.sleep(7)
-                continue # Retry the while loop (send $tu again)
+                continue
             else:
-                break # Exit the while loop, we have the message content
+                break
 
-        # The rest of the parsing logic remains the same, as it's already using robust regex.
         content_lower = tu_message_content.lower()
         claim_reset_proceed = False
         lang_log_suffix = ""
@@ -266,7 +233,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         match_cant_claim_pt = re.search(r"calma aí, falta um tempo antes que você possa se casar novamente \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
 
         match_c = None; match_c_wait = None
-
         if match_can_claim_en: client.claim_right_available = True; match_c = match_can_claim_en; lang_log_suffix = " (EN)"
         elif match_can_claim_pt: client.claim_right_available = True; match_c = match_can_claim_pt; lang_log_suffix = " (PT)"
         elif match_cant_claim_en: client.claim_right_available = False; match_c_wait = match_cant_claim_en; lang_log_suffix = " (EN)"
@@ -286,7 +252,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] KeyMode on. Check rolls.", preset_name, "INFO"); claim_reset_proceed = True
             else:
                 log_function(f"[{client.muda_name}] Wait claim reset...", preset_name, "RESET")
-                await wait_for_reset((h * 60 + m), client.delay_seconds, log_function, preset_name) # Pass minutes directly
+                await wait_for_reset((h * 60 + m), client.delay_seconds, log_function, preset_name)
                 await check_status(client, channel, mudae_prefix); return
         else:
             log_function(f"[{client.muda_name}] Ambiguous/Unknown claim status in $tu. Assume No. Check rolls.", preset_name, "WARN")
@@ -299,46 +265,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                         ignore_limit_for_post_roll=(client.current_min_kakera_for_roll_claim == 0),
                                         key_mode_only_kakera_for_post_roll=(client.key_mode and not client.claim_right_available))
             return
-
         log_function(f"[{client.muda_name}] Unexp. state in $tu parse. Retry check_status.", preset_name, "ERROR")
         await asyncio.sleep(7)
         await check_status(client, channel, mudae_prefix)
         return
-    # --- END OF CORRECTED BLOCK ---
 
-
+    # --- CORRECTED FUNCTION 2 ---
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         log_function(f"[{client.muda_name}] Parsing rolls from $tu (rolling enabled)...", preset_name, "CHECK")
         content_lower = tu_message_content_for_rolls.lower()
-
         rolls_left = 0
         us_rolls_left = 0
         reset_time_r = 0
         lang_log_suffix_rolls = ""
         parsed_rolls_info = False
 
-        match_rolls_en = re.search(
-            r"you have \*\*(\d+)\*\* rolls?(?:\s*\(\+\*\*(\d+)\*\* \$us\))? left"
-            r"(?:"
-                r"[.\s\n]*?"
-                r"next rolls? reset in \*\*(\d+)\*\* min\.?"
-            r")?",
-            content_lower,
-            re.DOTALL
-        )
-        match_rolls_pt = re.search(
-            r"você tem \*\*(\d+)\*\* rolls?(?:\s*\(\+\*\*(\d+)\*\* \$us\))? restantes\.?"
-            r"(?:"
-                r"[.\s\n]*?"
-                r"a próxima reinicialização é em \*\*(\d+)\*\* min\.?"
-            r")?",
-            content_lower,
-            re.DOTALL
-        )
+        # Regex updated to optionally handle both $us and $mk parts.
+        base_regex = r" \*\*(\d+)\*\* rolls?(?:\s*\(\+\*\*(\d+)\*\* \$us\))?(?:\s*\(\+[\d,]+ \$mk\))? left"
+        reset_regex = r"next rolls? reset in \*\*(\d+)\*\* min\.?"
+
+        match_rolls_en = re.search(r"you have" + base_regex + r"(?:[.\s\n]*?" + reset_regex + r")?", content_lower, re.DOTALL)
+        match_rolls_pt = re.search(r"você tem" + base_regex.replace("left", "restantes") + r"(?:[.\s\n]*?" + reset_regex + r")?", content_lower, re.DOTALL)
 
         roll_match_obj = None
-
         if match_rolls_en:
             roll_match_obj = match_rolls_en
             lang_log_suffix_rolls = " (EN)"
@@ -353,28 +303,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if roll_match_obj.group(2):
                 us_rolls_left = int(roll_match_obj.group(2))
             
-            reset_minutes_str = roll_match_obj.group(3)
+            reset_minutes_str = roll_match_obj.group(3) if len(roll_match_obj.groups()) > 2 and roll_match_obj.group(3) else None
 
             if reset_minutes_str:
-                try:
-                    reset_time_r = int(reset_minutes_str)
+                try: reset_time_r = int(reset_minutes_str)
                 except ValueError:
-                    log_function(f"[{client.muda_name}] Warn: Roll reset time parse fail (value error).{lang_log_suffix_rolls}", preset_name, "ERROR")
-                    reset_time_r = 0
+                    log_function(f"[{client.muda_name}] Warn: Roll reset time parse fail.{lang_log_suffix_rolls}", preset_name, "ERROR"); reset_time_r = 0
             else:
-                log_function(f"[{client.muda_name}] Warn: Roll reset time phrase not found in $tu.{lang_log_suffix_rolls}", preset_name, "WARN")
-                reset_time_r = 0
+                log_function(f"[{client.muda_name}] Warn: Roll reset time not found.{lang_log_suffix_rolls}", preset_name, "WARN"); reset_time_r = 0
 
             total_rolls = rolls_left + us_rolls_left
-
             if total_rolls == 0:
                 log_function(f"[{client.muda_name}] No rolls. Reset: {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "RESET")
                 if reset_time_r <= 0:
-                    log_function(f"[{client.muda_name}] Roll reset time is {reset_time_r} min, using default 60 min for wait.", preset_name, "INFO")
-                    reset_time_r = 60
+                    log_function(f"[{client.muda_name}] Invalid roll reset time ({reset_time_r}m), using 60m.", preset_name, "INFO"); reset_time_r = 60
                 await wait_for_rolls_reset(reset_time_r, client.delay_seconds, log_function, preset_name)
-                await check_status(client, channel, mudae_prefix)
-                return
+                await check_status(client, channel, mudae_prefix); return
             else:
                 log_detail = f"({rolls_left} normal + {us_rolls_left} $us)" if us_rolls_left > 0 else ""
                 log_function(f"[{client.muda_name}] Rolls left: {total_rolls} {log_detail}. Next reset in {reset_time_r} min.{lang_log_suffix_rolls}", preset_name, "INFO")
@@ -382,9 +326,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
         else:
             log_function(f"[{client.muda_name}] CRITICAL: Roll parse fail from $tu. Re-check status.", preset_name, "ERROR")
-            await asyncio.sleep(30)
-            await check_status(client, channel, mudae_prefix)
-            return
+            await asyncio.sleep(30); await check_status(client, channel, mudae_prefix); return
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         log_text = f"Starting {rolls_left} rolls"
@@ -432,7 +374,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 for comp in msg.components:
                     for btn in comp.children:
                         if hasattr(btn.emoji,'name') and btn.emoji.name in KAKERA_EMOJIS: kakera_claims.append(msg); break
-            if client.claim_right_available or key_mode_only_kakera_param: # key_mode_only_kakera_param allows populating for RT even if claim is off
+            if client.claim_right_available or key_mode_only_kakera_param:
                 char_n=msg.embeds[0].author.name.lower(); desc=msg.embeds[0].description or ""; k_v=0
                 match_k=re.search(r"\*\*([\d,]+)\*\*<:kakera:",desc);
                 if match_k:
@@ -443,9 +385,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if has_claim_b:
                     if is_wl: wl_claims_post.append((msg,char_n,k_v))
                     elif k_v >= min_kak_post: char_claims_post.append((msg,char_n,k_v))
-
         for msg_k in kakera_claims: await claim_character(client,channel,msg_k,is_kakera=True); await asyncio.sleep(0.3)
-
         claimed_post=False; msg_claimed_id=-1
         if client.claim_right_available and wl_claims_post:
             msg_c,n,v=wl_claims_post[0]; log_function(f"[{client.muda_name}] (Post) Gen. WL: {n}", preset_name, "CLAIM")
@@ -454,13 +394,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             char_claims_post.sort(key=lambda x:x[2],reverse=True); msg_c,n,v=char_claims_post[0]
             log_function(f"[{client.muda_name}] (Post) Gen. HV: {n} ({v})", preset_name, "CLAIM")
             if await claim_character(client,channel,msg_c,is_kakera=False): claimed_post=True;client.claim_right_available=False;msg_claimed_id=msg_c.id
-
         if key_mode_only_kakera_param or claimed_post:
             rt_targets=[i for i in wl_claims_post if i[0].id!=msg_claimed_id] + [i for i in char_claims_post if i[0].id!=msg_claimed_id]
             rt_targets.sort(key=lambda x:x[2],reverse=True)
             if rt_targets:
                 msg_rt,n_rt,v_rt=rt_targets[0]
-
                 if v_rt >= client.min_kakera:
                     log_function(f"[{client.muda_name}] (Post) RT: {n_rt} ({v_rt}) vs MinKakRT: {client.min_kakera}", preset_name, "CLAIM")
                     try:
@@ -470,7 +408,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
                 elif v_rt >= min_kak_post :
                      log_function(f"[{client.muda_name}] (Post) RT Skipped: {n_rt} ({v_rt}) < MinKakRT: {client.min_kakera} (but was >= Gen. Post-Roll MinKak: {min_kak_post})", preset_name, "INFO")
-
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
         if not msg or not msg.embeds: log_function(f"[{client.muda_name}] Invalid msg to claim_character.", preset_name, "ERROR"); return False
@@ -505,13 +442,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
         total_wait = (target_wakeup_time - now).total_seconds()
-        if total_wait <= 0:
-            total_wait = base_delay_seconds + 1
+        if total_wait <= 0: total_wait = base_delay_seconds + 1
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
         log_function(f"[{client.muda_name}] Wait claim reset. Total: {total_wait:.2f}s. Resume ~{end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
         await asyncio.sleep(total_wait)
         log_function(f"[{client.muda_name}] Claim wait done.", preset_name, "RESET")
-
 
     async def wait_for_rolls_reset(reset_time_minutes, base_delay_seconds, log_function, preset_name):
         now = datetime.datetime.now()
@@ -523,8 +458,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         target_reset_minute = estimated_reset_time.replace(second=0, microsecond=0)
         target_wakeup_time = target_reset_minute + datetime.timedelta(seconds=base_delay_seconds)
         total_wait = (target_wakeup_time - now).total_seconds()
-        if total_wait <= 0:
-            total_wait = base_delay_seconds + 1
+        if total_wait <= 0: total_wait = base_delay_seconds + 1
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=total_wait)
         log_function(f"[{client.muda_name}] Wait rolls reset (~{actual_reset_time_minutes}m). Total: {total_wait:.2f}s. Resume ~{end_time.strftime('%H:%M:%S')}", preset_name, "RESET")
         await asyncio.sleep(total_wait)
@@ -537,7 +471,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if not message.embeds: return
         embed = message.embeds[0]; process_further = True
-
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and client.claim_right_available:
             if embed.author and embed.author.name:
                 char_name_l = embed.author.name.lower(); desc = embed.description or ""; series_l=(desc.splitlines()[0] if desc else "").lower(); k_val=0
@@ -548,7 +481,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 is_wl = any(w == char_name_l for w in client.wishlist)
                 is_series_wl = client.series_wishlist and any(sw in series_l for sw in client.series_wishlist)
                 is_k_snipe_criterion = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
-
                 if is_wl or is_series_wl or is_k_snipe_criterion:
                     has_claim_btn = any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children)
                     if has_claim_btn:
@@ -556,7 +488,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
                             if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
                                 await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
-
         if process_further and not client.is_actively_rolling:
             if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
                 desc = embed.description or "";
@@ -568,7 +499,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
                             await asyncio.sleep(client.series_snipe_delay)
                             if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
-
             if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages:
                 if embed.author and embed.author.name:
                     char_name_l = embed.author.name.lower()
@@ -579,7 +509,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
                             await asyncio.sleep(client.snipe_delay)
                             if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
-
             if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages:
                 if embed.author and embed.author.name:
                     desc = embed.description or ""; k_val=0
@@ -587,58 +516,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if match_k_ext:
                         try: k_val = int(match_k_ext.group(1).replace(",",""))
                         except ValueError: pass
-
                     if k_val >= client.kakera_snipe_threshold:
                         if any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
                             client.kakera_value_sniped_messages.add(message.id)
                             log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
                             await asyncio.sleep(client.snipe_delay)
                             if await claim_character(client, message.channel, message):
-                                client.snipe_happened = True
-                                process_further = False
-            
+                                client.snipe_happened = True; process_further = False
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 has_kakera_button_for_external_snipe = False
                 if message.components:
                     for comp in message.components:
                         for btn in comp.children:
                             if hasattr(btn.emoji, 'name') and btn.emoji.name in KAKERA_EMOJIS:
-                                has_kakera_button_for_external_snipe = True
-                                break
-                        if has_kakera_button_for_external_snipe:
-                            break
-
+                                has_kakera_button_for_external_snipe = True; break
+                        if has_kakera_button_for_external_snipe: break
                 if has_kakera_button_for_external_snipe:
                     client.kakera_reaction_sniped_messages.add(message.id)
                     log_subject_name = "Kakera Event"
-                    if embed.author and embed.author.name:
-                        log_subject_name = embed.author.name
-                    elif embed.description:
-                        log_subject_name = embed.description.splitlines()[0][:30]
-
+                    if embed.author and embed.author.name: log_subject_name = embed.author.name
+                    elif embed.description: log_subject_name = embed.description.splitlines()[0][:30]
                     log_function(f"[{client.muda_name}] Ext.KakeraReact Snipe: {log_subject_name} (Delay {client.kakera_reaction_snipe_delay_value}s)", client.preset_name, "KAKERA")
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
                     await claim_character(client, message.channel, message, is_kakera=True)
-
-        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further: #This part is for self-roll kakera reaction
-            if embed.author and embed.author.name: # Ensure it's a character embed
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further:
+            if embed.author and embed.author.name:
                 desc = embed.description or ""; k_val=0
                 match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
                 if match_k:
                     try: k_val = int(match_k.group(1).replace(",",""))
                     except ValueError: pass
-
                 kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
                 should_click_kakera = kakera_button_present and \
                                       (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
-
                 if should_click_kakera:
-                    if await claim_character(client, message.channel, message, is_kakera=True):
-                        pass
-
-        if process_further and client.rolling_enabled:
-            await client.process_commands(message)
-
+                    if await claim_character(client, message.channel, message, is_kakera=True): pass
+        if process_further and client.rolling_enabled: await client.process_commands(message)
 
     try: client.run(token)
     except discord.errors.LoginFailure: log_function(f"[{BOT_NAME}] LoginFail '{preset_name}'. Check token.", preset_name, "ERROR")
@@ -657,7 +570,6 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     rolling_enabled_preset = preset_data.get("rolling", True)
     kakera_reaction_snipe_mode_p = preset_data.get("kakera_reaction_snipe_mode", False)
     kakera_reaction_snipe_delay_p = preset_data.get("kakera_reaction_snipe_delay", 0.75)
-
     restart_delay = 60
     while True:
         run_bot(
@@ -672,7 +584,6 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
         )
         print_log(f"Bot instance for '{preset_name}' has stopped. Restarting in {restart_delay} seconds...", preset_name, "RESET")
         time.sleep(restart_delay)
-
 
 def start_preset_thread(preset_name, preset_data):
      if not validate_preset(preset_name, preset_data):
@@ -750,5 +661,5 @@ def main_menu():
 if __name__ == "__main__":
     try:
         with open("logs.txt", "a", encoding='utf-8') as f: f.write(f"\n--- MudaRemote Log Start: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-    except Exception as e: print(f"\033[91mCould not initialize log file: {e}\033[0m")
+    except Exception as e: print(f"\03-3[91mCould not initialize log file: {e}\033[0m")
     main_menu()
