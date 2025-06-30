@@ -7,52 +7,44 @@
 
 ---
 
-## 🚀 MudaRemote: Enhance Your Mudae Experience (Use Responsibly!) 🚀
+## 🚀 MudaRemote: Enhance Your Mudae Experience (Use Responsibly!)
 
-MudaRemote is a Python-based self-bot designed to automate various tasks for the Discord bot Mudae. It offers features like real-time sniping and intelligent claiming but **using self-bots is against Discord's Terms of Service and may lead to account suspension or ban.** Please use with extreme caution and understand the risks involved.
+MudaRemote is a Python-based self-bot designed to automate various tasks for the Discord bot Mudae. It offers features like real-time sniping and intelligent claiming. **However, using self-bots is against Discord's Terms of Service and may lead to account suspension or ban.** Please use with extreme caution and understand the risks involved.
 
-**✨ Core Features: ✨**
+### ✨ Core Features:
 
 *   **🎯 External Sniping (Wishlist, Series & Kakera Value):**
-    *   **Wishlist Sniping:** Claims characters from your wishlist when rolled by *others*, using a configurable delay (`snipe_delay`).
-    *   **Series Sniping:** Claims characters from your series wishlist when rolled by *others*, using a configurable delay (`series_snipe_delay`).
-    *   **Kakera Value Sniping:** Claims characters based purely on their kakera value (if above `kakera_snipe_threshold`) when rolled by *others*, using `snipe_delay`. This triggers if the character isn't already a wishlist/series match.
-*   **🟡 External Kakera Reaction Sniping (New!):**
-    *   Automatically clicks kakera reaction buttons (from the defined `KAKERA_EMOJIS` list, e.g., `kakeraY`, `kakeraO`) found on *any* Mudae message (not just your own rolls).
-    *   Configurable with `kakera_reaction_snipe_mode` and `kakera_reaction_snipe_delay`.
-    *   This is separate from heart-based snipes and kakera collection during your own rolls.
-*   **😴 Snipe-Only Mode (Configurable per Preset):**
-    *   Set `rolling: false` in a preset to have that bot instance *only* listen for and execute external snipes (including Wishlist, Series, Kakera Value, and Kakera Reaction snipes).
-    *   In this mode, the bot will not send any roll commands, initial setup commands, or perform status checks for rolls/claims. Ideal for dedicated sniping accounts.
-*   **⚡ Reactive Self-Roll Sniping (Configurable, if Rolling Enabled):**
-    *   Instantly (no delay) claims characters from your *own* rolls if they match your wishlist, series wishlist, or `kakera_snipe_threshold` (if `kakera_snipe_mode` is active). Also clicks available kakera buttons on these claimed characters.
-    *   This action interrupts the current rolling batch to secure the claim.
-    *   Can be toggled on/off with `reactive_snipe_on_own_rolls`. (Only active if `rolling: true`).
-*   **👯 Multi-Account Support:** Manage and run multiple bot instances simultaneously via presets, each with its own configuration (including rolling/snipe-only mode).
-*   **🤖 Automated Rolling & General Claiming (if Rolling Enabled):** Handles your rolling commands and makes general claims based on `min_kakera` after rolls are complete. Also collects kakera from your own rolls post-batch.
-*   **🥇 Intelligent Claim Logic (if Rolling Enabled):** Utilizes `$rt` for a potential second claim after a successful primary claim or when in Key Mode.
-*   **🔄 Auto Roll & Claim Reset Detection (if Rolling Enabled):** Monitors and waits for Mudae's reset timers to optimize actions.
-*   **🔑 Key Mode (if Rolling Enabled):** Enables continuous rolling specifically for kakera collection, even when your main character claim rights are on cooldown.
-*   **⏱️ Customizable Delays & Roll Speed:** Adjust general action delays and the speed of rolling commands.
-*   **🗂️ Easy Preset Configuration:** Manage all settings for different accounts/scenarios via a `presets.json` file.
+    *   **Wishlist Sniping:** Claims characters from your wishlist when rolled by *others* (configurable delay).
+    *   **Series Sniping:** Claims characters from your series wishlist when rolled by *others* (configurable delay).
+    *   **Kakera Value Sniping:** Claims characters based on their kakera value (if above threshold) when rolled by *others*.
+*   **🟡 External Kakera Reaction Sniping (New!):** Automatically clicks kakera reaction buttons on *any* Mudae message.
+*   **😴 Snipe-Only Mode:** Configure bot instances to *only* listen for and execute external snipes, without sending roll commands.
+*   **⚡ Reactive Self-Roll Sniping:** Instantly claims characters from *your own* rolls if they match criteria (wishlist, series, kakera value). Interrupts current rolling batch.
+*   **👯 Multi-Account Support:** Run multiple bot instances simultaneously, each with its own configuration.
+*   **🤖 Automated Rolling & General Claiming:** Handles rolling commands and makes general claims based on minimum kakera after rolls.
+*   **🥇 Intelligent Claim Logic:** Utilizes `$rt` for a potential second claim.
+*   **🔄 Auto Roll & Claim Reset Detection:** Monitors and waits for Mudae's reset timers.
+*   **🔑 Key Mode:** Enables continuous rolling for kakera collection, even when main character claim rights are on cooldown.
+*   **⏱️ Customizable Delays & Roll Speed:** Adjust general action delays and roll command speed.
+*   **🗂️ Easy Preset Configuration:** Manage all settings via a `presets.json` file.
 *   **📊 Console Logging:** Clear, color-coded real-time output of bot actions and status.
 
 ---
 
-## 🛠️ Setup Guide 💨
+## 🛠️ Setup Guide
 
 1.  **🐍 Python:** Ensure Python 3.8+ is installed. ([Download Python](https://www.python.org/downloads/))
 2.  **📦 Dependencies:** Open your terminal or command prompt and run:
     ```bash
     pip install discord.py-self inquirer
     ```
-3.  **📝 `presets.json`:** Create a file named `presets.json` in the same directory as the script. Add your bot configurations here. See the example below for all available options.
+3.  **📝 `presets.json`:** Create a `presets.json` file in the script's directory. Add your bot configurations here. See the example below for all available options.
 4.  **🚀 Run:** Execute the script from your terminal:
     ```bash
     python mudae_bot.py
     ```
     (Replace `mudae_bot.py` with your script's actual filename if different).
-5.  **🕹️ Select Presets:** Choose which configured bot(s) to run from the interactive menu that appears.
+5.  **🕹️ Select Presets:** Choose which configured bot(s) to run from the interactive menu.
 
 ---
 
@@ -116,7 +108,7 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
 
 Self-bots require your Discord account token. **This token grants full access to your account – keep it extremely private! Sharing it is like giving away your password.** It is recommended to use this bot on an alternative account.
 
-1.  **Open Discord in your web browser** (e.g., Chrome, Firefox). *Not the desktop app.*
+1.  **Open Discord in your web browser** (e.g., Chrome, Chrome, Firefox). *Not the desktop app.* 
 2.  Press **F12** to open Developer Tools.
 3.  Navigate to the **`Console`** tab.
 4.  Paste the following code snippet into the console and press Enter:
