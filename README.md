@@ -1,3 +1,5 @@
+[English](README.md) | [Türkçe](README.tr.md) | [Français](README.fr.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
+
 # ✨ MudaRemote: Advanced Mudae Automation ✨
 
 [![Discord TOS Violation - **USE CAUTIOUSLY**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **ACCOUNT BAN RISK!** ⚠️
