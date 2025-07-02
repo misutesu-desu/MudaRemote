@@ -43,7 +43,6 @@ COLORS = {
 
 # Define claim and kakera emojis at the top level
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', '🪐']
-# Reverted KAKERA_EMOJIS list
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
 
 
@@ -224,10 +223,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claim_reset_proceed = False
         lang_log_suffix = ""
 
-        match_can_claim_en = re.search(r"you __can__ claim.*?next claim reset .*?\*\*(\d+h)?\s*(\d+)\*\* min.?", content_lower)
-        match_can_claim_pt = re.search(r"pode se casar agora mesmo!.*?a próxima reinicialização é em .*?\*\*(\d+h)?\s*(\d+)\*\* min.?", content_lower)
-        match_cant_claim_en = re.search(r"can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min.?", content_lower)
-        match_cant_claim_pt = re.search(r"calma aí, falta um tempo antes que você possa se casar novamente \*\*(\d+h)?\s*(\d+)\*\* min.?", content_lower)
+        match_can_claim_en = re.search(r"you __can__ claim.*?next claim reset .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
+        match_can_claim_pt = re.search(r"pode se casar agora mesmo!.*?a próxima reinicialização é em .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
+        match_cant_claim_en = re.search(r"can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
+        match_cant_claim_pt = re.search(r"calma aí, falta um tempo antes que você possa se casar novamente \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
 
         match_c = None; match_c_wait = None
         if match_can_claim_en: client.claim_right_available = True; match_c = match_can_claim_en; lang_log_suffix = " (EN)"
@@ -359,57 +358,89 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
 
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
-        kakera_claims = []; char_claims_post = []; wl_claims_post = []
+        """
+        Handles post-roll messages.
+        FIX: This function is updated to correctly identify claimable characters even on messages without buttons.
+        """
+        kakera_claims = []
+        char_claims_post = []
+        wl_claims_post = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
         log_function(f"[{client.muda_name}] Post-Roll Handle. MinKak(gen):{min_kak_post} (IgnLmtP:{ignore_limit_param},KeyMNoClaimP:{key_mode_only_kakera_param})", preset_name, "CHECK")
-        for msg in mudae_messages:
-            if not msg.embeds or not msg.embeds[0].author or not msg.embeds[0].author.name: continue
-            
-            # DEĞİŞİKLİK 1: Mesajları kakera için daha verimli ve doğru bir şekilde topla
-            if msg.components:
-                # Bir mesajda herhangi bir kakera butonu varsa, o mesajı listeye BİR KEZ ekle
-                if any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in msg.components for b in c.children):
-                    kakera_claims.append(msg)
 
-            if client.claim_right_available or key_mode_only_kakera_param:
-                char_n=msg.embeds[0].author.name.lower(); desc=msg.embeds[0].description or ""; k_v=0
-                match_k=re.search(r"\*\*([\d,]+)\*\*<:kakera:",desc);
+        for msg in mudae_messages:
+            if not msg.embeds or not msg.embeds[0].author or not msg.embeds[0].author.name:
+                continue
+
+            # First, check for kakera reaction buttons. If they exist, it's a kakera message, not a direct character claim for us.
+            is_kakera_message = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in msg.components for b in c.children)
+
+            if is_kakera_message:
+                kakera_claims.append(msg)
+            
+            # If it's NOT a kakera message, it's a potential character claim, regardless of whether it has buttons or not.
+            elif client.claim_right_available or key_mode_only_kakera_param:
+                char_n = msg.embeds[0].author.name.lower()
+                desc = msg.embeds[0].description or ""
+                k_v = 0
+                match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
                 if match_k:
-                    try: k_v=int(match_k.group(1).replace(",",""))
-                    except ValueError: pass
+                    try:
+                        k_v = int(match_k.group(1).replace(",", ""))
+                    except ValueError:
+                        pass
+                
                 is_wl = any(w == char_n for w in client.wishlist)
-                has_claim_b = any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for c in msg.components for b in c.children)
-                if has_claim_b:
-                    if is_wl: wl_claims_post.append((msg,char_n,k_v))
-                    elif k_v >= min_kak_post: char_claims_post.append((msg,char_n,k_v))
+                
+                # We no longer check for a claim button here. We just check claim criteria.
+                # claim_character() will handle the button click vs. reaction fallback.
+                if is_wl:
+                    wl_claims_post.append((msg, char_n, k_v))
+                elif k_v >= min_kak_post:
+                    char_claims_post.append((msg, char_n, k_v))
+
+        # Process Kakera claims first
+        for msg_k in kakera_claims:
+            await claim_character(client, channel, msg_k, is_kakera=True)
+            await asyncio.sleep(0.3)
         
-        # Kakera mesajları için `claim_character` çağrısı (yeni fonksiyon tüm butonları tıklayacak)
-        for msg_k in kakera_claims: await claim_character(client,channel,msg_k,is_kakera=True); await asyncio.sleep(0.3)
-        
-        claimed_post=False; msg_claimed_id=-1
+        # Process Character/Wishlist claims
+        claimed_post = False
+        msg_claimed_id = -1
         if client.claim_right_available and wl_claims_post:
-            msg_c,n,v=wl_claims_post[0]; log_function(f"[{client.muda_name}] (Post) Gen. WL: {n}", preset_name, "CLAIM")
-            if await claim_character(client,channel,msg_c,is_kakera=False): claimed_post=True;client.claim_right_available=False;msg_claimed_id=msg_c.id
+            msg_c, n, v = wl_claims_post[0]
+            log_function(f"[{client.muda_name}] (Post) Gen. WL: {n}", preset_name, "CLAIM")
+            if await claim_character(client, channel, msg_c, is_kakera=False):
+                claimed_post = True
+                client.claim_right_available = False
+                msg_claimed_id = msg_c.id
         elif client.claim_right_available and char_claims_post:
-            char_claims_post.sort(key=lambda x:x[2],reverse=True); msg_c,n,v=char_claims_post[0]
+            char_claims_post.sort(key=lambda x: x[2], reverse=True)
+            msg_c, n, v = char_claims_post[0]
             log_function(f"[{client.muda_name}] (Post) Gen. HV: {n} ({v})", preset_name, "CLAIM")
-            if await claim_character(client,channel,msg_c,is_kakera=False): claimed_post=True;client.claim_right_available=False;msg_claimed_id=msg_c.id
+            if await claim_character(client, channel, msg_c, is_kakera=False):
+                claimed_post = True
+                client.claim_right_available = False
+                msg_claimed_id = msg_c.id
+        
+        # Process Roll-back ($rt) if applicable
         if key_mode_only_kakera_param or claimed_post:
-            rt_targets=[i for i in wl_claims_post if i[0].id!=msg_claimed_id] + [i for i in char_claims_post if i[0].id!=msg_claimed_id]
-            rt_targets.sort(key=lambda x:x[2],reverse=True)
+            rt_targets = [i for i in wl_claims_post if i[0].id != msg_claimed_id] + [i for i in char_claims_post if i[0].id != msg_claimed_id]
+            rt_targets.sort(key=lambda x: x[2], reverse=True)
             if rt_targets:
-                msg_rt,n_rt,v_rt=rt_targets[0]
+                msg_rt, n_rt, v_rt = rt_targets[0]
                 if v_rt >= client.min_kakera:
                     log_function(f"[{client.muda_name}] (Post) RT: {n_rt} ({v_rt}) vs MinKakRT: {client.min_kakera}", preset_name, "CLAIM")
                     try:
-                        await channel.send(f"{client.mudae_prefix}rt"); await asyncio.sleep(0.7)
-                        await claim_character(client,channel,msg_rt,is_rt_claim=True)
+                        await channel.send(f"{client.mudae_prefix}rt")
+                        await asyncio.sleep(0.7)
+                        await claim_character(client, channel, msg_rt, is_rt_claim=True)
                     except Exception as e:
                         log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
-                elif v_rt >= min_kak_post :
-                     log_function(f"[{client.muda_name}] (Post) RT Skipped: {n_rt} ({v_rt}) < MinKakRT: {client.min_kakera} (but was >= Gen. Post-Roll MinKak: {min_kak_post})", preset_name, "INFO")
+                elif v_rt >= min_kak_post:
+                    log_function(f"[{client.muda_name}] (Post) RT Skipped: {n_rt} ({v_rt}) < MinKakRT: {client.min_kakera} (but was >= Gen. Post-Roll MinKak: {min_kak_post})", preset_name, "INFO")
 
-    # DEĞİŞİKLİK 2: Fonksiyon tamamen yeniden düzenlendi.
+
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
         if not msg or not msg.embeds:
             log_function(f"[{client.muda_name}] Invalid msg to claim_character.", preset_name, "ERROR")
@@ -418,7 +449,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_name = embed.author.name if embed.author and embed.author.name else "Unknown"
         log_px = f"[{client.muda_name}]"
 
-        # Kakera için özel mantık: Tüm kakera butonlarını tıkla ve emojiyi logla
+        # Kakera for special logic: click all kakera buttons and log the emoji
         if is_kakera:
             log_sx = f": {char_name}"
             any_button_clicked = False
@@ -431,7 +462,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 log_function(f"{log_px} Kakera ({emoji_name}){log_sx}", client.preset_name, "KAKERA")
                                 await btn.click()
                                 any_button_clicked = True
-                                await asyncio.sleep(0.5)  # Aynı mesajdaki tıklamalar arasında küçük bir bekleme
+                                await asyncio.sleep(0.5)  # Small delay between clicks on the same message
                             except discord.errors.NotFound:
                                 log_function(f"{log_px} Kakera ({emoji_name}) Click Fail (NotFound){log_sx}", preset_name, "ERROR")
                             except discord.errors.HTTPException as e:
@@ -440,7 +471,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 log_function(f"{log_px} Kakera ({emoji_name}) Click Fail (Unexp {e}){log_sx}", preset_name, "ERROR")
             return any_button_clicked
 
-        # Normal claim ve RT claim için eski mantık (sadece bir kez tıkla ve çık)
+        # Logic for normal claims and RT claims (click once and exit)
         log_ty = "CLAIM"
         btns_to_click = CLAIM_EMOJIS
         log_action_desc = "Claim"
@@ -470,7 +501,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             log_function(f"{log_px} {log_action_desc} Fail (Unexp {e}){log_sx}", preset_name, "ERROR")
                             return False
         
-        # Buton bulunamazsa veya tıklanamazsa geri tepki (react) ile deneme
+        # Fallback to reaction if no button was found or clicked (and it's not an RT attempt)
         if not btn_clicked_ok and not is_rt_claim:
             log_function(f"{log_px} No btn for {char_name}. Fallback react.", preset_name, "INFO")
             try:
@@ -532,33 +563,32 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 is_series_wl = client.series_wishlist and any(sw in series_l for sw in client.series_wishlist)
                 is_k_snipe_criterion = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
                 if is_wl or is_series_wl or is_k_snipe_criterion:
-                    has_claim_btn = any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children)
-                    if has_claim_btn:
-                        if await claim_character(client, message.channel, message, is_kakera=False):
-                            client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
-                            if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
-                                await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
+                    # Fallback to reaction is handled inside claim_character, no button check needed here
+                    if await claim_character(client, message.channel, message, is_kakera=False):
+                        client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
+                        if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
+                            await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
         if process_further and not client.is_actively_rolling:
             if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
                 desc = embed.description or "";
                 if desc:
                     first_line = desc.splitlines()[0].lower()
                     if any(kw in first_line for kw in client.series_wishlist):
-                        if any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
-                            client.series_sniped_messages.add(message.id); s_name = embed.author.name if embed.author else desc.splitlines()[0]
-                            log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
-                            await asyncio.sleep(client.series_snipe_delay)
-                            if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
+                        # Fallback to reaction is handled inside claim_character
+                        client.series_sniped_messages.add(message.id); s_name = embed.author.name if embed.author else desc.splitlines()[0]
+                        log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.series_snipe_delay)
+                        if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
             if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages:
                 if embed.author and embed.author.name:
                     char_name_l = embed.author.name.lower()
                     is_snipe_ext = any(w == char_name_l for w in client.wishlist)
                     if is_snipe_ext:
-                        if any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
-                            client.sniped_messages.add(message.id)
-                            log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
-                            await asyncio.sleep(client.snipe_delay)
-                            if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
+                        # Fallback to reaction is handled inside claim_character
+                        client.sniped_messages.add(message.id)
+                        log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.snipe_delay)
+                        if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
             if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages:
                 if embed.author and embed.author.name:
                     desc = embed.description or ""; k_val=0
@@ -567,12 +597,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         try: k_val = int(match_k_ext.group(1).replace(",",""))
                         except ValueError: pass
                     if k_val >= client.kakera_snipe_threshold:
-                        if any(hasattr(b.emoji,'name') and b.emoji.name in CLAIM_EMOJIS for comp in message.components for b in comp.children):
-                            client.kakera_value_sniped_messages.add(message.id)
-                            log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
-                            await asyncio.sleep(client.snipe_delay)
-                            if await claim_character(client, message.channel, message):
-                                client.snipe_happened = True; process_further = False
+                        # Fallback to reaction is handled inside claim_character
+                        client.kakera_value_sniped_messages.add(message.id)
+                        log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.snipe_delay)
+                        if await claim_character(client, message.channel, message):
+                            client.snipe_happened = True; process_further = False
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 has_kakera_button_for_external_snipe = False
                 if message.components:
