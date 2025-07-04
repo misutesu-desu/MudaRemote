@@ -66,6 +66,25 @@ def print_log(message, preset_name, log_type="INFO"):
     log_message_formatted = color_log(message, preset_name, log_type)
     write_log_to_file(log_message_formatted)
 
+# FINAL ROBUST FUNCTION: Positively identifies a character embed based on structure.
+def is_character_embed(embed):
+    """
+    Positively identifies if an embed is a character roll using the most reliable structural check.
+    - A true character embed uses the main 'image' field for the portrait and has no 'thumbnail'.
+    - Profile, list, and status embeds use the 'thumbnail' field and have no 'image'.
+    """
+    if not embed:
+        return False
+    
+    # Check for the presence of a main image URL.
+    has_image = embed.image and embed.image.url
+    
+    # Check for the presence of a thumbnail URL.
+    has_thumbnail = embed.thumbnail and embed.thumbnail.url
+
+    # A message is a character roll if and only if it has an image and does NOT have a thumbnail.
+    return has_image and not has_thumbnail
+
 
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
@@ -341,8 +360,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         try:
             async for msg in channel.history(limit=fetch_limit, after=start_time, oldest_first=False):
                 processed_count += 1
-                if msg.author.id == TARGET_BOT_ID and msg.embeds and msg.embeds[0].author and msg.embeds[0].author.name:
-                         mudae_messages_to_process.append(msg)
+                if msg.author.id == TARGET_BOT_ID and msg.embeds:
+                    mudae_messages_to_process.append(msg)
             mudae_messages_to_process.reverse()
             log_function(f"[{client.muda_name}] Fetched {processed_count} msgs. Processing {len(mudae_messages_to_process)} post-roll.", client.preset_name, "INFO")
             if mudae_messages_to_process:
@@ -360,7 +379,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
         """
         Handles post-roll messages.
-        FIX: This function is updated to correctly identify claimable characters even on messages without buttons.
         """
         kakera_claims = []
         char_claims_post = []
@@ -369,35 +387,40 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Post-Roll Handle. MinKak(gen):{min_kak_post} (IgnLmtP:{ignore_limit_param},KeyMNoClaimP:{key_mode_only_kakera_param})", preset_name, "CHECK")
 
         for msg in mudae_messages:
-            if not msg.embeds or not msg.embeds[0].author or not msg.embeds[0].author.name:
+            if not msg.embeds:
                 continue
 
-            # First, check for kakera reaction buttons. If they exist, it's a kakera message, not a direct character claim for us.
+            embed = msg.embeds[0]
+            # Only process messages that are identified as characters.
+            if not is_character_embed(embed):
+                continue
+            
+            # Check for kakera buttons first.
             is_kakera_message = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in msg.components for b in c.children)
-
             if is_kakera_message:
                 kakera_claims.append(msg)
-            
-            # If it's NOT a kakera message, it's a potential character claim, regardless of whether it has buttons or not.
-            elif client.claim_right_available or key_mode_only_kakera_param:
-                char_n = msg.embeds[0].author.name.lower()
-                desc = msg.embeds[0].description or ""
-                k_v = 0
-                match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
-                if match_k:
-                    try:
-                        k_v = int(match_k.group(1).replace(",", ""))
-                    except ValueError:
-                        pass
-                
-                is_wl = any(w == char_n for w in client.wishlist)
-                
-                # We no longer check for a claim button here. We just check claim criteria.
-                # claim_character() will handle the button click vs. reaction fallback.
-                if is_wl:
-                    wl_claims_post.append((msg, char_n, k_v))
-                elif k_v >= min_kak_post:
-                    char_claims_post.append((msg, char_n, k_v))
+            # If it's not a kakera message, check if it's a claimable character.
+            # This prevents processing embeds that look like characters but have no claim buttons (e.g., special event messages).
+            elif (client.claim_right_available or key_mode_only_kakera_param):
+                is_claimable_char = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in msg.components for b in c.children)
+                if is_claimable_char:
+                    char_n = embed.author.name.lower()
+                    desc = embed.description or ""
+                    k_v = 0
+                    # FIX: Updated regex to handle markdown (e.g., **123**) around kakera value.
+                    match_k = re.search(r"\**(\d{1,3}(?:,\d{3})*|\d+)\**<:kakera:", desc)
+                    if match_k:
+                        try:
+                            k_v = int(match_k.group(1).replace(",", ""))
+                        except ValueError:
+                            pass
+                    
+                    is_wl = any(w == char_n for w in client.wishlist)
+                    
+                    if is_wl:
+                        wl_claims_post.append((msg, char_n, k_v))
+                    elif k_v >= min_kak_post:
+                        char_claims_post.append((msg, char_n, k_v))
 
         # Process Kakera claims first
         for msg_k in kakera_claims:
@@ -551,67 +574,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.rolling_enabled: await client.process_commands(message)
             return
         if not message.embeds: return
-        embed = message.embeds[0]; process_further = True
-        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and client.claim_right_available:
-            if embed.author and embed.author.name:
-                char_name_l = embed.author.name.lower(); desc = embed.description or ""; series_l=(desc.splitlines()[0] if desc else "").lower(); k_val=0
-                match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc);
-                if match_k:
-                    try: k_val = int(match_k.group(1).replace(",",""))
-                    except ValueError: pass
-                is_wl = any(w == char_name_l for w in client.wishlist)
-                is_series_wl = client.series_wishlist and any(sw in series_l for sw in client.series_wishlist)
-                is_k_snipe_criterion = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
-                if is_wl or is_series_wl or is_k_snipe_criterion:
-                    # Fallback to reaction is handled inside claim_character, no button check needed here
-                    if await claim_character(client, message.channel, message, is_kakera=False):
-                        client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
-                        if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
-                            await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
-        if process_further and not client.is_actively_rolling:
-            if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
-                desc = embed.description or "";
-                if desc:
-                    first_line = desc.splitlines()[0].lower()
-                    if any(kw in first_line for kw in client.series_wishlist):
-                        # Fallback to reaction is handled inside claim_character
-                        client.series_sniped_messages.add(message.id); s_name = embed.author.name if embed.author else desc.splitlines()[0]
-                        log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
-                        await asyncio.sleep(client.series_snipe_delay)
-                        if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
-            if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages:
-                if embed.author and embed.author.name:
-                    char_name_l = embed.author.name.lower()
-                    is_snipe_ext = any(w == char_name_l for w in client.wishlist)
-                    if is_snipe_ext:
-                        # Fallback to reaction is handled inside claim_character
-                        client.sniped_messages.add(message.id)
-                        log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
-                        await asyncio.sleep(client.snipe_delay)
-                        if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
-            if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages:
-                if embed.author and embed.author.name:
-                    desc = embed.description or ""; k_val=0
-                    match_k_ext = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
-                    if match_k_ext:
-                        try: k_val = int(match_k_ext.group(1).replace(",",""))
-                        except ValueError: pass
-                    if k_val >= client.kakera_snipe_threshold:
-                        # Fallback to reaction is handled inside claim_character
-                        client.kakera_value_sniped_messages.add(message.id)
-                        log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
-                        await asyncio.sleep(client.snipe_delay)
-                        if await claim_character(client, message.channel, message):
-                            client.snipe_happened = True; process_further = False
-            if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
-                has_kakera_button_for_external_snipe = False
-                if message.components:
-                    for comp in message.components:
-                        for btn in comp.children:
-                            if hasattr(btn.emoji, 'name') and btn.emoji.name in KAKERA_EMOJIS:
-                                has_kakera_button_for_external_snipe = True; break
-                        if has_kakera_button_for_external_snipe: break
-                if has_kakera_button_for_external_snipe:
+        embed = message.embeds[0]
+        
+        # If the message is not a character roll, ignore it for sniping/rolling purposes.
+        if not is_character_embed(embed):
+            # However, it could be a target for kakera reaction sniping (e.g., from $daily).
+            if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
+                # Check for the presence of a kakera button.
+                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
                     client.kakera_reaction_sniped_messages.add(message.id)
                     log_subject_name = "Kakera Event"
                     if embed.author and embed.author.name: log_subject_name = embed.author.name
@@ -619,18 +589,88 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     log_function(f"[{client.muda_name}] Ext.KakeraReact Snipe: {log_subject_name} (Delay {client.kakera_reaction_snipe_delay_value}s)", client.preset_name, "KAKERA")
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
                     await claim_character(client, message.channel, message, is_kakera=True)
-        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further:
-            if embed.author and embed.author.name:
+            
+            if client.rolling_enabled:
+                await client.process_commands(message) # Still allow bot commands to be processed
+            return
+
+        # --- From this point on, we are sure it's a character embed ---
+
+        process_further = True
+        # Logic for reactive self-snipe during own rolls.
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and client.claim_right_available:
+            char_name_l = embed.author.name.lower(); desc = embed.description or ""; series_l=(desc.splitlines()[0] if desc else "").lower(); k_val=0
+            match_k = re.search(r"\**(\d{1,3}(?:,\d{3})*|\d+)\**<:kakera:", desc)
+            if match_k:
+                try: k_val = int(match_k.group(1).replace(",",""))
+                except ValueError: pass
+            is_wl = any(w == char_name_l for w in client.wishlist)
+            is_series_wl = client.series_wishlist and any(sw in series_l for sw in client.series_wishlist)
+            is_k_snipe_criterion = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
+            
+            if is_wl or is_series_wl or is_k_snipe_criterion:
+                # Also ensure a claim button is present before attempting to snipe.
+                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                    if await claim_character(client, message.channel, message, is_kakera=False):
+                        client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
+                        # If a character is claimed, also check for and click any kakera buttons.
+                        if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
+                            await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
+        
+        # Logic for sniping other users' rolls (when not actively rolling).
+        if process_further and not client.is_actively_rolling:
+            # Series Snipe
+            if client.series_snipe_mode and client.series_wishlist and message.id not in client.series_sniped_messages:
+                desc = embed.description or "";
+                first_line = desc.splitlines()[0].lower()
+                if any(kw in first_line for kw in client.series_wishlist):
+                    # Ensure a claim button is present before attempting the snipe.
+                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                        client.series_sniped_messages.add(message.id); s_name = embed.author.name
+                        log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.series_snipe_delay)
+                        if await claim_character(client, message.channel, message): client.series_snipe_happened=True; process_further=False
+            
+            # Wishlist Character Snipe
+            if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages:
+                char_name_l = embed.author.name.lower()
+                if any(w == char_name_l for w in client.wishlist):
+                    # Ensure a claim button is present before attempting the snipe.
+                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                        client.sniped_messages.add(message.id)
+                        log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.snipe_delay)
+                        if await claim_character(client, message.channel, message): client.snipe_happened=True; process_further=False
+
+            # Kakera Value Snipe
+            if process_further and client.kakera_snipe_mode_active and message.id not in client.kakera_value_sniped_messages:
                 desc = embed.description or ""; k_val=0
-                match_k = re.search(r"\*\*([\d,]+)\*\*<:kakera:", desc)
-                if match_k:
-                    try: k_val = int(match_k.group(1).replace(",",""))
+                match_k_ext = re.search(r"\**(\d{1,3}(?:,\d{3})*|\d+)\**<:kakera:", desc)
+                if match_k_ext:
+                    try: k_val = int(match_k_ext.group(1).replace(",",""))
                     except ValueError: pass
-                kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
-                should_click_kakera = kakera_button_present and \
-                                      (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
-                if should_click_kakera:
-                    if await claim_character(client, message.channel, message, is_kakera=True): pass
+                if k_val >= client.kakera_snipe_threshold:
+                    # Ensure a claim button is present before attempting the snipe.
+                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                        client.kakera_value_sniped_messages.add(message.id)
+                        log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
+                        await asyncio.sleep(client.snipe_delay)
+                        if await claim_character(client, message.channel, message):
+                            client.snipe_happened = True; process_further = False
+        
+        # During own rolls, automatically click kakera if conditions are met.
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process_further:
+            desc = embed.description or ""; k_val=0
+            match_k = re.search(r"\**(\d{1,3}(?:,\d{3})*|\d+)\**<:kakera:", desc)
+            if match_k:
+                try: k_val = int(match_k.group(1).replace(",",""))
+                except ValueError: pass
+            kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
+            should_click_kakera = kakera_button_present and \
+                                    (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
+            if should_click_kakera:
+                if await claim_character(client, message.channel, message, is_kakera=True): pass
+        
         if process_further and client.rolling_enabled: await client.process_commands(message)
 
     try: client.run(token)
@@ -706,7 +746,7 @@ def validate_preset(preset_name, preset_data):
     if "snipe_delay" in preset_data and (not isinstance(preset_data["snipe_delay"], (int,float)) or preset_data["snipe_delay"] < 0): print(f"\033[91mWarn '{preset_name}': 'snipe_delay' should be number >=0.\033[0m")
     if "wishlist" in preset_data and not isinstance(preset_data["wishlist"],list): print(f"\033[91mWarn '{preset_name}': 'wishlist' should be a list.\033[0m")
     if "kakera_snipe_mode" in preset_data and not isinstance(preset_data["kakera_snipe_mode"],bool): print(f"\033[91mWarn '{preset_name}': 'kakera_snipe_mode' should be boolean.\033[0m")
-    if "kakera_snipe_threshold" in preset_data and (not isinstance(preset_data["kakera_snipe_threshold"],int) or preset_data["kakera_snipe_threshold"]<0): print(f"\033[91mWarn '{preset_name}': 'kakera_snipe_threshold' should be non-neg int.\033[0m")
+    if "kakera_snipe_threshold" in preset_data and (not isinstance(preset_data["kakera_snipe_threshold"],int) or preset_data["kakera_snipe_threshold"]<0): print(f"\03-3[91mWarn '{preset_name}': 'kakera_snipe_threshold' should be non-neg int.\033[0m")
     if "reactive_snipe_on_own_rolls" in preset_data and not isinstance(preset_data["reactive_snipe_on_own_rolls"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'reactive_snipe_on_own_rolls' should be true or false.\033[0m")
     if "kakera_reaction_snipe_mode" in preset_data and not isinstance(preset_data["kakera_reaction_snipe_mode"], bool):
