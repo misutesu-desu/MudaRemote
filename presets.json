@@ -22,7 +22,11 @@
     "kakera_snipe_threshold": 150,
     "snipe_ignore_min_kakera_reset": false,
     "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 0.75
+    "kakera_reaction_snipe_delay": 0.75,
+    "humanization_enabled": true,
+    "humanization_window_minutes": 30,
+    "humanization_inactivity_seconds": 5,
+    "dk_power_management": true
   },
   "Preset_2_Kakera_Focus_KeyMode": {
     "token": "YOUR_DISCORD_TOKEN_2",
@@ -47,7 +51,11 @@
     "kakera_snipe_threshold": 80,
     "snipe_ignore_min_kakera_reset": true,
     "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 0.75
+    "kakera_reaction_snipe_delay": 0.75,
+    "humanization_enabled": true,
+    "humanization_window_minutes": 50,
+    "humanization_inactivity_seconds": 10,
+    "dk_power_management": false
   },
   "Preset_3_Casual_Roller": {
     "token": "YOUR_DISCORD_TOKEN_3",
@@ -72,7 +80,11 @@
     "kakera_snipe_threshold": 0,
     "snipe_ignore_min_kakera_reset": false,
     "kakera_reaction_snipe_mode": false,
-    "kakera_reaction_snipe_delay": 0.75
+    "kakera_reaction_snipe_delay": 0.75,
+    "humanization_enabled": false,
+    "humanization_window_minutes": 40,
+    "humanization_inactivity_seconds": 5,
+    "dk_power_management": false
   },
   "Preset_4_Aggressive_HighValue_Sniping": {
     "token": "YOUR_DISCORD_TOKEN_4",
@@ -97,7 +109,11 @@
     "kakera_snipe_threshold": 250,
     "snipe_ignore_min_kakera_reset": true,
     "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 0.5
+    "kakera_reaction_snipe_delay": 0.5,
+    "humanization_enabled": true,
+    "humanization_window_minutes": 15,
+    "humanization_inactivity_seconds": 3,
+    "dk_power_management": true
   },
   "Preset_5_Snipe_Only_Dedicated": {
     "token": "YOUR_DISCORD_TOKEN_5",
@@ -117,11 +133,15 @@
     "series_snipe_mode": true,
     "series_wishlist": ["Chainsaw Man", "Darling in the FranXX"],
     "series_snipe_delay": 1.5,
-    "reactive_snipe_on_own_rolls": false, 
+    "reactive_snipe_on_own_rolls": false,
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 200,
     "snipe_ignore_min_kakera_reset": false,
     "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 1.0
+    "kakera_reaction_snipe_delay": 1.0,
+    "humanization_enabled": false,
+    "humanization_window_minutes": 40,
+    "humanization_inactivity_seconds": 5,
+    "dk_power_management": false
   }
 }
