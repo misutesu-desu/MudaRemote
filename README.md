@@ -1,5 +1,3 @@
-[English](README.md) | [Türkçe](README.tr.md) | [Français](README.fr.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
-
 # ✨ MudaRemote: Advanced Mudae Automation ✨
 
 [![Discord TOS Violation - **USE CAUTIOUSLY**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **ACCOUNT BAN RISK!** ⚠️
@@ -16,20 +14,23 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
 ### ✨ Core Features:
 
 *   **🎯 External Sniping (Wishlist, Series & Kakera Value):**
-    *   **Wishlist Sniping:** Claims characters from your wishlist when rolled by *others* (configurable delay).
-    *   **Series Sniping:** Claims characters from your series wishlist when rolled by *others* (configurable delay).
-    *   **Kakera Value Sniping:** Claims characters based on their kakera value (if above threshold) when rolled by *others*.
-*   **🟡 External Kakera Reaction Sniping (New!):** Automatically clicks kakera reaction buttons on *any* Mudae message.
+    *   **Wishlist Sniping:** Claims characters from your wishlist when rolled by *others*.
+    *   **Series Sniping:** Claims characters from your series wishlist when rolled by *others*.
+    *   **Kakera Value Sniping:** Claims characters based on their kakera value when rolled by *others*.
+*   **🟡 External Kakera Reaction Sniping:** Automatically clicks kakera reaction buttons on *any* Mudae message from anyone.
 *   **😴 Snipe-Only Mode:** Configure bot instances to *only* listen for and execute external snipes, without sending roll commands.
-*   **⚡ Reactive Self-Roll Sniping:** Instantly claims characters from *your own* rolls if they match criteria (wishlist, series, kakera value). Interrupts current rolling batch.
-*   **👯 Multi-Account Support:** Run multiple bot instances simultaneously, each with its own configuration.
-*   **🤖 Automated Rolling & General Claiming:** Handles rolling commands and makes general claims based on minimum kakera after rolls.
-*   **🥇 Intelligent Claim Logic:** Utilizes `$rt` for a potential second claim.
-*   **🔄 Auto Roll & Claim Reset Detection:** Monitors and waits for Mudae's reset timers.
-*   **🔑 Key Mode:** Enables continuous rolling for kakera collection, even when main character claim rights are on cooldown.
-*   **⏱️ Customizable Delays & Roll Speed:** Adjust general action delays and roll command speed.
-*   **🗂️ Easy Preset Configuration:** Manage all settings via a `presets.json` file.
+*   **⚡ Reactive Self-Roll Sniping:** Instantly claims characters from *your own* rolls if they match criteria (wishlist, series, kakera value). Interrupts the current rolling batch to secure the claim.
+*   **🤖 Automated Rolling & General Claiming:** Handles rolling commands and makes claims based on minimum kakera after rolls are complete.
+*   **🥇 Intelligent Claim Logic:** Parses `$tu` to check for `$rt` availability and uses it for a potential second claim on high-value characters.
+*   **🔄 Auto Reset Detection:** Monitors and waits for Mudae's claim and roll reset timers.
+*   **🚶‍♂️ Humanized Waiting (New!):** Simulates human behavior by waiting for a random period and for channel inactivity before resuming actions after a reset, reducing predictability.
+*   **💡 DK Power Management (New!):** Intelligently checks your kakera reaction power and only uses `$dk` when necessary, saving charges.
+*   **🔑 Key Mode:** Enables continuous rolling for kakera collection, even when character claims are on cooldown.
+*   **👯 Multi-Account Support:** Run multiple bot instances simultaneously from a single terminal, each with its own configuration.
+*   **⏱️ Customizable Delays & Roll Speed:** Fine-tune all action delays and the speed of roll commands.
+*   **🗂️ Easy Preset Configuration:** Manage all settings for multiple accounts in a single `presets.json` file.
 *   **📊 Console Logging:** Clear, color-coded real-time output of bot actions and status.
+*   **🌐 Localization Support:** Improved parsing for both English and Portuguese (PT-BR) Mudae responses.
 
 ---
 
@@ -58,47 +59,53 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
     // --- REQUIRED SETTINGS ---
     "token": "YOUR_DISCORD_ACCOUNT_TOKEN", // Your Discord account token. KEEP THIS EXTREMELY SECRET!
     "channel_id": 123456789012345678,     // ID of the Discord channel for Mudae commands.
-    "roll_command": "wa",                  // Your preferred Mudae roll command (e.g., wa, hg, w, ma). Only used if "rolling" is true.
-    "delay_seconds": 1,                    // General delay (seconds) between some bot actions (e.g., after $tu before parsing). Only used if "rolling" is true.
+    "roll_command": "wa",                  // Your preferred Mudae roll command (e.g., wa, hg, w, ma).
+    "delay_seconds": 1,                    // General delay for some bot actions (e.g., after $tu).
     "mudae_prefix": "$",                   // The prefix Mudae uses in your server (usually "$").
-    "min_kakera": 50,                      // Minimum kakera value for general (post-roll batch) character claims. Only used if "rolling" is true.
+    "min_kakera": 50,                      // Minimum kakera value for general (post-roll batch) claims.
 
     // --- CORE OPERATIONAL MODE ---
-    "rolling": true,                       // (Default: true) If true, bot performs rolling, claiming, $tu checks, etc.
-                                           // If false, bot enters SNIPE-ONLY mode: no rolling, no $tu checks, only listens for external snipes.
+    "rolling": true,                       // (Default: true) If true, bot performs rolling, claiming, $tu checks.
+                                           // If false, bot enters SNIPE-ONLY mode: no rolling, only listens for external snipes.
 
-    // --- OPTIONAL SETTINGS (Some depend on "rolling: true") ---
-    "key_mode": false,                     // (Default: false) If true AND "rolling" is true, rolls for kakera even if no character claim right is available.
-    "start_delay": 0,                      // (Default: 0) Delay (seconds) before the bot starts after being selected in the menu.
-    "roll_speed": 0.4,                     // (Default: 0.4) Delay (seconds) between individual roll commands. Only used if "rolling" is true.
+    // --- HUMANIZATION (RECOMMENDED) ---
+    "humanization_enabled": true,          // (Default: false) If true, waits more naturally after resets. Reduces predictability.
+    "humanization_window_minutes": 40,     // (Default: 40) The bot will wait for the reset time + a random time up to this many minutes.
+    "humanization_inactivity_seconds": 5,  // (Default: 5) After waiting, the bot proceeds only when the channel has been inactive for this many seconds.
 
-    // External Sniping Settings (for characters/kakera rolled by OTHERS - Always active if configured, regardless of "rolling" status)
-    "snipe_mode": true,                    // (Default: false) Enable external wishlist sniping (heart claims).
-    "wishlist": ["Character Name 1", "Character Name 2"], // List of character names for heart sniping.
-    "snipe_delay": 2,                      // (Default: 2) Delay (seconds) before claiming an external wishlist snipe AND external kakera value snipe.
+    // --- OPTIONAL SETTINGS (Most depend on "rolling: true") ---
+    "key_mode": false,                     // (Default: false) If true, rolls for kakera even without a claim right.
+    "start_delay": 0,                      // (Default: 0) Delay (seconds) before the bot starts after being selected.
+    "roll_speed": 0.4,                     // (Default: 0.4) Delay (seconds) between individual roll commands.
+    "dk_power_management": true,           // (Default: false) If true, checks kakera power in $tu and only uses $dk if needed.
+                                           // NOTE: This is most effective when your gold badge is maxed out, as it prevents wasting full charges.
 
-    "series_snipe_mode": true,             // (Default: false) Enable external series sniping (heart claims).
-    "series_wishlist": ["Series Name 1"],  // List of series names for heart sniping.
-    "series_snipe_delay": 3,               // (Default: 3) Delay (seconds) before claiming an external series snipe.
+    // --- EXTERNAL SNIPING (For characters rolled by OTHERS) ---
+    // These are always active if enabled, regardless of the "rolling" status.
+    "snipe_mode": true,                    // (Default: false) Enable external wishlist sniping.
+    "wishlist": ["Character Name 1", "Character Name 2"],
+    "snipe_delay": 2,                      // (Default: 2) Delay (seconds) before sniping an external wishlist or kakera value character.
 
-    "kakera_reaction_snipe_mode": false,   // (Default: false) Enable external kakera REACTION sniping (clicks kakera buttons).
+    "series_snipe_mode": true,             // (Default: false) Enable external series sniping.
+    "series_wishlist": ["Series Name 1"],
+    "series_snipe_delay": 3,               // (Default: 3) Delay (seconds) before sniping an external series character.
+
+    "kakera_reaction_snipe_mode": false,   // (Default: false) Enable sniping of kakera reaction buttons on any Mudae message.
     "kakera_reaction_snipe_delay": 0.75,   // (Default: 0.75) Delay (seconds) before clicking an external kakera reaction.
 
-    // Reactive Sniping Settings (for characters/kakera from YOUR OWN rolls - Only active if "rolling: true")
-    "reactive_snipe_on_own_rolls": true,   // (Default: true) Enable/disable INSTANT reactive heart claims AND kakera clicks during YOUR OWN rolls.
-                                           // If true, uses wishlist, series_wishlist, and kakera_snipe_threshold (if kakera_snipe_mode is true) as criteria for heart claims.
-                                           // Kakera on these reactively claimed characters will also be clicked.
-                                           // If false, all claims/kakera clicks for own rolls happen after the roll batch is complete.
+    // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
+    // Only active if "rolling: true".
+    "reactive_snipe_on_own_rolls": true,   // (Default: true) Enable/disable INSTANT claims during your own rolls.
+                                           // If false, all claims happen after the roll batch is complete.
 
-    // Kakera Threshold Settings (used for BOTH reactive self-roll HEART claims AND external kakera value HEART snipes)
-    "kakera_snipe_mode": true,             // (Default: false) If true, enables `kakera_snipe_threshold` as a criterion for HEART claims for:
-                                           //    1. INSTANT reactive heart claims during own rolls (if "rolling" AND reactive_snipe_on_own_rolls are true).
-                                           //    2. DELAYED external kakera value-only heart snipes (uses `snipe_delay`).
-    "kakera_snipe_threshold": 100,         // (Default: 0) Minimum kakera value to trigger HEART claims mentioned above if `kakera_snipe_mode` is true.
+    // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
+    "kakera_snipe_mode": true,             // (Default: false) If true, enables heart claims based on kakera value for:
+                                           //    1. INSTANT reactive claims on your own rolls.
+                                           //    2. DELAYED external snipes on others' rolls.
+    "kakera_snipe_threshold": 100,         // (Default: 0) Minimum kakera value to trigger the heart claims above.
 
-    // Other (Only active if "rolling: true")
-    "snipe_ignore_min_kakera_reset": false // (Default: false) If true, for post-roll general claims, min_kakera is effectively 0 if your claim reset is <1hr away.
-                                           // This does NOT affect reactive sniping or external kakera value sniping thresholds.
+    // --- OTHER ---
+    "snipe_ignore_min_kakera_reset": false // (Default: false) If true, sets post-roll min_kakera to 0 if your claim reset is <1hr away.
   }
   // Add more presets for other accounts here, separated by commas.
 }
@@ -110,7 +117,7 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
 
 Self-bots require your Discord account token. **This token grants full access to your account – keep it extremely private! Sharing it is like giving away your password.** It is recommended to use this bot on an alternative account.
 
-1.  **Open Discord in your web browser** (e.g., Chrome, Chrome, Firefox). *Not the desktop app.* 
+1.  **Open Discord in your web browser** (e.g., Chrome, Firefox). *Not the desktop app.*
 2.  Press **F12** to open Developer Tools.
 3.  Navigate to the **`Console`** tab.
 4.  Paste the following code snippet into the console and press Enter:
