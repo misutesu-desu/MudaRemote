@@ -43,7 +43,7 @@ COLORS = {
 }
 
 # Define claim and kakera emojis at the top level
-CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
+CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', 'castle_DarkRed']
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
 
 
@@ -97,7 +97,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_reactive_self_snipe_preset, rolling_enabled,
             kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
             humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
-            dk_power_management):
+            dk_power_management, skip_initial_commands):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -140,6 +140,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     
     # NEW: DK Power Management setting
     client.dk_power_management = dk_power_management
+    client.skip_initial_commands = skip_initial_commands
 
     async def health_monitor_task():
         """Monitors gateway connection and forces a restart if disconnected for too long."""
@@ -172,6 +173,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled:
             log_function(f"[{client.muda_name}] Delay: {delay_seconds}s", preset_name, "INFO")
             log_function(f"[{client.muda_name}] Key Mode: {'On' if key_mode else 'Off'}", preset_name, "INFO")
+            log_function(f"[{client.muda_name}] Skip Initial Cmds: {'On' if client.skip_initial_commands else 'Off'}", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Start Delay: {start_delay}s", preset_name, "INFO")
         log_function(f"[{client.muda_name}] Ext. WL Snipe: {'On' if snipe_mode else 'Off'}", preset_name, "INFO")
         if snipe_mode:
@@ -223,15 +225,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.rolling_enabled:
             try:
-                log_function(f"[{client.muda_name}] Initial commands (rolling enabled)...", preset_name, "INFO")
-                await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
-                # NEW: Conditionally send $dk based on the new setting
-                if not client.dk_power_management:
-                    await channel.send(f"{client.mudae_prefix}dk"); await asyncio.sleep(1.0)
+                if client.skip_initial_commands:
+                    log_function(f"[{client.muda_name}] Skipping limroul/dk/daily; going straight to $tu.", preset_name, "INFO")
+                    await check_status(client, channel, client.mudae_prefix)
                 else:
-                    log_function(f"[{client.muda_name}] Skipping initial $dk due to DK Power Management.", preset_name, "INFO")
-                await channel.send(f"{client.mudae_prefix}daily"); await asyncio.sleep(1.0)
-                await check_status(client, channel, client.mudae_prefix)
+                    log_function(f"[{client.muda_name}] Initial commands (rolling enabled)...", preset_name, "INFO")
+                    await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
+                    # NEW: Conditionally send $dk based on the new setting
+                    if not client.dk_power_management:
+                        await channel.send(f"{client.mudae_prefix}dk"); await asyncio.sleep(1.0)
+                    else:
+                        log_function(f"[{client.muda_name}] Skipping initial $dk due to DK Power Management.", preset_name, "INFO")
+                    await channel.send(f"{client.mudae_prefix}daily"); await asyncio.sleep(1.0)
+                    await check_status(client, channel, client.mudae_prefix)
             except discord.errors.Forbidden as e: log_function(f"[{client.muda_name}] Err: Forbidden in setup (rolling) {e}", preset_name, "ERROR"); await client.close()
             except Exception as e: log_function(f"[{client.muda_name}] Err: Unexpected in setup (rolling) {e}", preset_name, "ERROR"); await client.close()
         else:
@@ -865,6 +871,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     
     # NEW: Load DK Power Management setting
     dk_power_management_p = preset_data.get("dk_power_management", False)
+    # NEW: Load Skip Initial Commands setting
+    skip_initial_commands_p = preset_data.get("skip_initial_commands", False)
 
     restart_delay = 60 # Seconds to wait before restarting a bot instance
     while True:
@@ -879,7 +887,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 enable_reactive_self_snipe_preset, rolling_enabled_preset,
                 kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p,
                 humanization_enabled_p, humanization_window_p, humanization_inactivity_p,
-                dk_power_management_p
+                dk_power_management_p, skip_initial_commands_p
             )
             print_log(f"Bot instance for '{preset_name}' has stopped normally. Restarting in {restart_delay} seconds...", preset_name, "RESET")
         except Exception as e:
@@ -944,6 +952,9 @@ def validate_preset(preset_name, preset_data):
     # NEW: Validate DK Power Management key
     if "dk_power_management" in preset_data and not isinstance(preset_data["dk_power_management"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'dk_power_management' should be a boolean.\033[0m")
+    # NEW: Validate Skip Initial Commands key
+    if "skip_initial_commands" in preset_data and not isinstance(preset_data["skip_initial_commands"], bool):
+        print(f"\033[91mWarn in preset '{preset_name}': 'skip_initial_commands' should be a boolean.\033[0m")
     return True
 
 def main_menu():
