@@ -472,7 +472,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.enable_reactive_self_snipe: log_text += " (Reactive Snipe ON)"
         else: log_text += " (Reactive Snipe OFF)"
         log_function(f"[{client.muda_name}] {log_text}", client.preset_name, "INFO")
-        start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=0.5)
         client.is_actively_rolling = True; client.interrupt_rolling = False
         for i in range(rolls_left):
             if client.interrupt_rolling:
