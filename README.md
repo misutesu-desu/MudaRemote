@@ -7,6 +7,8 @@
 
 ---
 
+Join our [discord server](https://discord.gg/4WHXkDzuZx)
+
 ## 🚀 MudaRemote: Enhance Your Mudae Experience (Use Responsibly!)
 
 MudaRemote is a Python-based self-bot designed to automate various tasks for the Discord bot Mudae. It offers features like real-time sniping and intelligent claiming. **However, using self-bots is against Discord's Terms of Service and may lead to account suspension or ban.** Please use with extreme caution and understand the risks involved.
