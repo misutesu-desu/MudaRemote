@@ -159,4 +159,3 @@ Contributions are welcome! Feel free to report issues, suggest features, or subm
 
 ---
 **License:** [MIT License](LICENSE)
-```
