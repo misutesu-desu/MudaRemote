@@ -25,7 +25,7 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
 *   **🚶‍♂️ Humanized Waiting (NEW!):** Simulates human behavior by waiting for a random period and for channel inactivity before resuming actions after a reset, significantly reducing predictability.
 *   **💡 DK Power Management (NEW!):** Intelligently checks your kakera reaction power via `$tu` and only uses `$dk` when power is insufficient for a reaction, saving charges.
 *   **🔑 Key Mode:** Enables continuous rolling for kakera collection, even when character claims are on cooldown.
-*   **⏩ Slash Roll Dispatch (NEW!):** Optional feature to send roll commands (`wa`, `h`, `m`, etc.) using Discord's faster, less rate-limited Slash Command infrastructure instead of text commands.
+*   **⏩ Slash Roll Dispatch (NEW!):** Optional feature to send roll commands (`wa`, `h`, `m`, etc.) using Discord's Slash Command infrastructure instead of text commands.
 *   **👯 Multi-Account Support:** Run multiple bot instances simultaneously.
 *   **⏱️ Customizable Delays & Roll Speed:** Fine-tune all action delays and the speed of roll commands.
 *   **🗂️ Easy Preset Configuration:** Manage all settings in a single `presets.json` file.
