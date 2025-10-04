@@ -26,7 +26,9 @@
     "humanization_enabled": true,
     "humanization_window_minutes": 30,
     "humanization_inactivity_seconds": 5,
-    "dk_power_management": true
+    "dk_power_management": true,
+    "skip_initial_commands": false,
+    "use_slash_rolls": true
   },
   "Preset_2_Kakera_Focus_KeyMode": {
     "token": "YOUR_DISCORD_TOKEN_2",
@@ -55,7 +57,9 @@
     "humanization_enabled": true,
     "humanization_window_minutes": 50,
     "humanization_inactivity_seconds": 10,
-    "dk_power_management": false
+    "dk_power_management": false,
+    "skip_initial_commands": false,
+    "use_slash_rolls": false
   },
   "Preset_3_Casual_Roller": {
     "token": "YOUR_DISCORD_TOKEN_3",
@@ -84,7 +88,9 @@
     "humanization_enabled": false,
     "humanization_window_minutes": 40,
     "humanization_inactivity_seconds": 5,
-    "dk_power_management": false
+    "dk_power_management": false,
+    "skip_initial_commands": true,
+    "use_slash_rolls": false
   },
   "Preset_4_Aggressive_HighValue_Sniping": {
     "token": "YOUR_DISCORD_TOKEN_4",
@@ -113,7 +119,9 @@
     "humanization_enabled": true,
     "humanization_window_minutes": 15,
     "humanization_inactivity_seconds": 3,
-    "dk_power_management": true
+    "dk_power_management": true,
+    "skip_initial_commands": false,
+    "use_slash_rolls": true
   },
   "Preset_5_Snipe_Only_Dedicated": {
     "token": "YOUR_DISCORD_TOKEN_5",
@@ -142,6 +150,39 @@
     "humanization_enabled": false,
     "humanization_window_minutes": 40,
     "humanization_inactivity_seconds": 5,
-    "dk_power_management": false
+    "dk_power_management": false,
+    "skip_initial_commands": true,
+    "use_slash_rolls": true
+  },
+  "Preset_6_Max_Roll_Speed_Slash_Test": {
+    "token": "YOUR_DISCORD_TOKEN_6",
+    "prefix": "@@",
+    "channel_id": 445566778899001122,
+    "roll_command": "w",
+    "delay_seconds": 0.5,
+    "mudae_prefix": "$",
+    "min_kakera": 100,
+    "rolling": true,
+    "key_mode": false,
+    "start_delay": 5,
+    "roll_speed": 0.1,
+    "snipe_mode": false,
+    "wishlist": [],
+    "snipe_delay": 2,
+    "series_snipe_mode": false,
+    "series_wishlist": [],
+    "series_snipe_delay": 2,
+    "reactive_snipe_on_own_rolls": true,
+    "kakera_snipe_mode": false,
+    "kakera_snipe_threshold": 0,
+    "snipe_ignore_min_kakera_reset": false,
+    "kakera_reaction_snipe_mode": true,
+    "kakera_reaction_snipe_delay": 0.6,
+    "humanization_enabled": false,
+    "humanization_window_minutes": 30,
+    "humanization_inactivity_seconds": 5,
+    "dk_power_management": false,
+    "skip_initial_commands": true,
+    "use_slash_rolls": true
   }
 }
