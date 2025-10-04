@@ -380,19 +380,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not cmd:
             return
 
+        normalized = cmd.lstrip('/')
+
         # Normalize to always call slash handler with leading slash for clarity
         if client.use_slash_rolls:
-            slash_name = cmd if cmd.startswith("/") else f"/{cmd}"
+            slash_target = normalized
+            slash_override_map = {"w": "wx", "h": "hx", "m": "mx"}
+            slash_target = slash_override_map.get(slash_target.lower(), slash_target)
+            slash_name = slash_target if slash_target.startswith("/") else f"/{slash_target}"
             sent = await _trigger_mudae_slash(channel, slash_name)
             if sent:
                 return
             if not client.use_slash_rolls:
                 # Slash mode toggled off due to failures; fall through to text command
-                normalized = cmd.lstrip('/')
                 await channel.send(f"{client.mudae_prefix}{normalized}")
                 return
 
-        normalized = cmd.lstrip('/')
         await channel.send(f"{client.mudae_prefix}{normalized}")
 
     @client.event
