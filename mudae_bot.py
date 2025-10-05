@@ -1061,7 +1061,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not client.humanization_enabled:
             # Fallback to the old, simple wait logic if humanization is disabled
             wait_seconds = (base_reset_minutes * 60) + client.delay_seconds
-            if wait_seconds <= 0: wait_seconds = client.delay_seconds + 1
+            if wait_seconds <= 0:
+                wait_seconds = max(client.delay_seconds + 60, 240)
             end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_seconds)
             log_function(f"[{client.muda_name}] Wait {reason}: {wait_seconds:.0f}s", preset_name, "RESET")
             await asyncio.sleep(wait_seconds)
@@ -1072,9 +1073,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Minimal log: choose a random time after reset and then ensure brief inactivity
         
         # 1. Calculate the random wait time
-        min_wait_sec = base_reset_minutes * 60
-        max_wait_sec = min_wait_sec + (client.humanization_window_minutes * 60)
-        random_wait_seconds = random.uniform(min_wait_sec, max_wait_sec)
+        min_wait_sec = max(0.0, base_reset_minutes * 60)
+        window_sec = max(0.0, client.humanization_window_minutes * 60)
+
+        if min_wait_sec <= 0:
+            inferred_wait = None
+            if reason and reason.lower().startswith("claim") and client.next_claim_reset_at_utc:
+                try:
+                    inferred_wait = (client.next_claim_reset_at_utc - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+                except Exception:
+                    inferred_wait = None
+            if inferred_wait and inferred_wait > 0:
+                min_wait_sec = inferred_wait
+            if min_wait_sec <= 0:
+                min_wait_sec = max(client.delay_seconds + 60, 240)
+
+        max_wait_sec = min_wait_sec + window_sec
+        if window_sec <= 0:
+            random_wait_seconds = min_wait_sec
+        else:
+            random_wait_seconds = random.uniform(min_wait_sec, max_wait_sec)
         
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=random_wait_seconds)
         log_function(f"[{client.muda_name}] Humanized {reason}: ~{random_wait_seconds/60:.1f}m", preset_name, "RESET")
