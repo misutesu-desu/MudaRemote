@@ -522,6 +522,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         error_count = 0; max_retries = 5
         tu_message_content = None
 
+        def parse_hours_minutes(match_obj):
+            """Safely extracts hour/minute integers from a regex match."""
+            if not match_obj:
+                return 0, 0
+            groups = match_obj.groups(default="") if hasattr(match_obj, "groups") else ()
+            h_str = groups[0] if len(groups) >= 1 else ""
+            m_str = groups[1] if len(groups) >= 2 else ""
+
+            def parse_component(value: str) -> int:
+                digits = re.sub(r"\D", "", value or "")
+                if not digits:
+                    return 0
+                try:
+                    return int(digits)
+                except ValueError:
+                    return 0
+
+            return parse_component(h_str), parse_component(m_str)
+
         while True:
             await channel.send(f"{mudae_prefix}tu"); await asyncio.sleep(2.5)
             tu_message_content = None
@@ -635,7 +654,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 match_rt_cd_pt = re.search(r"a recarga do \$rt ainda não acabou\. tempo restante: \*\*(\d+h)?\s*(\d+)\*\* min", content_lower)
                 match_rt_cd = match_rt_cd_en or match_rt_cd_pt
                 if match_rt_cd:
-                    h_s = match_rt_cd.group(1); h_rt = int(h_s[:-1]) if h_s else 0; m_rt = int(match_rt_cd.group(2))
+                    h_rt, m_rt = parse_hours_minutes(match_rt_cd)
                     client.rt_available = False
                     log_function(f"[{client.muda_name}] RT: No. Reset: {h_rt}h {m_rt}m.", preset_name, "INFO")
                 else:
@@ -653,7 +672,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         match_can_claim_pt = re.search(r"você __pode__ se casar agora mesmo!.*?a próxima reinicialização é em .*?\*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
         match_cant_claim_en = re.search(r"can't claim for another \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
         # PT exact phrase: "Calma aí, falta um tempo antes que você possa se casar novamente **59** min."
-        match_cant_claim_pt = re.search(r"calma aí, falta um tempo antes que você possa se casar novamente \*\*(\d+)\*\* min\.?", content_lower)
+        match_cant_claim_pt = re.search(r"calma a[ií], falta um tempo antes que (?:você|voce) possa se casar novamente \*\*(\d+h)?\s*(\d+)\*\* min\.?", content_lower)
 
         match_c = None; match_c_wait = None
         if match_can_claim_en: client.claim_right_available = True; match_c = match_can_claim_en; lang_log_suffix = " (EN)"
@@ -662,7 +681,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         elif match_cant_claim_pt: client.claim_right_available = False; match_c_wait = match_cant_claim_pt; lang_log_suffix = " (PT)"
 
         if match_c:
-            h_s = match_c.group(1); h = int(h_s[:-1]) if h_s else 0; m = int(match_c.group(2))
+            h, m = parse_hours_minutes(match_c)
             log_function(f"[{client.muda_name}] Claim: Yes. Reset: {h}h {m}m.{lang_log_suffix}", preset_name, "INFO")
             if (h * 60 + m) * 60 <= 3600 and client.snipe_ignore_min_kakera_reset: client.current_min_kakera_for_roll_claim = 0
             else: client.current_min_kakera_for_roll_claim = client.min_kakera
@@ -675,7 +694,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 log_function(f"[{client.muda_name}] Failed to compute next claim reset timestamp: {e}", preset_name, "ERROR")
         elif match_c_wait:
-            h_s = match_c_wait.group(1); h = int(h_s[:-1]) if h_s else 0; m = int(match_c_wait.group(2))
+            h, m = parse_hours_minutes(match_c_wait)
             log_function(f"[{client.muda_name}] Claim: No. Reset: {h}h {m}m.{lang_log_suffix}", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
 
@@ -713,9 +732,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] Kakera React: Yes.", preset_name, "KAKERA")
             elif kakera_wait_en or kakera_wait_pt:
                 match_kr = kakera_wait_en or kakera_wait_pt
-                h_s = match_kr.group(1)
-                h = int(h_s[:-1]) if h_s else 0
-                m = int(match_kr.group(2)) if match_kr.group(2) else 0
+                h, m = parse_hours_minutes(match_kr)
                 minutes_to_reset = h * 60 + m
                 client.kakera_react_available = False
                 client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=minutes_to_reset)
@@ -732,7 +749,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             match_next_reset_pt = re.search(r"a próxima reinicialização .*?\*\*(\d+h)?\s*(\d+)\*\* min", content_lower)
             match_next_reset = match_next_reset_en or match_next_reset_pt
             if match_next_reset:
-                h_s2 = match_next_reset.group(1); h2 = int(h_s2[:-1]) if h_s2 else 0; m2 = int(match_next_reset.group(2))
+                h2, m2 = parse_hours_minutes(match_next_reset)
                 client.next_claim_reset_at_utc = now_utc + datetime.timedelta(minutes=(h2 * 60 + m2))
                 # Minimal: do not log this secondary parse to avoid duplication
         except Exception as e:
