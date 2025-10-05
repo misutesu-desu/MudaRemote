@@ -503,15 +503,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.dk_stock_count == 0:
             return
         
-        # Check if $dk is on cooldown by looking for cooldown messages
-        # EN: "You may vote again in **4h 03** min." (appears when on cooldown)
-        # PT-BR: "Você pode votar novamente em **11h 58** min."
-        dk_on_cooldown = bool(re.search(r"(?:you may vote again in|você pode votar novamente em|voce pode votar novamente em)\s*\*\*\d+h?\s*\d+\*\*\s*min", content_lower))
-        
-        # If $dk is on cooldown, we can't activate it even if we have stock
-        if dk_on_cooldown:
-            log_function(f"[{client.muda_name}] DK on cooldown (Stock: {client.dk_stock_count})", preset_name, "INFO")
-            return
+        # If we have stocked $dk, we can always use them
+        # The "vote cooldown" message is not about using existing stock
+        # No cooldown check needed - having stock means we can activate them
 
         try:
             # Power line is language-agnostic ("Power: **100%**"), allow any case
