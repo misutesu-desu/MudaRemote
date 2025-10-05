@@ -149,6 +149,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     # NEW: DK Power Management setting
     client.dk_power_management = dk_power_management
     client.skip_initial_commands = skip_initial_commands
+    client.dk_stock_count = 0  # Track number of stocked $dk available
 
     # NEW: Claim tracking and sniping state
     client.next_claim_reset_at_utc = None  # Parsed from $tu: "next claim reset in"
@@ -482,11 +483,33 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def handle_dk_power_management(client, channel, tu_content):
         """
         NEW: Analyzes $tu output to decide if $dk needs to be sent.
+        Checks for stocked $dk and activates them when power is insufficient.
         """
-        # Minimal logging: only log on action or errors
-        # Support EN and PT-BR variants for "$dk is ready!" / "$dk está pronto!"
         content_lower = tu_content.lower()
-        if not ("$dk is ready!" in content_lower or "$dk está pronto!" in content_lower or "$dk esta pronto!" in content_lower):
+        
+        # First, parse the number of stocked $dk available
+        # Pattern: "**2** $dk available. (Max)" or "**1** $dk available. Next in **5h 32** min."
+        # EN: "**N** $dk available"
+        # PT-BR: "**N** $dk disponível" or "**N** $dk disponíveis" or "**N** $dk no estoque"
+        dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque)", content_lower)
+        if dk_stock_match:
+            client.dk_stock_count = int(dk_stock_match.group(1))
+            log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
+        else:
+            # If no stock info found, assume 0
+            client.dk_stock_count = 0
+        
+        # Check if $dk is ready (not on cooldown)
+        # Support EN and PT-BR variants for "$dk is ready!" / "$dk está pronto!"
+        dk_ready = ("$dk is ready!" in content_lower or "$dk está pronto!" in content_lower or "$dk esta pronto!" in content_lower)
+        
+        # Only proceed if we have stocked $dk available
+        if client.dk_stock_count == 0:
+            return
+        
+        # If $dk is not ready (on cooldown), we can't activate it even if we have stock
+        if not dk_ready:
+            log_function(f"[{client.muda_name}] DK on cooldown (Stock: {client.dk_stock_count})", preset_name, "INFO")
             return
 
         try:
@@ -504,10 +527,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             current_power = int(power_match.group(1))
             consumption_cost = int(consumption_match.group(1))
             
+            # Activate $dk if current power is insufficient for a kakera reaction
             if current_power < consumption_cost:
-                log_function(f"[{client.muda_name}] DK: activate ({current_power}%<{consumption_cost}%)", preset_name, "KAKERA")
+                log_function(f"[{client.muda_name}] DK: activate ({current_power}%<{consumption_cost}%, Stock: {client.dk_stock_count})", preset_name, "KAKERA")
                 await channel.send(f"{client.mudae_prefix}dk")
                 await asyncio.sleep(1.5) # Wait a bit after sending command
+                # Decrement stock count (will be refreshed on next $tu)
+                client.dk_stock_count = max(0, client.dk_stock_count - 1)
             else:
                 pass
 
