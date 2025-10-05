@@ -1064,7 +1064,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if wait_seconds <= 0:
                 wait_seconds = max(client.delay_seconds + 60, 240)
             end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_seconds)
-            log_function(f"[{client.muda_name}] Wait {reason}: {wait_seconds:.0f}s", preset_name, "RESET")
+            log_function(
+                f"[{client.muda_name}] Wait {reason}: {wait_seconds:.0f}s (~{wait_seconds/60:.1f}m) | starts at {end_time.strftime('%Y-%m-%d %H:%M:%S')}",
+                preset_name,
+                "RESET",
+            )
             await asyncio.sleep(wait_seconds)
             log_function(f"[{client.muda_name}] {reason} done.", preset_name, "RESET")
             return
@@ -1095,7 +1099,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             random_wait_seconds = random.uniform(min_wait_sec, max_wait_sec)
         
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=random_wait_seconds)
-        log_function(f"[{client.muda_name}] Humanized {reason}: ~{random_wait_seconds/60:.1f}m", preset_name, "RESET")
+        log_function(
+            f"[{client.muda_name}] Humanized {reason}: ~{random_wait_seconds/60:.1f}m | starts at {end_time.strftime('%Y-%m-%d %H:%M:%S')}",
+            preset_name,
+            "RESET",
+        )
         await asyncio.sleep(random_wait_seconds)
 
         # 2. Wait for channel inactivity
