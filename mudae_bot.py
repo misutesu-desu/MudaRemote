@@ -1003,17 +1003,37 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera logic: click all available kakera buttons
         if is_kakera:
-            if not is_kakera_reaction_allowed():
-                log_function(f"{log_px} Kakera blocked by cooldown: {char_name}", client.preset_name, "KAKERA")
-                return False
+            cooldown_active = not is_kakera_reaction_allowed()
             log_sx = f": {char_name}"
             any_button_clicked = False
+            
+            # Check if KakeraP is available (doesn't consume power)
+            has_kakera_p = False
+            if msg.components:
+                for comp in msg.components:
+                    for btn in comp.children:
+                        if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name == 'kakeraP':
+                            has_kakera_p = True
+                            break
+                    if has_kakera_p:
+                        break
+            
+            # If on cooldown and no KakeraP, block the action
+            if cooldown_active and not has_kakera_p:
+                log_function(f"{log_px} Kakera blocked by cooldown: {char_name}", client.preset_name, "KAKERA")
+                return False
+            
             if msg.components:
                 for comp in msg.components:
                     for btn in comp.children:
                         if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in KAKERA_EMOJIS:
+                            emoji_name = btn.emoji.name
+                            
+                            # Skip non-KakeraP kakera if on cooldown
+                            if cooldown_active and emoji_name != 'kakeraP':
+                                continue
+                            
                             try:
-                                emoji_name = btn.emoji.name
                                 log_function(f"{log_px} Kakera ({emoji_name}){log_sx}", client.preset_name, "KAKERA")
                                 await btn.click()
                                 any_button_clicked = True
