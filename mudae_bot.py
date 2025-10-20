@@ -95,6 +95,16 @@ def is_character_embed(embed):
     return has_image and not has_thumbnail
 
 
+def has_claim_option(message, embed):
+    if not message.components:
+        return True
+    for comp in message.components:
+        for btn in comp.children:
+            if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in CLAIM_EMOJIS:
+                return True
+    return False
+
+
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
@@ -923,7 +933,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # If it's not a kakera message, check if it's a claimable character.
             # This prevents processing embeds that look like characters but have no claim buttons (e.g., special event messages).
             elif (client.claim_right_available or key_mode_only_kakera_param):
-                is_claimable_char = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in msg.components for b in c.children)
+                is_claimable_char = has_claim_option(msg, embed)
                 if is_claimable_char:
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
@@ -995,6 +1005,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         embed = msg.embeds[0]
         char_name = embed.author.name if embed.author and embed.author.name else "Unknown"
         log_px = f"[{client.muda_name}]"
+        can_claim_by_reaction = has_claim_option(msg, embed)
 
         # Gate character snipes by our local cooldown awareness (kakera is not gated; RT claims bypass this gate)
         if not is_kakera and not is_rt_claim and not is_character_snipe_allowed():
@@ -1086,28 +1097,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             return False
         
         # Fallback to reaction if no button was found or clicked (and it's not an RT attempt)
-        if not btn_clicked_ok and not is_rt_claim:
-            log_function(f"{log_px} No btn for {char_name}. Fallback react.", preset_name, "INFO")
-            try:
-                log_function(f"{log_px} {log_action_desc}{log_sx} (react)", client.preset_name, log_ty)
-                await msg.add_reaction("💖")
-                await asyncio.sleep(1.5)
-                # Register snipe watch to track the outcome
+        if not btn_clicked_ok:
+            if can_claim_by_reaction:
+                log_function(f"{log_px} No btn for {log_action_desc}{log_sx}. Fallback react.", preset_name, "INFO")
                 try:
-                    client.snipe_watch[msg.id] = {
-                        'channel_id': msg.channel.id,
-                        'char_name': char_name,
-                        'ts': time.time(),
-                    }
-                except Exception:
-                    pass
-                return True
-            except Exception as e:
-                log_function(f"{log_px} {log_action_desc} React Fail{log_sx}: {e}", preset_name, "ERROR")
-                return False
-        elif not btn_clicked_ok:
-            log_function(f"{log_px} No btn for {log_action_desc} on {char_name}", preset_name, "INFO")
-        
+                    log_function(f"{log_px} {log_action_desc}{log_sx} (react)", client.preset_name, log_ty)
+                    await msg.add_reaction("💖")
+                    await asyncio.sleep(1.5)
+                    try:
+                        client.snipe_watch[msg.id] = {
+                            'channel_id': msg.channel.id,
+                            'char_name': char_name,
+                            'ts': time.time(),
+                        }
+                    except Exception:
+                        pass
+                    return True
+                except Exception as e:
+                    log_function(f"{log_px} {log_action_desc} React Fail{log_sx}: {e}", preset_name, "ERROR")
+                    return False
+            else:
+                log_function(f"{log_px} No btn for {log_action_desc} on {char_name}", preset_name, "INFO")
+
         return False
 
     async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset"):
@@ -1231,8 +1242,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             is_k_snipe_criterion = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if is_wl or is_series_wl or is_k_snipe_criterion:
-                # Also ensure a claim button is present before attempting to snipe.
-                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                # Also ensure a claim option is present before attempting to snipe.
+                if has_claim_option(message, embed):
                     if await claim_character(client, message.channel, message, is_kakera=False):
                         client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
                         # If a character is claimed, also check for and click any kakera buttons.
@@ -1246,7 +1257,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 desc = embed.description or "";
                 first_line = desc.splitlines()[0].lower()
                 if any(kw in first_line for kw in client.series_wishlist):
-                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                    if has_claim_option(message, embed):
                         client.series_sniped_messages.add(message.id); s_name = embed.author.name
                         log_function(f"[{client.muda_name}] Ext.Series Snipe: {s_name} (Delay {client.series_snipe_delay}s)", preset_name, "CLAIM")
                         await asyncio.sleep(client.series_snipe_delay)
@@ -1256,7 +1267,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if process_further and client.snipe_mode and client.wishlist and message.id not in client.sniped_messages and is_character_snipe_allowed():
                 char_name_l = embed.author.name.lower()
                 if any(w == char_name_l for w in client.wishlist):
-                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                    if has_claim_option(message, embed):
                         client.sniped_messages.add(message.id)
                         log_function(f"[{client.muda_name}] Ext.Char Snipe: {embed.author.name} (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
                         await asyncio.sleep(client.snipe_delay)
@@ -1270,7 +1281,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     try: k_val = int(match_k_ext.group(1).replace(",",""))
                     except ValueError: pass
                 if k_val >= client.kakera_snipe_threshold:
-                    if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in CLAIM_EMOJIS for c in message.components for b in c.children):
+                    if has_claim_option(message, embed):
                         client.kakera_value_sniped_messages.add(message.id)
                         log_function(f"[{client.muda_name}] Ext.Kakera Val. Snipe: {embed.author.name} ({k_val}) (Delay {client.snipe_delay}s)", preset_name, "CLAIM")
                         await asyncio.sleep(client.snipe_delay)
