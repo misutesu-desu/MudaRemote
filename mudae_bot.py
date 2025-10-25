@@ -105,6 +105,33 @@ def has_claim_option(message, embed):
     return False
 
 
+def count_chaos_keys(embed):
+    """
+    Counts the number of chaos keys (keys with value >= 10) from the embed description.
+    Keys appear in the format: <:chaoskey:ID> (**N**) where N is the key level.
+    Returns the count of keys with level >= 10.
+    """
+    if not embed or not embed.description:
+        return 0
+    
+    desc = embed.description
+    # Pattern to match: <:chaoskey:...> (**N**)
+    # The key emoji can be "chaoskey" or similar variations
+    key_pattern = r'<:(?:chaos)?key:\d+>\s*\(\*\*(\d+)\*\*\)'
+    matches = re.findall(key_pattern, desc, re.IGNORECASE)
+    
+    chaos_count = 0
+    for match in matches:
+        try:
+            key_level = int(match)
+            if key_level >= 10:
+                chaos_count += 1
+        except ValueError:
+            continue
+    
+    return chaos_count
+
+
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
@@ -113,7 +140,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_reactive_self_snipe_preset, rolling_enabled,
             kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
             humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
-            dk_power_management, skip_initial_commands, use_slash_rolls):
+            dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -160,6 +187,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.dk_power_management = dk_power_management
     client.skip_initial_commands = skip_initial_commands
     client.dk_stock_count = 0  # Track number of stocked $dk available
+    
+    # NEW: Only Chaos setting - only click kakera on characters with 10+ keys
+    client.only_chaos = only_chaos
 
     # NEW: Claim tracking and sniping state
     client.next_claim_reset_at_utc = None  # Parsed from $tu: "next claim reset in"
@@ -1014,6 +1044,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera logic: click all available kakera buttons
         if is_kakera:
+            # NEW: Check only_chaos setting - skip if character doesn't have 10+ keys
+            if client.only_chaos:
+                chaos_key_count = count_chaos_keys(embed)
+                if chaos_key_count == 0:
+                    log_function(f"{log_px} Kakera skipped (only_chaos): {char_name} (no 10+ keys)", client.preset_name, "KAKERA")
+                    return False
+            
             cooldown_active = not is_kakera_reaction_allowed()
             log_sx = f": {char_name}"
             any_button_clicked = False
@@ -1417,6 +1454,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     skip_initial_commands_p = preset_data.get("skip_initial_commands", False)
     # NEW: Slash roll dispatch toggle
     use_slash_rolls_p = preset_data.get("use_slash_rolls", False)
+    # NEW: Load Only Chaos setting
+    only_chaos_p = preset_data.get("only_chaos", False)
 
     restart_delay = 60 # Seconds to wait before restarting a bot instance
     while True:
@@ -1431,7 +1470,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 enable_reactive_self_snipe_preset, rolling_enabled_preset,
                 kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p,
                 humanization_enabled_p, humanization_window_p, humanization_inactivity_p,
-                dk_power_management_p, skip_initial_commands_p, use_slash_rolls_p
+                dk_power_management_p, skip_initial_commands_p, use_slash_rolls_p, only_chaos_p
             )
             print_log(f"Bot instance for '{preset_name}' has stopped normally. Restarting in {restart_delay} seconds...", preset_name, "RESET")
         except Exception as e:
@@ -1501,6 +1540,9 @@ def validate_preset(preset_name, preset_data):
     # NEW: Validate Skip Initial Commands key
     if "skip_initial_commands" in preset_data and not isinstance(preset_data["skip_initial_commands"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'skip_initial_commands' should be a boolean.\033[0m")
+    # NEW: Validate Only Chaos key
+    if "only_chaos" in preset_data and not isinstance(preset_data["only_chaos"], bool):
+        print(f"\033[91mWarn in preset '{preset_name}': 'only_chaos' should be a boolean.\033[0m")
     return True
 
 def main_menu():
