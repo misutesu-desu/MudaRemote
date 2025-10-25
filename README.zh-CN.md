@@ -93,8 +93,9 @@ MudaRemote 是一个基于 Python 的自用机器人 (self-bot)，旨在自动�
     "series_wishlist": ["Series Name 1"],
     "series_snipe_delay": 3,               
 
-    "kakera_reaction_snipe_mode": false,   
-    "kakera_reaction_snipe_delay": 0.75,   
+    "kakera_reaction_snipe_mode": false,   // (默认: false) 启用对任何Mudae消息上kakera反应按钮的狙击。
+    "kakera_reaction_snipe_delay": 0.75,   // (默认: 0.75) 点击外部kakera反应前的延迟（秒）。
+    "kakera_reaction_snipe_targets": [],   // (默认: []) 目标用户名列表。如果为空，狙击所有用户。如果设置，仅狙击这些用户拥有的角色。   
 
     // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
     "kakera_snipe_mode": true,             
