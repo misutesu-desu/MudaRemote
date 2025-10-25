@@ -93,8 +93,9 @@ MudaRemote는 디스코드 봇 Mudae의 다양한 작업을 자동화하도록 �
     "series_wishlist": ["Series Name 1"],
     "series_snipe_delay": 3,               
 
-    "kakera_reaction_snipe_mode": false,   
-    "kakera_reaction_snipe_delay": 0.75,   
+    "kakera_reaction_snipe_mode": false,   // (기본값: false) 모든 Mudae 메시지의 kakera 반응 버튼 스나이핑을 활성화합니다.
+    "kakera_reaction_snipe_delay": 0.75,   // (기본값: 0.75) 외부 kakera 반응을 클릭하기 전의 지연(초).
+    "kakera_reaction_snipe_targets": [],   // (기본값: []) 대상으로 할 사용자 이름 목록. 비어 있으면 모든 사용자를 스나이핑합니다. 설정되면 이 사용자들이 소유한 캠릭터만 스나이핑합니다.   
 
     // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
     "kakera_snipe_mode": true,             
