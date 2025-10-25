@@ -93,8 +93,9 @@ MudaRemoteは、DiscordボットMudaeのさまざまなタスクを自動化す�
     "series_wishlist": ["Series Name 1"],
     "series_snipe_delay": 3,               
 
-    "kakera_reaction_snipe_mode": false,   
-    "kakera_reaction_snipe_delay": 0.75,   
+    "kakera_reaction_snipe_mode": false,   // (デフォルト: false) 任意のMudaeメッセージのkakeraリアクションボタンのスナイプを有効にします。
+    "kakera_reaction_snipe_delay": 0.75,   // (デフォルト: 0.75) 外部kakeraリアクションをクリックする前の遅延（秒）。
+    "kakera_reaction_snipe_targets": [],   // (デフォルト: []) ターゲットとするユーザー名のリスト。空の場合、すべてのユーザーをスナイプします。設定されている場合、これらのユーザーが所有するキャラクターのみをスナイプします。   
 
     // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
     "kakera_snipe_mode": true,             
