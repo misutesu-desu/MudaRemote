@@ -93,8 +93,9 @@ MudaRemote est un self-bot basé sur Python conçu pour automatiser diverses tâ
     "series_wishlist": ["Series Name 1"],
     "series_snipe_delay": 3,               
 
-    "kakera_reaction_snipe_mode": false,   
-    "kakera_reaction_snipe_delay": 0.75,   
+    "kakera_reaction_snipe_mode": false,   // (Par défaut: false) Active le snipe des boutons de réaction kakera sur n'importe quel message Mudae.
+    "kakera_reaction_snipe_delay": 0.75,   // (Par défaut: 0.75) Délai (secondes) avant de cliquer sur une réaction kakera externe.
+    "kakera_reaction_snipe_targets": [],   // (Par défaut: []) Liste des noms d'utilisateurs à cibler. Si vide, snipe tous les utilisateurs. Si défini, snipe uniquement les personnages appartenant à ces utilisateurs.   
 
     // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
     "kakera_snipe_mode": true,             
