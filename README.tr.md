@@ -72,9 +72,12 @@ MudaRemote, Discord botu Mudae için çeşitli görevleri otomatikleştirmek üz
     // --- ADVANCED ROLLING / CLAIMING ---
     "roll_speed": 0.4,                     
     "key_mode": false,                     
-    "skip_initial_commands": false,        
-    "use_slash_rolls": false,              
-    "dk_power_management": true,           
+    "skip_initial_commands": false,        // (Varsayılan: false) True ise, başlangıçta $limroul, $dk ve $daily'yi atlar, doğrudan $tu'ya gider.
+    "use_slash_rolls": false,              // (Varsayılan: false) True ise, Discord'un slash komut API'sini kullanarak roll komutlarını göndermeye çalışır.
+    "dk_power_management": true,           // (Varsayılan: false) True ise, $tu'da kakera gücünü kontrol eder ve yalnızca gerekirse $dk kullanır.
+
+    // YENİ: Sadece Chaos Anahtarları Filtresi
+    "only_chaos": false,                   // (Varsayılan: false) True ise, sadece 10+ anahtarlı (chaos keys) karakterlerde kakera butonlarına tıklar.           
 
     // --- HUMANIZATION (Recommended for high-risk accounts) ---
     "humanization_enabled": true,          
@@ -97,8 +100,9 @@ MudaRemote, Discord botu Mudae için çeşitli görevleri otomatikleştirmek üz
     "kakera_snipe_mode": true,             
     "kakera_snipe_threshold": 100,         
 
-    // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
-    "reactive_snipe_on_own_rolls": true,   
+    // --- REAKTİF SNİPE (KENDİ rolllerinizden gelen karakterler için) ---
+    "reactive_snipe_on_own_rolls": true,   // (Varsayılan: true) Kendi rollleriniz sırasında ANINDA talepleri etkinleştirir/devre dışı bırakır (WL, Seri WL veya Kakera Eşiğine göre).
+    "reactive_snipe_delay": 0,             // (Varsayılan: 0) Kendi rolllerinizde reaktif snipe sırasında talep etmeden önce gecikme (saniye). Daha doğal görünmek için kullanışlıdır.   
 
     // --- OTHER ---
     "start_delay": 0,                      

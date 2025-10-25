@@ -72,9 +72,12 @@ MudaRemote 是一个基于 Python 的自用机器人 (self-bot)，旨在自动�
     // --- ADVANCED ROLLING / CLAIMING ---
     "roll_speed": 0.4,                     
     "key_mode": false,                     
-    "skip_initial_commands": false,        
-    "use_slash_rolls": false,              
-    "dk_power_management": true,           
+    "skip_initial_commands": false,        // (默认: false) 如果为true，启动时跳过$limroul、$dk和$daily，直接进入$tu。
+    "use_slash_rolls": false,              // (默认: false) 如果为true，尝试使用Discord的斜杠命令API发送抽卡命令。
+    "dk_power_management": true,           // (默认: false) 如果为true，在$tu中检查kakera力量，仅在必要时使用$dk。
+
+    // 新功能: 仅Chaos钥匙过滤器
+    "only_chaos": false,                   // (默认: false) 如果为true，仅在拥有10+钥匙（chaos keys）的角色上点击kakera按钮。           
 
     // --- HUMANIZATION (Recommended for high-risk accounts) ---
     "humanization_enabled": true,          
@@ -97,8 +100,9 @@ MudaRemote 是一个基于 Python 的自用机器人 (self-bot)，旨在自动�
     "kakera_snipe_mode": true,             
     "kakera_snipe_threshold": 100,         
 
-    // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
-    "reactive_snipe_on_own_rolls": true,   
+    // --- 响应式狙击（用于您自己抽卡中的角色） ---
+    "reactive_snipe_on_own_rolls": true,   // (默认: true) 启用/禁用在您自己抽卡期间的即时领取（基于WL、系列WL或Kakera阈值）。
+    "reactive_snipe_delay": 0,             // (默认: 0) 在您自己抽卡期间响应式狙击时领取前的延迟（秒）。有助于显得更自然。   
 
     // --- OTHER ---
     "start_delay": 0,                      

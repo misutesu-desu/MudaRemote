@@ -72,9 +72,12 @@ MudaRemote는 디스코드 봇 Mudae의 다양한 작업을 자동화하도록 �
     // --- ADVANCED ROLLING / CLAIMING ---
     "roll_speed": 0.4,                     
     "key_mode": false,                     
-    "skip_initial_commands": false,        
-    "use_slash_rolls": false,              
-    "dk_power_management": true,           
+    "skip_initial_commands": false,        // (기본값: false) true일 경우, 시작 시 $limroul, $dk, $daily를 건너뛰고 바로 $tu로 이동합니다.
+    "use_slash_rolls": false,              // (기본값: false) true일 경우, Discord의 슬래시 명령 API를 사용하여 롤 명령을 보냅니다.
+    "dk_power_management": true,           // (기본값: false) true일 경우, $tu에서 kakera 파워를 확인하고 필요한 경우에만 $dk를 사용합니다.
+
+    // 새 기능: Chaos 키만 필터
+    "only_chaos": false,                   // (기본값: false) true일 경우, 10+ 키(chaos keys)를 가진 캠릭터에서만 kakera 버튼을 클릭합니다.           
 
     // --- HUMANIZATION (Recommended for high-risk accounts) ---
     "humanization_enabled": true,          
@@ -97,8 +100,9 @@ MudaRemote는 디스코드 봇 Mudae의 다양한 작업을 자동화하도록 �
     "kakera_snipe_mode": true,             
     "kakera_snipe_threshold": 100,         
 
-    // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
-    "reactive_snipe_on_own_rolls": true,   
+    // --- 반응형 스나이핑 (자신의 롤에서 나온 캠릭터용) ---
+    "reactive_snipe_on_own_rolls": true,   // (기본값: true) 자신의 롤 중 즉각 클레임을 활성화/비활성화합니다(WL, 시리즈 WL 또는 Kakera 임계값 기반).
+    "reactive_snipe_delay": 0,             // (기본값: 0) 자신의 롤 중 반응형 스나이핑 시 클레임하기 전의 지연(초). 더 자연스럽게 보이는 데 유용합니다.   
 
     // --- OTHER ---
     "start_delay": 0,                      

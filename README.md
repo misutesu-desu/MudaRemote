@@ -81,6 +81,9 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
     // NEW: DK Power Management
     "dk_power_management": true,           // (Default: false) If true, checks kakera power in $tu and only uses $dk if necessary (needs $tu access).
 
+    // NEW: Only Chaos Keys Filter
+    "only_chaos": false,                   // (Default: false) If true, only clicks kakera buttons on characters with 10+ keys (chaos keys).
+
     // --- HUMANIZATION (Recommended for high-risk accounts) ---
     "humanization_enabled": true,          // (Default: false) If true, uses humanized waiting after resets.
     "humanization_window_minutes": 40,     // (Default: 40) Add a random wait up to this duration after the reset time.
@@ -104,6 +107,7 @@ MudaRemote is a Python-based self-bot designed to automate various tasks for the
 
     // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
     "reactive_snipe_on_own_rolls": true,   // (Default: true) Enable/disable INSTANT claims during your own rolls (based on WL, Series WL, or Kakera Threshold).
+    "reactive_snipe_delay": 0,             // (Default: 0) Delay (seconds) before claiming during reactive snipe on own rolls. Useful for appearing more natural.
 
     // --- OTHER ---
     "start_delay": 0,                      // (Default: 0) Delay (seconds) before the bot starts after being selected.

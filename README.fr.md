@@ -72,9 +72,12 @@ MudaRemote est un self-bot basé sur Python conçu pour automatiser diverses tâ
     // --- ADVANCED ROLLING / CLAIMING ---
     "roll_speed": 0.4,                     
     "key_mode": false,                     
-    "skip_initial_commands": false,        
-    "use_slash_rolls": false,              
-    "dk_power_management": true,           
+    "skip_initial_commands": false,        // (Par défaut: false) Si true, ignore $limroul, $dk et $daily au démarrage, va directement à $tu.
+    "use_slash_rolls": false,              // (Par défaut: false) Si true, tente d'envoyer les commandes de roll via l'API slash command de Discord.
+    "dk_power_management": true,           // (Par défaut: false) Si true, vérifie la puissance kakera dans $tu et n'utilise $dk que si nécessaire.
+
+    // NOUVEAU: Filtre Clés Chaos Uniquement
+    "only_chaos": false,                   // (Par défaut: false) Si true, clique uniquement sur les boutons kakera des personnages avec 10+ clés (clés chaos).           
 
     // --- HUMANIZATION (Recommended for high-risk accounts) ---
     "humanization_enabled": true,          
@@ -97,8 +100,9 @@ MudaRemote est un self-bot basé sur Python conçu pour automatiser diverses tâ
     "kakera_snipe_mode": true,             
     "kakera_snipe_threshold": 100,         
 
-    // --- REACTIVE SNIPING (For characters from YOUR OWN rolls) ---
-    "reactive_snipe_on_own_rolls": true,   
+    // --- SNIPE RÉACTIF (Pour les personnages de VOS PROPRES rolls) ---
+    "reactive_snipe_on_own_rolls": true,   // (Par défaut: true) Active/désactive les réclamations INSTANTANÉES pendant vos propres rolls (basé sur WL, Série WL ou Seuil Kakera).
+    "reactive_snipe_delay": 0,             // (Par défaut: 0) Délai (secondes) avant de réclamer pendant le snipe réactif sur vos propres rolls. Utile pour paraître plus naturel.   
 
     // --- OTHER ---
     "start_delay": 0,                      
