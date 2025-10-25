@@ -140,7 +140,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_reactive_self_snipe_preset, rolling_enabled,
             kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
             humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
-            dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos):
+            dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
+            reactive_snipe_delay):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -169,6 +170,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_snipe_mode_active = kakera_snipe_mode_preset
     client.kakera_snipe_threshold = kakera_snipe_threshold_preset
     client.enable_reactive_self_snipe = enable_reactive_self_snipe_preset
+    client.reactive_snipe_delay = reactive_snipe_delay
     client.rolling_enabled = rolling_enabled
     client.rt_available = False  # Updated after parsing $tu
 
@@ -1281,6 +1283,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if is_wl or is_series_wl or is_k_snipe_criterion:
                 # Also ensure a claim option is present before attempting to snipe.
                 if has_claim_option(message, embed):
+                    # Apply reactive snipe delay
+                    if client.reactive_snipe_delay > 0:
+                        await asyncio.sleep(client.reactive_snipe_delay)
                     if await claim_character(client, message.channel, message, is_kakera=False):
                         client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
                         # If a character is claimed, also check for and click any kakera buttons.
@@ -1456,6 +1461,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     use_slash_rolls_p = preset_data.get("use_slash_rolls", False)
     # NEW: Load Only Chaos setting
     only_chaos_p = preset_data.get("only_chaos", False)
+    # NEW: Load Reactive Snipe Delay setting
+    reactive_snipe_delay_p = preset_data.get("reactive_snipe_delay", 0)
 
     restart_delay = 60 # Seconds to wait before restarting a bot instance
     while True:
@@ -1470,7 +1477,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 enable_reactive_self_snipe_preset, rolling_enabled_preset,
                 kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p,
                 humanization_enabled_p, humanization_window_p, humanization_inactivity_p,
-                dk_power_management_p, skip_initial_commands_p, use_slash_rolls_p, only_chaos_p
+                dk_power_management_p, skip_initial_commands_p, use_slash_rolls_p, only_chaos_p,
+                reactive_snipe_delay_p
             )
             print_log(f"Bot instance for '{preset_name}' has stopped normally. Restarting in {restart_delay} seconds...", preset_name, "RESET")
         except Exception as e:
@@ -1543,6 +1551,9 @@ def validate_preset(preset_name, preset_data):
     # NEW: Validate Only Chaos key
     if "only_chaos" in preset_data and not isinstance(preset_data["only_chaos"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'only_chaos' should be a boolean.\033[0m")
+    # NEW: Validate Reactive Snipe Delay key
+    if "reactive_snipe_delay" in preset_data and (not isinstance(preset_data["reactive_snipe_delay"], (int, float)) or preset_data["reactive_snipe_delay"] < 0):
+        print(f"\033[91mWarn in preset '{preset_name}': 'reactive_snipe_delay' should be a non-negative number.\033[0m")
     return True
 
 def main_menu():
