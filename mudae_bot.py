@@ -132,6 +132,28 @@ def count_chaos_keys(embed):
     return chaos_count
 
 
+def get_character_owner(embed):
+    """
+    Extracts the owner username from the embed footer.
+    Footer format: "Belongs to username"
+    Returns the username in lowercase, or None if not found.
+    """
+    if not embed or not embed.footer or not embed.footer.text:
+        return None
+    
+    footer_text = embed.footer.text
+    # Pattern to match: "Belongs to username"
+    # The username can contain special characters
+    belongs_pattern = r'(?:·\s*)?[Bb]elongs to\s+(.+?)(?:\s*$)'
+    match = re.search(belongs_pattern, footer_text)
+    
+    if match:
+        username = match.group(1).strip()
+        return username.lower()
+    
+    return None
+
+
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
@@ -139,6 +161,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_snipe_mode_preset, kakera_snipe_threshold_preset,
             enable_reactive_self_snipe_preset, rolling_enabled,
             kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
+            kakera_reaction_snipe_targets,
             humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
             dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
             reactive_snipe_delay):
@@ -176,6 +199,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client.kakera_reaction_snipe_mode_active = kakera_reaction_snipe_mode_preset
     client.kakera_reaction_snipe_delay_value = kakera_reaction_snipe_delay_preset
+    client.kakera_reaction_snipe_targets = [t.lower() for t in kakera_reaction_snipe_targets]  # Lowercase for comparison
     client.kakera_reaction_sniped_messages = set()
     client.kakera_react_available = True
     client.kakera_react_cooldown_until_utc = None
@@ -470,6 +494,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Ext. Kakera Reaction Snipe: {'On' if client.kakera_reaction_snipe_mode_active else 'Off'}", preset_name, "INFO")
             if client.kakera_reaction_snipe_mode_active:
                 log_function(f"[{client.muda_name}]   Ext. Kakera React. Snipe Delay: {client.kakera_reaction_snipe_delay_value}s", preset_name, "INFO")
+                if client.kakera_reaction_snipe_targets:
+                    log_function(f"[{client.muda_name}]   Ext. Kakera React. Targets: {len(client.kakera_reaction_snipe_targets)} users", preset_name, "INFO")
         
         # Retrieve target channel and validate
         channel = client.get_channel(target_channel_id)
@@ -1254,6 +1280,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 # Check for the presence of a kakera button.
                 if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
+                    # NEW: Check if targets list is set and if owner matches
+                    if client.kakera_reaction_snipe_targets:
+                        owner = get_character_owner(embed)
+                        if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            return  # Skip if owner doesn't match target list
+                    
                     client.kakera_reaction_sniped_messages.add(message.id)
                     log_subject_name = "Kakera Event"
                     if embed.author and embed.author.name: log_subject_name = embed.author.name
@@ -1333,6 +1365,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Kakera Reaction Snipe on Character Embeds (if no other snipe was triggered)
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
+                    # NEW: Check if targets list is set and if owner matches
+                    if client.kakera_reaction_snipe_targets:
+                        owner = get_character_owner(embed)
+                        if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            return  # Skip if owner doesn't match target list
+                    
                     client.kakera_reaction_sniped_messages.add(message.id)
                     char_name = embed.author.name if embed.author and embed.author.name else "Unknown Character"
                     log_function(f"[{client.muda_name}] Ext.KakeraReact Snipe on Char: {char_name} (Delay {client.kakera_reaction_snipe_delay_value}s)", client.preset_name, "KAKERA")
@@ -1447,6 +1485,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     rolling_enabled_preset = preset_data.get("rolling", True)
     kakera_reaction_snipe_mode_p = preset_data.get("kakera_reaction_snipe_mode", False)
     kakera_reaction_snipe_delay_p = preset_data.get("kakera_reaction_snipe_delay", 0.75)
+    kakera_reaction_snipe_targets_p = preset_data.get("kakera_reaction_snipe_targets", [])
     
     # Load humanization settings
     humanization_enabled_p = preset_data.get("humanization_enabled", False)
@@ -1476,6 +1515,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 kakera_snipe_mode_preset, kakera_snipe_threshold_preset,
                 enable_reactive_self_snipe_preset, rolling_enabled_preset,
                 kakera_reaction_snipe_mode_p, kakera_reaction_snipe_delay_p,
+                kakera_reaction_snipe_targets_p,
                 humanization_enabled_p, humanization_window_p, humanization_inactivity_p,
                 dk_power_management_p, skip_initial_commands_p, use_slash_rolls_p, only_chaos_p,
                 reactive_snipe_delay_p
@@ -1534,6 +1574,8 @@ def validate_preset(preset_name, preset_data):
         print(f"\033[91mWarn in preset '{preset_name}': 'kakera_reaction_snipe_mode' should be a boolean.\033[0m")
     if "kakera_reaction_snipe_delay" in preset_data and (not isinstance(preset_data["kakera_reaction_snipe_delay"], (int, float)) or preset_data["kakera_reaction_snipe_delay"] < 0):
         print(f"\033[91mWarn in preset '{preset_name}': 'kakera_reaction_snipe_delay' should be a non-negative number.\033[0m")
+    if "kakera_reaction_snipe_targets" in preset_data and not isinstance(preset_data["kakera_reaction_snipe_targets"], list):
+        print(f"\033[91mWarn in preset '{preset_name}': 'kakera_reaction_snipe_targets' should be a list of usernames.\033[0m")
     if "humanization_enabled" in preset_data and not isinstance(preset_data["humanization_enabled"], bool):
         print(f"\033[91mWarn in preset '{preset_name}': 'humanization_enabled' should be a boolean.\033[0m")
     if "humanization_window_minutes" in preset_data and (not isinstance(preset_data["humanization_window_minutes"], int) or preset_data["humanization_window_minutes"] < 0):
