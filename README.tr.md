@@ -53,8 +53,6 @@ MudaRemote, Discord botu Mudae için çeşitli görevleri otomatikleştirmek üz
 
 ### `presets.json` Yapılandırma Örneği:
 
-*(Teknik yapılandırma için JSON içeriği orijinaliyle aynı kalır.)*
-
 ```json
 {
   "YourBotAccountName": {
@@ -123,7 +121,6 @@ Self-bot'lar Discord hesap jetonunuzu gerektirir. **Bu jeton hesabınıza tam er
 4.  Aşağıdaki kod parçasını konsola yapıştırın ve Enter tuşuna basın:
 
     ```javascript
-    // [Aynı Javascript kod parçası buraya eklenir]
     window.webpackChunkdiscord_app.push([
     	[Symbol()],
     	{},
