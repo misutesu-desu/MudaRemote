@@ -91,8 +91,9 @@ MudaRemote, Discord botu Mudae için çeşitli görevleri otomatikleştirmek üz
     "series_wishlist": ["Series Name 1"],
     "series_snipe_delay": 3,               
 
-    "kakera_reaction_snipe_mode": false,   
-    "kakera_reaction_snipe_delay": 0.75,   
+    "kakera_reaction_snipe_mode": false,   // (Varsayılan: false) Herhangi bir Mudae mesajındaki kakera reaksiyon butonlarını snipe etmeyi etkinleştirir.
+    "kakera_reaction_snipe_delay": 0.75,   // (Varsayılan: 0.75) Harici kakera reaksiyonuna tıklamadan önce gecikme (saniye).
+    "kakera_reaction_snipe_targets": [],   // (Varsayılan: []) Hedeflenecek kullanıcı adları listesi. Boşsa tüm kullanıcıları snipe eder. Ayarlanırsa, yalnızca bu kullanıcılara ait karakterleri snipe eder.   
 
     // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
     "kakera_snipe_mode": true,             
