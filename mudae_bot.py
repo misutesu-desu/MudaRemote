@@ -135,7 +135,7 @@ def count_chaos_keys(embed):
 def get_character_owner(embed):
     """
     Extracts the owner username from the embed footer.
-    Footer format: "Belongs to username"
+    Footer format: "Belongs to username" or "(⭐15) · Belongs to username"
     Returns the username in lowercase, or None if not found.
     """
     if not embed or not embed.footer or not embed.footer.text:
@@ -143,12 +143,14 @@ def get_character_owner(embed):
     
     footer_text = embed.footer.text
     # Pattern to match: "Belongs to username"
-    # The username can contain special characters
-    belongs_pattern = r'(?:·\s*)?[Bb]elongs to\s+(.+?)(?:\s*$)'
+    # Matches everything after "Belongs to " until end of string
+    belongs_pattern = r'[Bb]elongs to\s+(.+?)$'
     match = re.search(belongs_pattern, footer_text)
     
     if match:
         username = match.group(1).strip()
+        # Remove any trailing whitespace or special characters
+        username = username.rstrip()
         return username.lower()
     
     return None
@@ -1283,7 +1285,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # NEW: Check if targets list is set and if owner matches
                     if client.kakera_reaction_snipe_targets:
                         owner = get_character_owner(embed)
+                        log_function(f"[{client.muda_name}] Owner check: '{owner}' vs targets {client.kakera_reaction_snipe_targets}", client.preset_name, "DEBUG")
                         if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            log_function(f"[{client.muda_name}] Skipped - owner not in targets", client.preset_name, "DEBUG")
                             return  # Skip if owner doesn't match target list
                     
                     client.kakera_reaction_sniped_messages.add(message.id)
@@ -1368,7 +1372,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # NEW: Check if targets list is set and if owner matches
                     if client.kakera_reaction_snipe_targets:
                         owner = get_character_owner(embed)
+                        log_function(f"[{client.muda_name}] Char Owner check: '{owner}' vs targets {client.kakera_reaction_snipe_targets}", client.preset_name, "DEBUG")
                         if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            log_function(f"[{client.muda_name}] Skipped char - owner not in targets", client.preset_name, "DEBUG")
                             return  # Skip if owner doesn't match target list
                     
                     client.kakera_reaction_sniped_messages.add(message.id)
