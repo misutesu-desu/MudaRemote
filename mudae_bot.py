@@ -1311,6 +1311,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
 
         # --- From this point on, we are sure it's a character embed ---
+        
+        # --- Check for key limit message during active rolling ---
+        if client.rolling_enabled and client.is_actively_rolling:
+            desc = embed.description or ""
+            if "You reached the limit of 1,000 keys per hour!" in desc or "Você atingiu o limite de 1.000 chaves por hora!" in desc:
+                client.interrupt_rolling = True
+                client.is_actively_rolling = False
+                # Calculate random wait time: 1 hour + random(0 to humanization_window_minutes)
+                base_wait_seconds = 3600  # 1 hour
+                if client.humanization_enabled and client.humanization_window_minutes > 0:
+                    extra_wait_seconds = random.randint(0, client.humanization_window_minutes * 60)
+                else:
+                    extra_wait_seconds = 0
+                total_wait_seconds = base_wait_seconds + extra_wait_seconds
+                wait_minutes = total_wait_seconds / 60
+                log_function(f"[{client.muda_name}] Key limit reached! Pausing for {wait_minutes:.1f} minutes...", client.preset_name, "ERROR")
+                await asyncio.sleep(total_wait_seconds)
+                log_function(f"[{client.muda_name}] Key limit pause complete. Checking channel activity before resuming...", client.preset_name, "INFO")
+                # Wait for channel inactivity before sending $tu
+                await humanized_wait_and_proceed(client, message.channel, 0, "key limit recovery")
+                await check_status(client, message.channel, client.mudae_prefix)
+                return
 
         process_further = True
         # --- Logic for reactive self-snipe during own rolls ---
