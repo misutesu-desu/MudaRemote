@@ -1280,6 +1280,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # --- Handle non-character embeds (e.g., $daily) for kakera reactions ---
         if not is_character_embed(embed):
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
+                # Check if footer contains "belongs to" and there's no button - if so, ignore
+                footer_text = (embed.footer.text or "") if embed.footer else ""
+                has_belongs_to = "belongs to" in footer_text.lower() or "pertence a" in footer_text.lower()
+                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in KAKERA_EMOJIS or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
+                
+                if has_belongs_to and not has_button:
+                    return  # Ignore messages with "belongs to" footer and no button
+                
                 # Check for the presence of a kakera button.
                 if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
                     # NEW: Check if targets list is set and if owner matches
@@ -1368,6 +1376,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
             # Kakera Reaction Snipe on Character Embeds (if no other snipe was triggered)
             if process_further and client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
+                # Check if footer contains "belongs to" and there's no button - if so, ignore
+                footer_text = (embed.footer.text or "") if embed.footer else ""
+                has_belongs_to = "belongs to" in footer_text.lower() or "pertence a" in footer_text.lower()
+                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in KAKERA_EMOJIS or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
+                
+                if has_belongs_to and not has_button:
+                    return  # Ignore messages with "belongs to" footer and no button
+                
                 if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
                     # NEW: Check if targets list is set and if owner matches
                     if client.kakera_reaction_snipe_targets:
