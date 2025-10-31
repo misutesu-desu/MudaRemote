@@ -236,6 +236,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.slash_max_backoff = 6.0
     client.last_slash_attempt = 0.0
     client.slash_rate_limited_until = 0.0
+    client.key_limit_hit = False  # Track if key limit was reached
 
     async def health_monitor_task():
         """Monitors gateway connection and forces a restart if disconnected for too long."""
@@ -846,6 +847,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception as e:
             log_function(f"[{client.muda_name}] Error parsing 'next claim reset' timestamp: {e}", preset_name, "ERROR")
 
+        # Check if key limit was hit - if so, skip rolling and just wait for next reset
+        if client.key_limit_hit:
+            log_function(f"[{client.muda_name}] Key limit recovery mode. Skipping rolls. Waiting for next reset...", preset_name, "INFO")
+            client.key_limit_hit = False  # Reset flag
+            # Wait for the next roll reset instead of rolling
+            if claim_reset_proceed and not client.claim_right_available:
+                # We're in claim cooldown, wait for it
+                if match_c_wait:
+                    h, m = parse_hours_minutes(match_c_wait)
+                    await humanized_wait_and_proceed(client, channel, (h * 60 + m), "claim reset after key limit")
+                    await check_status(client, channel, mudae_prefix)
+                    return
+            return
+        
         if claim_reset_proceed and client.rolling_enabled and proceed_to_rolls:
             await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                         tu_message_content_for_rolls=tu_message_content,
@@ -1038,7 +1053,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 msg_claimed_id = msg_c.id
         
         # Process Roll-back ($rt) if applicable (Key Mode or after a successful claim)
-        if key_mode_only_kakera_param or claimed_post:
+        if (key_mode_only_kakera_param or claimed_post) and client.rt_available:
             rt_targets = [i for i in wl_claims_post if i[0].id != msg_claimed_id] + [i for i in char_claims_post if i[0].id != msg_claimed_id]
             rt_targets.sort(key=lambda x: x[2], reverse=True)
             if rt_targets:
@@ -1055,6 +1070,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] (Post) RT Err: {e}", preset_name, "ERROR")
                 elif v_rt >= min_kak_post:
                     log_function(f"[{client.muda_name}] (Post) RT Skipped: {n_rt} ({v_rt}) < MinKakRT: {client.min_kakera} (but was >= Gen. Post-Roll MinKak: {min_kak_post})", preset_name, "INFO")
+        elif (key_mode_only_kakera_param or claimed_post) and not client.rt_available:
+            log_function(f"[{client.muda_name}] (Post) RT not available. Skipping RT attempt.", preset_name, "INFO")
 
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
@@ -1318,6 +1335,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if "You reached the limit of 1,000 keys per hour!" in desc or "Você atingiu o limite de 1.000 chaves por hora!" in desc:
                 client.interrupt_rolling = True
                 client.is_actively_rolling = False
+                client.key_limit_hit = True  # Set flag to prevent rolling after recovery
                 # Calculate random wait time: 1 hour + random(0 to humanization_window_minutes)
                 base_wait_seconds = 3600  # 1 hour
                 if client.humanization_enabled and client.humanization_window_minutes > 0:
