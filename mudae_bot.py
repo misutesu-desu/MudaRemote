@@ -883,10 +883,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         lang_log_suffix_rolls = ""
         parsed_rolls_info = False
 
-        # Regex for both English and Portuguese roll counts
-        main_match_en = re.search(r"you have \*\*(\d+)\*\* rolls?(.*?)left", content_lower)
-        # PT exact phrase: "Você tem **15** rolls restantes."
-        main_match_pt = re.search(r"você tem \*\*(\d+)\*\* rolls?(.*?)restantes", content_lower)
+        def parse_int_from_fragment(fragment: str) -> int:
+            digits = re.sub(r"[^\d]", "", fragment or "")
+            return int(digits) if digits else 0
+
+        # Regex for both English and Portuguese roll counts (supports thousands separators / optional bold)
+        main_match_en = re.search(r"you have\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left\b)", content_lower, re.DOTALL)
+        # PT exact phrase: "Você tem 15 rolls restantes." (with or without bold/accents)
+        main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
 
         main_match = None
         if main_match_en:
@@ -899,26 +903,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             parsed_rolls_info = True
 
         if parsed_rolls_info:
-            rolls_left = int(main_match.group(1))
-            
+            rolls_left = parse_int_from_fragment(main_match.group(1))
+
             # Check for bonus rolls from $us
             middle_text = main_match.group(2)
-            us_match = re.search(r"\(\+\*\*(\d+)\*\* \$us\)", middle_text)
-            if us_match:
-                us_rolls_left = int(us_match.group(1))
+            bonus_total = 0
+            for bonus_match in re.finditer(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$(us|mk)\)", middle_text):
+                bonus_total += parse_int_from_fragment(bonus_match.group(1))
+            us_rolls_left = bonus_total
 
             # Find the roll reset time
-            match_reset_en = re.search(r"next rolls? reset in \*\*(\d+h)?\s*(\d+)\*\* min", content_lower)
+            match_reset_en = re.search(r"next rolls? reset in\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower)
             match_reset_pt = None
             try:
                 # PT message often omits the word 'rolls', so search after the rolls-count segment
                 pt_search_zone = content_lower[main_match.end():]
-                match_reset_pt = re.search(r"a próxima reinicialização é em \*\*(\d+h)?\s*(\d+)\*\* min", pt_search_zone)
+                match_reset_pt = re.search(r"a próxima reinicialização é em\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", pt_search_zone)
             except Exception:
                 match_reset_pt = None
             reset_match = match_reset_en or match_reset_pt
             if reset_match:
-                h_s = reset_match.group(1); h_r = int(h_s[:-1]) if h_s else 0; m_r = int(reset_match.group(2))
+                h_r = parse_int_from_fragment(reset_match.group(1)) if reset_match.group(1) else 0
+                m_r = parse_int_from_fragment(reset_match.group(2)) if reset_match.group(2) else 0
                 reset_time_r = h_r * 60 + m_r
             else:
                 log_function(f"[{client.muda_name}] Warn: Roll reset time not found.{lang_log_suffix_rolls}", preset_name, "WARN");
