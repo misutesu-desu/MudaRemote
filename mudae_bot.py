@@ -49,8 +49,14 @@ COLORS = {
 }
 
 # Define claim and kakera emojis at the top level
-CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️', 'castle_DarkRed']
+CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
+
+# Standard Kakera Emojis
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+
+# NEW: Chaos Kakera Emojis (Used when character has 10+ keys)
+# You can add specific emojis here that you only want to click on chaos characters
+CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
 
 
 def color_log(message, preset_name, log_type="INFO"):
@@ -1007,8 +1013,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_character_embed(embed):
                 continue
             
-            # Check for kakera buttons first.
-            is_kakera_message = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in msg.components for b in c.children)
+            # Check for kakera buttons first (check both standard and chaos lists).
+            all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+            is_kakera_message = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in msg.components for b in c.children)
             if is_kakera_message:
                 kakera_claims.append(msg)
             # If it's not a kakera message, check if it's a claimable character.
@@ -1097,15 +1104,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera logic: click all available kakera buttons
         if is_kakera:
-            # NEW: Check only_chaos setting - skip if character doesn't have 10+ keys
+            # Check only_chaos setting - skip if character doesn't have 10+ keys
+            chaos_key_count = count_chaos_keys(embed)
             if client.only_chaos:
-                chaos_key_count = count_chaos_keys(embed)
                 if chaos_key_count == 0:
                     log_function(f"{log_px} Kakera skipped (only_chaos): {char_name} (no 10+ keys)", client.preset_name, "KAKERA")
                     return False
             
+            # Determine which emoji list to use
+            is_chaos_char = chaos_key_count > 0
+            target_kakera_list = CHAOS_KAKERA_EMOJIS if is_chaos_char else KAKERA_EMOJIS
+            list_name_log = "ChaosList" if is_chaos_char else "StdList"
+            
             cooldown_active = not is_kakera_reaction_allowed()
-            log_sx = f": {char_name}"
+            log_sx = f": {char_name} ({list_name_log})"
             any_button_clicked = False
             
             # Check if KakeraP is available (doesn't consume power)
@@ -1127,7 +1139,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if msg.components:
                 for comp in msg.components:
                     for btn in comp.children:
-                        if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in KAKERA_EMOJIS:
+                        if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in target_kakera_list:
                             emoji_name = btn.emoji.name
                             
                             # Skip non-KakeraP kakera if on cooldown
@@ -1306,13 +1318,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Check if footer contains "belongs to" and there's no button - if so, ignore
                 footer_text = (embed.footer.text or "") if embed.footer else ""
                 has_belongs_to = "belongs to" in footer_text.lower() or "pertence a" in footer_text.lower()
-                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in KAKERA_EMOJIS or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
+                all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in all_kakera_emojis or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
                 
                 if has_belongs_to and not has_button:
                     return  # Ignore messages with "belongs to" footer and no button
                 
                 # Check for the presence of a kakera button.
-                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
+                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in message.components for b in c.children):
                     # NEW: Check if targets list is set and if owner matches
                     if client.kakera_reaction_snipe_targets:
                         owner = get_character_owner(embed)
@@ -1379,7 +1392,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if await claim_character(client, message.channel, message, is_kakera=False):
                         client.claim_right_available=False; client.interrupt_rolling=True; client.snipe_happened=True; process_further=False
                         # If a character is claimed, also check for and click any kakera buttons.
-                        if any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children):
+                        all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+                        if any(hasattr(b.emoji,'name') and b.emoji.name in all_kakera_emojis for comp in message.components for b in comp.children):
                             await asyncio.sleep(0.2); await claim_character(client, message.channel, message, is_kakera=True)
         
         # --- Logic for sniping other users' rolls (when not actively rolling) ---
@@ -1425,12 +1439,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Check if footer contains "belongs to" and there's no button - if so, ignore
                 footer_text = (embed.footer.text or "") if embed.footer else ""
                 has_belongs_to = "belongs to" in footer_text.lower() or "pertence a" in footer_text.lower()
-                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in KAKERA_EMOJIS or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
+                all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+                has_button = message.components and any(hasattr(b.emoji, 'name') and (b.emoji.name in all_kakera_emojis or b.emoji.name in CLAIM_EMOJIS) for c in message.components for b in c.children)
                 
                 if has_belongs_to and not has_button:
                     return  # Ignore messages with "belongs to" footer and no button
                 
-                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in KAKERA_EMOJIS for c in message.components for b in c.children):
+                if message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in message.components for b in c.children):
                     # NEW: Check if targets list is set and if owner matches
                     if client.kakera_reaction_snipe_targets:
                         owner = get_character_owner(embed)
@@ -1452,7 +1467,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if match_k:
                 try: k_val = int(match_k.group(1).replace(",",""))
                 except ValueError: pass
-            kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in KAKERA_EMOJIS for comp in message.components for b in comp.children)
+            
+            all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+            kakera_button_present = any(hasattr(b.emoji,'name') and b.emoji.name in all_kakera_emojis for comp in message.components for b in comp.children)
             should_click_kakera = kakera_button_present and \
                                     (not client.kakera_snipe_mode_active or k_val >= client.kakera_snipe_threshold or client.kakera_snipe_threshold == 0)
             if should_click_kakera:
