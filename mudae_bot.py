@@ -973,7 +973,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         client.snipe_happened = True; process = False
 
         # Reactive Kakera on own rolls
-        if client.rolling_enabled and client.is_actively_rolling and process:
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
             # Check if kakera button exists and value is high enough
             all_k = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
             if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
