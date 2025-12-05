@@ -637,7 +637,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass 
 
             # Parse reset time
-            match_reset = re.search(r"(?:reset in|reinicialização é em)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower)
+            match_reset = re.search(r"(?:reset in|reinicialização é em)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
             if match_reset:
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
