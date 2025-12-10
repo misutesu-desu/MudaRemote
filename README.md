@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 
+[Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md)
+
 > **⚠️ CRITICAL WARNING ⚠️**
 > 
 > **MudaRemote is a SELF-BOT.** Automating user accounts is a violation of [Discord's Terms of Service](https://discord.com/terms). 
