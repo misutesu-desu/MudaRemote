@@ -1,162 +1,138 @@
-# ✨ MudaRemote：高级 Mudae 自动化 ✨
+# ⚡ MudaRemote: 终极 Mudae 自动化工具 ⚡
 
-[![Discord TOS 违规 - **谨慎使用**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **账号封禁风险！** ⚠️
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 
-**🛑🛑🛑 警告：自用机器人 (Self-Bot) - 潜在的 Discord TOS 违规！账号封禁风险！ 🛑🛑🛑**
-**🔥 风险自负！ 🔥 对于您的账号采取的任何行动，我们概不负责。 😱**
-
----
-
-加入我们的 [Discord 服务器](https://discord.gg/4WHXkDzuZx)
-
-## 🚀 MudaRemote：增强您的 Mudae 体验（请负责任地使用！）
-
-MudaRemote 是一个基于 Python 的自用机器人 (self-bot)，旨在自动化 Discord 机器人 Mudae 的各种任务。它提供实时狙击和智能认领等功能。**然而，使用自用机器人违反了 Discord 的服务条款 (TOS)，可能导致账号暂停或封禁。** 请务必谨慎使用，并理解所涉及的风险。
-
-### ✨ 核心功能：
-
-*   **🎯 外部狙击（许愿单、系列和卡克拉值）：** 认领 *其他用户* 掷出的角色。
-*   **🟡 外部卡克拉反应狙击：** 自动点击 *任何* Mudae 消息中的卡克拉反应按钮。
-*   **😴 仅狙击模式：** 配置机器人实例，使其 *仅* 监听和执行外部狙击，而不发送掷骰命令。
-*   **⚡ 反应式自我掷骰狙击：** 如果 *您自己* 掷出的角色符合标准，则立即认领。
-*   **🤖 自动化掷骰与一般认领：** 处理掷骰命令，并根据最小卡克拉值进行认领。
-*   **🥇 智能认领逻辑：** 解析 `$tu` 以检查 `$rt` 的可用性，并用于高价值掷骰的潜在第二次认领。
-*   **🔄 自动重置检测：** 监控并等待 Mudae 的认领和掷骰重置计时器。
-*   **🚶‍♂️ 人性化等待 (NEW!)：** 通过在重置后等待随机时间段和频道不活动状态，模拟人类行为，从而显著降低可预测性。
-*   **💡 DK 力量管理 (NEW!)：** 通过 `$tu` 智能检查您的卡克拉反应力量，并且仅在力量不足以进行反应时才使用 `$dk`，从而节省充能。
-*   **🔑 钥匙模式：** 即使角色认领处于冷却状态，也允许持续掷骰以收集卡克拉。
-*   **⏩ 斜杠掷骰调度 (NEW!)：** 可选功能，使用 Discord 的斜杠命令基础设施而不是文本命令来发送掷骰命令（`wa`、`h`、`m` 等）。
-*   **👯 多账号支持：** 同时运行多个机器人实例。
-*   **⏱️ 可自定义的延迟和掷骰速度：** 微调所有动作延迟和掷骰命令的速度。
-*   **🗂️ 简易预设配置：** 在单个 `presets.json` 文件中管理所有设置。
-*   **📊 控制台日志记录：** 清晰、彩色编码的实时输出。
-*   **🌐 本地化支持：** 改进了对英语和葡萄牙语 (PT-BR) Mudae 响应的解析。
+> **⚠️ 严重警告 ⚠️**
+> 
+> **MudaRemote 是一个 SELF-BOT。** 自动化用户账户违反了 [Discord 的服务条款](https://discord.com/terms)。
+> 使用此工具存在账户被暂停或封禁的风险。**请自行承担使用风险。** 开发人员对任何后果概不负责。
 
 ---
 
-## 🛠️ 设置指南
+## 🚀 概述
 
-1.  **🐍 Python：** 确保安装了 Python 3.8+。 ([下载 Python](https://www.python.org/downloads/))
-2.  **📦 依赖项：** 打开您的终端或命令提示符并运行：
+**MudaRemote** 是一款专为 Discord 机器人 Mudae 设计的高性能、功能丰富的自动化引擎。它远不止简单的自动滚动宏，还提供智能状态管理、精准的狙击（Sniping）功能和高级人性化设置，在最大限度提高后宫效率的同时保护您的账户安全。
+
+与基本宏不同，MudaRemote 实时解析 Mudae 的响应（$tu、消息、嵌入），从而智能地决定何时滚动、何时休眠以及领取什么。
+
+---
+
+## ✨ 核心功能
+
+### 🎯 高级狙击生态系统
+*   **心愿单狙击 (Wishlist Sniping)**：立即领取*其他用户*滚出的您 `wishlist` 中的角色。
+*   **系列狙击 (Series Sniping)**：以此系列为目标！如果有人滚出受追踪系列中的角色，它就是您的了。
+*   **Kakera 价值狙击**：即使角色不在心愿单中，如果其 Kakera 价值超过您设定的阈值，也会自动狙击。
+*   **全局 Kakera 耕作**：机器人会监视**每条**消息中的 Kakera 反应按钮。
+    *   *新功能:* **智能过滤**：配置为仅从特定用户（例如您的小号）那里窃取 Kakera，以避免服务器纠纷。
+    *   *新功能:* **混沌模式**：智能处理混沌钥匙 (Chaos Keys) 与普通 Kakera 的区别。
+
+### 🤖 智能自动化
+*   **智能滚动**：自动处理每小时滚动（$wa、$hg、$ma 等）并追踪您的 $daily 重置。
+*   **斜杠命令引擎**：可选使用现代 Discord `/commands` 进行滚动，这比传统文本命令更快，且通常更少受到速率限制。
+*   **优化领取**：
+    *   **$rt 集成**：自动检查您是否拥有退款愿望 ($rt) 特权，并利用它在同一重置周期内获得第二个高价值角色。
+    *   **恐慌模式**：如果您的领取重置时间少于 60 分钟 (`snipe_ignore_min_kakera_reset`)，机器人会降低标准并领取*任何东西*，以避免浪费冷却时间。
+*   **DK 能量管理**：分析您当前的反应能量和库存。只有在您的能量实际上太低而无法反应时，它才会消耗 `$dk` (Daily Kakera) 充能，从而防止浪费。
+
+### 🛡️ 隐身与安全
+*   **人性化间隔**：不再有机械式的 60 分钟计时器。机器人会在每个等待期增加随机的“抖动 (jitter)”。
+*   **不活跃观察者**：检测频道何时繁忙，并等待对话平息后再发送滚动，模拟有礼貌的人类用户。
+*   **钥匙限制检测**：如果您达到 Mudae 钥匙限制，自动暂停滚动。
+
+---
+
+## 🛠️ 安装
+
+1.  **先决条件**：
+    *   安装 [Python 3.8](https://www.python.org/downloads/) 或更高版本。
+2.  **安装依赖项**：
     ```bash
     pip install discord.py-self inquirer
     ```
-    *注意：如果您计划使用 `use_slash_rolls: true`，请确保您的 `discord.py-self` 版本包含 `Route` 对象（较新版本通常包含）。*
-3.  **📝 `presets.json`：** 在脚本的目录中创建一个 `presets.json` 文件。在此处添加您的机器人配置。有关所有可用选项，请参阅下面的示例。
-4.  **🚀 运行：** 从终端执行脚本：
-    ```bash
-    python mudae_bot.py
-    ```
-5.  **🕹️ 选择预设：** 从交互式菜单中选择要运行的已配置机器人。
+3.  **设置**：
+    *   下载此存储库。
+    *   创建 `presets.json` 文件（参见下面的配置）。
 
 ---
 
-### `presets.json` 配置示例：
+## ⚙️ 配置 (`presets.json`)
 
-*(由于是技术配置，JSON 配置内容与原文保持一致。)*
+所有设置均在 `presets.json` 中管理。您可以定义多个机器人配置文件（例如，“主账号”、“小号”）并同时运行它们。
 
 ```json
 {
-  "YourBotAccountName": {
-    // --- REQUIRED SETTINGS ---
-    "token": "YOUR_DISCORD_ACCOUNT_TOKEN", 
-    "channel_id": 123456789012345678,     
-    "roll_command": "wa",                  
-    "delay_seconds": 1,                    
-    "mudae_prefix": "$",                   
-    "min_kakera": 50,                      
+  "我的超级Muda机器人": {
+    "token": "在此处输入您的DISCORD令牌",
+    "channel_id": 123456789012345678,
+    "prefix": "!", 
+    "mudae_prefix": "$",
+    "roll_command": "wa",
 
-    // --- CORE OPERATIONAL MODE ---
-    "rolling": true,                       
+    "// --- 核心设置 ---": "",
+    "rolling": true,                       // 设置为 false 以进入“仅狙击”模式（不滚动，仅监视）
+    "min_kakera": 200,                     // 在您自己滚动期间领取角色的最低值
+    "delay_seconds": 2,                    // 基础处理延迟
+    "roll_speed": 1.5,                     // 滚动命令之间的秒数
 
-    // --- ADVANCED ROLLING / CLAIMING ---
-    "roll_speed": 0.4,                     
-    "key_mode": false,                     
-    "skip_initial_commands": false,        // (默认: false) 如果为true，启动时跳过$limroul、$dk和$daily，直接进入$tu。
-    "use_slash_rolls": false,              // (默认: false) 如果为true，尝试使用Discord的斜杠命令API发送抽卡命令。
-    "dk_power_management": true,           // (默认: false) 如果为true，在$tu中检查kakera力量，仅在必要时使用$dk。
+    "// --- 狙击配置 ---": "",
+    "snipe_mode": true,                    // 心愿单狙击的主开关
+    "wishlist": ["Makima", "Rem"],         // 要狙击的确切角色名称列表
+    "snipe_delay": 0.5,                    // 狙击速度（秒）
+    
+    "series_snipe_mode": true,
+    "series_wishlist": ["Chainsaw Man"],   // 要狙击的系列名称列表
+    "series_snipe_delay": 1.0,
 
-    // 新功能: 仅Chaos钥匙过滤器
-    "only_chaos": false,                   // (默认: false) 如果为true，仅在拥有10+钥匙（chaos keys）的角色上点击kakera按钮。           
+    "// --- KAKERA 耕作 ---": "",
+    "kakera_reaction_snipe_mode": true,    // 点击任何消息上的 kakera 按钮？
+    "kakera_reaction_snipe_delay": 0.8,
+    "kakera_reaction_snipe_targets": [     // 可选：仅从这些特定用户（例如您的小号）那里窃取
+        "my_alt_account_username"
+    ],
+    "only_chaos": false,                   // 如果为 true，则仅对混沌钥匙（紫色）水晶做出反应。
 
-    // --- HUMANIZATION (Recommended for high-risk accounts) ---
-    "humanization_enabled": true,          
-    "humanization_window_minutes": 40,     
-    "humanization_inactivity_seconds": 5,  
+    "// --- 高级逻辑 ---": "",
+    "use_slash_rolls": true,               // 使用 /wa 代替 $wa（推荐）
+    "dk_power_management": true,           // 保留 $dk 充能以备不时之需
+    "snipe_ignore_min_kakera_reset": true, // 如果领取重置在 < 1 小时内，领取任何角色。
+    "key_mode": false,                     // 即使没有领取权也继续滚动以获取钥匙？
 
-    // --- EXTERNAL SNIPING (For characters rolled by OTHERS) ---
-    "snipe_mode": true,                    
-    "wishlist": ["Character Name 1", "Character Name 2"],
-    "snipe_delay": 2,                      
-
-    "series_snipe_mode": true,             
-    "series_wishlist": ["Series Name 1"],
-    "series_snipe_delay": 3,               
-
-    "kakera_reaction_snipe_mode": false,   // (默认: false) 启用对任何Mudae消息上kakera反应按钮的狙击。
-    "kakera_reaction_snipe_delay": 0.75,   // (默认: 0.75) 点击外部kakera反应前的延迟（秒）。
-    "kakera_reaction_snipe_targets": [],   // (默认: []) 目标用户名列表。如果为空，狙击所有用户。如果设置，仅狙击这些用户拥有的角色。   
-
-    // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
-    "kakera_snipe_mode": true,             
-    "kakera_snipe_threshold": 100,         
-
-    // --- 响应式狙击（用于您自己抽卡中的角色） ---
-    "reactive_snipe_on_own_rolls": true,   // (默认: true) 启用/禁用在您自己抽卡期间的即时领取（基于WL、系列WL或Kakera阈值）。
-    "reactive_snipe_delay": 0,             // (默认: 0) 在您自己抽卡期间响应式狙击时领取前的延迟（秒）。有助于显得更自然。   
-
-    // --- OTHER ---
-    "start_delay": 0,                      
-    "snipe_ignore_min_kakera_reset": false 
+    "// --- 人性化 ---": "",
+    "humanization_enabled": true,
+    "humanization_window_minutes": 30,     // 重置后随机额外等待 0-30 分钟
+    "humanization_inactivity_seconds": 10  // 在滚动前等待频道静默 10 秒
   }
 }
 ```
 
 ---
 
-## 🎮 获取您的 Discord Token 🔑
+## 🎮 用法
 
-自用机器人需要您的 Discord 账号 Token。**此 Token 授予对您账号的完全访问权限 – 请务必将其保持绝对机密！分享它就像泄露您的密码一样。** 建议在备用账号上使用此机器人。
-
-1.  **在您的网络浏览器中打开 Discord**（例如 Chrome、Firefox）。*而不是桌面应用程序。*
-2.  按 **F12** 打开开发者工具。
-3.  导航到 **`Console`**（控制台）选项卡。
-4.  将以下代码片段粘贴到控制台中，然后按 Enter：
-
-    ```javascript
-    // [同样的 Javascript 代码片段在此处插入]
-    window.webpackChunkdiscord_app.push([
-    	[Symbol()],
-    	{},
-    	req => {
-    		if (!req.c) return;
-    		for (let m of Object.values(req.c)) {
-    			try {
-    				if (!m.exports || m.exports === window) continue;
-    				if (m.exports?.getToken) return copy(m.exports.getToken());
-    				for (let ex in m.exports) {
-    					if (m.exports?.[ex]?.getToken && m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return copy(m.exports[ex].getToken());
-    				}
-    			} catch {}
-    		}
-    	},
-    ]);
-
-    window.webpackChunkdiscord_app.pop();
-    console.log('%cWorked!', 'font-size: 50px');
-    console.log(`%cYou now have your token in the clipboard!`, 'font-size: 16px');
+1.  在机器人文件夹中打开终端。
+2.  运行脚本：
+    ```bash
+    python mudae_bot.py
     ```
-5.  您的 Token 将被复制到剪贴板。小心地将其粘贴到 `presets.json` 文件中的 `"token"` 字段。
+3.  从菜单中选择您的预设。
+4.  坐下来，看着后宫壮大。📈
 
 ---
 
-## 🤝 贡献
+## 🔒 获取您的令牌
 
-欢迎贡献！随时报告问题、建议功能或向项目存储库提交拉取请求 (pull requests)。
-
-**🙏 请以负责任和道德的方式使用此工具，并充分意识到对您的 Discord 账号的潜在风险。 🙏**
-
-**祝您 Mudae 愉快（并保持警惕！）** 😉
+1.  在浏览器（Chrome/Firefox）中登录 Discord。
+2.  按 **F12**（开发者工具）-> **Console**（控制台）选项卡。
+3.  粘贴此代码以显示您的令牌：
+    ```javascript
+    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
+    ```
+    *（注意：切勿与任何人共享此令牌。它给予了对您帐户的完全访问权限。）*
 
 ---
-**许可证：** [MIT 许可证](LICENSE)
+
+**祝狩猎愉快！** 💖

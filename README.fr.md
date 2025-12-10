@@ -1,162 +1,138 @@
-# ✨ MudaRemote : Automatisation Mudae Avancée ✨
+# ⚡ MudaRemote: L'Outil Ultime d'Automatisation Mudae ⚡
 
-[![Violation des CGU de Discord - **UTILISER AVEC PRÉCAUTION**](https://img.shields.io/badge/Discord%20CGU-VIOLATION-red)](https://discord.com/terms) ⚠️ **RISQUE DE BANDE DE COMPTE !** ⚠️
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Actif-success.svg)]()
 
-**🛑🛑🛑 ATTENTION : SELF-BOT - VIOLATION POTENTIELLE DES CGU DE DISCORD ! RISQUE DE BANDE DE COMPTE ! 🛑🛑🛑**
-**🔥 UTILISEZ À VOS PROPRES RISQUES ! 🔥 NOUS NE SOMMES PAS RESPONSABLES DES ACTIONS PRISES CONTRE VOTRE COMPTE. 😱**
-
----
-
-Rejoignez notre [serveur Discord](https://discord.gg/4WHXkDzuZx)
-
-## 🚀 MudaRemote : Améliorez Votre Expérience Mudae (Utilisez Responsablement !)
-
-MudaRemote est un self-bot basé sur Python conçu pour automatiser diverses tâches pour le bot Discord Mudae. Il offre des fonctionnalités telles que le sniping en temps réel et le réclamement intelligent. **Cependant, l'utilisation de self-bots est contraire aux Conditions Générales d'Utilisation (CGU) de Discord et peut entraîner une suspension ou un bannissement de compte.** Veuillez l'utiliser avec une extrême prudence et comprendre les risques encourus.
-
-### ✨ Fonctionnalités Principales :
-
-*   **🎯 Sniping Externe (Liste de Souhaits, Série & Valeur Kakera) :** Réclame les personnages tirés par *d'autres*.
-*   **🟡 Sniping de Réaction Kakera Externe :** Clique automatiquement sur les boutons de réaction kakera sur *tout* message Mudae.
-*   **😴 Mode Snipe-Seulement :** Configurez les instances du bot pour *uniquement* écouter et exécuter les snipes externes, sans envoyer de commandes de tirage.
-*   **⚡ Sniping Réactif sur les Auto-Tirages :** Réclame instantanément les personnages de *vos propres* tirages s'ils correspondent aux critères.
-*   **🤖 Tirage Automatisé & Réclamement Général :** Gère les commandes de tirage et réclame en fonction du kakera minimum.
-*   **🥇 Logique de Réclamement Intelligente :** Analyse `$tu` pour vérifier la disponibilité de `$rt` et l'utilise pour une potentielle deuxième réclamation sur les tirages de grande valeur.
-*   **🔄 Détection de Réinitialisation Automatique :** Surveille et attend les minuteries de réinitialisation de réclamation et de tirage de Mudae.
-*   **🚶‍♂️ Attente Humanisée (NOUVEAU !) :** Simule un comportement humain en attendant une période aléatoire et l'inactivité du canal avant de reprendre les actions après une réinitialisation, réduisant significativement la prévisibilité.
-*   **💡 Gestion de Puissance DK (NOUVEAU !) :** Vérifie intelligemment votre puissance de réaction kakera via `$tu` et n'utilise `$dk` que lorsque la puissance est insuffisante pour une réaction, économisant les charges.
-*   **🔑 Mode Clé :** Permet un tirage continu pour la collecte de kakera, même lorsque les réclamations de personnages sont en temps de recharge.
-*   **⏩ Dispatch de Tirage par Slash (NOUVEAU !) :** Fonctionnalité optionnelle pour envoyer les commandes de tirage (`wa`, `h`, `m`, etc.) en utilisant l'infrastructure de commande Slash de Discord au lieu des commandes textuelles.
-*   **👯 Support Multi-Comptes :** Exécutez plusieurs instances de bot simultanément.
-*   **⏱️ Délais Personnalisables & Vitesse de Tirage :** Ajustez finement tous les délais d'action et la vitesse des commandes de tirage.
-*   **🗂️ Configuration Facile des Préréglages :** Gérez tous les paramètres dans un seul fichier `presets.json`.
-*   **📊 Journalisation de Console :** Sortie claire, codée par couleur et en temps réel.
-*   **🌐 Support de Localisation :** Amélioration de l'analyse pour les réponses Mudae en anglais et en portugais (PT-BR).
+> **⚠️ AVERTISSEMENT CRITIQUE ⚠️**
+> 
+> **MudaRemote est un SELF-BOT.** L'automatisation des comptes utilisateurs est une violation des [Conditions d'Utilisation de Discord](https://discord.com/terms). 
+> L'utilisation de cet outil comporte un risque de suspension ou de bannissement de compte. **Utilisez à vos propres risques.** Les développeurs déclinent toute responsabilité quant aux conséquences.
 
 ---
 
-## 🛠️ Guide de Configuration
+## 🚀 Vue d'ensemble
 
-1.  **🐍 Python :** Assurez-vous que Python 3.8+ est installé. ([Télécharger Python](https://www.python.org/downloads/))
-2.  **📦 Dépendances :** Ouvrez votre terminal ou invite de commande et exécutez :
+**MudaRemote** est un moteur d'automatisation haute performance et riche en fonctionnalités conçu spécifiquement pour le bot Discord Mudae. Il va bien au-delà de la simple macro de "roll" automatique, offrant une gestion intelligente de l'état, des capacités de snipe chirurgicales et une humanisation avancée pour garder votre compte en sécurité tout en maximisant l'efficacité de votre harem.
+
+Contrairement aux macros basiques, MudaRemote analyse les réponses de Mudae en temps réel ($tu, messages, embeds) pour prendre des décisions intelligentes sur quand lancer des rolls, quand dormir et quoi claim.
+
+---
+
+## ✨ Fonctionnalités Clés
+
+### 🎯 Écosystème de Snipe Avancé
+*   **Snipe de Wishlist**: Claim instantanément les personnages de votre `wishlist` qui sont rollés par *d'autres utilisateurs*.
+*   **Snipe de Série**: Ciblez une série entière ! Si quelqu'un roll un personnage d'une série suivie, il est à vous.
+*   **Snipe de Valeur Kakera**: Snipe automatiquement *n'importe quel* personnage (même hors wishlist) si sa valeur kakera dépasse votre seuil.
+*   **Farming Global de Kakera**: Le bot surveille **chaque** message pour les boutons de réaction kakera.
+    *   *Nouveau:* **Filtrage Intelligent**: Configurez-le pour voler uniquement les kakera d'utilisateurs spécifiques (ex: vos comptes secondaires) pour éviter les drames sur le serveur.
+    *   *Nouveau:* **Mode Chaos**: Gestion intelligente des Clés du Chaos vs Kakera Normal.
+
+### 🤖 Automatisation Intelligente
+*   **Rolling Intelligent**: Gère automatiquement les rolls horaires ($wa, $hg, $ma, etc.) et suit votre reset $daily.
+*   **Moteur de Commandes Slash**: Utilise optionnellement les `/commandes` Discord modernes pour les rolls, ce qui est plus rapide et souvent moins limité en taux que les commandes textuelles classiques.
+*   **Claim Optimisé**:
+    *   **Intégration $rt**: Vérifie automatiquement si vous possédez l'avantage Refund Wish ($rt) et l'utilise pour sécuriser un deuxième claim de haute valeur dans le même reset.
+    *   **Mode Panique**: Si votre reset de claim est à moins de 60 minutes (`snipe_ignore_min_kakera_reset`), le bot baisse ses standards et claim *n'importe quoi* pour éviter de gaspiller le cooldown.
+*   **Gestion d'Énergie DK**: Analyse votre puissance de réaction actuelle et votre stock. Il ne consomme une charge `$dk` (Daily Kakera) que lorsque votre puissance est réellement trop faible pour réagir, évitant le gaspillage.
+
+### 🛡️ Discrétion & Sécurité
+*   **Intervalles Humanisés**: Finis les minuteurs robotiques de 60 minutes. Le bot ajoute un "jitter" aléatoire à chaque période d'attente.
+*   **Observateur d'Inactivité**: Détecte quand un canal est occupé et attend une accalmie dans la conversation avant de spammer les rolls, simulant un utilisateur humain poli.
+*   **Détection de Limite de Clés**: Met automatiquement les rolls en pause si vous atteignez la limite de clés Mudae.
+
+---
+
+## 🛠️ Installation
+
+1.  **Prérequis**:
+    *   Installez [Python 3.8](https://www.python.org/downloads/) ou supérieur.
+2.  **Installer les Dépendances**:
     ```bash
     pip install discord.py-self inquirer
     ```
-    *Note : Si vous prévoyez d'utiliser `use_slash_rolls: true`, assurez-vous que votre version de `discord.py-self` inclut l'objet `Route` (les versions plus récentes le font généralement).*
-3.  **📝 `presets.json` :** Créez un fichier `presets.json` dans le répertoire du script. Ajoutez vos configurations de bot ici. Consultez l'exemple ci-dessous pour toutes les options disponibles.
-4.  **🚀 Exécuter :** Exécutez le script depuis votre terminal :
-    ```bash
-    python mudae_bot.py
-    ```
-5.  **🕹️ Sélectionner les Préréglages :** Choisissez quel(s) bot(s) configuré(s) exécuter à partir du menu interactif.
+3.  **Configuration**:
+    *   Téléchargez ce dépôt.
+    *   Créez un fichier `presets.json` (voir configuration ci-dessous).
 
 ---
 
-### Exemple de Configuration `presets.json` :
+## ⚙️ Configuration (`presets.json`)
 
-*(Le contenu de l'exemple JSON reste identique à l'original pour la configuration technique.)*
+Tous les paramètres sont gérés dans `presets.json`. Vous pouvez définir plusieurs profils de bot (ex: "ComptePrincipal", "CompteSecondaire") et les exécuter simultanément.
 
 ```json
 {
-  "YourBotAccountName": {
-    // --- REQUIRED SETTINGS ---
-    "token": "YOUR_DISCORD_ACCOUNT_TOKEN", 
-    "channel_id": 123456789012345678,     
-    "roll_command": "wa",                  
-    "delay_seconds": 1,                    
-    "mudae_prefix": "$",                   
-    "min_kakera": 50,                      
+  "MonSuperBotMuda": {
+    "token": "VOTRE_TOKEN_DISCORD_ICI",
+    "channel_id": 123456789012345678,
+    "prefix": "!", 
+    "mudae_prefix": "$",
+    "roll_command": "wa",
 
-    // --- CORE OPERATIONAL MODE ---
-    "rolling": true,                       
+    "// --- PARAMÈTRES DE BASE ---": "",
+    "rolling": true,                       // Mettre à false pour le mode "Snipe Seul" (pas de roll, juste surveillance)
+    "min_kakera": 200,                     // Valeur minimale pour claim un personnage durant vos propres rolls
+    "delay_seconds": 2,                    // Délai de traitement de base
+    "roll_speed": 1.5,                     // Secondes entre les commandes de roll
 
-    // --- ADVANCED ROLLING / CLAIMING ---
-    "roll_speed": 0.4,                     
-    "key_mode": false,                     
-    "skip_initial_commands": false,        // (Par défaut: false) Si true, ignore $limroul, $dk et $daily au démarrage, va directement à $tu.
-    "use_slash_rolls": false,              // (Par défaut: false) Si true, tente d'envoyer les commandes de roll via l'API slash command de Discord.
-    "dk_power_management": true,           // (Par défaut: false) Si true, vérifie la puissance kakera dans $tu et n'utilise $dk que si nécessaire.
+    "// --- CONFIGURATION SNIPE ---": "",
+    "snipe_mode": true,                    // Interrupteur principal pour le snipe Wishlist
+    "wishlist": ["Makima", "Rem"],         // Liste des noms exacts de personnages à sniper
+    "snipe_delay": 0.5,                    // Vitesse de snipe (secondes)
+    
+    "series_snipe_mode": true,
+    "series_wishlist": ["Chainsaw Man"],   // Liste des noms de séries à sniper
+    "series_snipe_delay": 1.0,
 
-    // NOUVEAU: Filtre Clés Chaos Uniquement
-    "only_chaos": false,                   // (Par défaut: false) Si true, clique uniquement sur les boutons kakera des personnages avec 10+ clés (clés chaos).           
+    "// --- FARMING KAKERA ---": "",
+    "kakera_reaction_snipe_mode": true,    // Cliquer sur les boutons kakera de N'IMPORTE QUEL message ?
+    "kakera_reaction_snipe_delay": 0.8,
+    "kakera_reaction_snipe_targets": [     // OPTIONNEL: Voler uniquement ces utilisateurs (ex: vos alts)
+        "nom_utilisateur_mon_alt"
+    ],
+    "only_chaos": false,                   // Si true, réagit uniquement aux cristaux Clé du Chaos (violets).
 
-    // --- HUMANIZATION (Recommended for high-risk accounts) ---
-    "humanization_enabled": true,          
-    "humanization_window_minutes": 40,     
-    "humanization_inactivity_seconds": 5,  
+    "// --- LOGIQUE AVANCÉE ---": "",
+    "use_slash_rolls": true,               // Utiliser /wa au lieu de $wa (Recommandé)
+    "dk_power_management": true,           // Économiser les charges $dk pour quand vous en avez vraiment besoin
+    "snipe_ignore_min_kakera_reset": true, // Claim N'IMPORTE QUEL perso si le reset est dans < 1 heure.
+    "key_mode": false,                     // Continuer à roll pour les clés même sans claim disponible ?
 
-    // --- EXTERNAL SNIPING (For characters rolled by OTHERS) ---
-    "snipe_mode": true,                    
-    "wishlist": ["Character Name 1", "Character Name 2"],
-    "snipe_delay": 2,                      
-
-    "series_snipe_mode": true,             
-    "series_wishlist": ["Series Name 1"],
-    "series_snipe_delay": 3,               
-
-    "kakera_reaction_snipe_mode": false,   // (Par défaut: false) Active le snipe des boutons de réaction kakera sur n'importe quel message Mudae.
-    "kakera_reaction_snipe_delay": 0.75,   // (Par défaut: 0.75) Délai (secondes) avant de cliquer sur une réaction kakera externe.
-    "kakera_reaction_snipe_targets": [],   // (Par défaut: []) Liste des noms d'utilisateurs à cibler. Si vide, snipe tous les utilisateurs. Si défini, snipe uniquement les personnages appartenant à ces utilisateurs.   
-
-    // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
-    "kakera_snipe_mode": true,             
-    "kakera_snipe_threshold": 100,         
-
-    // --- SNIPE RÉACTIF (Pour les personnages de VOS PROPRES rolls) ---
-    "reactive_snipe_on_own_rolls": true,   // (Par défaut: true) Active/désactive les réclamations INSTANTANÉES pendant vos propres rolls (basé sur WL, Série WL ou Seuil Kakera).
-    "reactive_snipe_delay": 0,             // (Par défaut: 0) Délai (secondes) avant de réclamer pendant le snipe réactif sur vos propres rolls. Utile pour paraître plus naturel.   
-
-    // --- OTHER ---
-    "start_delay": 0,                      
-    "snipe_ignore_min_kakera_reset": false 
+    "// --- HUMANISATION ---": "",
+    "humanization_enabled": true,
+    "humanization_window_minutes": 30,     // Attendre aléatoirement 0-30 min de plus après le reset
+    "humanization_inactivity_seconds": 10  // Attendre 10s de silence dans le canal avant de roll
   }
 }
 ```
 
 ---
 
-## 🎮 Obtenir Votre Jeton Discord 🔑
+## 🎮 Utilisation
 
-Les self-bots nécessitent le jeton de votre compte Discord. **Ce jeton donne un accès complet à votre compte – gardez-le extrêmement privé ! Le partager revient à donner votre mot de passe.** Il est recommandé d'utiliser ce bot sur un compte alternatif.
-
-1.  **Ouvrez Discord dans votre navigateur web** (ex. Chrome, Firefox). *Pas l'application de bureau.*
-2.  Appuyez sur **F12** pour ouvrir les Outils de Développement.
-3.  Naviguez jusqu'à l'onglet **`Console`**.
-4.  Collez l'extrait de code suivant dans la console et appuyez sur Entrée :
-
-    ```javascript
-    // [Le même extrait de code Javascript est inséré ici]
-    window.webpackChunkdiscord_app.push([
-    	[Symbol()],
-    	{},
-    	req => {
-    		if (!req.c) return;
-    		for (let m of Object.values(req.c)) {
-    			try {
-    				if (!m.exports || m.exports === window) continue;
-    				if (m.exports?.getToken) return copy(m.exports.getToken());
-    				for (let ex in m.exports) {
-    					if (m.exports?.[ex]?.getToken && m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return copy(m.exports[ex].getToken());
-    				}
-    			} catch {}
-    		}
-    	},
-    ]);
-
-    window.webpackChunkdiscord_app.pop();
-    console.log('%cWorked!', 'font-size: 50px');
-    console.log(`%cYou now have your token in the clipboard!`, 'font-size: 16px');
+1.  Ouvrez votre terminal dans le dossier du bot.
+2.  Lancez le script:
+    ```bash
+    python mudae_bot.py
     ```
-5.  Votre jeton sera copié dans votre presse-papiers. Collez-le soigneusement dans le champ `"token"` de votre fichier `presets.json`.
+3.  Sélectionnez votre preset dans le menu.
+4.  Détendez-vous et regardez le harem grandir. 📈
 
 ---
 
-## 🤝 Contribution
+## 🔒 Obtenir Votre Token
 
-Les contributions sont les bienvenues ! N'hésitez pas à signaler des problèmes, suggérer des fonctionnalités ou soumettre des requêtes de tirage (pull requests) au dépôt du projet.
-
-**🙏 Veuillez utiliser cet outil de manière responsable et éthique, en étant pleinement conscient des risques potentiels pour votre compte Discord. 🙏**
-
-**Bon (et Prudent !) Mudae-ing !** 😉
+1.  Connectez-vous à Discord dans votre navigateur (Chrome/Firefox).
+2.  Appuyez sur **F12** (Outils de développement) -> onglet **Console**.
+3.  Collez ce code pour révéler votre token:
+    ```javascript
+    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
+    ```
+    *(Note: Ne partagez jamais ce token avec quiconque. Il donne un accès total à votre compte.)*
 
 ---
-**Licence :** [Licence MIT](LICENSE)
+
+**Bonne Chasse !** 💖

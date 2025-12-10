@@ -1,162 +1,138 @@
-# ✨ MudaRemote：高度なMudae自動化 ✨
+# ⚡ MudaRemote: 究極のMudae自動化ツール ⚡
 
-[![Discord TOS違反 - **注意して使用してください**](https://img.shields.io/badge/Discord%20TOS-VIOLATION-red)](https://discord.com/terms) ⚠️ **アカウントBANのリスクあり！** ⚠️
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 
-**🛑🛑🛑 警告：セルフボット - Discord TOSに違反する可能性あり！アカウントBANのリスクあり！ 🛑🛑🛑**
-**🔥 自己責任でご使用ください！ 🔥 アカウントに対して行われたいかなる措置についても、私たちは責任を負いません。 😱**
-
----
-
-私たちの [Discordサーバーに参加](https://discord.gg/4WHXkDzuZx)
-
-## 🚀 MudaRemote：Mudae体験を向上させる（責任を持って使用してください！）
-
-MudaRemoteは、DiscordボットMudaeのさまざまなタスクを自動化するために設計されたPythonベースのセルフボットです。リアルタイムスナイピングやインテリジェントなクレームなどの機能を提供します。**しかし、セルフボットの使用はDiscordの利用規約（TOS）に違反しており、アカウントの停止やBANにつながる可能性があります。** 極度の注意を払って使用し、関連するリスクを理解してください。
-
-### ✨ 主な機能：
-
-*   **🎯 外部スナイピング（ウィッシュリスト、シリーズ、カケラ値）：** *他のユーザー*がロールしたキャラクターをクレームします。
-*   **🟡 外部カケラ反応スナイピング：** *任意の* Mudaeメッセージのカケラ反応ボタンを自動的にクリックします。
-*   **😴 スナイプ専用モード：** ロールコマンドを送信せずに、外部スナイプを*のみ*リッスンして実行するようにボットインスタンスを設定します。
-*   **⚡ リアクティブなセルフロールスナイピング：** *自分の*ロールからのキャラクターが基準に一致した場合、即座にクレームします。
-*   **🤖 自動ローリングと一般クレーム：** ロールコマンドを処理し、最小カケラに基づいてクレームします。
-*   **🥇 インテリジェントなクレームロジック：** `$tu`を解析して`$rt`の利用可能性を確認し、高価値ロールに対して潜在的な2回目のクレームに使用します。
-*   **🔄 自動リセット検出：** Mudaeのクレームおよびロールのリセットタイマーを監視し、待ちます。
-*   **🚶‍♂️ 人間化された待機 (NEW!)：** リセット後にランダムな期間およびチャンネルの非アクティブ状態を待ってからアクションを再開することで、人間の行動をシミュレートし、予測可能性を大幅に減らします。
-*   **💡 DKパワー管理 (NEW!)：** `$tu`を介してカケラ反応パワーをインテリジェントにチェックし、反応にパワーが不十分な場合に*のみ* `$dk`を使用して、チャージを節約します。
-*   **🔑 キーモード：** キャラクターのクレームがクールダウン中でも、カケラ収集のために連続してロールできるようにします。
-*   **⏩ スラッシュロールディスパッチ (NEW!)：** テキストコマンドの代わりに、Discordのスラッシュコマンドインフラストラクチャを使用してロールコマンド（`wa`、`h`、`m`など）を送信するオプション機能。
-*   **👯 マルチアカウントサポート：** 複数のボットインスタンスを同時に実行します。
-*   **⏱️ カスタマイズ可能な遅延とロール速度：** すべてのアクション遅延とロールコマンドの速度を細かく調整します。
-*   **🗂️ 簡単なプリセット設定：** すべての設定を単一の `presets.json` ファイルで管理します。
-*   **📊 コンソールロギング：** クリアで色分けされたリアルタイム出力。
-*   **🌐 ローカリゼーションサポート：** 英語とポルトガル語（PT-BR）の両方のMudae応答に対する解析を改善。
+> **⚠️ 重大な警告 ⚠️**
+> 
+> **MudaRemoteはセルフボット（Self-Bot）です。** ユーザーアカウントを自動化することは、[Discordの利用規約](https://discord.com/terms)に違反します。
+> このツールを使用すると、アカウントの一時停止やBANのリスクがあります。**自己責任で使用してください。** 開発者は一切の責任を負いません。
 
 ---
 
-## 🛠️ セットアップガイド
+## 🚀 概要
 
-1.  **🐍 Python：** Python 3.8以降がインストールされていることを確認してください。 ([Pythonをダウンロード](https://www.python.org/downloads/))
-2.  **📦 依存関係：** ターミナルまたはコマンドプロンプトを開き、以下を実行します。
+**MudaRemote** は、Discordボット「Mudae」専用に設計された、高性能で機能豊富な自動化エンジンです。単純な自動ロールマクロを超え、ハーレム効率を最大化しつつアカウントを安全に保つための、インテリジェントな状態管理、精密なスナイプ機能、高度な人間化機能を提供します。
+
+基本的なマクロとは異なり、MudaRemoteはMudaeの応答（$tu、メッセージ、埋め込み）をリアルタイムで解析し、いつロールするか、いつ休むか、何をクレームするかを賢く判断します。
+
+---
+
+## ✨ 主な機能
+
+### 🎯 高度なスナイプエコシステム
+*   **ウィッシュリストスナイプ**: *他のユーザー*がロールした、あなたの `wishlist` にあるキャラクターを即座にクレームします。
+*   **シリーズスナイプ**: シリーズ全体をターゲットに！ 追跡中のシリーズからキャラクターが出れば、それはあなたのものです。
+*   **カケラ値スナイプ**: ウィッシュリストになくても、カケラ値が設定したしきい値を超えれば、自動的にスナイプします。
+*   **グローバルカケラファーミング**: ボットはカケラリアクションボタンのために**すべての**メッセージを監視します。
+    *   *New:* **スマートフィルタリング**: サーバーでのトラブルを避けるため、特定のユーザー（例：自分のサブ垢）からのみカケラを盗むように設定できます。
+    *   *New:* **カオスモード**: カオスキー（Chaos Keys）と通常のカケラの違いをインテリジェントに処理します。
+
+### 🤖 インテリジェントオートメーション
+*   **スマートローリング**: 毎時のロール（$wa, $hg, $ma など）を自動的に処理し、$dailyのリセットを追跡します。
+*   **スラッシュコマンドエンジン**: オプションで、ロールに最新のDiscord `/commands` を使用できます。これは従来のテキストコマンドよりも高速で、レート制限にかかりにくい場合があります。
+*   **最適化されたクレーム**:
+    *   **$rt統合**: Refund Wish ($rt) パークを持っているかを自動的に確認し、同じリセット期間内に2体目の高価値キャラクターを確保するために使用します。
+    *   **パニックモード**: クレームリセットまで60分を切っている場合 (`snipe_ignore_min_kakera_reset`)、ボットは基準を下げて、クールダウンを無駄にしないために*何でも*クレームします。
+*   **DKパワー管理**: 現在のリアクションパワーと在庫を分析します。パワーが実際に低すぎて反応できない場合にのみ `$dk` (Daily Kakera) チャージを消費し、無駄を防ぎます。
+
+### 🛡️ ステルス & 安全性
+*   **人間化されたインターバル**: ロボットのような正確な60分タイマーはもうありません。ボットはすべての待機時間にランダムな「揺らぎ（jitter）」を加えます。
+*   **非アクティブ監視**: チャンネルが忙しいことを検出し、会話が途切れるのを待ってからロールを開始することで、礼儀正しい人間のユーザーをシミュレートします。
+*   **キー制限検出**: Mudaeのキー制限に達した場合、自動的にロールを一時停止します。
+
+---
+
+## 🛠️ インストール
+
+1.  **前提条件**:
+    *   [Python 3.8](https://www.python.org/downloads/) 以上をインストールしてください。
+2.  **依存関係のインストール**:
     ```bash
     pip install discord.py-self inquirer
     ```
-    *注意: `use_slash_rolls: true`を使用する予定がある場合は、`discord.py-self`のバージョンに `Route` オブジェクトが含まれていることを確認してください（通常、新しいバージョンには含まれています）。*
-3.  **📝 `presets.json`：** スクリプトのディレクトリに `presets.json` ファイルを作成します。ここにボット構成を追加します。利用可能なすべてのオプションについては、以下の例を参照してください。
-4.  **🚀 実行：** ターミナルからスクリプトを実行します。
-    ```bash
-    python mudae_bot.py
-    ```
-5.  **🕹️ プリセットの選択：** 対話型メニューから、実行する構成済みボットを選択します。
+3.  **セットアップ**:
+    *   このリポジトリをダウンロードします。
+    *   スクリプトと同じディレクトリに `presets.json` ファイルを作成します（下記の設定を参照）。
 
 ---
 
-### `presets.json` 設定例：
+## ⚙️ 設定 (`presets.json`)
 
-*(技術的な構成のため、JSON設定内容はオリジナルと同じです。)*
+すべての設定は `presets.json` で管理されます。複数のボットプロファイル（例：「メイン垢」、「サブ垢」）を定義し、同時に実行することができます。
 
 ```json
 {
-  "YourBotAccountName": {
-    // --- REQUIRED SETTINGS ---
-    "token": "YOUR_DISCORD_ACCOUNT_TOKEN", 
-    "channel_id": 123456789012345678,     
-    "roll_command": "wa",                  
-    "delay_seconds": 1,                    
-    "mudae_prefix": "$",                   
-    "min_kakera": 50,                      
+  "MyProMudaBot": {
+    "token": "YOUR_DISCORD_TOKEN_HERE",
+    "channel_id": 123456789012345678,
+    "prefix": "!", 
+    "mudae_prefix": "$",
+    "roll_command": "wa",
 
-    // --- CORE OPERATIONAL MODE ---
-    "rolling": true,                       
+    "// --- 基本設定 ---": "",
+    "rolling": true,                       // 「スナイプ専用」モードにする場合は false に設定（ロールせず、監視のみ）
+    "min_kakera": 200,                     // 自分のロール中にキャラクターをクレームするための最低値
+    "delay_seconds": 2,                    // 基本処理遅延
+    "roll_speed": 1.5,                     // ロールコマンド間の秒数
 
-    // --- ADVANCED ROLLING / CLAIMING ---
-    "roll_speed": 0.4,                     
-    "key_mode": false,                     
-    "skip_initial_commands": false,        // (デフォルト: false) trueの場合、起動時に$limroul、$dk、$dailyをスキップし、直接$tuに移動します。
-    "use_slash_rolls": false,              // (デフォルト: false) trueの場合、DiscordのスラッシュコマンドAPIを使用してロールコマンドを送信します。
-    "dk_power_management": true,           // (デフォルト: false) trueの場合、$tuでkakeraパワーをチェックし、必要な場合のみ$dkを使用します。
+    "// --- スナイプ設定 ---": "",
+    "snipe_mode": true,                    // ウィッシュリストスナイプのマスタースイッチ
+    "wishlist": ["Makima", "Rem"],         // スナイプする正確なキャラクター名リスト
+    "snipe_delay": 0.5,                    // スナイプ速度（秒）
+    
+    "series_snipe_mode": true,
+    "series_wishlist": ["Chainsaw Man"],   // スナイプするシリーズ名リスト
+    "series_snipe_delay": 1.0,
 
-    // 新機能: Chaosキーのみフィルター
-    "only_chaos": false,                   // (デフォルト: false) trueの場合、10+キー（chaos keys）を持つキャラクターのみかkakeraボタンをクリックします。           
+    "// --- カケラファーミング ---": "",
+    "kakera_reaction_snipe_mode": true,    // *任意の*メッセージのカケラボタンをクリックしますか？
+    "kakera_reaction_snipe_delay": 0.8,
+    "kakera_reaction_snipe_targets": [     // オプション: 特定のユーザー（例：自分のサブ垢）からのみ盗む
+        "my_alt_account_username"
+    ],
+    "only_chaos": false,                   // trueの場合、カオスキー（紫）のクリスタルにのみ反応します。
 
-    // --- HUMANIZATION (Recommended for high-risk accounts) ---
-    "humanization_enabled": true,          
-    "humanization_window_minutes": 40,     
-    "humanization_inactivity_seconds": 5,  
+    "// --- 高度なロジック ---": "",
+    "use_slash_rolls": true,               // $wa の代わりに /wa を使用（推奨）
+    "dk_power_management": true,           // 本当に必要なときのために $dk チャージを節約する
+    "snipe_ignore_min_kakera_reset": true, // クレームリセットまで1時間未満なら*何でも*クレームする。
+    "key_mode": false,                     // クレーム権がなくてもキーのためにロールを続ける？
 
-    // --- EXTERNAL SNIPING (For characters rolled by OTHERS) ---
-    "snipe_mode": true,                    
-    "wishlist": ["Character Name 1", "Character Name 2"],
-    "snipe_delay": 2,                      
-
-    "series_snipe_mode": true,             
-    "series_wishlist": ["Series Name 1"],
-    "series_snipe_delay": 3,               
-
-    "kakera_reaction_snipe_mode": false,   // (デフォルト: false) 任意のMudaeメッセージのkakeraリアクションボタンのスナイプを有効にします。
-    "kakera_reaction_snipe_delay": 0.75,   // (デフォルト: 0.75) 外部kakeraリアクションをクリックする前の遅延（秒）。
-    "kakera_reaction_snipe_targets": [],   // (デフォルト: []) ターゲットとするユーザー名のリスト。空の場合、すべてのユーザーをスナイプします。設定されている場合、これらのユーザーが所有するキャラクターのみをスナイプします。   
-
-    // --- KAKERA THRESHOLD (Used for both External and Reactive Sniping) ---
-    "kakera_snipe_mode": true,             
-    "kakera_snipe_threshold": 100,         
-
-    // --- リアクティブスナイプ（自分のロールからのキャラクター用） ---
-    "reactive_snipe_on_own_rolls": true,   // (デフォルト: true) 自分のロール中の即座クレームを有効/無効にします（WL、シリーズWL、Kakeraしきい値に基づく）。
-    "reactive_snipe_delay": 0,             // (デフォルト: 0) 自分のロール中のリアクティブスナイプ時にクレームする前の遅延（秒）。より自然に見せるのに便利です。   
-
-    // --- OTHER ---
-    "start_delay": 0,                      
-    "snipe_ignore_min_kakera_reset": false 
+    "// --- 人間化設定 ---": "",
+    "humanization_enabled": true,
+    "humanization_window_minutes": 30,     // リセット後、ランダムに0〜30分余分に待機
+    "humanization_inactivity_seconds": 10  // ロールする前にチャンネルで10秒間の静寂を待つ
   }
 }
 ```
 
 ---
 
-## 🎮 Discordトークンの取得 🔑
+## 🎮 使い方
 
-セルフボットはあなたのDiscordアカウントトークンを必要とします。**このトークンはあなたのアカウントへの完全なアクセスを許可します – 極秘に保ってください！共有することはパスワードを教えるようなものです。** このボットは代替アカウントで使用することを推奨します。
-
-1.  **ウェブブラウザでDiscordを開きます**（例：Chrome、Firefox）。*デスクトップアプリではない。*
-2.  **F12**を押して開発者ツールを開きます。
-3.  **`Console`** タブに移動します。
-4.  以下のコードスニペットをコンソールに貼り付け、Enterを押します。
-
-    ```javascript
-    // [同じJavascriptコードスニペットがここに挿入されます]
-    window.webpackChunkdiscord_app.push([
-    	[Symbol()],
-    	{},
-    	req => {
-    		if (!req.c) return;
-    		for (let m of Object.values(req.c)) {
-    			try {
-    				if (!m.exports || m.exports === window) continue;
-    				if (m.exports?.getToken) return copy(m.exports.getToken());
-    				for (let ex in m.exports) {
-    					if (m.exports?.[ex]?.getToken && m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return copy(m.exports[ex].getToken());
-    				}
-    			} catch {}
-    		}
-    	},
-    ]);
-
-    window.webpackChunkdiscord_app.pop();
-    console.log('%cWorked!', 'font-size: 50px');
-    console.log(`%cYou now have your token in the clipboard!`, 'font-size: 16px');
+1.  ボットのフォルダでターミナルを開きます。
+2.  スクリプトを実行します:
+    ```bash
+    python mudae_bot.py
     ```
-5.  あなたのトークンがクリップボードにコピーされます。それを慎重に `presets.json` ファイルの `"token"` フィールドに貼り付けます。
+3.  メニューからプリセットを選択します。
+4.  あとはリラックスして、ハーレムが成長するのを見守りましょう。📈
 
 ---
 
-## 🤝 貢献
+## 🔒 トークンの取得方法
 
-貢献を歓迎します！問題の報告、機能の提案、またはプロジェクトリポジトリへのプルリクエストの提出を自由に行ってください。
-
-**🙏 Discordアカウントへの潜在的なリスクを十分に認識し、責任を持って倫理的にこのツールを使用してください。 🙏**
-
-**ハッピー（かつ注意深い！）Mudae-ing！** 😉
+1.  ブラウザ（Chrome/Firefox）でDiscordにログインします。
+2.  **F12**（開発者ツール）を押し、**Console**タブに移動します。
+3.  以下のコードを貼り付けてトークンを表示させます:
+    ```javascript
+    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
+    ```
+    *(注: このトークンは誰にも教えないでください。アカウントへの完全なアクセス権を与えてしまいます。)*
 
 ---
-**ライセンス:** [MITライセンス](LICENSE)
+
+**よい狩りを！** 💖
