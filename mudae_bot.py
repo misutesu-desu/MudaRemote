@@ -959,6 +959,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if process and not client.is_actively_rolling:
             c_name = embed.author.name.lower()
             
+            # External Kakera Snipe on Character Rolls
+            if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and process:
+                 all_k = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+                 has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
+                 if has_btn:
+                    # Check owner
+                    target_ok = True
+                    if client.kakera_reaction_snipe_targets:
+                        owner = get_character_owner(embed)
+                        if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            target_ok = False
+                    
+                    if target_ok:
+                        client.kakera_reaction_sniped_messages.add(message.id)
+                        await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
+                        await claim_character(client, message.channel, message, is_kakera=True)
+                        process = False
+            
             # Series Snipe
             if client.series_snipe_mode and client.series_wishlist:
                 desc = embed.description or ""
