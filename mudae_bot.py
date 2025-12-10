@@ -789,7 +789,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         pass
 
 
-    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False):
+    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False):
         if not msg or not msg.embeds: return False
         embed = msg.embeds[0]
         char_name = embed.author.name if embed.author else "Unknown"
@@ -800,10 +800,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Kakera Claim Logic
         if is_kakera:
             chaos_count = count_chaos_keys(embed)
-            if client.only_chaos and chaos_count == 0:
+            if not is_snipe and client.only_chaos and chaos_count == 0:
                 return False
             
-            target_list = CHAOS_KAKERA_EMOJIS if chaos_count > 0 else KAKERA_EMOJIS
+            # If sniping, treat as normal character (ignore chaos logic)
+            target_list = CHAOS_KAKERA_EMOJIS if (chaos_count > 0 and not is_snipe) else KAKERA_EMOJIS
             cooldown_active = not is_kakera_reaction_allowed()
             clicked = False
             
@@ -917,7 +918,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     client.kakera_reaction_sniped_messages.add(message.id)
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
-                    await claim_character(client, message.channel, message, is_kakera=True)
+                    await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
 
         # Handle Character Rolls
@@ -974,7 +975,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if target_ok:
                         client.kakera_reaction_sniped_messages.add(message.id)
                         await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
-                        await claim_character(client, message.channel, message, is_kakera=True)
+                        await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
                         process = False
             
             # Series Snipe
