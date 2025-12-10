@@ -547,6 +547,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Claim Status
         can_claim = False
         wait_time = 0
+
+        # Try to parse claim reset time first (available in both states)
+        claim_reset_minutes = None
+        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento).*?(?:in|em)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
+        if match_claim_reset:
+            h_c, m_c = parse_hours_minutes(match_claim_reset)
+            claim_reset_minutes = h_c * 60 + m_c
         
         claim_ready_pt = "você __pode__ se casar agora mesmo" in c_lower
         claim_ready_en = "you __can__ claim" in c_lower
@@ -555,10 +562,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.claim_right_available = True
             log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
+            
             if client.snipe_ignore_min_kakera_reset: 
-                 # Check if reset is soon, maybe lower standard
-                 pass
-            client.next_claim_reset_at_utc = now_utc # Approximation, refined below
+                 if claim_reset_minutes is not None and claim_reset_minutes <= 60:
+                      client.current_min_kakera_for_roll_claim = 0
+                      log_function(f"[{client.muda_name}] Reset soon ({claim_reset_minutes}m). Ignoring Min Kakera.", preset_name, "WARN")
+            
+            if claim_reset_minutes is not None:
+                client.next_claim_reset_at_utc = now_utc + datetime.timedelta(minutes=claim_reset_minutes)
+            else:
+                client.next_claim_reset_at_utc = now_utc # Approximation
+            
             can_claim = True
         else:
             client.claim_right_available = False
