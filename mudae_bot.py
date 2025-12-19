@@ -463,10 +463,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         content_lower = tu_content.lower()
         
         # Check stock
-        dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque)", content_lower)
+        dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock)", content_lower)
         if dk_stock_match:
             client.dk_stock_count = int(dk_stock_match.group(1))
             log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
+        elif "¡$dk está listo!" in content_lower or "$dk está listo" in content_lower:
+            # Fallback for Spanish where it might say ready without a number
+            client.dk_stock_count = 1
+            log_function(f"[{client.muda_name}] DK Stock: 1 (Derived)", preset_name, "INFO")
         else:
             client.dk_stock_count = 0
         
@@ -781,7 +785,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_targets.sort(key=lambda x: x[2], reverse=True)
             if rt_targets:
                 msg_rt, n_rt, v_rt = rt_targets[0]
-                if v_rt >= client.min_kakera or v_rt >= min_kak_post:
+                if v_rt >= client.min_kakera:
                     log_function(f"[{client.muda_name}] Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
                     try:
                         await channel.send(f"{client.mudae_prefix}rt")
