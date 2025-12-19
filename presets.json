@@ -1,8 +1,8 @@
 {
-  "Main_Account_Full_Features": {
-    "token": "YOUR_DISCORD_USER_TOKEN_HERE",
+  "Main_Account": {
+    "token": "YOUR_TOKEN_HERE",
     "channel_id": 123456789012345678,
-    "prefix": "!",
+    "prefix": "/////////////////////",
     "mudae_prefix": "$",
     "roll_command": "$wa",
     "rolling": true,
@@ -15,66 +15,27 @@
     "only_chaos": false,
     "wishlist": [
       "rem",
-      "makima",
-      "2b"
+      "makima"
     ],
     "snipe_mode": true,
-    "snipe_delay": 0.2,
+    "snipe_delay": 0.5,
     "snipe_ignore_min_kakera_reset": true,
     "series_wishlist": [
-      "chainsaw man",
-      "nier: automata"
+      "chainsaw man"
     ],
     "series_snipe_mode": true,
     "series_snipe_delay": 1.5,
     "kakera_snipe_mode": true,
-    "kakera_snipe_threshold": 400,
+    "kakera_snipe_threshold": 500,
     "reactive_snipe_on_own_rolls": true,
-    "reactive_snipe_delay": 0.0,
-    "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 0.75,
-    "kakera_reaction_snipe_targets": [
-      "UserToStealFrom1",
-      "UserToStealFrom2"
-    ],
-    "humanization_enabled": true,
-    "humanization_window_minutes": 20,
-    "humanization_inactivity_seconds": 300,
-    "dk_power_management": true,
-    "skip_initial_commands": false
-  },
-  "Sniper_Only_Account": {
-    "token": "YOUR_ALT_TOKEN_HERE",
-    "channel_id": 123456789012345678,
-    "prefix": "?",
-    "mudae_prefix": "$",
-    "roll_command": "$mg",
-    "rolling": false,
-    "use_slash_rolls": false,
-    "roll_speed": 1.0,
-    "delay_seconds": 5,
-    "start_delay": 2,
-    "min_kakera": 0,
-    "key_mode": false,
-    "only_chaos": true,
-    "wishlist": [],
-    "snipe_mode": false,
-    "snipe_delay": 0.0,
-    "snipe_ignore_min_kakera_reset": false,
-    "series_wishlist": [],
-    "series_snipe_mode": false,
-    "series_snipe_delay": 0.0,
-    "kakera_snipe_mode": false,
-    "kakera_snipe_threshold": 0,
-    "reactive_snipe_on_own_rolls": false,
     "reactive_snipe_delay": 0,
     "kakera_reaction_snipe_mode": true,
-    "kakera_reaction_snipe_delay": 0.5,
+    "kakera_reaction_snipe_delay": 0.75,
     "kakera_reaction_snipe_targets": [],
-    "humanization_enabled": false,
-    "humanization_window_minutes": 0,
-    "humanization_inactivity_seconds": 0,
-    "dk_power_management": false,
-    "skip_initial_commands": true
+    "humanization_enabled": true,
+    "humanization_window_minutes": 15,
+    "humanization_inactivity_seconds": 120,
+    "dk_power_management": true,
+    "skip_initial_commands": false
   }
 }
