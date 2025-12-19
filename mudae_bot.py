@@ -100,13 +100,14 @@ def count_chaos_keys(embed):
         return 0
     
     desc = embed.description
-    key_pattern = r'<:(?:chaos)?key:\d+>\s*\(\*\*(\d+)\*\*\)'
+    key_pattern = r'<:(?:chaos)?key:\d+>\s*\(\*\*([\d,.]+)\*\*\)'
     matches = re.findall(key_pattern, desc, re.IGNORECASE)
     
     chaos_count = 0
     for match in matches:
         try:
-            if int(match) >= 10:
+            val = int(re.sub(r"[^\d]", "", match))
+            if val >= 10:
                 chaos_count += 1
         except ValueError:
             continue
@@ -118,7 +119,7 @@ def get_character_owner(embed):
         return None
     
     footer_text = embed.footer.text
-    belongs_pattern = r'[Bb]elongs to\s+(.+?)$'
+    belongs_pattern = r'(?:[Bb]elongs to|[Pp]ertence a|[Pp]ertenece a)\s+(.+?)$'
     match = re.search(belongs_pattern, footer_text)
     
     if match:
@@ -473,10 +474,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         
         try:
-            power_match = re.search(r"power:\s*\*\*(\d+)%\*\*", content_lower)
+            power_match = re.search(r"(?:power|poder):\s*\*\*(\d+)%\*\*", content_lower)
             
-            # Handling PT-BR translation variance: "reação" vs "botão"
-            consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão) de kakera consume)\s*(\d+)%", content_lower)
+            # Handling PT-BR translation variance: "reação" vs "botão", Spanish: "botón"
+            consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão|botón) de kakera consume)\s*(\d+)%", content_lower)
             
             if not power_match or not consumption_match:
                 log_function(f"[{client.muda_name}] DK: Parse failed (power/consumption).", preset_name, "WARN")
@@ -537,7 +538,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # $rt Status
-        if "$rt is available" in c_lower or "$rt está pronto" in c_lower or "$rt esta pronto" in c_lower:
+        if "$rt is available" in c_lower or "$rt está pronto" in c_lower or "$rt esta pronto" in c_lower or "$rt está disponible" in c_lower:
             client.rt_available = True
             log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
         else:
@@ -550,15 +551,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Try to parse claim reset time first (available in both states)
         claim_reset_minutes = None
-        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento).*?(?:in|em)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
+        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo).*?(?:in|em|en)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
         if match_claim_reset:
             h_c, m_c = parse_hours_minutes(match_claim_reset)
             claim_reset_minutes = h_c * 60 + m_c
         
         claim_ready_pt = "você __pode__ se casar agora mesmo" in c_lower
         claim_ready_en = "you __can__ claim" in c_lower
+        claim_ready_es = "puedes__ reclamar" in c_lower or "puedes reclamar" in c_lower
         
-        if claim_ready_en or claim_ready_pt:
+        if claim_ready_en or claim_ready_pt or claim_ready_es:
             client.claim_right_available = True
             log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
@@ -577,7 +579,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             client.claim_right_available = False
             # Parse wait time
-            match_wait = re.search(r"(?:can't claim|falta um tempo).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
+            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
             if match_wait:
                 h, m = parse_hours_minutes(match_wait)
                 wait_time = h * 60 + m
@@ -596,13 +598,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
         # Kakera Status
-        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower:
+        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower:
             client.kakera_react_available = True
             client.kakera_react_cooldown_until_utc = None
-        elif "can't react" in c_lower or "não pode" in c_lower:
+        elif "can't react" in c_lower or "não pode" in c_lower or "no puedes" in c_lower:
             client.kakera_react_available = False
             # Try to parse time
-            match_k = re.search(r"(?:react|pegar).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
+            match_k = re.search(r"(?:react|pegar|reaccionar).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
             if match_k:
                 h, m = parse_hours_minutes(match_k)
                 client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=(h*60+m))
@@ -632,8 +634,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Regex for rolls
         main_match_en = re.search(r"you have\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left\b)", content_lower, re.DOTALL)
         main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
+        main_match_es = re.search(r"tienes\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
 
-        main_match = main_match_en or main_match_pt
+        main_match = main_match_en or main_match_pt or main_match_es
         
         if main_match:
             rolls_left = parse_int_from_fragment(main_match.group(1))
@@ -651,7 +654,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass 
 
             # Parse reset time
-            match_reset = re.search(r"(?:reset in|reinicialização é em)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
+            match_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
             if match_reset:
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
@@ -738,9 +741,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
                     k_v = 0
-                    match_k = re.search(r"\**(\d{1,3}(?:,\d{3})*|\d+)\**<:kakera:", desc)
+                    match_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
                     if match_k:
-                        k_v = int(match_k.group(1).replace(",", ""))
+                        k_v = int(re.sub(r"[^\d]", "", match_k.group(1)))
                     
                     is_wl = any(w == char_n for w in client.wishlist)
                     if is_wl:
@@ -926,7 +929,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Key Limit Check
         if client.rolling_enabled and client.is_actively_rolling:
             desc = embed.description or ""
-            if "limit of 1,000 keys" in desc or "limite de 1.000 chaves" in desc:
+            if "limit of 1,000 keys" in desc or "limite de 1.000 chaves" in desc or "límite de 1.000 llaves" in desc:
                 client.interrupt_rolling = True
                 client.key_limit_hit = True
                 log_function(f"[{client.muda_name}] Key Limit Hit. Pausing.", preset_name, "ERROR")
@@ -942,8 +945,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             c_name = embed.author.name.lower()
             desc = embed.description or ""
             k_val = 0
-            m_k = re.search(r"\**(\d+)\**<:kakera:", desc)
-            if m_k: k_val = int(m_k.group(1))
+            m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
+            if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
             is_wl = c_name in client.wishlist
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
@@ -997,8 +1000,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if process and client.kakera_snipe_mode_active:
                 desc = embed.description or ""
                 k_val = 0
-                m_k = re.search(r"\**(\d+)\**<:kakera:", desc)
-                if m_k: k_val = int(m_k.group(1))
+                m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
+                if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 
                 if k_val >= client.kakera_snipe_threshold and has_claim_option(message, embed):
                     await asyncio.sleep(client.snipe_delay)
@@ -1020,7 +1023,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         embed = after.embeds[0]
         ft = (embed.footer.text or "").lower()
-        if "belongs to" not in ft and "pertence a" not in ft: return
+        if "belongs to" not in ft and "pertence a" not in ft and "pertenece a" not in ft: return
         
         watch = client.snipe_watch.pop(after.id)
         name = watch['char_name']
