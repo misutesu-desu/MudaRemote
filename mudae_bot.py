@@ -523,7 +523,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
-                    if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c):
+                    if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c) or ("rolls" in c and "reclamar" in c):
                         tu_message_content = msg.content
                         break
             if tu_message_content: break
