@@ -4,6 +4,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
+[![Discord Server](https://img.shields.io/badge/Discord-参加する-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 > **⚠️ 重大な警告 ⚠️**
 > 

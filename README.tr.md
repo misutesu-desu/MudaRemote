@@ -4,6 +4,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![Lisans](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Durum](https://img.shields.io/badge/Status-Aktif-success.svg)]()
+[![Discord Server](https://img.shields.io/badge/Discord-Katıl-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 > **⚠️ KRİTİK UYARI ⚠️**
 > 
