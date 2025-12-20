@@ -478,7 +478,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         
         try:
-            power_match = re.search(r"(?:power|poder):\s*\*\*(\d+)%\*\*", content_lower)
+            power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", content_lower)
             
             # Handling PT-BR translation variance: "reação" vs "botão", Spanish: "botón"
             consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão|botón) de kakera consume)\s*(\d+)%", content_lower)
@@ -583,7 +583,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             client.claim_right_available = False
             # Parse wait time
-            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
+            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
             if match_wait:
                 h, m = parse_hours_minutes(match_wait)
                 wait_time = h * 60 + m
@@ -602,13 +602,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
         # Kakera Status
-        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower:
+        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower:
             client.kakera_react_available = True
             client.kakera_react_cooldown_until_utc = None
         elif "can't react" in c_lower or "não pode" in c_lower or "no puedes" in c_lower:
             client.kakera_react_available = False
             # Try to parse time
-            match_k = re.search(r"(?:react|pegar|reaccionar).*?\*\*(\d+h)?\s*(\d+)\*\* min", c_lower)
+            match_k = re.search(r"(?:react|pegar|reaccionar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
             if match_k:
                 h, m = parse_hours_minutes(match_k)
                 client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=(h*60+m))
@@ -1034,7 +1034,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         # Check if we own it now
         user_names = [client.user.name.lower(), client.user.display_name.lower()]
-        if client.user.global_name: user_names.append(client.user.global_name.lower())
+        global_name = getattr(client.user, "global_name", None)
+        if global_name: user_names.append(global_name.lower())
         
         if any(n in ft for n in user_names):
             log_function(f"[{client.muda_name}] Snipe Confirmed: {name}", preset_name, "CLAIM")
