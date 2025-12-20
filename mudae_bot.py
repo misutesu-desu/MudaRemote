@@ -562,7 +562,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         claim_ready_pt = "você __pode__ se casar agora mesmo" in c_lower
         claim_ready_en = "you __can__ claim" in c_lower
-        claim_ready_es = "puedes__ reclamar" in c_lower or "puedes reclamar" in c_lower
+        claim_ready_es = "puedes__ reclamar" in c_lower or ("puedes reclamar" in c_lower and "no puedes reclamar" not in c_lower)
         
         if claim_ready_en or claim_ready_pt or claim_ready_es:
             client.claim_right_available = True
@@ -1113,5 +1113,27 @@ def main_menu():
             if p_ans: 
                 for p in p_ans['p']: threads.append(start_preset_thread(p, presets[p]))
 
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="Mudae Bot Helper")
+    parser.add_argument("--preset", type=str, help="Name of the preset to run")
+    parser.add_argument("--all", action="store_true", help="Run all presets")
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    main_menu()
+    args = parse_args()
+    
+    if args.preset:
+        if args.preset in presets:
+            t = start_preset_thread(args.preset, presets[args.preset])
+            if t: t.join() # Keep main thread alive
+        else:
+            print(f"Preset '{args.preset}' not found.")
+    elif args.all:
+        started = []
+        for p_name, p_data in presets.items():
+            t = start_preset_thread(p_name, p_data)
+            if t: started.append(t)
+        for t in started: t.join()
+    else:
+        main_menu()
