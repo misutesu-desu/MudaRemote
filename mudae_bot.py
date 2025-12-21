@@ -425,9 +425,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.loop.create_task(snipe_watch_cleanup_task())
         _refresh_session_id()
         
-        channel = client.get_channel(target_channel_id)
+        # Retrieve target channel and validate
+        try:
+            target_channel_id_int = int(target_channel_id)
+        except (ValueError, TypeError):
+            log_function(f"[{client.muda_name}] Err: Invalid channel ID format: {target_channel_id}", preset_name, "ERROR"); await client.close(); return
+
+        channel = client.get_channel(target_channel_id_int)
         if not channel:
-            log_function(f"[{client.muda_name}] Channel {target_channel_id} not found", preset_name, "ERROR"); await client.close(); return
+            log_function(f"[{client.muda_name}] Channel {target_channel_id_int} not in cache, fetching...", preset_name, "INFO")
+            try:
+                channel = await client.fetch_channel(target_channel_id_int)
+            except discord.NotFound:
+                log_function(f"[{client.muda_name}] Channel {target_channel_id_int} not found via API", preset_name, "ERROR"); await client.close(); return
+            except discord.Forbidden:
+                log_function(f"[{client.muda_name}] No access to channel {target_channel_id_int}", preset_name, "ERROR"); await client.close(); return
+            except Exception as e:
+                log_function(f"[{client.muda_name}] Err fetching channel {target_channel_id_int}: {e}", preset_name, "ERROR"); await client.close(); return
+        
+        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+            log_function(f"[{client.muda_name}] Err: Channel {target_channel_id_int} is not a messageable channel", preset_name, "ERROR"); await client.close(); return
         
         if client.rolling_enabled:
              # Permissions check
