@@ -76,8 +76,8 @@ def print_log(message, preset_name, log_type="INFO"):
     write_log_to_file(log_message_formatted)
 
 def is_character_embed(embed):
-    # Reliable check: Characters have an image but NO thumbnail
-    if not embed:
+    # Reliable check: Characters have an author name, an image, and NO thumbnail
+    if not embed or not embed.author or not embed.author.name:
         return False
     
     has_image = embed.image and embed.image.url
@@ -816,7 +816,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False):
         if not msg or not msg.embeds: return False
         embed = msg.embeds[0]
-        char_name = embed.author.name if embed.author else "Unknown"
+        char_author = embed.author.name if embed.author else None
+        char_name = char_author if char_author else "Unknown"
         
         if not is_kakera and not is_rt_claim and not is_character_snipe_allowed():
             return False
