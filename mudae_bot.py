@@ -239,16 +239,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
     def is_character_snipe_allowed() -> bool:
-        # Check local timers before attempting snipes
-        try:
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            if client.snipe_globally_disabled_until and now_utc < client.snipe_globally_disabled_until:
-                return False
-            if client.claim_cooldown_until_utc and now_utc < client.claim_cooldown_until_utc:
-                return False
-            return True
-        except Exception:
-            return True
+        return True
 
     def is_kakera_reaction_allowed() -> bool:
         try:
@@ -263,17 +254,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception:
             return True
 
-    async def snipe_watch_cleanup_task():
-        # Memory cleanup
-        while not client.is_closed():
-            try:
-                now_ts = time.time()
-                stale = [mid for mid, info in client.snipe_watch.items() if now_ts - info.get('ts', now_ts) > client.snipe_watch_expiry_seconds]
-                for mid in stale:
-                    client.snipe_watch.pop(mid, None)
-                await asyncio.sleep(30)
-            except Exception:
-                await asyncio.sleep(30)
 
     def _refresh_session_id():
         try:
@@ -422,7 +402,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def on_ready():
         log_function(f"[{client.muda_name}] Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
-        client.loop.create_task(snipe_watch_cleanup_task())
         _refresh_session_id()
         
         # Retrieve target channel and validate
@@ -733,10 +712,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Post-roll processing error: {e}", preset_name, "ERROR")
         
         await asyncio.sleep(2)
-        if client.snipe_happened or client.series_snipe_happened:
-            client.snipe_happened = False
-            client.series_snipe_happened = False
-        
         await asyncio.sleep(1)
         await check_status(client, channel, client.mudae_prefix)
 
@@ -757,7 +732,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
             if is_kakera:
                 kakera_claims.append(msg)
-            elif (client.claim_right_available or key_mode_only_kakera_param):
+            else:
                 if has_claim_option(msg, embed):
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
@@ -781,19 +756,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claimed_post = False
         msg_claimed_id = -1
         
-        if client.claim_right_available and is_character_snipe_allowed():
+        if is_character_snipe_allowed():
             if wl_claims_post:
                 msg_c, n, v = wl_claims_post[0]
                 if await claim_character(client, channel, msg_c, is_kakera=False):
                     claimed_post = True
-                    client.claim_right_available = False
                     msg_claimed_id = msg_c.id
             elif char_claims_post:
                 char_claims_post.sort(key=lambda x: x[2], reverse=True)
                 msg_c, n, v = char_claims_post[0]
                 if await claim_character(client, channel, msg_c, is_kakera=False):
                     claimed_post = True
-                    client.claim_right_available = False
                     msg_claimed_id = msg_c.id
         
         # RT check
@@ -867,7 +840,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await btn.click()
                             clicked_claim = True
                             await asyncio.sleep(1.5)
-                            client.snipe_watch[msg.id] = {'char_name': char_name, 'ts': time.time()}
                             return True
                         except Exception:
                             return False
@@ -878,7 +850,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] Claiming {char_name} (Reaction)", client.preset_name, "CLAIM")
                 await msg.add_reaction("💖")
                 await asyncio.sleep(1.5)
-                client.snipe_watch[msg.id] = {'char_name': char_name, 'ts': time.time()}
                 return True
             except Exception:
                 return False
@@ -963,7 +934,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         process = True
         
         # Self-snipe (Reactive)
-        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and client.claim_right_available:
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling:
             c_name = embed.author.name.lower()
             desc = embed.description or ""
             k_val = 0
@@ -976,9 +947,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if (is_wl or is_val) and has_claim_option(message, embed):
                 if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
                 if await claim_character(client, message.channel, message):
-                    client.claim_right_available = False
                     client.interrupt_rolling = True
-                    client.snipe_happened = True
                     process = False
 
         # Snipe other users
@@ -1037,32 +1006,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
                  await claim_character(client, message.channel, message, is_kakera=True)
 
-    @client.event
-    async def on_message_edit(before, after):
-        # Watch for successful claims (ownership change)
-        if after.id not in client.snipe_watch: return
-        if not after.embeds: return
-        
-        embed = after.embeds[0]
-        ft = (embed.footer.text or "").lower()
-        if "belongs to" not in ft and "pertence a" not in ft and "pertenece a" not in ft: return
-        
-        watch = client.snipe_watch.pop(after.id)
-        name = watch['char_name']
-        
-        # Check if we own it now
-        user_names = [client.user.name.lower(), client.user.display_name.lower()]
-        global_name = getattr(client.user, "global_name", None)
-        if global_name: user_names.append(global_name.lower())
-        
-        if any(n in ft for n in user_names):
-            log_function(f"[{client.muda_name}] Snipe Confirmed: {name}", preset_name, "CLAIM")
-            client.claim_right_available = False
-            # Approx 3h reset
-            client.next_claim_reset_at_utc = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=3)
-            client.claim_cooldown_until_utc = client.next_claim_reset_at_utc
-        else:
-            log_function(f"[{client.muda_name}] Snipe Failed: {name}", preset_name, "INFO")
 
     try:
         client.run(token)
