@@ -11,6 +11,10 @@ import inquirer
 import logging
 import time
 import random
+import os
+import shutil
+import requests
+import subprocess
 from discord.utils import time_snowflake
 
 try:
@@ -20,6 +24,52 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
+CURRENT_VERSION = "3.0.0"
+
+# --- UPDATE CONFIGURATION ---
+# Replace this URL with your GitHub RAW URL for version.json and the script itself
+UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/" 
+
+def check_for_updates():
+    if not UPDATE_URL:
+        return
+    
+    print(f"[{BOT_NAME}] Checking for updates... (Current: v{CURRENT_VERSION})")
+    try:
+        # Check version.json
+        # Format: {"version": "2.6.0", "download_url": "..."}
+        response = requests.get(f"{UPDATE_URL}version.json", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            latest_version = data.get("version")
+            download_url = data.get("download_url")
+            
+            if latest_version and latest_version > CURRENT_VERSION:
+                print(f"[{BOT_NAME}] New version found: v{latest_version}")
+                print(f"[{BOT_NAME}] Downloading update...")
+                
+                # Download new script
+                update_res = requests.get(download_url, timeout=30)
+                if update_res.status_code == 200:
+                    current_script = os.path.abspath(__file__)
+                    backup_script = current_script + ".bak"
+                    
+                    # Create backup
+                    shutil.copy2(current_script, backup_script)
+                    
+                    # Replace current script
+                    with open(current_script, "wb") as f:
+                        f.write(update_res.content)
+                    
+                    print(f"[{BOT_NAME}] Update applied. Restarting...")
+                    # Restart process
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                else:
+                    print(f"[{BOT_NAME}] Failed to download update file.")
+            else:
+                print(f"[{BOT_NAME}] You are up to date.")
+    except Exception as e:
+        print(f"[{BOT_NAME}] Update check failed: {e}")
 
 # Load config
 presets = {}
@@ -85,12 +135,12 @@ def is_character_embed(embed):
 
     return has_image and not has_thumbnail
 
-def has_claim_option(message, embed):
+def has_claim_option(message, embed, claim_emojis):
     if not message.components:
         return True
     for comp in message.components:
         for btn in comp.children:
-            if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in CLAIM_EMOJIS:
+            if hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in claim_emojis:
                 return True
     return False
 
@@ -137,7 +187,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_reaction_snipe_targets,
             humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
             dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
-            reactive_snipe_delay):
+            reactive_snipe_delay, time_rolls_to_claim_reset_preset,
+            rt_ignore_min_kakera_for_wishlist_preset,
+            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -153,10 +205,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.snipe_mode = snipe_mode
     client.snipe_delay = snipe_delay
     client.snipe_ignore_min_kakera_reset = snipe_ignore_min_kakera_reset
-    client.wishlist = [w.lower() for w in wishlist]
+    client.wishlist = set([w.lower() for w in wishlist])
     client.series_snipe_mode = series_snipe_mode
     client.series_snipe_delay = series_snipe_delay
-    client.series_wishlist = [sw.lower() for sw in series_wishlist]
+    client.series_wishlist = set([sw.lower() for sw in series_wishlist])
     client.muda_name = BOT_NAME
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
@@ -177,11 +229,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.enable_reactive_self_snipe = enable_reactive_self_snipe_preset
     client.reactive_snipe_delay = reactive_snipe_delay
     client.rolling_enabled = rolling_enabled
-    client.rt_available = False 
-
+    client.rt_available = False # $rt (Reset Timer) status
     client.kakera_reaction_snipe_mode_active = kakera_reaction_snipe_mode_preset
     client.kakera_reaction_snipe_delay_value = kakera_reaction_snipe_delay_preset
-    client.kakera_reaction_snipe_targets = [t.lower() for t in kakera_reaction_snipe_targets]
+    client.kakera_reaction_snipe_targets = set([t.lower() for t in kakera_reaction_snipe_targets])
     client.kakera_reaction_sniped_messages = set()
     client.kakera_react_available = True
     client.kakera_react_cooldown_until_utc = None
@@ -216,6 +267,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.last_slash_attempt = 0.0
     client.slash_rate_limited_until = 0.0
     client.key_limit_hit = False
+    client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
+    client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
+    
+    # Custom Emojis
+    client.claim_emojis = claim_emojis_preset or ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
+    client.kakera_emojis = kakera_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+    client.chaos_emojis = chaos_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+
 
     async def health_monitor_task():
         # Reconnect if gateway drops
@@ -239,7 +298,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
     def is_character_snipe_allowed() -> bool:
-        return client.claim_right_available
+        return client.claim_right_available or client.rt_available or client.key_mode
 
     def is_kakera_reaction_allowed() -> bool:
         try:
@@ -571,23 +630,38 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                       log_function(f"[{client.muda_name}] Reset soon ({claim_reset_minutes}m). Ignoring Min Kakera.", preset_name, "WARN")
             
             if claim_reset_minutes is not None:
-                client.next_claim_reset_at_utc = now_utc + datetime.timedelta(minutes=claim_reset_minutes)
+                # Align to the next minute boundary (:00) for precision
+                client.next_claim_reset_at_utc = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
             else:
-                client.next_claim_reset_at_utc = now_utc # Approximation
+                client.next_claim_reset_at_utc = now_utc.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
             
             can_claim = True
         else:
             client.claim_right_available = False
+            client.current_min_kakera_for_roll_claim = client.min_kakera  # Reset to normal rules
             # Parse wait time
             match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
             if match_wait:
                 h, m = parse_hours_minutes(match_wait)
                 wait_time = h * 60 + m
                 log_function(f"[{client.muda_name}] Claim: Cooldown ({h}h {m}m)", preset_name, "INFO")
-                client.claim_cooldown_until_utc = now_utc + datetime.timedelta(minutes=wait_time)
+                
+                # Align to next minute for precision
+                target_time = (now_utc + datetime.timedelta(minutes=wait_time)).replace(second=0, microsecond=0)
+                client.claim_cooldown_until_utc = target_time
+                client.next_claim_reset_at_utc = target_time
+                
+                if claim_reset_minutes is None:
+                    claim_reset_minutes = wait_time
             
-            # If we can't claim, we might still want to roll for keys/$rt
-            immediate_roll = client.rolling_enabled and proceed_to_rolls and (client.key_mode or client.rt_available)
+            # If we can't claim, we might still want to roll for keys/$rt or time to reset
+            # Timing logic: Only roll if claim reset is near (<= 65 mins)
+            is_timing_window = False
+            if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 65:
+                is_timing_window = True
+
+            immediate_roll = client.rolling_enabled and proceed_to_rolls and (client.key_mode or client.rt_available or is_timing_window)
+            
             if immediate_roll:
                 can_claim = True # Pseudo-true to proceed to roll logic
             elif client.rolling_enabled and proceed_to_rolls:
@@ -626,6 +700,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         rolls_left = 0
         us_rolls_left = 0
         reset_time_r = 0
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
         
         def parse_int_from_fragment(fragment: str) -> int:
             digits = re.sub(r"[^\d]", "", fragment or "")
@@ -659,8 +734,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
                 reset_time_r = h_r * 60 + m_r
+                # Align to the next minute boundary (:00)
+                client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
             else:
                 reset_time_r = 60 # Default safe fallback
+                client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
             
             # Only add $us to total. Ignoring $mk fixes the 0+1 loop bug.
             total_rolls = rolls_left + us_rolls_left
@@ -683,6 +761,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_text += " (Reactive)" if client.enable_reactive_self_snipe else ""
         log_function(f"[{client.muda_name}] {log_text}", client.preset_name, "INFO")
         
+        # Timing Logic: If not ready to claim and timing is enabled, wait until just before claim reset
+        # If reset is soon (<= 65 mins), we time it even if RT/KeyMode is available (per user request)
+        reset_soon = False
+        if client.next_claim_reset_at_utc:
+            diff = (client.next_claim_reset_at_utc - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            if 0 < diff <= 65 * 60:
+                reset_soon = True
+
+        if client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
+                actual_speed = max(client.roll_speed, 0.2 if client.use_slash_rolls else 0)
+                total_duration = rolls_left * actual_speed
+                
+                # Aim for the last roll to finish ~2s before reset, so processing (with its 5s sleep) 
+                # starts exactly at reset + 3s.
+                target_start_time = client.next_claim_reset_at_utc - datetime.timedelta(seconds=total_duration + 2)
+                
+                wait_seconds = (target_start_time - now_utc).total_seconds()
+                
+                # Safety: Don't wait past roll reset
+                if client.roll_reset_at_utc:
+                    max_wait = (client.roll_reset_at_utc - now_utc).total_seconds() - total_duration - 5
+                    wait_seconds = min(wait_seconds, max_wait)
+
+                if wait_seconds > 2:
+                    log_function(f"[{client.muda_name}] Timing rolls to finish at reset. Waiting {wait_seconds/60:.1f}m.", preset_name, "RESET")
+                    await asyncio.sleep(wait_seconds)
+
         start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=0.5)
         client.is_actively_rolling = True
         client.interrupt_rolling = False
@@ -727,13 +834,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             embed = msg.embeds[0]
             if not is_character_embed(embed): continue
             
-            all_kakera_emojis = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+            all_kakera_emojis = client.kakera_emojis + client.chaos_emojis
             is_kakera = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in msg.components for b in c.children)
             
             if is_kakera:
                 kakera_claims.append(msg)
             else:
-                if has_claim_option(msg, embed):
+                if has_claim_option(msg, embed, client.claim_emojis):
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
                     k_v = 0
@@ -757,17 +864,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         msg_claimed_id = -1
         
         if is_character_snipe_allowed():
-            if wl_claims_post:
-                msg_c, n, v = wl_claims_post[0]
-                if await claim_character(client, channel, msg_c, is_kakera=False):
-                    claimed_post = True
-                    msg_claimed_id = msg_c.id
-            elif char_claims_post:
-                char_claims_post.sort(key=lambda x: x[2], reverse=True)
-                msg_c, n, v = char_claims_post[0]
-                if await claim_character(client, channel, msg_c, is_kakera=False):
-                    claimed_post = True
-                    msg_claimed_id = msg_c.id
+            if client.claim_right_available:
+                if wl_claims_post:
+                    msg_c, n, v = wl_claims_post[0]
+                    if await claim_character(client, channel, msg_c, is_kakera=False):
+                        claimed_post = True
+                        msg_claimed_id = msg_c.id
+                elif char_claims_post:
+                    char_claims_post.sort(key=lambda x: x[2], reverse=True)
+                    msg_c, n, v = char_claims_post[0]
+                    if await claim_character(client, channel, msg_c, is_kakera=False):
+                        claimed_post = True
+                        msg_claimed_id = msg_c.id
         
         # RT check
         if (key_mode_only_kakera_param or claimed_post) and client.rt_available:
@@ -775,7 +883,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_targets.sort(key=lambda x: x[2], reverse=True)
             if rt_targets:
                 msg_rt, n_rt, v_rt = rt_targets[0]
-                if v_rt >= client.min_kakera:
+                is_wl_rt = n_rt in client.wishlist
+                
+                # Check if we should ignore min_kakera for wishlist or if value is enough
+                bypass_min = is_wl_rt and client.rt_ignore_min_kakera_for_wishlist
+                if bypass_min or v_rt >= client.min_kakera:
                     log_function(f"[{client.muda_name}] Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
                     try:
                         await channel.send(f"{client.mudae_prefix}rt")
@@ -792,7 +904,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
         
-        # Check if snipe is allowed for character claims
         if not is_kakera and not is_rt_claim and not is_character_snipe_allowed():
             return False
 
@@ -803,7 +914,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return False
             
             # If sniping, treat as normal character (ignore chaos logic)
-            target_list = CHAOS_KAKERA_EMOJIS if (chaos_count > 0 and not is_snipe) else KAKERA_EMOJIS
+            target_list = client.chaos_emojis if (chaos_count > 0 and not is_snipe) else client.kakera_emojis
             cooldown_active = not is_kakera_reaction_allowed()
             clicked = False
             
@@ -821,10 +932,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if cooldown_active and name != 'kakeraP':
                                 continue
                             try:
-                                # Prioritize click for speed
-                                click_task = asyncio.create_task(btn.click())
+                                await btn.click()
                                 log_function(f"[{client.muda_name}] Kakera clicked: {char_name}", client.preset_name, "KAKERA")
-                                await click_task
                                 clicked = True
                                 await asyncio.sleep(0.5)
                             except Exception:
@@ -837,25 +946,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             for comp in msg.components:
                 if clicked_claim: break
                 for btn in comp.children:
-                    if hasattr(btn.emoji, 'name') and btn.emoji.name in CLAIM_EMOJIS:
+                    if hasattr(btn.emoji, 'name') and btn.emoji.name in client.claim_emojis:
                         try:
-                            # Prioritize click for speed
-                            click_task = asyncio.create_task(btn.click())
+                            await btn.click()
                             log_function(f"[{client.muda_name}] Claiming {char_name}", client.preset_name, "CLAIM")
-                            await click_task
                             clicked_claim = True
-                            client.claim_right_available = False # Update status immediately
                             await asyncio.sleep(1.5)
                             return True
                         except Exception:
                             return False
         
         # Reaction fallback
-        if not clicked_claim and has_claim_option(msg, embed):
+        if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
             try:
-                log_function(f"[{client.muda_name}] Claiming {char_name} (Reaction)", client.preset_name, "CLAIM")
                 await msg.add_reaction("💖")
-                client.claim_right_available = False # Update status immediately
+                log_function(f"[{client.muda_name}] Claiming {char_name} (Reaction)", client.preset_name, "CLAIM")
                 await asyncio.sleep(1.5)
                 return True
             except Exception:
@@ -902,10 +1007,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.rolling_enabled: await client.process_commands(message)
             return
         if not message.embeds: return
-        
-        # Deduplication
-        if message.id in client.sniped_messages: return
-        
         embed = message.embeds[0]
 
         # Handle Kakera Drops (non-character messages)
@@ -913,7 +1014,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Logic for sniping loose kakera if enabled
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                  # Verify it's actually a drop via buttons
-                all_k = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
+                all_k = client.kakera_emojis + client.chaos_emojis
                 has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
                 
                 if has_btn:
@@ -930,7 +1031,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Handle Character Rolls
         
-        # Key Limit Check (Only while actively rolling)
+        # Key Limit Check
         if client.rolling_enabled and client.is_actively_rolling:
             desc = embed.description or ""
             if "limit of 1,000 keys" in desc or "limite de 1.000 chaves" in desc or "límite de 1.000 llaves" in desc:
@@ -942,68 +1043,80 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await check_status(client, message.channel, client.mudae_prefix)
                 return
 
-        # SNIPE LOGIC (Unified)
-        c_name = embed.author.name.lower()
-        desc = embed.description or ""
-        series = desc.splitlines()[0].lower() if desc else ""
+        process = True
         
-        # Parse Kakera Value
-        k_val = 0
-        m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
-        if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
-        
-        # Determine criteria
-        is_wishlist = c_name in client.wishlist
-        is_series_wishlist = any(s in series for s in client.series_wishlist) if client.series_snipe_mode else False
-        is_value_snipe = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
-        
-        if (is_wishlist or is_series_wishlist or is_value_snipe) and has_claim_option(message, embed):
-            # Check if we should use reactive delay (if it's likely our roll) or normal snipe delay
-            # If we are rolling, we use reactive delay for EVERYTHING we want to snipe
-            if client.is_actively_rolling:
-                delay = client.reactive_snipe_delay
-            else:
-                # Determine specific delay based on type
-                if is_series_wishlist and not is_wishlist:
-                    delay = client.series_snipe_delay
-                else:
-                    delay = client.snipe_delay
+        # Self-snipe (Reactive)
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling:
+            c_name = embed.author.name.lower()
+            desc = embed.description or ""
+            k_val = 0
+            m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
+            if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
-            if delay > 0: await asyncio.sleep(delay)
+            is_wl = c_name in client.wishlist
+            is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
-            # Avoid duplicate snipes in case of concurrent events
-            if message.id not in client.sniped_messages:
+            if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
+                if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
                 if await claim_character(client, message.channel, message):
-                    client.sniped_messages.add(message.id)
-                    if client.is_actively_rolling:
-                        client.interrupt_rolling = True
-                    return # Successfully claimed, no need for kakera loop below
+                    client.interrupt_rolling = True
+                    process = False
 
-        # Reactive Kakera on messages (includes own rolls and others if enabled)
-        # Only if it's a character roll with kakera buttons
-        all_k = KAKERA_EMOJIS + CHAOS_KAKERA_EMOJIS
-        has_kakera_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
-        
-        if has_kakera_btn:
-            # Check if it's our own roll or a snipe target
-            should_kakera = False
-            if client.is_actively_rolling:
-                should_kakera = True # Own roll
-            elif client.kakera_reaction_snipe_mode_active:
-                # Check owner targets if specified
-                target_ok = True
-                if client.kakera_reaction_snipe_targets:
-                    owner = get_character_owner(embed)
-                    if not owner or owner not in client.kakera_reaction_snipe_targets:
-                        target_ok = False
-                if target_ok:
-                    should_kakera = True
+        # Snipe other users
+        if process and not client.is_actively_rolling:
+            c_name = embed.author.name.lower()
             
-            if should_kakera and message.id not in client.kakera_reaction_sniped_messages:
-                client.kakera_reaction_sniped_messages.add(message.id)
-                if not client.is_actively_rolling:
-                    await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
-                await claim_character(client, message.channel, message, is_kakera=True, is_snipe=(not client.is_actively_rolling))
+            # External Kakera Snipe on Character Rolls
+            if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and process:
+                 all_k = client.kakera_emojis + client.chaos_emojis
+                 has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
+                 if has_btn:
+                    # Check owner
+                    target_ok = True
+                    if client.kakera_reaction_snipe_targets:
+                        owner = get_character_owner(embed)
+                        if not owner or owner not in client.kakera_reaction_snipe_targets:
+                            target_ok = False
+                    
+                    if target_ok:
+                        client.kakera_reaction_sniped_messages.add(message.id)
+                        await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
+                        await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
+                        process = False
+            
+            # Series Snipe
+            if client.series_snipe_mode and client.series_wishlist:
+                desc = embed.description or ""
+                series = desc.splitlines()[0].lower() if desc else ""
+                if any(s in series for s in client.series_wishlist) and has_claim_option(message, embed, client.claim_emojis):
+                    await asyncio.sleep(client.series_snipe_delay)
+                    if await claim_character(client, message.channel, message):
+                         client.series_snipe_happened = True; process = False
+
+            # Wishlist Snipe
+            if process and client.snipe_mode and c_name in client.wishlist and has_claim_option(message, embed, client.claim_emojis):
+                await asyncio.sleep(client.snipe_delay)
+                if await claim_character(client, message.channel, message):
+                    client.snipe_happened = True; process = False
+            
+            # Value Snipe
+            if process and client.kakera_snipe_mode_active:
+                desc = embed.description or ""
+                k_val = 0
+                m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
+                if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+                
+                if k_val >= client.kakera_snipe_threshold and has_claim_option(message, embed, client.claim_emojis):
+                    await asyncio.sleep(client.snipe_delay)
+                    if await claim_character(client, message.channel, message):
+                        client.snipe_happened = True; process = False
+
+        # Reactive Kakera on own rolls
+        if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
+            # Check if kakera button exists and value is high enough
+            all_k = client.kakera_emojis + client.chaos_emojis
+            if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
+                 await claim_character(client, message.channel, message, is_kakera=True)
 
 
     try:
@@ -1032,7 +1145,11 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("humanization_inactivity_seconds", 5),
                 preset_data.get("dk_power_management", False), preset_data.get("skip_initial_commands", False),
                 preset_data.get("use_slash_rolls", False), preset_data.get("only_chaos", False),
-                preset_data.get("reactive_snipe_delay", 0)
+                preset_data.get("reactive_snipe_delay", 0), preset_data.get("time_rolls_to_claim_reset", False),
+                preset_data.get("rt_ignore_min_kakera_for_wishlist", False),
+                preset_data.get("claim_emojis", None),
+                preset_data.get("kakera_emojis", None),
+                preset_data.get("chaos_emojis", None)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
@@ -1081,6 +1198,7 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == "__main__":
+    check_for_updates()
     args = parse_args()
     
     if args.preset:
