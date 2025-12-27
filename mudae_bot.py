@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.1"
+CURRENT_VERSION = "3.0.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -64,7 +64,7 @@ def check_for_updates():
                     print(f"[{BOT_NAME}] Update applied. Starting new version in a fresh window...")
                     # Restart process
                     if os.name == 'nt':
-                        # On Windows, launch in a new console window to ensure it stays open
+                        # On Windows, launch in a new console window
                         subprocess.Popen([sys.executable] + sys.argv, creationflags=subprocess.CREATE_NEW_CONSOLE)
                     else:
                         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -77,11 +77,13 @@ def check_for_updates():
         print(f"[{BOT_NAME}] Update check failed: {e}")
 
 def cleanup_after_update():
-    backup_file = os.path.abspath(__file__) + ".bak"
+    """Removes the backup file created during the update process."""
+    current_script = os.path.abspath(__file__)
+    backup_file = current_script + ".bak"
     if os.path.exists(backup_file):
         try:
             os.remove(backup_file)
-            print(f"[{BOT_NAME}] Previous version backup cleaned up.")
+            print(f"[{BOT_NAME}] Previous version backup (.bak) cleaned up.")
         except Exception:
             pass
 
