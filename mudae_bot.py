@@ -61,15 +61,29 @@ def check_for_updates():
                     with open(current_script, "wb") as f:
                         f.write(update_res.content)
                     
-                    print(f"[{BOT_NAME}] Update applied. Restarting...")
+                    print(f"[{BOT_NAME}] Update applied. Starting new version in a fresh window...")
                     # Restart process
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                    if os.name == 'nt':
+                        # On Windows, launch in a new console window to ensure it stays open
+                        subprocess.Popen([sys.executable] + sys.argv, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    else:
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+                    sys.exit()
                 else:
                     print(f"[{BOT_NAME}] Failed to download update file.")
             else:
                 print(f"[{BOT_NAME}] You are up to date.")
     except Exception as e:
         print(f"[{BOT_NAME}] Update check failed: {e}")
+
+def cleanup_after_update():
+    backup_file = os.path.abspath(__file__) + ".bak"
+    if os.path.exists(backup_file):
+        try:
+            os.remove(backup_file)
+            print(f"[{BOT_NAME}] Previous version backup cleaned up.")
+        except Exception:
+            pass
 
 # Load config
 presets = {}
@@ -1198,6 +1212,7 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == "__main__":
+    cleanup_after_update()
     check_for_updates()
     args = parse_args()
     
