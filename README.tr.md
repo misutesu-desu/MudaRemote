@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![Lisans](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Sürüm](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Durum](https://img.shields.io/badge/Status-Aktif-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Katıl-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,10 +35,17 @@ MudaRemote, ne zaman yuvarlayacağına, ne zaman uyuyacağına ve neyi talep ede
 ### 🤖 Akıllı Otomasyon
 *   **Akıllı Yuvarlama (Rolling)**: Saatlik yuvarlamaları ($wa, $hg, $ma, vb.) otomatik olarak halleder ve $daily sıfırlamanızı takip eder.
 *   **Slash Komut Motoru**: İsteğe bağlı olarak yuvarlama için modern Discord `/komutlarını` kullanır; bu klasik metin komutlarından daha hızlıdır ve genellikle daha az hız sınırına (rate-limit) takılır.
-*   **Optimize Edilmiş Talep (Claim)**:
-    *   **$rt Entegrasyonu**: Refund Wish ($rt) avantajına sahip olup olmadığınızı otomatik olarak kontrol eder ve aynı sıfırlama döneminde ikinci bir yüksek değerli karakteri almak için kullanır.
-    *   **Panik Modu**: Talep sıfırlamanıza 60 dakikadan az kaldıysa (`snipe_ignore_min_kakera_reset`), bot standartlarını düşürür ve hakkın boşa gitmesini önlemek için *herhangi bir şeyi* talep eder.
-*   **DK Güç Yönetimi**: Mevcut reaksiyon gücünüzü ve stoğunuzu analiz eder. Sadece gücünüz reaksiyon vermek için gerçekten çok düşük olduğunda bir `$dk` (Günlük Kakera) yükü tüketir, böylece israfı önler.
+*   **Akıllı $rt Kullanımı**: 
+    *   `$rt` (Reset Timer) hakkınızın hazır olup olmadığını algılar ve aynı sıfırlama döneminde ikinci bir değerli karakter çıktığında otomatik olarak kullanır.
+    *   *Yeni:* **Wishlist RT Önceliği**: Wishlist karakterleri için kakera değerine bakılmaksızın `$rt` kullanımını etkinleştirebilirsiniz.
+*   **Stratejik Yuvarlama Zamanlaması**: 
+    *   **İsraf Önleme Mantığı**: Claim hakkınız bekleme süresindeyse, bot yuvarlamaları claim sıfırlanmasına tam saniyeler kala başlayacak şekilde zamanlar. Her bir roll'un yeni döneme sayılmasını garanti eder.
+*   **Otomatik Güncelleme Sistemi**: 
+    *   Uzak depodan yeni sürümleri otomatik olarak algılar ve betiği yerel olarak güncelleyerek sizi en son performans iyileştirmeleri ve özelliklerle senkronize tutar.
+*   **Özel Emoji Desteği**: 
+    *   *Yeni:* Botunuzu kişiselleştirin! Claim kalpleri, kakera kristalleri ve kaos anahtarları için her preset özelinde emoji listeleri tanımlayabilirsiniz.
+*   **Reset Timer ($rt) Optimizasyonu**: 
+    *   Birden fazla yüksek değerli hedefi güvence altına almak için `$rt`'nin akıllı algılanması ve otomatik yürütülmesi.
 
 ### 🛡️ Gizlilik & Güvenlik
 *   **İnsanlaştırılmış Aralıklar**: Artık robotik 60 dakikalık zamanlayıcılar yok. Bot, her bekleme süresine rastgele "sapmalar" (jitter) ekler.
@@ -52,7 +60,7 @@ MudaRemote, ne zaman yuvarlayacağına, ne zaman uyuyacağına ve neyi talep ede
     *   [Python 3.8](https://www.python.org/downloads/) veya üzerini yükleyin.
 2.  **Bağımlılıkları Yükleyin**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **Kurulum**:
     *   Bu depoyu indirin.
@@ -97,10 +105,17 @@ Tüm ayarlar `presets.json` içinde yönetilir. Birden fazla bot profili (örn. 
     "only_chaos": false,                   // Eğer true ise, sadece Kaos Anahtarı (mor) kristallerine tepki verir.
 
     "// --- GELİŞMİŞ MANTIK ---": "",
-    "use_slash_rolls": true,               // $wa yerine /wa kullan (Önerilen)
+    "use_slash_rolls": true,               // $wa yerine /wa kullan (Şiddetle Önerilir)
     "dk_power_management": true,           // $dk yüklerini gerçekten ihtiyaç duyduğunda kullanmak üzere sakla
     "snipe_ignore_min_kakera_reset": true, // Talep sıfırlamasına < 1 saat kaldıysa HERHANGİ bir karakteri al.
     "key_mode": false,                     // Talep hakkın olmasa bile anahtar için yuvarlamaya devam et?
+    "time_rolls_to_claim_reset": true,    // Yuvarlamaları claim resetine saniyelik zamanla (Maksimum verimlilik)
+    "rt_ignore_min_kakera_for_wishlist": false, // Wishlist için kakera < min_kakera olsa bile $rt kullanılsın mı?
+
+    "// --- ÖZEL EMOJİLER (İsteğe Bağlı) ---": "",
+    "claim_emojis": ["💖", "💗"],          // Tıklanacak özel kalpler
+    "kakera_emojis": ["kakeraY", "kakeraO"], // Toplanacak özel kristaller
+    "chaos_emojis": ["kakeraP"]            // Özel kaos anahtarları (10+ key karakterleri)
 
     "// --- İNSANLAŞTIRMA ---": "",
     "humanization_enabled": true,

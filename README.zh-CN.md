@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![版本](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-加入-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,10 +35,12 @@
 ### 🤖 智能自动化
 *   **智能滚动**：自动处理每小时滚动（$wa、$hg、$ma 等）并追踪您的 $daily 重置。
 *   **斜杠命令引擎**：可选使用现代 Discord `/commands` 进行滚动，这比传统文本命令更快，且通常更少受到速率限制。
-*   **优化领取**：
-    *   **$rt 集成**：自动检查您是否拥有退款愿望 ($rt) 特权，并利用它在同一重置周期内获得第二个高价值角色。
-    *   **恐慌模式**：如果您的领取重置时间少于 60 分钟 (`snipe_ignore_min_kakera_reset`)，机器人会降低标准并领取*任何东西*，以避免浪费冷却时间。
-*   **DK 能量管理**：分析您当前的反应能量和库存。只有在您的能量实际上太低而无法反应时，它才会消耗 `$dk` (Daily Kakera) 充能，从而防止浪费。
+*   **自动更新系统**： 
+    *   自动检测远程存储库中的新版本并本地更新脚本。
+*   **自定义表情符号配置**： 
+    *   *新功能:* 个性化您的机器人！现在可以按预设定义领取心形、Kakera 水晶和混沌钥匙 python 的自定义列表。
+*   **Reset Timer ($rt) 优化**： 
+    *   智能检测并自动执行 `$rt` 以确保获得多个高价值目标。
 
 ### 🛡️ 隐身与安全
 *   **人性化间隔**：不再有机械式的 60 分钟计时器。机器人会在每个等待期增加随机的“抖动 (jitter)”。
@@ -52,7 +55,7 @@
     *   安装 [Python 3.8](https://www.python.org/downloads/) 或更高版本。
 2.  **安装依赖项**：
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **设置**：
     *   下载此存储库。
@@ -97,10 +100,17 @@
     "only_chaos": false,                   // 如果为 true，则仅对混沌钥匙（紫色）水晶做出反应。
 
     "// --- 高级逻辑 ---": "",
-    "use_slash_rolls": true,               // 使用 /wa 代替 $wa（推荐）
+    "use_slash_rolls": true,               // 使用 /wa 代替 $wa（强烈推荐）
     "dk_power_management": true,           // 保留 $dk 充能以备不时之需
     "snipe_ignore_min_kakera_reset": true, // 如果领取重置在 < 1 小时内，领取任何角色。
     "key_mode": false,                     // 即使没有领取权也继续滚动以获取钥匙？
+    "time_rolls_to_claim_reset": true,    // 将滚动时机对齐领取重置（效率最大化）
+    "rt_ignore_min_kakera_for_wishlist": false, // 即使价值 < min_kakera，也对心愿单使用 $rt？
+
+    "// --- 自定义表情符号 (可选) ---": "",
+    "claim_emojis": ["💖", "💗"],          // 要点击的自定义心形
+    "kakera_emojis": ["kakeraY", "kakeraO"], // 自定义 Kakera 水晶
+    "chaos_emojis": ["kakeraP"]            // 自定义混沌钥匙 (10+ key 角色)
 
     "// --- 人性化 ---": "",
     "humanization_enabled": true,

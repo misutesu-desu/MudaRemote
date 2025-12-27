@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-참여하기-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,10 +35,12 @@
 ### 🤖 지능형 자동화
 *   **스마트 롤링**: 시간별 롤($wa, $hg, $ma 등)을 자동으로 처리하고 $daily 리셋을 추적합니다.
 *   **슬래시 커맨드 엔진**: 선택적으로 롤링에 최신 Discord `/명령어`를 사용합니다. 이는 기존 텍스트 명령보다 빠르며 속도 제한(rate-limit)에 덜 걸립니다.
-*   **최적화된 클레임**:
-    *   **$rt 통합**: Refund Wish ($rt) 특전이 있는지 자동으로 확인하고, 같은 리셋 주기 내에 두 번째 고가치 캐릭터를 확보하는 데 사용합니다.
-    *   **패닉 모드**: 클레임 리셋까지 60분 미만으로 남았다면(`snipe_ignore_min_kakera_reset`), 봇이 기준을 낮추고 쿨다운 낭비를 막기 위해 *무엇이든* 클레임합니다.
-*   **DK 파워 관리**: 현재 반응 파워와 스톡을 분석합니다. 파워가 실제로 너무 낮아 반응할 수 없을 때만 `$dk` (Daily Kakera) 충전을 소모하여 낭비를 방지합니다.
+*   **자동 업데이트 시스템**: 
+    *   원격 저장소에서 새 버전을 자동으로 감지하고 로컬 스크립트를 업데이트합니다.
+*   **커스텀 이모지 설정**: 
+    *   *New:* 봇을 개인화하세요! 클레임 하트, 카케라 크리스탈, 카오스 키에 대한 커스텀 리스트를 프리셋별로 정의할 수 있습니다.
+*   **Reset Timer ($rt) 최적화**: 
+    *   여러 고가치 타겟을 확보하기 위한 `$rt`의 지능적 감지 및 자동 실행.
 
 ### 🛡️ 스텔스 & 보안
 *   **인간화된 간격**: 로봇 같은 정확한 60분 타이머는 이제 그만. 봇은 모든 대기 시간에 무작위 "지연(jitter)"을 추가합니다.
@@ -52,7 +55,7 @@
     *   [Python 3.8](https://www.python.org/downloads/) 이상을 설치하세요.
 2.  **의존성 설치**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **설정**:
     *   이 저장소를 다운로드하세요.
@@ -97,10 +100,17 @@
     "only_chaos": false,                   // true일 경우, 카오스 열쇠(보라색) 수정에만 반응합니다.
 
     "// --- 고급 로직 ---": "",
-    "use_slash_rolls": true,               // $wa 대신 /wa 사용 (권장)
+    "use_slash_rolls": true,               // $wa 대신 /wa 사용 (강력 권장)
     "dk_power_management": true,           // 정말 필요할 때를 위해 $dk 충전 아끼기
     "snipe_ignore_min_kakera_reset": true, // 클레임 리셋이 1시간 미만이면 *무엇이든* 클레임하기.
     "key_mode": false,                     // 클레임 권한이 없어도 열쇠를 위해 계속 롤링할까요?
+    "time_rolls_to_claim_reset": true,    // 리셋에 맞춰 롤링 종료 타이밍 조절 (효율 극대화)
+    "rt_ignore_min_kakera_for_wishlist": false, // 위시리스트 캐릭터면 카케라 < min_kakera 라도 $rt 사용할까요?
+
+    "// --- 커스텀 이모지 (선택 사항) ---": "",
+    "claim_emojis": ["💖", "💗"],          // 클릭할 커스텀 하트
+    "kakera_emojis": ["kakeraY", "kakeraO"], // 커스텀 카케라
+    "chaos_emojis": ["kakeraP"]            // 커스텀 카오스 키 (10+ key 캐릭터)
 
     "// --- 인간화 설정 ---": "",
     "humanization_enabled": true,

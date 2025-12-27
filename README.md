@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-3.0.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -36,10 +37,17 @@ Unlike basic macros, MudaRemote parses Mudae's responses in real-time ($tu, mess
 ### 🤖 Intelligent Automation
 *   **Smart Rolling**: Automatically handles hourly rolls ($wa, $hg, $ma, etc.) and tracks your $daily reset.
 *   **Slash Command Engine**: optionally uses modern Discord `/commands` for rolling, which is faster and often less rate-limited than classic text commands.
-*   **Optimized Claiming**:
-    *   **$rt Integration**: Automatically checks if you own the Refund Wish ($rt) perk and uses it to secure a second high-value claim in the same reset.
-    *   **Panic Mode**: If your claim reset is less than 60 minutes away (`snipe_ignore_min_kakera_reset`), the bot drops its standards and claims *anything* to avoid wasting the cooldown.
-*   **DK Power Management**: analyzes your current reaction power and stock. It only consumes a `$dk` (Daily Kakera) charge when your power is actually too low to react, preventing waste.
+*   **Intelligent $rt Claiming**: 
+    *   Detects if `$rt` (Reset Timer) is available and uses it automatically when a second high-value character appears in the same reset.
+    *   *New:* **Wishlist RT Priority**: Optionally allow `$rt` to be used on wishlist characters regardless of their kakera value.
+*   **Strategic Roll Timing**: 
+    *   **Anti-Waste Logic**: If your claim is on cooldown, the bot holds rolls until precisely before the reset boundary, ensuring every roll counts towards a new claim.
+*   **Auto-Update System**: 
+    *   Automatically detects newer versions from the remote repository and updates the script locally, keeping you synced with the latest performance tweaks and features.
+*   **Custom Emoji Configuration**: 
+    *   *New:* Personalize your bot! Custom lists for claim hearts, kakera crystals, and chaos keys can now be defined per preset.
+*   **Reset Timer ($rt) Optimization**: 
+    *   Intelligent detection and automatic execution of `$rt` to secure multiple high-value targets.
 
 ### 🛡️ Stealth & Safety
 *   **Humanized Intervals**: No more robotic 60-minute timers. The bot adds random "jitter" to every wait period.
@@ -54,7 +62,7 @@ Unlike basic macros, MudaRemote parses Mudae's responses in real-time ($tu, mess
     *   Install [Python 3.8](https://www.python.org/downloads/) or higher.
 2.  **Install Dependencies**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **Setup**:
     *   Download this repository.
@@ -99,10 +107,17 @@ All settings are managed in `presets.json`. You can define multiple bot profiles
     "only_chaos": false,                   // If true, only reacts to Chaos Key crystals (purple).
 
     "// --- ADVANCED LOGIC ---": "",
-    "use_slash_rolls": true,               // Use /wa instead of $wa (Recommended)
+    "use_slash_rolls": true,               // Use /wa instead of $wa (Highly Recommended)
     "dk_power_management": true,           // Save $dk charges for when you really need them
     "snipe_ignore_min_kakera_reset": true, // Claim ANY character if claim reset is in < 1 hour.
     "key_mode": false,                     // Continue rolling for keys even if you can't claim?
+    "time_rolls_to_claim_reset": true,    // Time rolls to finish exactly at claim reset (Maximize harem efficiency)
+    "rt_ignore_min_kakera_for_wishlist": false, // Use $rt for wishlist even if value < min_kakera?
+
+    "// --- CUSTOM EMOJIS (Optional) ---": "",
+    "claim_emojis": ["💖", "💗"],          // Custom hearts to click
+    "kakera_emojis": ["kakeraY", "kakeraO"], // Custom crystals to sniff
+    "chaos_emojis": ["kakeraP"]            // Custom chaos keys (10+ key characters)
 
     "// --- HUMANIZATION ---": "",
     "humanization_enabled": true,

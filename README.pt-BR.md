@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Versão](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Entrar-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,12 +35,16 @@ Ao contrário de macros básicos, o MudaRemote analisa as respostas do Mudae em 
     *   *Novo:* **Modo Caos**: Manuseio inteligente de Chaves do Caos vs Kakera Normal.
 
 ### 🤖 Automação Inteligente
-*   **Rolagem Inteligente**: Lida automaticamente com rolagens horárias ($wa, $hg, $ma, etc.) e rastreia seu reset diário ($daily).
-*   **Motor de Slash Commands**: opcionalmente usa `/commands` modernos do Discord para rodar, o que é mais rápido e frequentemente sofre menos limites de taxa que os comandos de texto clássicos.
-*   **Reivindicação Otimizada**:
-    *   **Integração $rt**: Verifica automaticamente se você possui o perk de Reembolso de Wish ($rt) e o usa para garantir uma segunda reivindicação de alto valor no mesmo reset.
-    *   **Modo Pânico**: Se o reset de reivindicação (claim) estiver a menos de 60 minutos (`snipe_ignore_min_kakera_reset`), o bot reduz seus padrões e reivindica *qualquer coisa* para evitar desperdiçar o cooldown.
-*   **Gerenciamento de Poder DK**: analisa seu poder de reação atual e estoque. Ele só consome uma carga `$dk` (Daily Kakera) quando seu poder é realmente muito baixo para reagir, evitando desperdício.
+*   **Sistema de Atualização Automática**: 
+    *   Detecta automaticamente novas versões no repositório remoto e atualiza o script localmente.
+*   **Configuração de Emojis Personalizados**: 
+    *   *Novo:* Personalize seu bot! Listas personalizadas para corações de reivindicação, cristais de kakera e chaves do caos agora podem ser definidas por preset.
+*   **Otimização do Reset Timer ($rt)**: 
+    *   Detecção inteligente e execução automática do `$rt` para garantir múltiplos alvos de alto valor.
+*   **Tempo Estratégico de Rolagem**: 
+    *   **Lógica Anti-Desperdício**: Se sua reivindicação estiver em cooldown, o bot sincroniza as rolagens para terminarem precisamente antes do reset, garantindo que cada roll conte para o novo ciclo.
+*   **Modo Pânico**: Se o reset de reivindicação estiver a menos de 60 minutos (`snipe_ignore_min_kakera_reset`), o bot reduz seus padrões e reivindica *qualquer coisa* para evitar desperdiçar o cooldown.
+*   **Gerenciamento de Poder DK**: Analisa o poder de reação e estoque em tempo real. Ele só consome uma carga `$dk` (Daily Kakera) quando o poder é realmente muito baixo para reagir.
 
 ### 🛡️ Furtividade e Segurança
 *   **Intervalos Humanizados**: Chega de temporizadores robóticos de 60 minutos. O bot adiciona um "jitter" (variação) aleatório a cada período de espera.
@@ -54,7 +59,7 @@ Ao contrário de macros básicos, o MudaRemote analisa as respostas do Mudae em 
     *   Instale [Python 3.8](https://www.python.org/downloads/) ou superior.
 2.  **Instalar Dependências**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **Configuração**:
     *   Baixe este repositório.
@@ -100,10 +105,17 @@ Todas as configurações são gerenciadas em `presets.json`. Você pode definir 
     "only_chaos": false,                   // Se true, reage apenas a cristais de Chave do Caos (roxos).
 
     "// --- LÓGICA AVANÇADA ---": "",
-    "use_slash_rolls": true,               // Usar /wa em vez de $wa (Recomendado)
+    "use_slash_rolls": true,               // Usar /wa em vez de $wa (Altamente Recomendado)
     "dk_power_management": true,           // Economizar cargas de $dk para quando você realmente precisar
     "snipe_ignore_min_kakera_reset": true, // Reivindicar QUALQUER personagem se o reset de claim for em < 1 hora.
     "key_mode": false,                     // Continuar rodando por chaves mesmo se não puder reivindicar?
+    "time_rolls_to_claim_reset": true,    // Sincronizar rolagens com o reset do claim (Máxima Eficiência)
+    "rt_ignore_min_kakera_for_wishlist": false, // Usar $rt para wishlist mesmo se kakera < min_kakera?
+
+    "// --- EMOJIS PERSONALIZADOS (Opcional) ---": "",
+    "claim_emojis": ["💖", "💗"],          // Corações personalizados para clicar
+    "kakera_emojis": ["kakeraY", "kakeraO"], // Cristais personalizados
+    "chaos_emojis": ["kakeraP"],           // Chaves do caos personalizadas (persos 10+ chaves)
 
     "// --- HUMANIZAÇÃO ---": "",
     "humanization_enabled": true,

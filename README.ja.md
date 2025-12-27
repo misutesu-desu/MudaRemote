@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-参加する-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,10 +35,12 @@
 ### 🤖 インテリジェントオートメーション
 *   **スマートローリング**: 毎時のロール（$wa, $hg, $ma など）を自動的に処理し、$dailyのリセットを追跡します。
 *   **スラッシュコマンドエンジン**: オプションで、ロールに最新のDiscord `/commands` を使用できます。これは従来のテキストコマンドよりも高速で、レート制限にかかりにくい場合があります。
-*   **最適化されたクレーム**:
-    *   **$rt統合**: Refund Wish ($rt) パークを持っているかを自動的に確認し、同じリセット期間内に2体目の高価値キャラクターを確保するために使用します。
-    *   **パニックモード**: クレームリセットまで60分を切っている場合 (`snipe_ignore_min_kakera_reset`)、ボットは基準を下げて、クールダウンを無駄にしないために*何でも*クレームします。
-*   **DKパワー管理**: 現在のリアクションパワーと在庫を分析します。パワーが実際に低すぎて反応できない場合にのみ `$dk` (Daily Kakera) チャージを消費し、無駄を防ぎます。
+*   **自動アップデートシステム**: 
+    *   リモートリポジトリから最新バージョンを自動的に検出し、ローカルスクリプトを更新します。
+*   **カスタム絵文字設定**: 
+    *   *New:* ボットをパーソナライズ！クレーム用のハート、カケラクリスタル、カオスキーのカスタムリストをプリセットごとに定義できるようになりました。
+*   **Reset Timer ($rt) の最適化**: 
+    *   複数の高価値ターゲットを確保するための `$rt` のインテリジェントな検出と自動実行。
 
 ### 🛡️ ステルス & 安全性
 *   **人間化されたインターバル**: ロボットのような正確な60分タイマーはもうありません。ボットはすべての待機時間にランダムな「揺らぎ（jitter）」を加えます。
@@ -52,7 +55,7 @@
     *   [Python 3.8](https://www.python.org/downloads/) 以上をインストールしてください。
 2.  **依存関係のインストール**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **セットアップ**:
     *   このリポジトリをダウンロードします。
@@ -97,10 +100,17 @@
     "only_chaos": false,                   // trueの場合、カオスキー（紫）のクリスタルにのみ反応します。
 
     "// --- 高度なロジック ---": "",
-    "use_slash_rolls": true,               // $wa の代わりに /wa を使用（推奨）
+    "use_slash_rolls": true,               // $wa の代わりに /wa を使用（強く推奨）
     "dk_power_management": true,           // 本当に必要なときのために $dk チャージを節約する
     "snipe_ignore_min_kakera_reset": true, // クレームリセットまで1時間未満なら*何でも*クレームする。
     "key_mode": false,                     // クレーム権がなくてもキーのためにロールを続ける？
+    "time_rolls_to_claim_reset": true,    // ロール終了をリセットに合わせる（効率最大化）
+    "rt_ignore_min_kakera_for_wishlist": false, // ウィッシュリストならカケラ値 < min_kakera でも $rt を使う？
+
+    "// --- カスタム絵文字 (任意) ---": "",
+    "claim_emojis": ["💖", "💗"],          // クリックするカスタムハート
+    "kakera_emojis": ["kakeraY", "kakeraO"], // カスタムカケラ
+    "chaos_emojis": ["kakeraP"]            // カスタムカオスキー (10+ keyキャラクター)
 
     "// --- 人間化設定 ---": "",
     "humanization_enabled": true,

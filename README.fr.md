@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-2.8.0-orange.svg)]()
 [![Status](https://img.shields.io/badge/Status-Actif-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Rejoindre-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -34,10 +35,12 @@ Contrairement aux macros basiques, MudaRemote analyse les réponses de Mudae en 
 ### 🤖 Automatisation Intelligente
 *   **Rolling Intelligent**: Gère automatiquement les rolls horaires ($wa, $hg, $ma, etc.) et suit votre reset $daily.
 *   **Moteur de Commandes Slash**: Utilise optionnellement les `/commandes` Discord modernes pour les rolls, ce qui est plus rapide et souvent moins limité en taux que les commandes textuelles classiques.
-*   **Claim Optimisé**:
-    *   **Intégration $rt**: Vérifie automatiquement si vous possédez l'avantage Refund Wish ($rt) et l'utilise pour sécuriser un deuxième claim de haute valeur dans le même reset.
-    *   **Mode Panique**: Si votre reset de claim est à moins de 60 minutes (`snipe_ignore_min_kakera_reset`), le bot baisse ses standards et claim *n'importe quoi* pour éviter de gaspiller le cooldown.
-*   **Gestion d'Énergie DK**: Analyse votre puissance de réaction actuelle et votre stock. Il ne consomme une charge `$dk` (Daily Kakera) que lorsque votre puissance est réellement trop faible pour réagir, évitant le gaspillage.
+*   **Configuration d'Emoji Personnalisée**: 
+    *   *Nouveau:* Personnalisez votre bot! Des listes personnalisées pour les cœurs de claim, les cristaux de kakera et les clés de chaos peuvent désormais être définies par preset.
+*   **Optimisation du Reset Timer ($rt)**: 
+    *   Détection intelligente et exécution automatique du `$rt` pour sécuriser plusieurs cibles de haute valeur.
+*   **Système de Mise à Jour Automatique**: 
+    *   Détecte automatiquement les nouvelles versions sur le dépôt distant et met à jour le script localement.
 
 ### 🛡️ Discrétion & Sécurité
 *   **Intervalles Humanisés**: Finis les minuteurs robotiques de 60 minutes. Le bot ajoute un "jitter" aléatoire à chaque période d'attente.
@@ -52,7 +55,7 @@ Contrairement aux macros basiques, MudaRemote analyse les réponses de Mudae en 
     *   Installez [Python 3.8](https://www.python.org/downloads/) ou supérieur.
 2.  **Installer les Dépendances**:
     ```bash
-    pip install discord.py-self inquirer
+    pip install discord.py-self inquirer requests
     ```
 3.  **Configuration**:
     *   Téléchargez ce dépôt.
@@ -97,10 +100,17 @@ Tous les paramètres sont gérés dans `presets.json`. Vous pouvez définir plus
     "only_chaos": false,                   // Si true, réagit uniquement aux cristaux Clé du Chaos (violets).
 
     "// --- LOGIQUE AVANCÉE ---": "",
-    "use_slash_rolls": true,               // Utiliser /wa au lieu de $wa (Recommandé)
+    "use_slash_rolls": true,               // Utiliser /wa au lieu de $wa (Fortement Recommandé)
     "dk_power_management": true,           // Économiser les charges $dk pour quand vous en avez vraiment besoin
     "snipe_ignore_min_kakera_reset": true, // Claim N'IMPORTE QUEL perso si le reset est dans < 1 heure.
     "key_mode": false,                     // Continuer à roll pour les clés même sans claim disponible ?
+    "time_rolls_to_claim_reset": true,    // Synchroniser les rolls avec le reset du claim (Efficacité Max)
+    "rt_ignore_min_kakera_for_wishlist": false, // Utiliser $rt pour la wishlist même si kakera < min_kakera ?
+
+    "// --- EMOJIS PERSONNALISÉS (Optionnel) ---": "",
+    "claim_emojis": ["💖", "💗"],          // Cœurs personnalisés à cliquer
+    "kakera_emojis": ["kakeraY", "kakeraO"], // Cristaux personnalisés
+    "chaos_emojis": ["kakeraP"]            // Clés de chaos personnalisées (persos 10+ clés)
 
     "// --- HUMANISATION ---": "",
     "humanization_enabled": true,
