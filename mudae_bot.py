@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.2"
+CURRENT_VERSION = "3.0.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -785,26 +785,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if 0 < diff <= 65 * 60:
                 reset_soon = True
 
+        is_timing_mode_active = False
         if client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
                 actual_speed = max(client.roll_speed, 0.2 if client.use_slash_rolls else 0)
                 total_duration = rolls_left * actual_speed
                 
-                # Aim for the last roll to finish ~2s before reset, so processing (with its 5s sleep) 
-                # starts exactly at reset + 3s.
-                target_start_time = client.next_claim_reset_at_utc - datetime.timedelta(seconds=total_duration + 2)
+                # Aim for the last roll to finish ~1s AFTER reset.
+                # This way claim happens after reset → we use normal claim (not RT) with fresh claim right.
+                # Formula: start_time = reset + offset - total_duration
+                # offset = 1 second after reset (minimizes new interval roll waste)
+                target_start_time = client.next_claim_reset_at_utc + datetime.timedelta(seconds=1) - datetime.timedelta(seconds=total_duration)
                 
                 wait_seconds = (target_start_time - now_utc).total_seconds()
                 
-                # Safety: Don't wait past roll reset
+                # Safety: Don't wait past roll reset (ensure we finish before roll reset)
                 if client.roll_reset_at_utc:
                     max_wait = (client.roll_reset_at_utc - now_utc).total_seconds() - total_duration - 5
                     wait_seconds = min(wait_seconds, max_wait)
 
                 if wait_seconds > 2:
-                    log_function(f"[{client.muda_name}] Timing rolls to finish at reset. Waiting {wait_seconds/60:.1f}m.", preset_name, "RESET")
+                    log_function(f"[{client.muda_name}] Timing rolls to finish after reset. Waiting {wait_seconds/60:.1f}m.", preset_name, "RESET")
                     await asyncio.sleep(wait_seconds)
+                    is_timing_mode_active = True
 
         start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=0.5)
         client.is_actively_rolling = True
@@ -822,6 +826,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.is_actively_rolling = False
         await asyncio.sleep(5) # Let messages populate
         
+        # If timing mode was active, claim reset has now happened. Update state for normal claim flow.
+        if is_timing_mode_active:
+            client.claim_right_available = True
+            log_function(f"[{client.muda_name}] Reset passed. Claim is now available.", preset_name, "CLAIM")
+        
         mudae_messages_to_process = []
         try:
             async for msg in channel.history(limit=(rolls_left*2 + 10), after=start_time, oldest_first=False):
@@ -830,7 +839,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
             mudae_messages_to_process.reverse()
             if mudae_messages_to_process:
-                 await handle_mudae_messages(client, channel, mudae_messages_to_process, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                 # In timing mode, use normal claim flow (not key_mode_only) since claim is now available
+                 await handle_mudae_messages(client, channel, mudae_messages_to_process, ignore_limit_for_post_roll, False if is_timing_mode_active else key_mode_only_kakera_for_post_roll)
         except Exception as e:
             log_function(f"[{client.muda_name}] Post-roll processing error: {e}", preset_name, "ERROR")
         
