@@ -1,156 +1,103 @@
-# ⚡ MudaRemote: The Ultimate Mudae Automation Tool ⚡
+# ⚡ MudaeRemote: The Ultimate Mudae Bot Automation Tool
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.2-orange.svg)]()
-[![Status](https://img.shields.io/badge/Status-Active-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md) | [Português Brasileiro](README.pt-BR.md)
 
-> **⚠️ CRITICAL WARNING ⚠️**
-> 
-> **MudaRemote is a SELF-BOT.** Automating user accounts is a violation of [Discord's Terms of Service](https://discord.com/terms). 
-> Using this tool carries a risk of account suspension or banning. **Use at your own risk.** The developers accept no responsibility for any consequences.
+**MudaRemote** is the most sophisticated, feature-rich automation engine designed specifically for the **Mudae Discord Bot**. It goes far beyond simple macros by parsing real-time data ($tu, embeds, components) to simulate human-like behavior while maximizing harem efficiency.
+
+> **⚠️ CRITICAL WARNING:** MudaRemote is a **SELF-BOT**. Use of self-bots violates Discord's ToS and carries a risk of permanent ban. **Use at your own risk.**
 
 ---
 
-## 🚀 Overview
+## 🏆 Why MudaRemote? (Comparison)
 
-**MudaRemote** is a high-performance, feature-rich automation engine designed specifically for the Mudae Discord bot. It goes far beyond simple auto-rolling, offering intelligent state management, surgical sniping capabilities, and advanced humanization to keep your account safe while maximizing your harem efficiency.
+Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 
-Unlike basic macros, MudaRemote parses Mudae's responses in real-time ($tu, messages, embeds) to make smart decisions about when to roll, when to sleep, and what to claim.
+| Feature | Ordinary Mudae Bots | **MudaRemote v3.0.3** |
+| :--- | :--- | :--- |
+| **Roll Timing** | Constant/Random Timers | **Strategic Boundary Sync (Claims perfectly)** |
+| **Command Engine** | Text Only | **Slash Commands (Modern API Support)** |
+| **$rt Management** | None / Manual | **Fully Automated Intelligence** |
+| **Updates** | Manual Re-download | **Integrated Auto-Update System** |
+| **Stealth** | Static Delays | **Human-Like Jitter & Inactivity Watcher** |
+| **Localization** | English Only | **7 Languages Supported** |
 
 ---
 
-## ✨ Key Features
+## ✨ Key High-Impact Features
 
 ### 🎯 Advanced Sniping Ecosystem
-*   **Wishlist Sniping**: Instantly claims characters from your `wishlist` that are rolled by *other users*.
-*   **Series Sniping**: Target entire series! If anyone rolls a character from a tracked series, it's yours.
-*   **Kakera Value Sniping**: Automatically snipe *any* character (even non-wishlisted ones) if their kakera value exceeds your threshold.
-*   **Global Kakera Farming**: The bot watches **every** message for kakera reaction buttons.
-    *   *New:* **Smart Filtering**: Configure it to only steal kakera from specific users (e.g., your alt accounts) to avoid server drama.
-    *   *New:* **Chaos Mode**: Intelligent handling of Chaos Keys vs Normal Kakera.
+*   **Wishlist & Series Sniping:** Instantly claims characters or entire anime series rolled by others.
+*   **Intelligent Kakera Sniper:** Set a threshold (e.g., 200+) and let the bot secure value automatically.
+*   **Global Kakera Farming:** Scans all messages for crystals. Includes **Smart Filtering** to only take from specific users (like your alts) to stay under the radar.
+*   **Chaos Mode:** Specialized logic for Chaos Keys (10+ key characters).
 
-### 🤖 Intelligent Automation
-*   **Smart Rolling**: Automatically handles hourly rolls ($wa, $hg, $ma, etc.) and tracks your $daily reset.
-*   **Slash Command Engine**: optionally uses modern Discord `/commands` for rolling, which is faster and often less rate-limited than classic text commands.
-*   **Intelligent $rt Claiming**: 
-    *   Detects if `$rt` (Reset Timer) is available and uses it automatically when a second high-value character appears in the same reset.
-    *   *New:* **Wishlist RT Priority**: Optionally allow `$rt` to be used on wishlist characters regardless of their kakera value.
-*   **Strategic Roll Timing**: 
-    *   **Anti-Waste Logic**: If your claim is on cooldown, the bot holds rolls until precisely before the reset boundary, ensuring every roll counts towards a new claim.
-*   **Auto-Update System**: 
-    *   Automatically detects newer versions from the remote repository and updates the script locally, keeping you synced with the latest performance tweaks and features.
-*   **Custom Emoji Configuration**: 
-    *   *New:* Personalize your bot! Custom lists for claim hearts, kakera crystals, and chaos keys can now be defined per preset.
-*   **Reset Timer ($rt) Optimization**: 
-    *   Intelligent detection and automatic execution of `$rt` to secure multiple high-value targets.
+### 🤖 Intelligent Automation (The "Brain")
+*   **Strategic Roll Timing:** The bot holds rolls until just before your claim reset, ensuring you never waste a roll while your claim is on cooldown.
+*   **Slash Command Engine:** optionally uses `/wa`, `/ha`, etc., which are faster and significantly safer from Discord's detection.
+*   **Smart $rt Utilization:** Automatically detects if `$rt` is available and uses it only for high-priority wishlist targets.
+*   **DK Power Management:** Optimizes your Kakera power usage to ensure you always have enough for high-value reacts.
 
-### 🛡️ Stealth & Safety
-*   **Humanized Intervals**: No more robotic 60-minute timers. The bot adds random "jitter" to every wait period.
-*   **Inactivity Watcher**: detecting when a channel is busy and waiting for a lull in conversation before spamming rolls, simulating a polite human user.
-*   **Key Limit Detection**: Automatically pauses rolling if you hit the Mudae key limit.
+### 🛡️ Stealth & Anti-Ban Technology
+*   **Humanized Intervals:** Implements random "jitter" so your activity never looks like a 60-minute loop.
+*   **Inactivity Watcher:** Detects when a channel is busy and waits for a conversation lull before rolling—acting like a polite user.
+*   **Key Limit Protection:** Automatically pauses if you hit the 1,000-key daily limit to prevent flagging.
 
 ---
 
-## 🛠️ Installation
+## 🛠️ Quick Start
 
-1.  **Prerequisites**:
-    *   Install [Python 3.8](https://www.python.org/downloads/) or higher.
-2.  **Install Dependencies**:
+1.  **Requirements**: [Python 3.8+](https://www.python.org/downloads/)
+2.  **Installation**:
     ```bash
     pip install discord.py-self inquirer requests
     ```
-3.  **Setup**:
-    *   Download this repository.
-    *   Create a `presets.json` file (see configuration below).
+3.  **Run**:
+    ```bash
+    python mudae_bot.py
+    ```
+    *Select your preset from the interactive menu and you're ready!*
 
 ---
 
 ## ⚙️ Configuration (`presets.json`)
 
-All settings are managed in `presets.json`. You can define multiple bot profiles (e.g., "MainAccount", "AltAccount") and run them simultaneously.
+Define multiple profiles for different accounts or servers.
 
 ```json
 {
-  "MyProMudaBot": {
-    "token": "YOUR_DISCORD_TOKEN_HERE",
-    "channel_id": 123456789012345678,
-    "prefix": "!", 
-    "mudae_prefix": "$",
-    "roll_command": "wa",
-
-    "// --- CORE SETTINGS ---": "",
-    "rolling": true,                       // Set to false for "Snipe Only" mode (no rolling, just watching)
-    "min_kakera": 200,                     // Minimum value to claim a character during your own rolls
-    "delay_seconds": 2,                    // Base processing delay
-    "roll_speed": 1.5,                     // Seconds between roll commands
-
-    "// --- SNIPING CONFIGURATION ---": "",
-    "snipe_mode": true,                    // Master switch for Wishlist sniping
-    "wishlist": ["Makima", "Rem"],         // List of exact character names to snipe
-    "snipe_delay": 0.5,                    // How fast to snipe (seconds)
-    
-    "series_snipe_mode": true,
-    "series_wishlist": ["Chainsaw Man"],   // List of series names to snipe
-    "series_snipe_delay": 1.0,
-
-    "// --- KAKERA FARMING ---": "",
-    "kakera_reaction_snipe_mode": true,    // Click kakera buttons on ANY message?
-    "kakera_reaction_snipe_delay": 0.8,
-    "kakera_reaction_snipe_targets": [     // OPTIONAL: Only steal from these specific users (e.g., your alts)
-        "my_alt_account_username"
-    ],
-    "only_chaos": false,                   // If true, only reacts to Chaos Key crystals (purple).
-
-    "// --- ADVANCED LOGIC ---": "",
-    "use_slash_rolls": true,               // Use /wa instead of $wa (Highly Recommended)
-    "dk_power_management": true,           // Save $dk charges for when you really need them
-    "snipe_ignore_min_kakera_reset": true, // Claim ANY character if claim reset is in < 1 hour.
-    "key_mode": false,                     // Continue rolling for keys even if you can't claim?
-    "time_rolls_to_claim_reset": true,    // Time rolls to finish exactly at claim reset (Maximize harem efficiency)
-    "rt_ignore_min_kakera_for_wishlist": false, // Use $rt for wishlist even if value < min_kakera?
-
-    "// --- CUSTOM EMOJIS (Optional) ---": "",
-    "claim_emojis": ["💖", "💗"],          // Custom hearts to click
-    "kakera_emojis": ["kakeraY", "kakeraO"], // Custom crystals to sniff
-    "chaos_emojis": ["kakeraP"]            // Custom chaos keys (10+ key characters)
-
-    "// --- HUMANIZATION ---": "",
+  "MainAccount": {
+    "token": "YOUR_TOKEN",
+    "channel_id": 123456789,
+    "rolling": true,
+    "use_slash_rolls": true,            // Recommended
+    "time_rolls_to_claim_reset": true, // Unique Feature
+    "min_kakera": 200,
     "humanization_enabled": true,
-    "humanization_window_minutes": 30,     // Randomly wait 0-30 mins extra after reset
-    "humanization_inactivity_seconds": 10  // Wait for 10s of silence in channel before rolling
+    "wishlist": ["Makima", "Rem"]
   }
 }
 ```
 
 ---
 
-## 🎮 Usage
-
-1.  Open your terminal in the bot folder.
-2.  Run the script:
-    ```bash
-    python mudae_bot.py
-    ```
-3.  Select your preset from the menu.
-4.  Sit back and watch the harem grow. 📈
-
----
-
 ## 🔒 Obtaining Your Token
-
-1.  Log into Discord in your browser (Chrome/Firefox).
-2.  Press **F12** (Developer Tools) -> **Console** tab.
-3.  Paste this code to reveal your token:
-    ```javascript
-    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
-    ```
-    *(Note: Never share this token with anyone. It gives full access to your account.)*
+1. Open Discord in your Browser.
+2. Press `F12` -> `Console`.
+3. Paste:
+   ```javascript
+   window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
+   ```
+4. **Never share this token!**
 
 ---
 
-**Happy Hunting!** 💖
+**⭐ If this tool helped you grow your harem, please give it a Star! It helps the project grow and stay updated.**
+
+[Back to Top ↑](#-mudaremote-the-ultimate-mudae-bot-automation-tool)
