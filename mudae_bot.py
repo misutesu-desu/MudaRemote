@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.4"
+CURRENT_VERSION = "3.0.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -954,6 +954,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed():
             return False
 
+        # Humanized delay for free event claims (since competition is low/none)
+        if is_free_claim:
+            await asyncio.sleep(random.uniform(1.0, 2.5))
+
         # Kakera Claim Logic
         if is_kakera:
             chaos_count = count_chaos_keys(embed)
@@ -993,15 +997,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             for comp in msg.components:
                 if clicked_claim: break
                 for btn in comp.children:
-                    if hasattr(btn.emoji, 'name') and btn.emoji.name in client.claim_emojis:
+                    # If it's a free claim, click ANY button. Otherwise, check for standard hearts.
+                    has_emoji = hasattr(btn.emoji, 'name') and btn.emoji.name is not None
+                    is_heart = has_emoji and btn.emoji.name in client.claim_emojis
+                    
+                    if is_free_claim or is_heart:
                         try:
                             await btn.click()
-                            log_function(f"[{client.muda_name}] Claiming {char_name}", client.preset_name, "CLAIM")
+                            log_type = "CLAIM" if not is_free_claim else "INFO"
+                            log_function(f"[{client.muda_name}] Claiming {char_name}", client.preset_name, log_type)
                             clicked_claim = True
                             await asyncio.sleep(1.5)
                             return True
                         except Exception:
-                            return False
+                            continue
         
         # Reaction fallback
         if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
