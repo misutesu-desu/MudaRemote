@@ -100,5 +100,4 @@ Define multiple profiles for different accounts or servers.
 
 **⭐ If this tool helped you grow your harem, please give it a Star! It helps the project grow and stay updated.**
 
-[Back to Top ↑](#-mudaremote-the-ultimate-mudae-bot-automation-tool)
 
