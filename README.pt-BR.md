@@ -1,4 +1,4 @@
-# ⚡ MudaeRemote: A Ferramenta Definitiva de Automação para o Mudae Bot
+# ⚡ MudaRemote: A Ferramenta Definitiva de Automação para o Mudae Bot
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
@@ -99,3 +99,4 @@ Defina múltiplos perfis para diferentes contas ou servidores.
 ---
 
 **⭐ Se esta ferramenta te ajudou a aumentar seu harem, por favor, deixe uma Estrela (Star)! Isso ajuda o projeto a crescer e a manter-se atualizado.**
+
