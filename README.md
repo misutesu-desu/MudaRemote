@@ -84,7 +84,7 @@ Define multiple profiles for different accounts or servers.
   }
 }
 ```
-
+📖 **Need help with settings?** Check out our detailed [Configuration Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)
 ---
 
 ## 🔒 Obtaining Your Token
@@ -99,5 +99,6 @@ Define multiple profiles for different accounts or servers.
 ---
 
 **⭐ If this tool helped you grow your harem, please give it a Star! It helps the project grow and stay updated.**
+
 
 
