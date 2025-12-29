@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.3"
+CURRENT_VERSION = "3.0.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -150,6 +150,18 @@ def is_character_embed(embed):
     has_thumbnail = embed.thumbnail and embed.thumbnail.url
 
     return has_image and not has_thumbnail
+
+def is_free_event(embed):
+    """
+    Detects special Mudae event characters (like Christmas Art Contest) 
+    that do not consume claim rights.
+    """
+    if not embed or not embed.description:
+        return False
+    desc = embed.description.lower()
+    # "on me, it's free!" is the standard indicator for these event cards.
+    free_keywords = ["it's free!", "é de graça!", "¡es gratis!", "christmas art contest", "new year's contest"]
+    return any(k in desc for k in free_keywords)
 
 def has_claim_option(message, embed, claim_emojis):
     if not message.components:
@@ -869,6 +881,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if has_claim_option(msg, embed, client.claim_emojis):
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
+                    
+                    # Detect "Free" event cards (Christmas, New Year, etc.)
+                    # These should be claimed regardless of claim availability 
+                    if is_free_event(embed):
+                        print_log(f"Detected free event card: {char_n}", client.preset_name, "CLAIM")
+                        await claim_character(client, channel, msg, is_free_claim=True)
+                        continue
+
                     k_v = 0
                     match_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
                     if match_k:
@@ -924,13 +944,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         pass
 
 
-    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False):
+    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False):
         if not msg or not msg.embeds: return False
         embed = msg.embeds[0]
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
         
-        if not is_kakera and not is_rt_claim and not is_character_snipe_allowed():
+        # Free claims bypass everything. Snipe claims check for rights/RT.
+        if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed():
             return False
 
         # Kakera Claim Logic
@@ -1136,6 +1157,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await asyncio.sleep(client.snipe_delay)
                     if await claim_character(client, message.channel, message):
                         client.snipe_happened = True; process = False
+
+            # Free Event Card Snipe (Regardless of mode)
+            if process and is_free_event(embed) and has_claim_option(message, embed, client.claim_emojis):
+                print_log(f"Sniping free event card: {c_name}", client.preset_name, "CLAIM")
+                if await claim_character(client, message.channel, message, is_free_claim=True):
+                    process = False
 
         # Reactive Kakera on own rolls
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
