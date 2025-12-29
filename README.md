@@ -1,4 +1,4 @@
-# ⚡ MudaeRemote: The Ultimate Mudae Bot Automation Tool
+# ⚡ MudaRemote: The Ultimate Mudae Bot Automation Tool
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
@@ -99,6 +99,7 @@ Define multiple profiles for different accounts or servers.
 ---
 
 **⭐ If this tool helped you grow your harem, please give it a Star! It helps the project grow and stay updated.**
+
 
 
 
