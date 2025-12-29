@@ -1,4 +1,4 @@
-# ⚡ MudaeRemote: Nihai Mudae Bot Otomasyon Aracı
+# ⚡ MudaRemote: Nihai Mudae Bot Otomasyon Aracı
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
