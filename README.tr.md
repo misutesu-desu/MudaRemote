@@ -1,154 +1,102 @@
-# ⚡ MudaRemote: En İyi Mudae Otomasyon Aracı ⚡
+# ⚡ MudaeRemote: Nihai Mudae Bot Otomasyon Aracı
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
-[![Lisans](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Sürüm](https://img.shields.io/badge/Version-3.0.2-orange.svg)]()
-[![Durum](https://img.shields.io/badge/Status-Aktif-success.svg)]()
-[![Discord Server](https://img.shields.io/badge/Discord-Katıl-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
+[![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
-> **⚠️ KRİTİK UYARI ⚠️**
-> 
-> **MudaRemote bir SELF-BOT'tur.** Kullanıcı hesaplarını otomatikleştirmek [Discord Hizmet Koşulları'na](https://discord.com/terms) aykırıdır. 
-> Bu aracı kullanmak hesap askıya alınması veya yasaklanması riski taşır. **Kullanım riski size aittir.** Geliştiriciler herhangi bir sonuç için sorumluluk kabul etmez.
+[Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md) | [Português Brasileiro](README.pt-BR.md)
 
----
+**MudaRemote**, **Mudae Discord Botu** için özel olarak tasarlanmış en sofistike, özellik açısından zengin otomasyon motorudur. Basit makroların çok ötesine geçerek, harem verimliliğini en üst düzeye çıkarırken insan benzeri davranışı simüle etmek için gerçek zamanlı verileri ($tu, embedler, bileşenler) analiz eder.
 
-## 🚀 Genel Bakış
-
-**MudaRemote**, özellikle Mudae Discord botu için tasarlanmış yüksek performanslı, zengin özelliklere sahip bir otomasyon motorudur. Basit bir otomatik yuvarlama (auto-roll) makrosunun çok ötesine geçerek, hesabınızı güvende tutarken harem verimliliğinizi en üst düzeye çıkarmak için akıllı durum yönetimi, cerrahi hassasiyette snipe yetenekleri ve gelişmiş insanlaştırma özellikleri sunar.
-
-MudaRemote, ne zaman yuvarlayacağına, ne zaman uyuyacağına ve neyi talep edeceğine (claim) karar vermek için Mudae'nin yanıtlarını ($tu, mesajlar, embed'ler) gerçek zamanlı olarak ayrıştırır.
+> **⚠️ KRİTİK UYARI:** MudaRemote bir **SELF-BOT**'tur. Self-bot kullanımı Discord'un Hizmet Şartlarını (ToS) ihlal eder ve kalıcı yasaklanma riski taşır. **Kullanım sorumluluğu tamamen size aittir.**
 
 ---
 
-## ✨ Temel Özellikler
+## 🏆 Neden MudaRemote? (Karşılaştırma)
 
-### 🎯 Gelişmiş Snipe Ekosistemi
-*   **İstek Listesi (Wishlist) Snipe**: *Diğer kullanıcılar* tarafından düşürülen karakterleri `wishlist`'inizden anında kapar.
-*   **Seri Snipe**: Tüm bir seriyi hedefleyin! Takip edilen bir seriden herhangi bir karakter düşerse, sizindir.
-*   **Kakera Değeri Snipe**: Karakter istek listenizde olmasa bile, kakera değeri belirlediğiniz eşiği aşarsa otomatik olarak kapar.
-*   **Global Kakera Çiftçiliği**: Bot, kakera reaksiyon butonları için **her** mesajı izler.
-    *   *Yeni:* **Akıllı Filtreleme**: Sunucu dramalarından kaçınmak için sadece belirli kullanıcılardan (örn. yan hesaplarınız) kakera çalacak şekilde yapılandırın.
-    *   *Yeni:* **Kaos Modu**: Kaos Anahtarları (Chaos Keys) ile Normal Kakera arasındaki farkı akıllıca yönetir.
+2021 model scriptlerle yetinmeyin. 2025 standardına yükseltin.
 
-### 🤖 Akıllı Otomasyon
-*   **Akıllı Yuvarlama (Rolling)**: Saatlik yuvarlamaları ($wa, $hg, $ma, vb.) otomatik olarak halleder ve $daily sıfırlamanızı takip eder.
-*   **Slash Komut Motoru**: İsteğe bağlı olarak yuvarlama için modern Discord `/komutlarını` kullanır; bu klasik metin komutlarından daha hızlıdır ve genellikle daha az hız sınırına (rate-limit) takılır.
-*   **Akıllı $rt Kullanımı**: 
-    *   `$rt` (Reset Timer) hakkınızın hazır olup olmadığını algılar ve aynı sıfırlama döneminde ikinci bir değerli karakter çıktığında otomatik olarak kullanır.
-    *   *Yeni:* **Wishlist RT Önceliği**: Wishlist karakterleri için kakera değerine bakılmaksızın `$rt` kullanımını etkinleştirebilirsiniz.
-*   **Stratejik Yuvarlama Zamanlaması**: 
-    *   **İsraf Önleme Mantığı**: Claim hakkınız bekleme süresindeyse, bot yuvarlamaları claim sıfırlanmasına tam saniyeler kala başlayacak şekilde zamanlar. Her bir roll'un yeni döneme sayılmasını garanti eder.
-*   **Otomatik Güncelleme Sistemi**: 
-    *   Uzak depodan yeni sürümleri otomatik olarak algılar ve betiği yerel olarak güncelleyerek sizi en son performans iyileştirmeleri ve özelliklerle senkronize tutar.
-*   **Özel Emoji Desteği**: 
-    *   *Yeni:* Botunuzu kişiselleştirin! Claim kalpleri, kakera kristalleri ve kaos anahtarları için her preset özelinde emoji listeleri tanımlayabilirsiniz.
-*   **Reset Timer ($rt) Optimizasyonu**: 
-    *   Birden fazla yüksek değerli hedefi güvence altına almak için `$rt`'nin akıllı algılanması ve otomatik yürütülmesi.
-
-### 🛡️ Gizlilik & Güvenlik
-*   **İnsanlaştırılmış Aralıklar**: Artık robotik 60 dakikalık zamanlayıcılar yok. Bot, her bekleme süresine rastgele "sapmalar" (jitter) ekler.
-*   **İnaktivite İzleyici**: Kanalın meşgul olduğunu algılar ve yuvarlamaları spamlamadan önce konuşmanın durulmasını bekler, böylece nazik bir insan kullanıcıyı taklit eder.
-*   **Anahtar Limiti Algılama**: Mudae anahtar limitine ulaşırsanız yuvarlamayı otomatik olarak duraklatır.
+| Özellik | Sıradan Mudae Botları | **MudaRemote v3.0.3** |
+| :--- | :--- | :--- |
+| **Roll Zamanlaması** | Sabit/Rastgele Zamanlayıcılar | **Stratejik Sınır Senkronizasyonu (Mükemmel claimleme)** |
+| **Komut Motoru** | Sadece Metin | **Slash Komutları (Modern API Desteği)** |
+| **$rt Yönetimi** | Yok / Manuel | **Tam Otomatik Zeka** |
+| **Güncellemeler** | Manuel Yeniden İndirme | **Entegre Otomatik Güncelleme Sistemi** |
+| **Gizlilik** | Statik Gecikmeler | **İnsan Benzeri Jitter (Sapma) & İnaktivite İzleyici** |
+| **Yerelleştirme** | Sadece İngilizce | **3 Dil Destekleniyor** |
 
 ---
 
-## 🛠️ Kurulum
+## ✨ Öne Çıkan Yüksek Etkili Özellikler
 
-1.  **Ön Koşullar**:
-    *   [Python 3.8](https://www.python.org/downloads/) veya üzerini yükleyin.
-2.  **Bağımlılıkları Yükleyin**:
+### 🎯 Gelişmiş Sniping (Kapma) Ekosistemi
+*   **Wishlist (İstek Listesi) & Seri Sniping:** Başkaları tarafından rollenen karakterleri veya tüm anime serilerini anında claimler.
+*   **Akıllı Kakera Sniper:** Bir eşik değeri belirleyin (örneğin 200+) ve botun değeri otomatik olarak güvence altına almasına izin verin.
+*   **Küresel Kakera Farming:** Tüm mesajları kristaller için tarar. Radara yakalanmamak için sadece belirli kullanıcılardan (yan hesaplarınız gibi) alım yapacak **Akıllı Filtreleme** içerir.
+*   **Kaos Modu:** Chaos Key (10+ anahtarlı karakterler) için özelleşmiş mantık.
+
+### 🤖 Akıllı Otomasyon ("Beyin")
+*   **Stratejik Roll Zamanlaması:** Bot, claim sıfırlamanızdan hemen öncesine kadar rolleri tutar; böylece claim hakkınız bekleme süresindeyken asla roll israf etmezsiniz.
+*   **Slash Komut Motoru:** İsteğe bağlı olarak `/wa`, `/ha` vb. kullanır; bunlar daha hızlıdır ve Discord'un tespit sistemine karşı önemli ölçüde daha güvenlidir.
+*   **Akıllı $rt Kullanımı:** `$rt` komutunun kullanılabilir olup olmadığını otomatik olarak algılar ve bunu yalnızca yüksek öncelikli wishlist hedefleri için kullanır.
+*   **DK Güç Yönetimi:** Yüksek değerli tepkiler (react) için her zaman yeterli gücünüzün olduğundan emin olmak için Kakera gücü kullanımınızı optimize eder.
+
+### 🛡️ Gizlilik & Ban Karşıtı Teknoloji
+*   **İnsanileştirilmiş Aralıklar:** Rastgele "jitter" (sapma) uygular, böylece aktiviteniz asla 60 dakikalık bir döngü gibi görünmez.
+*   **İnaktivite İzleyici:** Bir kanalın meşgul olduğunu algılar ve roll yapmadan önce sohbette bir duraksama bekler; nazik bir kullanıcı gibi davranır.
+*   **Key Limiti Koruması:** Bayraklanmayı önlemek için günlük 1.000 key limitine ulaştığınızda otomatik olarak duraklar.
+
+---
+
+## 🛠️ Hızlı Başlangıç
+
+1.  **Gereksinimler**: [Python 3.8+](https://www.python.org/downloads/)
+2.  **Kurulum**:
     ```bash
     pip install discord.py-self inquirer requests
     ```
-3.  **Kurulum**:
-    *   Bu depoyu indirin.
-    *   Bir `presets.json` dosyası oluşturun (aşağıdaki yapılandırmaya bakın).
+3.  **Çalıştır**:
+    ```bash
+    python mudae_bot.py
+    ```
+    *İnteraktif menüden preset'inizi (ön ayar) seçin ve hazırsınız!*
 
 ---
 
 ## ⚙️ Yapılandırma (`presets.json`)
 
-Tüm ayarlar `presets.json` içinde yönetilir. Birden fazla bot profili (örn. "AnaHesap", "YanHesap") tanımlayabilir ve bunları aynı anda çalıştırabilirsiniz.
+Farklı hesaplar veya sunucular için birden fazla profil tanımlayın.
 
 ```json
 {
-  "BenimProMudaBotum": {
-    "token": "DISCORD_TOKENINIZ_BURAYA",
-    "channel_id": 123456789012345678,
-    "prefix": "!", 
-    "mudae_prefix": "$",
-    "roll_command": "wa",
-
-    "// --- TEMEL AYARLAR ---": "",
-    "rolling": true,                       // Sadece Snipe modu için false yapın (yuvarlama yok, sadece izleme)
-    "min_kakera": 200,                     // Kendi yuvarlamalarınız sırasında bir karakteri almak için minimum değer
-    "delay_seconds": 2,                    // Temel işlem gecikmesi
-    "roll_speed": 1.5,                     // Yuvarlama komutları arasındaki saniye
-
-    "// --- SNIPE YAPILANDIRMASI ---": "",
-    "snipe_mode": true,                    // İstek listesi snipe için ana şalter
-    "wishlist": ["Makima", "Rem"],         // Snipe yapılacak tam karakter isimleri listesi
-    "snipe_delay": 0.5,                    // Ne kadar hızlı snipe yapılacak (saniye)
-    
-    "series_snipe_mode": true,
-    "series_wishlist": ["Chainsaw Man"],   // Snipe yapılacak seri isimleri
-    "series_snipe_delay": 1.0,
-
-    "// --- KAKERA ÇİFTÇİLİĞİ ---": "",
-    "kakera_reaction_snipe_mode": true,    // HERHANGİ bir mesajdaki kakera butonlarına tıklansın mı?
-    "kakera_reaction_snipe_delay": 0.8,
-    "kakera_reaction_snipe_targets": [     // İSTEĞE BAĞLI: Sadece bu kullanıcılardan çal (örn. yan hesapların)
-        "yan_hesap_kullanici_adi"
-    ],
-    "only_chaos": false,                   // Eğer true ise, sadece Kaos Anahtarı (mor) kristallerine tepki verir.
-
-    "// --- GELİŞMİŞ MANTIK ---": "",
-    "use_slash_rolls": true,               // $wa yerine /wa kullan (Şiddetle Önerilir)
-    "dk_power_management": true,           // $dk yüklerini gerçekten ihtiyaç duyduğunda kullanmak üzere sakla
-    "snipe_ignore_min_kakera_reset": true, // Talep sıfırlamasına < 1 saat kaldıysa HERHANGİ bir karakteri al.
-    "key_mode": false,                     // Talep hakkın olmasa bile anahtar için yuvarlamaya devam et?
-    "time_rolls_to_claim_reset": true,    // Yuvarlamaları claim resetine saniyelik zamanla (Maksimum verimlilik)
-    "rt_ignore_min_kakera_for_wishlist": false, // Wishlist için kakera < min_kakera olsa bile $rt kullanılsın mı?
-
-    "// --- ÖZEL EMOJİLER (İsteğe Bağlı) ---": "",
-    "claim_emojis": ["💖", "💗"],          // Tıklanacak özel kalpler
-    "kakera_emojis": ["kakeraY", "kakeraO"], // Toplanacak özel kristaller
-    "chaos_emojis": ["kakeraP"]            // Özel kaos anahtarları (10+ key karakterleri)
-
-    "// --- İNSANLAŞTIRMA ---": "",
+  "AnaHesap": {
+    "token": "TOKENINIZ_BURAYA",
+    "channel_id": 123456789,
+    "rolling": true,
+    "use_slash_rolls": true,            // Önerilen
+    "time_rolls_to_claim_reset": true, // Benzersiz Özellik
+    "min_kakera": 200,
     "humanization_enabled": true,
-    "humanization_window_minutes": 30,     // Sıfırlamadan sonra rastgele 0-30 dk fazladan bekle
-    "humanization_inactivity_seconds": 10  // Yuvarlamadan önce kanalda 10 sn sessizlik bekle
+    "wishlist": ["Makima", "Rem"]
   }
 }
 ```
-
----
-
-## 🎮 Kullanım
-
-1.  Bot klasöründe terminalinizi açın.
-2.  Komut dosyasını çalıştırın:
-    ```bash
-    python mudae_bot.py
-    ```
-3.  Menüden ön ayarınızı (preset) seçin.
-4.  Arkanıza yaslanın ve haremin büyümesini izleyin. 📈
+📖 **Ayarlar için yardıma mı ihtiyacınız var?** Ayrıntılı [Yapılandırma Kılavuzumuza (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide) göz atın.
 
 ---
 
 ## 🔒 Tokeninizi Alma
-
-1.  Tarayıcınızda (Chrome/Firefox) Discord'a giriş yapın.
-2.  **F12** (Geliştirici Araçları) -> **Console** sekmesine basın.
-3.  Tokeninizi görmek için bu kodu yapıştırın:
-    ```javascript
-    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
-    ```
-    *(Not: Bu tokeni asla kimseyle paylaşmayın. Hesabınıza tam erişim sağlar.)*
+1. Discord'u Tarayıcınızda açın.
+2. `F12` -> `Console` (Konsol) sekmesine basın.
+3. Şunu yapıştırın:
+   ```javascript
+   window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
+   ```
+4. **Bu tokeni asla kimseyle paylaşmayın!**
 
 ---
 
-**İyi Avlar!** 💖
+**⭐ Eğer bu araç hareminizi büyütmenize yardımcı olduysa, lütfen bir Yıldız verin! Bu, projenin büyümesine ve güncel kalmasına yardımcı olur.**
