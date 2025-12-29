@@ -26,7 +26,7 @@ Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 | **$rt Management** | None / Manual | **Fully Automated Intelligence** |
 | **Updates** | Manual Re-download | **Integrated Auto-Update System** |
 | **Stealth** | Static Delays | **Human-Like Jitter & Inactivity Watcher** |
-| **Localization** | English Only | **7 Languages Supported** |
+| **Localization** | English Only | **3 Languages Supported** |
 
 ---
 
@@ -101,3 +101,4 @@ Define multiple profiles for different accounts or servers.
 **⭐ If this tool helped you grow your harem, please give it a Star! It helps the project grow and stay updated.**
 
 [Back to Top ↑](#-mudaremote-the-ultimate-mudae-bot-automation-tool)
+
