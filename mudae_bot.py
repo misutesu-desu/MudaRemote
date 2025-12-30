@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.5"
+CURRENT_VERSION = "3.0.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -878,7 +878,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if is_kakera:
                 kakera_claims.append(msg)
             else:
-                if has_claim_option(msg, embed, client.claim_emojis):
+                if is_free_event(embed) or has_claim_option(msg, embed, client.claim_emojis):
                     char_n = embed.author.name.lower()
                     desc = embed.description or ""
                     
@@ -1168,7 +1168,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         client.snipe_happened = True; process = False
 
             # Free Event Card Snipe (Regardless of mode)
-            if process and is_free_event(embed) and has_claim_option(message, embed, client.claim_emojis):
+            if process and is_free_event(embed):
                 print_log(f"Sniping free event card: {c_name}", client.preset_name, "CLAIM")
                 if await claim_character(client, message.channel, message, is_free_claim=True):
                     process = False
