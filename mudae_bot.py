@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.6"
+CURRENT_VERSION = "3.0.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -117,10 +117,13 @@ COLORS = {
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
 
 # Standard Kakera
-KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 
 # Chaos Kakera (for characters with 10+ keys)
-CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+
+# Sphere Emojis (Do not consume power)
+SPHERE_EMOJIS = ['SpU', 'SpD', 'SpL', 'SpW', 'SpR', 'SpO', 'SpY', 'SpG', 'SpT', 'SpB', 'SpP']
 
 
 def color_log(message, preset_name, log_type="INFO"):
@@ -300,8 +303,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     
     # Custom Emojis
     client.claim_emojis = claim_emojis_preset or ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
-    client.kakera_emojis = kakera_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
-    client.chaos_emojis = chaos_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP']
+    client.kakera_emojis = kakera_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+    client.chaos_emojis = chaos_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+    client.sphere_emojis = SPHERE_EMOJIS
 
 
     async def health_monitor_task():
@@ -546,12 +550,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         content_lower = tu_content.lower()
         
         # Check stock
-        dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock)", content_lower)
+        dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", content_lower)
         if dk_stock_match:
             client.dk_stock_count = int(dk_stock_match.group(1))
             log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
-        elif "¡$dk está listo!" in content_lower or "$dk está listo" in content_lower:
-            # Fallback for Spanish where it might say ready without a number
+        elif "¡$dk está listo!" in content_lower or "$dk está listo" in content_lower or "$dk est prêt" in content_lower:
+            # Fallback for Spanish and French where it might say ready without a number
             client.dk_stock_count = 1
             log_function(f"[{client.muda_name}] DK Stock: 1 (Derived)", preset_name, "INFO")
         else:
@@ -563,8 +567,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         try:
             power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", content_lower)
             
-            # Handling PT-BR translation variance: "reação" vs "botão", Spanish: "botón"
-            consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão|botón) de kakera consume)\s*(\d+)%", content_lower)
+            # Handling PT-BR translation variance: "reação" vs "botão", Spanish/French: "botón"/"bouton"
+            consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", content_lower)
             
             if not power_match or not consumption_match:
                 log_function(f"[{client.muda_name}] DK: Parse failed (power/consumption).", preset_name, "WARN")
@@ -606,7 +610,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
-                    if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c) or ("rolls" in c and "reclamar" in c):
+                    if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c) or ("rolls" in c and "reclamar" in c) or ("rolls" in c and "marier" in c):
                         tu_message_content = msg.content
                         break
             if tu_message_content: break
@@ -625,7 +629,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # $rt Status
-        if "$rt is available" in c_lower or "$rt está pronto" in c_lower or "$rt esta pronto" in c_lower or "$rt está disponible" in c_lower:
+        if "$rt is available" in c_lower or "$rt está pronto" in c_lower or "$rt esta pronto" in c_lower or "$rt está disponible" in c_lower or "$rt est disponible" in c_lower:
             client.rt_available = True
             log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
         else:
@@ -638,16 +642,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Try to parse claim reset time first (available in both states)
         claim_reset_minutes = None
-        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo).*?(?:in|em|en)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
+        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset).*?(?:in|em|en|dans)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
         if match_claim_reset:
             h_c, m_c = parse_hours_minutes(match_claim_reset)
             claim_reset_minutes = h_c * 60 + m_c
         
-        claim_ready_pt = "você __pode__ se casar agora mesmo" in c_lower
+        claim_ready_pt = "você __pode__ se casar agora même" in c_lower or "você __pode__ se casar agora mesmo" in c_lower
         claim_ready_en = "you __can__ claim" in c_lower
         claim_ready_es = "puedes__ reclamar" in c_lower or ("puedes reclamar" in c_lower and "no puedes reclamar" not in c_lower)
+        claim_ready_fr = "vous __pouvez__ vous marier" in c_lower
         
-        if claim_ready_en or claim_ready_pt or claim_ready_es:
+        if claim_ready_en or claim_ready_pt or claim_ready_es or claim_ready_fr:
             client.claim_right_available = True
             log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
@@ -668,7 +673,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.claim_right_available = False
             client.current_min_kakera_for_roll_claim = client.min_kakera  # Reset to normal rules
             # Parse wait time
-            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes|pouvez vous remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
             if match_wait:
                 h, m = parse_hours_minutes(match_wait)
                 wait_time = h * 60 + m
@@ -700,7 +705,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
         # Kakera Status
-        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower:
+        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower or "pouvez__ réagir" in c_lower or "pouvez réagir" in c_lower:
             client.kakera_react_available = True
             client.kakera_react_cooldown_until_utc = None
         elif "can't react" in c_lower or "não pode" in c_lower or "no puedes" in c_lower:
@@ -738,8 +743,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         main_match_en = re.search(r"you have\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left\b)", content_lower, re.DOTALL)
         main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
         main_match_es = re.search(r"tienes\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
+        main_match_fr = re.search(r"vous avez\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restants\b)", content_lower, re.DOTALL)
 
-        main_match = main_match_en or main_match_pt or main_match_es
+        main_match = main_match_en or main_match_pt or main_match_es or main_match_fr
         
         if main_match:
             rolls_left = parse_int_from_fragment(main_match.group(1))
@@ -757,7 +763,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass 
 
             # Parse reset time
-            match_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
+            match_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
             if match_reset:
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
@@ -872,7 +878,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             embed = msg.embeds[0]
             if not is_character_embed(embed): continue
             
-            all_kakera_emojis = client.kakera_emojis + client.chaos_emojis
+            all_kakera_emojis = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
             is_kakera = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in msg.components for b in c.children)
             
             if is_kakera:
@@ -965,14 +971,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return False
             
             # If sniping, treat as normal character (ignore chaos logic)
-            target_list = client.chaos_emojis if (chaos_count > 0 and not is_snipe) else client.kakera_emojis
+            target_list = (client.chaos_emojis if (chaos_count > 0 and not is_snipe) else client.kakera_emojis) + client.sphere_emojis
             cooldown_active = not is_kakera_reaction_allowed()
             clicked = False
             
-            # Check for KakeraP (always safe)
-            has_p = msg.components and any(b.emoji.name == 'kakeraP' for c in msg.components for b in c.children if hasattr(b.emoji, 'name'))
+            # Check for KakeraP or Spheres (always safe)
+            has_p_or_sphere = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis) for c in msg.components for b in c.children)
             
-            if cooldown_active and not has_p:
+            if cooldown_active and not has_p_or_sphere:
                 return False
 
             if msg.components:
@@ -980,7 +986,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     for btn in comp.children:
                         if hasattr(btn.emoji, 'name') and btn.emoji.name in target_list:
                             name = btn.emoji.name
-                            if cooldown_active and name != 'kakeraP':
+                            if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis:
                                 continue
                             try:
                                 await btn.click()
@@ -1176,7 +1182,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Reactive Kakera on own rolls
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
             # Check if kakera button exists and value is high enough
-            all_k = client.kakera_emojis + client.chaos_emojis
+            all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
             if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
                  await claim_character(client, message.channel, message, is_kakera=True)
 
