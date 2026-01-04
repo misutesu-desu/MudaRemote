@@ -47,7 +47,7 @@
     "chaos_emojis": ["kakeraO"]
   },
   "Secondary_Account_Farmer": {
-    "token": "TOKEN_BURAYA_GELECEK",
+    "token": "TOKEN",
     "channel_id": 123456789012345678,
     "prefix": "!",
     "mudae_prefix": "$",
