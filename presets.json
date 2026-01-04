@@ -4,7 +4,7 @@
     "channel_id": 123456789012345678,
     "prefix": "/////////////////////",
     "mudae_prefix": "$",
-    "roll_command": "$wa",
+    "roll_command": "wa",
     "rolling": true,
     "use_slash_rolls": true,
     "roll_speed": 0.8,
@@ -13,6 +13,9 @@
     "min_kakera": 200,
     "key_mode": false,
     "only_chaos": false,
+    "time_rolls_to_claim_reset": true,
+    "dk_power_management": true,
+    "skip_initial_commands": false,
     "wishlist": [
       "rem",
       "makima"
@@ -29,13 +32,21 @@
     "kakera_snipe_threshold": 500,
     "reactive_snipe_on_own_rolls": true,
     "reactive_snipe_delay": 0,
+    "rt_ignore_min_kakera_for_wishlist": true,
     "kakera_reaction_snipe_mode": true,
     "kakera_reaction_snipe_delay": 0.75,
     "kakera_reaction_snipe_targets": [],
     "humanization_enabled": true,
     "humanization_window_minutes": 15,
     "humanization_inactivity_seconds": 120,
-    "dk_power_management": true,
-    "skip_initial_commands": false
+    "claim_emojis": [
+      "💖", "💗", "💘", "❤️", "💓", "💕", "♥️"
+    ],
+    "kakera_emojis": [
+      "kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP"
+    ],
+    "chaos_emojis": [
+      "kakeraO"
+    ]
   }
 }
