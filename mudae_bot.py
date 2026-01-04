@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.9"
+CURRENT_VERSION = "3.1.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -168,6 +168,10 @@ def is_free_event(embed):
 
 def has_claim_option(message, embed, claim_emojis):
     if not message.components:
+        # If no buttons are present, check if the character is already owned via the footer.
+        # If it belongs to someone, we ignore it as it's not a claimable roll.
+        if get_character_owner(embed):
+            return False
         return True
     for comp in message.components:
         for btn in comp.children:
@@ -200,7 +204,8 @@ def get_character_owner(embed):
         return None
     
     footer_text = embed.footer.text
-    belongs_pattern = r'(?:[Bb]elongs to|[Pp]ertence a|[Pp]ertenece a)\s+(.+?)$'
+    # Patterns for: English, Portuguese, Spanish, French
+    belongs_pattern = r'(?:[Bb]elongs to|[Pp]ertence a|[Pp]ertenece a|[Aa]ppartient [àa])\s+(.+?)$'
     match = re.search(belongs_pattern, footer_text)
     
     if match:
@@ -739,11 +744,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             digits = re.sub(r"[^\d]", "", fragment or "")
             return int(digits) if digits else 0
 
-        # Regex for rolls
+        # Regex for rolls (singular/plural support for all languages)
         main_match_en = re.search(r"you have\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left\b)", content_lower, re.DOTALL)
-        main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
-        main_match_es = re.search(r"tienes\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes\b)", content_lower, re.DOTALL)
-        main_match_fr = re.search(r"vous avez\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restants\b)", content_lower, re.DOTALL)
+        main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes?\b)", content_lower, re.DOTALL)
+        main_match_es = re.search(r"tienes\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes?\b)", content_lower, re.DOTALL)
+        main_match_fr = re.search(r"vous avez\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restants?\b)", content_lower, re.DOTALL)
 
         main_match = main_match_en or main_match_pt or main_match_es or main_match_fr
         
@@ -1280,8 +1285,8 @@ if __name__ == "__main__":
     
     if args.preset:
         if args.preset in presets:
-            t = start_preset_thread(args.preset, presets[args.preset])
-            if t: t.join() # Keep main thread alive
+            # FIX: Runs directly in main thread to avoid 'set_wakeup_fd' error
+            bot_lifecycle_wrapper(args.preset, presets[args.preset])
         else:
             print(f"Preset '{args.preset}' not found.")
     elif args.all:
@@ -1289,6 +1294,16 @@ if __name__ == "__main__":
         for p_name, p_data in presets.items():
             t = start_preset_thread(p_name, p_data)
             if t: started.append(t)
-        for t in started: t.join()
+        # FIX: Ensure all threads are finished before closing
+        for t in started: 
+            if t: t.join()
     else:
+        # Start the interactive menu
         main_menu()
+        
+        # FIX: Keep the main thread alive after menu selection so daemon threads don't die
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n[MudaRemote] Shutting down...")
