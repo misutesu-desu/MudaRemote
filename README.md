@@ -3,8 +3,8 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.6-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
-[![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md) | [Português Brasileiro](README.pt-BR.md)
@@ -19,14 +19,14 @@
 
 Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 
-| Feature | Ordinary Mudae Bots | **MudaRemote v3.0.3** |
+| Feature | Ordinary Mudae Bots | **MudaRemote v3.0.7** |
 | :--- | :--- | :--- |
 | **Roll Timing** | Constant/Random Timers | **Strategic Boundary Sync (Claims perfectly)** |
 | **Command Engine** | Text Only | **Slash Commands (Modern API Support)** |
 | **$rt Management** | None / Manual | **Fully Automated Intelligence** |
 | **Updates** | Manual Re-download | **Integrated Auto-Update System** |
 | **Stealth** | Static Delays | **Human-Like Jitter & Inactivity Watcher** |
-| **Localization** | English Only | **3 Languages Supported** |
+| **Localization** | English Only | **4 Languages Fully Supported** |
 
 ---
 
@@ -34,7 +34,8 @@ Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 
 ### 🎯 Advanced Sniping Ecosystem
 *   **Wishlist & Series Sniping:** Instantly claims characters or entire anime series rolled by others.
-*   **Intelligent Kakera Sniper:** Set a threshold (e.g., 200+) and let the bot secure value automatically.
+*   **Intelligent Kakera Sniper:** Set a threshold (e.g., 200+) and let the bot secure value automatically (Now supports **Kakera D & C**).
+*   **Sphere Specialist:** Detects and secures **Spheres** (SpU, SpD, etc.) using a zero-power bypass mechanism—ensuring you never miss these rare drops.
 *   **Global Kakera Farming:** Scans all messages for crystals. Includes **Smart Filtering** to only take from specific users (like your alts) to stay under the radar.
 *   **Chaos Mode:** Specialized logic for Chaos Keys (10+ key characters).
 

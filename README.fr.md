@@ -3,8 +3,8 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
-[![Status](https://img.shields.io/badge/Status-Actif_2025-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Actif_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Rejoindre%20le%20serveur-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [English](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md) | [Português Brasileiro](README.pt-BR.md)
@@ -19,14 +19,14 @@
 
 Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 
-| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.0.3** |
+| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.0.7** |
 | :--- | :--- | :--- |
 | **Timing des Rolls** | Timers constants/aléatoires | **Synchronisation stratégique (Claim parfait)** |
 | **Moteur de commandes** | Texte uniquement | **Commandes Slash (Support API moderne)** |
 | **Gestion $rt** | Aucune / Manuelle | **Intelligence entièrement automatisée** |
 | **Mises à jour** | Téléchargement manuel | **Système de mise à jour automatique intégré** |
 | **Furtivité** | Délais statiques | **Jitter humain et observateur d'inactivité** |
-| **Localisation** | Anglais uniquement | **3 langues supportées** |
+| **Localisation** | Anglais uniquement | **4 langues entièrement supportées** |
 
 ---
 
@@ -34,7 +34,8 @@ Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 
 ### 🎯 Écosystème de Snipe Avancé
 *   **Snipe de Wishlist & Séries :** Réclame instantanément les personnages ou des séries entières d'anime rollés par d'autres.
-*   **Sniper de Kakera Intelligent :** Définissez un seuil (ex: 200+) et laissez le bot sécuriser la valeur automatiquement.
+*   **Sniper de Kakera Intelligent :** Définissez un seuil (ex: 200+) et laissez le bot sécuriser la valeur automatiquement (Supporte désormais **Kakera D & C**).
+*   **Spécialiste de Sphères :** Détecte et sécurise les **Sphères** (SpU, SpD, etc.) via un mécanisme de bypass sans énergie — garantissant de ne jamais rater ces drops rares.
 *   **Farming de Kakera Global :** Scanne tous les messages pour les cristaux. Inclut un **filtrage intelligent** pour ne prendre que chez des utilisateurs spécifiques (comme vos alts) afin de rester discret.
 *   **Mode Chaos :** Logique spécialisée pour les Chaos Keys (personnages à 10+ clés).
 

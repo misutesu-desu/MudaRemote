@@ -3,8 +3,8 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
-[![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [English](README.md) | [Português Brasileiro](README.pt-BR.md)
@@ -19,14 +19,14 @@
 
 不要满足于 2021 年的老旧脚本。请升级到 2025 年的新标准。
 
-| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.0.3** |
+| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.0.7** |
 | :--- | :--- | :--- |
 | **抽卡时机** | 固定/随机定时器 | **战略性边界同步（完美认领）** |
 | **命令引擎** | 仅限文本 | **斜杠命令 Slash Commands（支持现代 API）** |
 | **$rt 管理** | 无 / 手动 | **全自动智能管理** |
 | **更新** | 手动重新下载 | **集成自动更新系统** |
 | **隐身性** | 静态延迟 | **模拟真人抖动 & 闲置状态监视器** |
-| **本地化** | 仅限英文 | **支持 3 种语言** |
+| **本地化** | 仅限英文 | **完美支持 4 种语言** |
 
 ---
 

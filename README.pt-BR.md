@@ -3,8 +3,8 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
-[![Status](https://img.shields.io/badge/Status-Ativo_2025-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Ativo_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Entrar%20no%20Servidor-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [English](README.md) | [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md)
@@ -19,14 +19,14 @@
 
 Não se contente com scripts da era de 2021. Atualize para o padrão de 2025.
 
-| Recurso | Bots Comuns de Mudae | **MudaRemote v3.0.3** |
+| Recurso | Bots Comuns de Mudae | **MudaRemote v3.0.7** |
 | :--- | :--- | :--- |
 | **Timing de Rolls** | Timers Constantes/Aleatórios | **Sincronização Estratégica (Claim perfeito)** |
 | **Motor de Comandos** | Apenas Texto | **Slash Commands (Suporte à API Moderna)** |
 | **Gerenciamento de $rt** | Nenhum / Manual | **Inteligência Totalmente Automatizada** |
 | **Atualizações** | Re-download Manual | **Sistema de Auto-Update Integrado** |
 | **Furtividade (Stealth)** | Delays Estáticos | **Jitter Humano e Monitor de Inatividade** |
-| **Localização** | Apenas Inglês | **Suporte a 3 Idiomas** |
+| **Localização** | Apenas Inglês | **Suporte Total a 4 Idiomas** |
 
 ---
 

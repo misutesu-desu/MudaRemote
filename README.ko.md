@@ -3,8 +3,8 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
-[![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
+[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
 [English](README.md) | [Français](README.fr.md) | [日本語](README.ja.md) | [Türkçe](README.tr.md) | [简体中文](README.zh-CN.md) | [Português Brasileiro](README.pt-BR.md)
@@ -19,14 +19,14 @@
 
 과거의 스크립트에 안주하지 마세요. 2025년 표준으로 업그레이드하십시오.
 
-| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.0.3** |
+| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.0.7** |
 | :--- | :--- | :--- |
 | **롤 타이밍** | 일정/랜덤 타이머 | **전략적 경계 동기화 (완벽한 클레임)** |
 | **커맨드 엔진** | 텍스트 전용 | **슬래시 커맨드 (현대적 API 지원)** |
 | **$rt 관리** | 없음 / 수동 | **완전 자동화된 지능형 관리** |
 | **업데이트** | 수동 재다운로드 | **통합 자동 업데이트 시스템** |
 | **스텔스** | 정적 지연 시간 | **인간과 유사한 지터 및 활동 감시** |
-| **다국어 지원** | 영어 전용 | **3개 국어 이상 지원** |
+| **다국어 지원** | 영어 전용 | **4개 국어 완벽 지원** |
 
 ---
 
