@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.7"
+CURRENT_VERSION = "3.0.8"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1187,10 +1187,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                  await claim_character(client, message.channel, message, is_kakera=True)
 
 
+    # Logic to handle the Discord client execution
     try:
-        client.run(token)
+        # log_handler=None prevents logging conflicts within threads on Windows
+        # reconnect=True ensures the bot attempts to stay online during minor outages
+        client.run(token, log_handler=None, reconnect=True)
     except Exception as e:
-        log_function(f"[{BOT_NAME}] Crash: {e}", preset_name, "ERROR")
+        # This specific error happens on Windows when the bot runs in a sub-thread.
+        # It's a signal handling limitation and doesn't affect Mudae functionality.
+        if "set_wakeup_fd" in str(e):
+            pass 
+        else:
+            log_function(f"[{BOT_NAME}] Crash: {e}", preset_name, "ERROR")
 
 def bot_lifecycle_wrapper(preset_name, preset_data):
     # Auto-restart wrapper
