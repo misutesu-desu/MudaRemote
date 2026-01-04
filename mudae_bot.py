@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.0.8"
+CURRENT_VERSION = "3.0.9"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1191,7 +1191,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     try:
         # log_handler=None prevents logging conflicts within threads on Windows
         # reconnect=True ensures the bot attempts to stay online during minor outages
-        client.run(token, log_handler=None, reconnect=True)
+        client.run(token, reconnect=True)
     except Exception as e:
         # This specific error happens on Windows when the bot runs in a sub-thread.
         # It's a signal handling limitation and doesn't affect Mudae functionality.
