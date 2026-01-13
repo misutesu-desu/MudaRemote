@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.1.0"
+CURRENT_VERSION = "3.2.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -634,7 +634,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # $rt Status
-        if "$rt is available" in c_lower or "$rt está pronto" in c_lower or "$rt esta pronto" in c_lower or "$rt está disponible" in c_lower or "$rt est disponible" in c_lower:
+        rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt"])
+        rt_reset_minutes = None
+
+        # Supports "$rt is in...", "$rt... time left:", etc.
+        match_rt_reset = re.search(r"\$rt.*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+        if match_rt_reset:
+            h_rt, m_rt = parse_hours_minutes(match_rt_reset)
+            rt_reset_minutes = h_rt * 60 + m_rt
+            client.rt_available = False
+            log_function(f"[{client.muda_name}] RT: Cooldown ({h_rt}h {m_rt}m)", preset_name, "INFO")
+        elif rt_ready:
             client.rt_available = True
             log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
         else:
@@ -647,7 +657,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Try to parse claim reset time first (available in both states)
         claim_reset_minutes = None
-        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset).*?(?:in|em|en|dans)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
+        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset|tiempo restante).*?(?:in|em|en|dans|left|restante|restant|tempo|tiempo|falta|restam)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
         if match_claim_reset:
             h_c, m_c = parse_hours_minutes(match_claim_reset)
             claim_reset_minutes = h_c * 60 + m_c
@@ -692,6 +702,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if claim_reset_minutes is None:
                     claim_reset_minutes = wait_time
             
+            # Decide best sleep target
+            best_sleep_wait = wait_time
+            sleep_reason = "claim reset"
+            
+            if rt_reset_minutes is not None and rt_reset_minutes < best_sleep_wait:
+                best_sleep_wait = rt_reset_minutes
+                sleep_reason = "$rt reset"
+
             # If we can't claim, we might still want to roll for keys/$rt or time to reset
             # Timing logic: Only roll if claim reset is near (<= 65 mins)
             is_timing_window = False
@@ -703,7 +721,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if immediate_roll:
                 can_claim = True # Pseudo-true to proceed to roll logic
             elif client.rolling_enabled and proceed_to_rolls:
-                await humanized_wait_and_proceed(client, channel, wait_time, "claim reset")
+                await humanized_wait_and_proceed(client, channel, best_sleep_wait, sleep_reason)
                 await check_status(client, channel, mudae_prefix)
                 return
             else:
@@ -961,9 +979,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
         
-        # Free claims bypass everything. Snipe claims check for rights/RT.
+        # Authorization check
         if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed():
             return False
+
+        # RT Handling: If we are claiming a character and have no claim right but RT is ready, use it now.
+        if not is_kakera and not is_free_claim and not is_rt_claim and not is_snipe:
+            if not client.claim_right_available and client.rt_available:
+                log_function(f"[{client.muda_name}] Using RT for {char_name}", client.preset_name, "CLAIM")
+                try:
+                    await channel.send(f"{client.mudae_prefix}rt")
+                    client.rt_available = False
+                    await asyncio.sleep(0.8) # Wait for Mudae to process RT
+                except Exception as e:
+                    log_function(f"[{client.muda_name}] RT Failed: {e}", client.preset_name, "ERROR")
+                    return False
 
         # Humanized delay for free event claims (since competition is low/none)
         if is_free_claim:
@@ -1047,7 +1077,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         wait_seconds = min_wait + (random.uniform(0, window) if client.humanization_enabled else 0)
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_seconds)
         
-        log_function(f"[{client.muda_name}] Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
+        log_prefix = "Humanized " if client.humanization_enabled else ""
+        log_function(f"[{client.muda_name}] {log_prefix}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         await asyncio.sleep(wait_seconds)
 
         # Inactivity check (anti-detection)
@@ -1116,11 +1147,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling:
             c_name = embed.author.name.lower()
             desc = embed.description or ""
+            series = desc.splitlines()[0].lower() if desc else ""
             k_val = 0
             m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
             if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
-            is_wl = c_name in client.wishlist
+            is_wl = c_name in client.wishlist or any(s in series for s in client.series_wishlist)
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
