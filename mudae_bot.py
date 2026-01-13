@@ -923,7 +923,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if match_k:
                         k_v = int(re.sub(r"[^\d]", "", match_k.group(1)))
                     
-                    is_wl = any(w == char_n for w in client.wishlist)
+                    series = desc.splitlines()[0].lower() if desc else ""
+                    
+                    is_wl = (char_n in client.wishlist) or any(s in series for s in client.series_wishlist)
                     if is_wl:
                         wl_claims_post.append((msg, char_n, k_v))
                     elif k_v >= min_kak_post:
