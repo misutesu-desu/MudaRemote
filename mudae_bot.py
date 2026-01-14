@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.2.1"
+CURRENT_VERSION = "3.2.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -544,11 +544,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
         else:
-            # Snipe only logic
-            try:
-                await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
-            except Exception:
-                pass
+            # Snipe only logic: Start a background loop to periodically check $tu
+            client.loop.create_task(snipe_only_status_loop(client, channel))
 
     async def handle_dk_power_management(client, channel, tu_content):
         # Manage $dk usage. Check if power is low and we have stock.
@@ -593,6 +590,91 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         except Exception as e:
             log_function(f"[{client.muda_name}] DK logic error: {e}", preset_name, "ERROR")
+
+
+    async def snipe_only_status_loop(client, channel):
+        """
+        Background loop for snipe-only mode (rolling disabled).
+        Periodically calls $tu to update claim_right_available and rt_available.
+        """
+        MIN_POLL_INTERVAL_SECONDS = 10 * 60  # 10 minutes minimum
+        MAX_POLL_INTERVAL_SECONDS = 60 * 60  # 60 minutes maximum
+        FALLBACK_POLL_INTERVAL_SECONDS = 30 * 60  # 30 minutes if no cooldown info
+
+        log_function(f"[{client.muda_name}] Snipe-only mode: Starting status monitor.", preset_name, "INFO")
+
+        while not client.is_closed():
+            # Inactivity check before sending $tu (humanization)
+            if client.humanization_enabled:
+                inactivity_wait_count = 0
+                max_inactivity_waits = 10  # Prevent infinite loops (max ~50s extra wait)
+                while inactivity_wait_count < max_inactivity_waits:
+                    try:
+                        last_msg = None
+                        async for m in channel.history(limit=1):
+                            last_msg = m
+                        
+                        if not last_msg:
+                            break  # Empty channel, proceed
+                        
+                        diff = (datetime.datetime.now(datetime.timezone.utc) - last_msg.created_at).total_seconds()
+                        if diff >= client.humanization_inactivity_seconds:
+                            break  # Channel is quiet, proceed
+                        else:
+                            # Wait for remaining inactivity period + small buffer
+                            wait_time = client.humanization_inactivity_seconds - diff + 0.5
+                            log_function(f"[{client.muda_name}] Snipe-only: Channel active, waiting {wait_time:.1f}s for inactivity.", preset_name, "INFO")
+                            await asyncio.sleep(wait_time)
+                            inactivity_wait_count += 1
+                    except Exception:
+                        break  # On error, proceed anyway
+
+            # Final guard check: If channel became active right before send, wait
+            if client.humanization_enabled:
+                try:
+                    last_msg = None
+                    async for m in channel.history(limit=1):
+                        last_msg = m
+                    if last_msg:
+                        diff = (datetime.datetime.now(datetime.timezone.utc) - last_msg.created_at).total_seconds()
+                        if diff < client.humanization_inactivity_seconds:
+                            # Someone just typed! Wait the remaining time + random jitter
+                            remaining = client.humanization_inactivity_seconds - diff
+                            jitter = random.uniform(1.0, 3.0)
+                            log_function(f"[{client.muda_name}] Snipe-only: Last-second activity detected. Waiting {remaining + jitter:.1f}s.", preset_name, "INFO")
+                            await asyncio.sleep(remaining + jitter)
+                except Exception:
+                    pass  # On error, proceed anyway
+
+            # Perform status check
+            try:
+                await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
+            except Exception as e:
+                log_function(f"[{client.muda_name}] Snipe-only status check error: {e}", preset_name, "ERROR")
+
+            # Determine next poll time
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            next_poll_seconds = FALLBACK_POLL_INTERVAL_SECONDS
+
+            # Check if we have a known cooldown to wait for
+            if not client.claim_right_available and client.claim_cooldown_until_utc:
+                diff = (client.claim_cooldown_until_utc - now_utc).total_seconds()
+                if diff > 0:
+                    # Poll shortly after the cooldown ends
+                    next_poll_seconds = min(next_poll_seconds, diff + 30)
+            
+            # Also check if claim is available but reset is coming (to catch the reset)
+            if client.claim_right_available and client.next_claim_reset_at_utc:
+                diff = (client.next_claim_reset_at_utc - now_utc).total_seconds()
+                if diff > 0:
+                    # Poll shortly after the reset to update state
+                    next_poll_seconds = min(next_poll_seconds, diff + 30)
+
+            # Clamp to min/max bounds
+            next_poll_seconds = max(MIN_POLL_INTERVAL_SECONDS, min(next_poll_seconds, MAX_POLL_INTERVAL_SECONDS))
+
+            log_function(f"[{client.muda_name}] Snipe-only: Next $tu check in {next_poll_seconds/60:.1f}m.", preset_name, "CHECK")
+            await asyncio.sleep(next_poll_seconds)
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
         log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
