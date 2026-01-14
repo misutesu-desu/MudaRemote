@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.2.2"
+CURRENT_VERSION = "3.2.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1007,7 +1007,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     
                     series = desc.splitlines()[0].lower() if desc else ""
                     
-                    is_wl = (char_n in client.wishlist) or any(s in series for s in client.series_wishlist)
+                    is_wl = (char_n in client.wishlist) or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
                     if is_wl:
                         wl_claims_post.append((msg, char_n, k_v))
                     elif k_v >= min_kak_post:
@@ -1236,7 +1236,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
             if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
-            is_wl = c_name in client.wishlist or any(s in series for s in client.series_wishlist)
+            is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
