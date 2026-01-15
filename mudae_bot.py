@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.1"
+CURRENT_VERSION = "3.3.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -397,17 +397,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return commands_map
 
     async def _trigger_mudae_slash(channel, command_text):
+        """
+        Trigger a Mudae slash command. Returns True on success, False on failure.
+        All failure points are logged with detailed reasons for debugging.
+        """
+        cmd_display = f"/{command_text.strip().lstrip('/')}" if command_text else "/?"
+        
         if not client.use_slash_rolls:
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: SKIP - Slash mode disabled", preset_name, "INFO")
             return False
-        if not channel or not getattr(channel, "guild", None):
+        
+        if not channel:
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - No channel provided", preset_name, "ERROR")
+            return False
+        
+        if not getattr(channel, "guild", None):
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Channel has no guild (DM or invalid)", preset_name, "ERROR")
             return False
 
         stripped = command_text.strip()
         if not stripped:
+            log_function(f"[{client.muda_name}] Slash: FAIL - Empty command text", preset_name, "ERROR")
             return False
+        
         now_ts = time.time()
         if client.slash_rate_limited_until and now_ts < client.slash_rate_limited_until:
+            remaining = client.slash_rate_limited_until - now_ts
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: SKIP - Rate limited ({remaining:.1f}s remaining)", preset_name, "WARN")
             return False
+        
         if client.last_slash_attempt:
             elapsed = now_ts - client.last_slash_attempt
             if elapsed < client.slash_min_interval:
@@ -419,12 +437,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             key = f"mixed:{stripped.split(' ', 1)[0].lower()}"
             if key not in client.mudae_slash_missing:
                 client.mudae_slash_missing.add(key)
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Commands with arguments not supported", preset_name, "WARN")
             return False
             
         base_name = stripped.lstrip("/").lower()
         guild = channel.guild
         command_map = await _fetch_mudae_slash_commands(guild.id)
+        
         if not command_map:
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Could not fetch Mudae slash commands for guild {guild.id}. Check bot permissions or Mudae availability.", preset_name, "ERROR")
             return False
 
         command_data = command_map.get(base_name)
@@ -432,6 +453,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             key = f"missing:{base_name}"
             if key not in client.mudae_slash_missing:
                 client.mudae_slash_missing.add(key)
+                available_cmds = list(command_map.keys())[:10]  # Show first 10 available
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Command '{base_name}' not found. Available: {available_cmds}...", preset_name, "ERROR")
             return False
 
         _refresh_session_id()
@@ -443,6 +466,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             session_id = client.mudae_session_id
 
         if not session_id:
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - No Discord session ID. WebSocket may be disconnected.", preset_name, "ERROR")
             return False
 
         payload = {
@@ -467,22 +491,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.slash_rate_limited_until = 0.0
             return True
         except discord.HTTPException as e:
+            status = getattr(e, "status", "?")
+            code = getattr(e, "code", "?")
+            text = getattr(e, "text", str(e))
             retry_after = getattr(e, "retry_after", None)
+            
             if retry_after:
                 client.slash_rate_limited_until = time.time() + min(retry_after, client.slash_max_backoff)
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Rate limited by Discord. Retry after {retry_after}s", preset_name, "WARN")
                 await asyncio.sleep(retry_after)
             else:
                 invalidate_cache = True
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - HTTP {status} (code: {code}): {text[:100]}", preset_name, "ERROR")
             client.slash_fail_streak += 1
-        except Exception:
+        except Exception as e:
             client.slash_fail_streak += 1
             invalidate_cache = True
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Unexpected error: {type(e).__name__}: {str(e)[:100]}", preset_name, "ERROR")
 
         if invalidate_cache:
             client.mudae_slash_cache.pop(guild.id, None)
         if client.slash_fail_streak >= client.slash_fail_threshold:
-            client.use_slash_rolls = False
-            log_function(f"[{client.muda_name}] SlashCmds failing, switching to text.", preset_name, "WARN")
+            # Log the failure streak but do NOT switch to text mode.
+            # Stealth is paramount: we never expose the bot with text commands.
+            log_function(f"[{client.muda_name}] Slash: WARNING - {client.slash_fail_streak} consecutive failures. Slash mode remains active (no text fallback).", preset_name, "WARN")
         return False
 
     async def send_roll_command(channel, command_name):
@@ -493,18 +525,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         normalized = cmd.lstrip('/')
 
         if client.use_slash_rolls:
+            # STEALTH MODE: When slash is enabled, NEVER fall back to text.
+            # If slash fails, we stay silent rather than exposing the bot.
             slash_target = normalized
             slash_override_map = {"w": "wx", "h": "hx", "m": "mx"}
             slash_target = slash_override_map.get(slash_target.lower(), slash_target)
             slash_name = slash_target if slash_target.startswith("/") else f"/{slash_target}"
-            sent = await _trigger_mudae_slash(channel, slash_name)
-            if sent:
-                return
-            if not client.use_slash_rolls:
-                # Slash disabled, fallback to text
-                await channel.send(f"{client.mudae_prefix}{normalized}")
-                return
+            await _trigger_mudae_slash(channel, slash_name)
+            # Always return here - no text fallback
+            return
 
+        # Text mode: Only used when slash is explicitly disabled
         await channel.send(f"{client.mudae_prefix}{normalized}")
 
     async def send_tu_command(channel):
@@ -519,16 +550,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             retry_delay = 5.0  # seconds between retries
             
             for attempt in range(1, max_attempts + 1):
+                # _trigger_mudae_slash logs detailed failure reasons
                 sent = await _trigger_mudae_slash(channel, "tu")
                 if sent:
                     return True
                 
                 if attempt < max_attempts:
-                    log_function(f"[{client.muda_name}] Slash /tu failed (attempt {attempt}/{max_attempts}). Retrying in {retry_delay}s...", preset_name, "WARN")
+                    log_function(f"[{client.muda_name}] Retrying /tu in {retry_delay}s... (attempt {attempt}/{max_attempts})", preset_name, "WARN")
                     await asyncio.sleep(retry_delay)
             
             # All attempts failed - wait 30 minutes
-            log_function(f"[{client.muda_name}] Slash /tu failed after {max_attempts} attempts. Waiting 30 minutes.", preset_name, "ERROR")
+            log_function(f"[{client.muda_name}] /tu failed after {max_attempts} attempts. Entering 30-minute cooldown before next retry.", preset_name, "ERROR")
             await asyncio.sleep(30 * 60)
             return False
         
@@ -734,14 +766,50 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return get_val(h_str), get_val(m_str)
 
         # Retrieve $tu message (using slash command if enabled)
+        # IMPORTANT: Validate that the response is addressed to THIS user, not another player
+        def is_tu_response_for_self(message_content: str) -> bool:
+            """
+            Validates that a Mudae $tu response is addressed to the bot's own user.
+            Mudae formats responses as: **Username**, your rolls: ... or **Username**, you __can__ claim...
+            Returns True if the username in the response matches client.user.
+            """
+            if not message_content:
+                return False
+            
+            # Extract the bolded username at the start of the message
+            # Pattern matches: **Username** at the beginning (with optional leading whitespace)
+            username_match = re.match(r"^\s*\*\*([^*]+)\*\*", message_content)
+            if not username_match:
+                # Fallback: some Mudae responses may use different formatting
+                # If we can't extract a username, be conservative and reject
+                return False
+            
+            response_username = username_match.group(1).strip().lower()
+            
+            # Compare against both the bot's username and display name
+            bot_username = (client.user.name or "").strip().lower()
+            bot_display_name = (client.user.display_name or "").strip().lower()
+            
+            # Match if either the username or display name matches
+            return response_username == bot_username or response_username == bot_display_name
+        
         for _ in range(5):
             await send_tu_command(channel); await asyncio.sleep(2.5)
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
                     if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c) or ("rolls" in c and "reclamar" in c) or ("rolls" in c and "marier" in c):
-                        tu_message_content = msg.content
-                        break
+                        # Validate this response is for OUR user, not someone else's $tu
+                        if is_tu_response_for_self(msg.content):
+                            tu_message_content = msg.content
+                            break
+                        else:
+                            # This is another player's $tu response, skip it
+                            # Extract the detected username for debug logging
+                            other_user_match = re.match(r"^\s*\*\*([^*]+)\*\*", msg.content)
+                            other_user = other_user_match.group(1) if other_user_match else "Unknown"
+                            log_function(f"[{client.muda_name}] Skipped $tu response for '{other_user}' (not our user)", preset_name, "INFO")
+                            continue
             if tu_message_content: break
             await asyncio.sleep(5)
         
