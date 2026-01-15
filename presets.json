@@ -36,15 +36,17 @@
     "reactive_snipe_on_own_rolls": true,
     "reactive_snipe_delay": 0,
     "rt_ignore_min_kakera_for_wishlist": true,
+    "rt_only_self_rolls": false,
     "kakera_reaction_snipe_mode": true,
     "kakera_reaction_snipe_delay": 0.3,
-    "kakera_reaction_snipe_targets": ["kakeraY", "kakeraO", "kakeraR"],
+    "kakera_reaction_snipe_targets": [],
+    "reactive_kakera_delay_range": [0.3, 0.8],
     "humanization_enabled": true,
     "humanization_window_minutes": 20,
     "humanization_inactivity_seconds": 180,
-    "claim_emojis": ["💖", "💗", "💘", "❤️"],
-    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP"],
-    "chaos_emojis": ["kakeraO"]
+    "claim_emojis": ["💖", "💗", "💘", "❤️", "💓", "💕", "♥️"],
+    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"],
+    "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"]
   },
   "Secondary_Account_Farmer": {
     "token": "TOKEN",
@@ -75,14 +77,16 @@
     "reactive_snipe_on_own_rolls": true,
     "reactive_snipe_delay": 0.5,
     "rt_ignore_min_kakera_for_wishlist": true,
+    "rt_only_self_rolls": true,
     "kakera_reaction_snipe_mode": true,
     "kakera_reaction_snipe_delay": 1.0,
     "kakera_reaction_snipe_targets": [],
+    "reactive_kakera_delay_range": [0.5, 1.5],
     "humanization_enabled": false,
     "humanization_window_minutes": 10,
     "humanization_inactivity_seconds": 60,
-    "claim_emojis": ["💕", "♥️", "💓"],
-    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW"],
-    "chaos_emojis": ["kakeraO", "kakeraR"]
+    "claim_emojis": ["💖", "💗", "💘", "❤️", "💓", "💕", "♥️"],
+    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"],
+    "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"]
   }
 }
