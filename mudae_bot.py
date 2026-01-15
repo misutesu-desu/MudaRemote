@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.2.3"
+CURRENT_VERSION = "3.3.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -225,7 +225,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
             reactive_snipe_delay, time_rolls_to_claim_reset_preset,
             rt_ignore_min_kakera_for_wishlist_preset,
-            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset):
+            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
+            rt_only_self_rolls_preset, reactive_kakera_delay_range_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -306,6 +307,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
     
+    # RT Self-Roll Only Mode: Prevents RT usage on external snipes
+    client.rt_only_self_rolls = rt_only_self_rolls_preset
+    
+    # Reactive Kakera Delay: Humanized delay before clicking kakera on own rolls
+    # Default: [0.3, 1.0] seconds (300ms to 1000ms)
+    if reactive_kakera_delay_range_preset and isinstance(reactive_kakera_delay_range_preset, (list, tuple)) and len(reactive_kakera_delay_range_preset) == 2:
+        client.reactive_kakera_delay_range = (float(reactive_kakera_delay_range_preset[0]), float(reactive_kakera_delay_range_preset[1]))
+    else:
+        client.reactive_kakera_delay_range = (0.3, 1.0)
+    
     # Custom Emojis
     client.claim_emojis = claim_emojis_preset or ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
     client.kakera_emojis = kakera_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
@@ -334,8 +345,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass
                 return
 
-    def is_character_snipe_allowed() -> bool:
-        return client.claim_right_available or client.rt_available or client.key_mode
+    def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
+        # If rt_only_self_rolls is enabled, don't count RT as available for external snipes
+        rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
+        return client.claim_right_available or rt_usable or client.key_mode
 
     def is_kakera_reaction_allowed() -> bool:
         try:
@@ -493,6 +506,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
         await channel.send(f"{client.mudae_prefix}{normalized}")
+
+    async def send_tu_command(channel):
+        """Send $tu command via slash (if enabled) or text."""
+        if client.use_slash_rolls:
+            sent = await _trigger_mudae_slash(channel, "tu")
+            if sent:
+                return True
+        # Fallback to text command
+        await channel.send(f"{client.mudae_prefix}tu")
+        return False
 
     @client.event
     async def on_ready():
@@ -691,9 +714,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return int(d) if d else 0
             return get_val(h_str), get_val(m_str)
 
-        # Retrieve $tu message
+        # Retrieve $tu message (using slash command if enabled)
         for _ in range(5):
-            await channel.send(f"{mudae_prefix}tu"); await asyncio.sleep(2.5)
+            await send_tu_command(channel); await asyncio.sleep(2.5)
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
@@ -1022,7 +1045,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claimed_post = False
         msg_claimed_id = -1
         
-        if is_character_snipe_allowed():
+        if is_character_snipe_allowed(is_external_snipe=False):
             if client.claim_right_available:
                 if wl_claims_post:
                     msg_c, n, v = wl_claims_post[0]
@@ -1064,12 +1087,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_name = char_author if char_author else "Unknown"
         
         # Authorization check
-        if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed():
+        # For snipe operations, check with is_external_snipe flag
+        if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed(is_external_snipe=is_snipe):
             return False
 
         # RT Handling: If we are claiming a character and have no claim right but RT is ready, use it now.
-        if not is_kakera and not is_free_claim and not is_rt_claim and not is_snipe:
-            if not client.claim_right_available and client.rt_available:
+        # If rt_only_self_rolls is enabled and this is an external snipe, don't use RT.
+        rt_blocked_for_snipe = is_snipe and client.rt_only_self_rolls
+        if not is_kakera and not is_free_claim and not is_rt_claim:
+            if not client.claim_right_available and client.rt_available and not rt_blocked_for_snipe:
                 log_function(f"[{client.muda_name}] Using RT for {char_name}", client.preset_name, "CLAIM")
                 try:
                     await channel.send(f"{client.mudae_prefix}rt")
@@ -1272,15 +1298,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 desc = embed.description or ""
                 series = desc.splitlines()[0].lower() if desc else ""
                 if any(s in series for s in client.series_wishlist) and has_claim_option(message, embed, client.claim_emojis):
-                    await asyncio.sleep(client.series_snipe_delay)
-                    if await claim_character(client, message.channel, message):
-                         client.series_snipe_happened = True; process = False
+                    if not is_character_snipe_allowed(is_external_snipe=True):
+                        pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
+                    else:
+                        await asyncio.sleep(client.series_snipe_delay)
+                        if await claim_character(client, message.channel, message, is_snipe=True):
+                             client.series_snipe_happened = True; process = False
 
             # Wishlist Snipe
             if process and client.snipe_mode and c_name in client.wishlist and has_claim_option(message, embed, client.claim_emojis):
-                await asyncio.sleep(client.snipe_delay)
-                if await claim_character(client, message.channel, message):
-                    client.snipe_happened = True; process = False
+                if not is_character_snipe_allowed(is_external_snipe=True):
+                    pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
+                else:
+                    await asyncio.sleep(client.snipe_delay)
+                    if await claim_character(client, message.channel, message, is_snipe=True):
+                        client.snipe_happened = True; process = False
             
             # Value Snipe
             if process and client.kakera_snipe_mode_active:
@@ -1290,9 +1322,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 
                 if k_val >= client.kakera_snipe_threshold and has_claim_option(message, embed, client.claim_emojis):
-                    await asyncio.sleep(client.snipe_delay)
-                    if await claim_character(client, message.channel, message):
-                        client.snipe_happened = True; process = False
+                    if not is_character_snipe_allowed(is_external_snipe=True):
+                        pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
+                    else:
+                        await asyncio.sleep(client.snipe_delay)
+                        if await claim_character(client, message.channel, message, is_snipe=True):
+                            client.snipe_happened = True; process = False
 
             # Free Event Card Snipe (Regardless of mode)
             if process and is_free_event(embed):
@@ -1300,11 +1335,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if await claim_character(client, message.channel, message, is_free_claim=True):
                     process = False
 
-        # Reactive Kakera on own rolls
+        # Reactive Kakera on own rolls (with humanized delay)
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
             # Check if kakera button exists and value is high enough
             all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
             if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
+                 # Apply humanized delay before clicking kakera on own rolls
+                 delay_min, delay_max = client.reactive_kakera_delay_range
+                 if delay_max > 0:
+                     await asyncio.sleep(random.uniform(delay_min, delay_max))
                  await claim_character(client, message.channel, message, is_kakera=True)
 
 
@@ -1346,7 +1385,9 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("rt_ignore_min_kakera_for_wishlist", False),
                 preset_data.get("claim_emojis", None),
                 preset_data.get("kakera_emojis", None),
-                preset_data.get("chaos_emojis", None)
+                preset_data.get("chaos_emojis", None),
+                preset_data.get("rt_only_self_rolls", False),
+                preset_data.get("reactive_kakera_delay_range", [0.3, 1.0])
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
