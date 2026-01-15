@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.0"
+CURRENT_VERSION = "3.3.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -508,14 +508,33 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await channel.send(f"{client.mudae_prefix}{normalized}")
 
     async def send_tu_command(channel):
-        """Send $tu command via slash (if enabled) or text."""
+        """
+        Send $tu command via slash (if enabled) or text.
+        If slash is enabled, retries up to 3 times on failure.
+        If all slash attempts fail, waits 30 minutes before returning.
+        Never falls back to text when slash is enabled.
+        """
         if client.use_slash_rolls:
-            sent = await _trigger_mudae_slash(channel, "tu")
-            if sent:
-                return True
-        # Fallback to text command
+            max_attempts = 3
+            retry_delay = 5.0  # seconds between retries
+            
+            for attempt in range(1, max_attempts + 1):
+                sent = await _trigger_mudae_slash(channel, "tu")
+                if sent:
+                    return True
+                
+                if attempt < max_attempts:
+                    log_function(f"[{client.muda_name}] Slash /tu failed (attempt {attempt}/{max_attempts}). Retrying in {retry_delay}s...", preset_name, "WARN")
+                    await asyncio.sleep(retry_delay)
+            
+            # All attempts failed - wait 30 minutes
+            log_function(f"[{client.muda_name}] Slash /tu failed after {max_attempts} attempts. Waiting 30 minutes.", preset_name, "ERROR")
+            await asyncio.sleep(30 * 60)
+            return False
+        
+        # Slash not enabled - use text command
         await channel.send(f"{client.mudae_prefix}tu")
-        return False
+        return True
 
     @client.event
     async def on_ready():
