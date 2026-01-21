@@ -45,7 +45,7 @@ BOOL_SETTINGS = [
     ("kakera_snipe_mode", "Kakera Value Snipe Mode", False),
     ("kakera_reaction_snipe_mode", "Kakera Reaction Snipe Mode", False),
     ("reactive_snipe_on_own_rolls", "Reactive Snipe on Own Rolls", True),
-    ("key_mode", "Key Mode (Always Claim)", False),
+    ("key_mode", "Key Mode (Always Roll even with no claim)", False),
     ("only_chaos", "Only Chaos Kakera", False),
     ("humanization_enabled", "Humanization Enabled", False),
     ("dk_power_management", "DK Power Management", False),
@@ -739,3 +739,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
