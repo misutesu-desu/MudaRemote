@@ -294,7 +294,7 @@ class PresetEditor:
         claim_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Kakera", 100)
-        self.add_checkbox(claim_frame, "key_mode", "Key Mode (Always Claim)")
+        self.add_checkbox(claim_frame, "key_mode", "Key Mode (Always Roll even with no claim)")
         self.add_checkbox(claim_frame, "only_chaos", "Only Chaos Kakera")
         
         # --- Snipe Settings ---
@@ -739,4 +739,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
