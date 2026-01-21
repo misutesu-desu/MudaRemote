@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 2021 model scriptlerle yetinmeyin. 2025 standardına yükseltin.
 
-| Özellik | Sıradan Mudae Botları | **MudaRemote v3.0.7** |
+| Özellik | Sıradan Mudae Botları | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **Roll Zamanlaması** | Sabit/Rastgele Zamanlayıcılar | **Stratejik Sınır Senkronizasyonu (Mükemmel claimleme)** |
 | **Komut Motoru** | Sadece Metin | **Slash Komutları (Modern API Desteği)** |
@@ -31,6 +31,11 @@
 ---
 
 ## ✨ Öne Çıkan Yüksek Etkili Özellikler
+
+### 🎨 Yepyeni: Grafiksel Preset Editörü
+*   **Görsel Yapılandırma:** Artık manuel JSON düzenlemeye son! Tüm presetlerinizi şık ve koyu temalı bir GUI üzerinden yönetmek için `mudae_preset_editor.py` dosyasını kullanın.
+*   **Kolay Özelleştirme:** Akıllı geri dönüş mantığı ile bireysel claim ve kakera emojilerini kolayca açıp kapatın.
+*   **Tek Tıkla Başlat:** Botu doğrudan editör üzerinden başlatın.
 
 ### 🎯 Gelişmiş Sniping (Kapma) Ekosistemi
 *   **Wishlist (İstek Listesi) & Seri Sniping:** Başkaları tarafından rollenen karakterleri veya tüm anime serilerini anında claimler.
@@ -60,9 +65,11 @@
     ```
 3.  **Çalıştır**:
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *İnteraktif menüden preset'inizi (ön ayar) seçin ve hazırsınız!*
+    *Presetleri yönetmek için şık yeni GUI'yi kullanın, ardından **Run Bot**'a tıklayın!*
+
+    *(Alternatif olarak, klasik konsol menüsü için `python mudae_bot.py` komutunu çalıştırın)*
 
 ---
 

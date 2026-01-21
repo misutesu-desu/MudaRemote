@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Ativo_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Entrar%20no%20Servidor-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 Não se contente com scripts da era de 2021. Atualize para o padrão de 2025.
 
-| Recurso | Bots Comuns de Mudae | **MudaRemote v3.0.7** |
+| Recurso | Bots Comuns de Mudae | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **Timing de Rolls** | Timers Constantes/Aleatórios | **Sincronização Estratégica (Claim perfeito)** |
 | **Motor de Comandos** | Apenas Texto | **Slash Commands (Suporte à API Moderna)** |
@@ -31,6 +31,11 @@ Não se contente com scripts da era de 2021. Atualize para o padrão de 2025.
 ---
 
 ## ✨ Principais Recursos de Alto Impacto
+
+### 🎨 Novidade: Editor de Presets Gráfico
+*   **Configuração Visual:** Chega de edição manual de JSON! Use o `mudae_preset_editor.py` para gerenciar todos os seus presets através de uma interface gráfica elegante com tema escuro.
+*   **Customização Fácil:** Ative ou desative emojis individuais de claim e kakera com lógica inteligente de fallback.
+*   **Início com um Clique:** Inicie o bot diretamente pelo editor.
 
 ### 🎯 Ecossistema Avançado de Sniping
 *   **Sniping de Wishlist e Séries:** Reivindica instantaneamente personagens ou séries inteiras de anime que outros usuários rodarem.
@@ -60,9 +65,11 @@ Não se contente com scripts da era de 2021. Atualize para o padrão de 2025.
     ```
 3.  **Execução**:
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *Selecione seu preset no menu interativo e você está pronto!*
+    *Use a nova e elegante interface gráfica para gerenciar presets e depois clique em **Run Bot**!*
+
+    *(Alternativamente, execute `python mudae_bot.py` para o menu de console clássico)*
 
 ---
 

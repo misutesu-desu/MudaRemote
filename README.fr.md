@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Actif_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Rejoindre%20le%20serveur-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 
-| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.0.7** |
+| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **Timing des Rolls** | Timers constants/aléatoires | **Synchronisation stratégique (Claim parfait)** |
 | **Moteur de commandes** | Texte uniquement | **Commandes Slash (Support API moderne)** |
@@ -31,6 +31,11 @@ Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 ---
 
 ## ✨ Fonctionnalités clés à fort impact
+
+### 🎨 Nouveau : Éditeur de Préréglages Graphique
+*   **Configuration Visuelle :** Fini l'édition manuelle du JSON ! Utilisez `mudae_preset_editor.py` pour gérer tous vos préréglages via une interface graphique élégante en mode sombre.
+*   **Personnalisation Facile :** Activez ou désactivez les emojis de claim et de kakera avec une logique de repli intelligente.
+*   **Démarrage en un Clic :** Lancez le bot directement depuis l'éditeur.
 
 ### 🎯 Écosystème de Snipe Avancé
 *   **Snipe de Wishlist & Séries :** Réclame instantanément les personnages ou des séries entières d'anime rollés par d'autres.
@@ -61,9 +66,11 @@ Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
     ```
 3.  **Exécution** :
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *Sélectionnez votre profil dans le menu interactif et vous êtes prêt !*
+    *Utilisez la nouvelle interface graphique élégante pour gérer les préréglages, puis cliquez sur **Run Bot** !*
+
+    *(Alternativement, lancez `python mudae_bot.py` pour le menu console classique)*
 
 ---
 

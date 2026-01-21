@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 2021年時代の古いスクリプトで妥協しないでください。2025年のスタンダードにアップグレードしましょう。
 
-| 機能 | 一般的なMudae Bot | **MudaRemote v3.0.3** |
+| 機能 | 一般的なMudae Bot | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **ロールのタイミング** | 固定/ランダムタイマー | **戦略的な境界同期（完璧なクレーム）** |
 | **コマンドエンジン** | テキストのみ | **スラッシュコマンド（最新APIサポート）** |
@@ -31,6 +31,11 @@
 ---
 
 ## ✨ 主要なハイインパクト機能
+
+### 🎨 新機能: グラフィカル・プリセット・エディター
+*   **ビジュアル設定:** もう手動でJSONを編集する必要はありません！ `mudae_preset_editor.py` を使用して、洗練されたダークテーマのGUIですべてのプリセットを管理できます。
+*   **簡単なカスタマイズ:** スマートなフォールバック・ロジックにより、個別のクレーム絵文字やカケラ絵文字を簡単に切り替えられます。
+*   **ワンクリック起動:** エディターから直接ボットを起動できます。
 
 ### 🎯 高度なスナイプエコシステム
 *   **ウィッシュリスト＆シリーズスナイプ:** 他人がロールしたキャラクターやアニメシリーズ全体を即座に取得（クレーム）します。
@@ -60,9 +65,11 @@
     ```
 3.  **実行**:
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *インタラクティブメニューからプリセットを選択すれば準備完了です！*
+    *洗練された新しいGUIを使用してプリセットを管理し、**Run Bot**をクリックしてください！*
+
+    *(または、従来のコンソールメニューを使用する場合は `python mudae_bot.py` を実行してください)*
 
 ---
 

@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 不要满足于 2021 年的老旧脚本。请升级到 2025 年的新标准。
 
-| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.0.7** |
+| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **抽卡时机** | 固定/随机定时器 | **战略性边界同步（完美认领）** |
 | **命令引擎** | 仅限文本 | **斜杠命令 Slash Commands（支持现代 API）** |
@@ -31,6 +31,11 @@
 ---
 
 ## ✨ 核心高影响力功能
+
+### 🎨 全新发布：图形化预设编辑器
+*   **可视化配置：** 不再需要手动编辑 JSON！使用 `mudae_preset_editor.py` 通过时尚的深色主题 GUI 管理您的所有预设。
+*   **轻松定制：** 通过智能回退逻辑轻松切换单个认领和卡片表情符号。
+*   **一键启动：** 直接从编辑器启动机器人。
 
 ### 🎯 先进的狙击生态系统
 *   **愿望单与系列狙击：** 立即认领他人抽出的角色或整个动漫系列。
@@ -60,9 +65,11 @@
     ```
 3.  **运行**：
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *从交互式菜单中选择您的预设，即可准备就绪！*
+    *使用时尚的新 GUI 管理预设，然后点击 **Run Bot**！*
+
+    *(或者，运行 `python mudae_bot.py` 使用经典的控制台菜单)*
 
 ---
 

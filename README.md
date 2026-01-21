@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 
-| Feature | Ordinary Mudae Bots | **MudaRemote v3.0.7** |
+| Feature | Ordinary Mudae Bots | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **Roll Timing** | Constant/Random Timers | **Strategic Boundary Sync (Claims perfectly)** |
 | **Command Engine** | Text Only | **Slash Commands (Modern API Support)** |
@@ -31,6 +31,11 @@ Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 ---
 
 ## ✨ Key High-Impact Features
+
+### 🎨 Brand New: Graphical Preset Editor
+*   **Visual Configuration:** No more manual JSON editing! Use `mudae_preset_editor.py` to manage all your presets through a sleek dark-themed GUI.
+*   **Easy Customization:** Toggle individual claim and kakera emojis with smart fallback logic.
+*   **One-Click Start:** Launch the bot directly from the editor.
 
 ### 🎯 Advanced Sniping Ecosystem
 *   **Wishlist & Series Sniping:** Instantly claims characters or entire anime series rolled by others.
@@ -61,9 +66,11 @@ Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
     ```
 3.  **Run**:
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *Select your preset from the interactive menu and you're ready!*
+    *Use the sleek New GUI to manage presets, then click **Run Bot**!*
+    
+    *(Alternatively, run `python mudae_bot.py` for the classic console menu)*
 
 ---
 

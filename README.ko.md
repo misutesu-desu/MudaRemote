@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0.7-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 과거의 스크립트에 안주하지 마세요. 2025년 표준으로 업그레이드하십시오.
 
-| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.0.7** |
+| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.3.3** |
 | :--- | :--- | :--- |
 | **롤 타이밍** | 일정/랜덤 타이머 | **전략적 경계 동기화 (완벽한 클레임)** |
 | **커맨드 엔진** | 텍스트 전용 | **슬래시 커맨드 (현대적 API 지원)** |
@@ -31,6 +31,11 @@
 ---
 
 ## ✨ 핵심 주요 기능
+
+### 🎨 새로운 기능: 그래픽 프리셋 에디터
+*   **비주얼 설정:** 더 이상 수동으로 JSON을 편집할 필요가 없습니다! `mudae_preset_editor.py`를 사용하여 세련된 다크 테마 GUI에서 모든 프리셋을 관리하세요.
+*   **쉬운 커스터마이징:** 스마트 폴백 로직을 통해 개별 클레임 및 카케라 이모지를 쉽게 전환할 수 있습니다.
+*   **원클릭 시작:** 에디터에서 직접 봇을 실행하세요.
 
 ### 🎯 고급 스나이핑 생태계
 *   **위시리스트 및 시리즈 스나이핑:** 다른 사용자가 뽑은 캐릭터나 특정 애니메이션 시리즈 전체를 즉시 클레임합니다.
@@ -60,9 +65,11 @@
     ```
 3.  **실행**:
     ```bash
-    python mudae_bot.py
+    python mudae_preset_editor.py
     ```
-    *대화형 메뉴에서 프리셋을 선택하면 준비 완료!*
+    *세련된 새로운 GUI를 사용하여 프리셋을 관리한 다음 **Run Bot**을 클릭하세요!*
+
+    *(또는 기존 콘솔 메뉴를 사용하려면 `python mudae_bot.py`를 실행하세요)*
 
 ---
 
