@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.2"
+CURRENT_VERSION = "3.3.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -318,9 +318,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.reactive_kakera_delay_range = (0.3, 1.0)
     
     # Custom Emojis
-    client.claim_emojis = claim_emojis_preset or ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
-    client.kakera_emojis = kakera_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
-    client.chaos_emojis = chaos_emojis_preset or ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+    # Use explicit None check to respect intentionally empty lists.
+    # - None: user never configured -> use defaults
+    # - []: user explicitly set blank -> use empty (no buttons clicked)
+    # - [...]: user set custom -> use their values
+    client.claim_emojis = claim_emojis_preset if claim_emojis_preset is not None else ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
+    client.kakera_emojis = kakera_emojis_preset if kakera_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+    client.chaos_emojis = chaos_emojis_preset if chaos_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.sphere_emojis = SPHERE_EMOJIS
 
 
