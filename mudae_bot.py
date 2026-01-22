@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.3"
+CURRENT_VERSION = "3.3.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -353,6 +353,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # If rt_only_self_rolls is enabled, don't count RT as available for external snipes
         rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
         return client.claim_right_available or rt_usable or client.key_mode
+
+    def parse_hours_minutes(match_obj):
+        if not match_obj: return 0, 0
+        groups = match_obj.groups(default="")
+        h_str = groups[0] if len(groups) >= 1 else ""
+        m_str = groups[1] if len(groups) >= 2 else ""
+        
+        def get_val(s):
+            d = re.sub(r"\D", "", s or "")
+            return int(d) if d else 0
+        return get_val(h_str), get_val(m_str)
 
     def is_kakera_reaction_allowed() -> bool:
         try:
@@ -758,16 +769,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
         tu_message_content = None
 
-        def parse_hours_minutes(match_obj):
-            if not match_obj: return 0, 0
-            groups = match_obj.groups(default="")
-            h_str = groups[0] if len(groups) >= 1 else ""
-            m_str = groups[1] if len(groups) >= 2 else ""
-            
-            def get_val(s):
-                d = re.sub(r"\D", "", s or "")
-                return int(d) if d else 0
-            return get_val(h_str), get_val(m_str)
 
         # Retrieve $tu message (using slash command if enabled)
         # IMPORTANT: Validate that the response is addressed to THIS user, not another player
@@ -898,30 +899,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if claim_reset_minutes is None:
                     claim_reset_minutes = wait_time
             
-            # Decide best sleep target
-            best_sleep_wait = wait_time
-            sleep_reason = "claim reset"
-            
-            if rt_reset_minutes is not None and rt_reset_minutes < best_sleep_wait:
-                best_sleep_wait = rt_reset_minutes
-                sleep_reason = "$rt reset"
-
-            # If we can't claim, we might still want to roll for keys/$rt or time to reset
-            # Timing logic: Only roll if claim reset is near (<= 65 mins)
-            is_timing_window = False
-            if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 65:
-                is_timing_window = True
-
-            immediate_roll = client.rolling_enabled and proceed_to_rolls and (client.key_mode or client.rt_available or is_timing_window)
-            
-            if immediate_roll:
-                can_claim = True # Pseudo-true to proceed to roll logic
-            elif client.rolling_enabled and proceed_to_rolls:
-                await humanized_wait_and_proceed(client, channel, best_sleep_wait, sleep_reason)
-                await check_status(client, channel, mudae_prefix)
-                return
-            else:
-                return
+        # Roll Reset Status (New in check_status for better sleep awareness)
+        roll_reset_minutes = None
+        match_roll_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", c_lower)
+        if match_roll_reset:
+            h_r, m_r = parse_hours_minutes(match_roll_reset)
+            roll_reset_minutes = h_r * 60 + m_r
 
         # Kakera Status
         if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower or "pouvez__ réagir" in c_lower or "pouvez réagir" in c_lower:
@@ -940,11 +923,55 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.key_limit_hit = False
             return
 
-        if can_claim and client.rolling_enabled and proceed_to_rolls:
+        # Timing logic: Only roll if claim reset is near (<= 60 mins)
+        is_timing_window = False
+        if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60:
+            is_timing_window = True
+
+        immediate_roll = (client.rolling_enabled and proceed_to_rolls and 
+                         (can_claim or client.key_mode or client.rt_available or is_timing_window))
+        
+        if immediate_roll:
             await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                       tu_message_content, 
                                       (client.current_min_kakera_for_roll_claim == 0),
                                       ((client.key_mode or client.rt_available) and not client.claim_right_available))
+        elif client.rolling_enabled and proceed_to_rolls:
+            # Decide best sleep target using a prioritized candidate list to avoid "Dead Zones"
+            sleep_choices = []
+            
+            # 1. Personal claim cooldown
+            if wait_time > 0:
+                sleep_choices.append((float(wait_time), "claim cooldown"))
+            
+            # 2. Global claim reset (for timing window threshold entry at 60 mins)
+            if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes > 60:
+                # Wake up right as we enter the window where "Timing" becomes possible
+                sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
+            
+            # 3. $rt reset
+            if rt_reset_minutes is not None and rt_reset_minutes > 0:
+                sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
+                
+            # 4. Roll reset
+            if roll_reset_minutes is not None and roll_reset_minutes > 0:
+                sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
+
+            if sleep_choices:
+                # Sort by wait time and pick the smallest logical event
+                sleep_choices.sort(key=lambda x: x[0])
+                best_sleep_wait, sleep_reason = sleep_choices[0]
+                # Ensure we don't sleep for too little or too much (clamped between 0.5 and the choice)
+                best_sleep_wait = max(0.5, best_sleep_wait)
+                await humanized_wait_and_proceed(client, channel, best_sleep_wait, sleep_reason)
+            else:
+                # Default safety sleep if no timers could be parsed
+                await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
+            
+            await check_status(client, channel, mudae_prefix)
+            return
+        else:
+            return
 
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
@@ -997,8 +1024,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_rolls = rolls_left + us_rolls_left
 
             if total_rolls == 0:
-                if reset_time_r <= 0: reset_time_r = 60
-                await humanized_wait_and_proceed(client, channel, reset_time_r, "rolls reset")
+                # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
+                # Parse claim reset again from local context to be safe
+                sleep_candidates = [(float(reset_time_r if reset_time_r > 0 else 60), "rolls reset")]
+                
+                # Check claim reset and timing window awareness
+                match_c = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset|tiempo restante).*?(?:in|em|en|dans|left|restante|restant|tempo|tiempo|falta|restam)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
+                if match_c:
+                    h_c, m_c = parse_hours_minutes(match_c) # Note: parse_hours_minutes is defined in check_status; we'll need to handle this or use local regex
+                    c_min = h_c * 60 + m_c
+                    if c_min > 0:
+                        sleep_candidates.append((float(c_min), "claim reset"))
+                        if client.time_rolls_to_claim_reset and c_min > 60:
+                            sleep_candidates.append((float(c_min - 60), "timing window arrival"))
+                
+                sleep_candidates.sort(key=lambda x: x[0])
+                wait_m, reason = sleep_candidates[0]
+                
+                await humanized_wait_and_proceed(client, channel, wait_m, reason)
                 await check_status(client, channel, mudae_prefix); return
             else:
                 log_detail = f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else ""
@@ -1015,11 +1058,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] {log_text}", client.preset_name, "INFO")
         
         # Timing Logic: If not ready to claim and timing is enabled, wait until just before claim reset
-        # If reset is soon (<= 65 mins), we time it even if RT/KeyMode is available (per user request)
+        # If reset is soon (<= 60 mins), we time it even if RT/KeyMode is available (per user request)
         reset_soon = False
         if client.next_claim_reset_at_utc:
             diff = (client.next_claim_reset_at_utc - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
-            if 0 < diff <= 65 * 60:
+            if 0 < diff <= 60 * 60:
                 reset_soon = True
 
         is_timing_mode_active = False
