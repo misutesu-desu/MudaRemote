@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.4"
+CURRENT_VERSION = "3.3.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1164,7 +1164,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     
                     series = desc.splitlines()[0].lower() if desc else ""
                     
-                    is_wl = (char_n in client.wishlist) or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
+                    # Dynamic wishlist check: Bot's name in local list OR Bot mentioned by Mudae in "Wished by" text
+                    bot_is_wished = any(user.id == client.user.id for user in msg.mentions) and (msg.content and "wished by" in msg.content.lower())
+                    is_wl = (char_n in client.wishlist) or bot_is_wished or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
+                    
                     if is_wl:
                         wl_claims_post.append((msg, char_n, k_v))
                     elif k_v >= min_kak_post:
@@ -1183,13 +1186,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.claim_right_available:
                 if wl_claims_post:
                     msg_c, n, v = wl_claims_post[0]
-                    if await claim_character(client, channel, msg_c, is_kakera=False):
+                    if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         claimed_post = True
                         msg_claimed_id = msg_c.id
                 elif char_claims_post:
                     char_claims_post.sort(key=lambda x: x[2], reverse=True)
                     msg_c, n, v = char_claims_post[0]
-                    if await claim_character(client, channel, msg_c, is_kakera=False):
+                    if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         claimed_post = True
                         msg_claimed_id = msg_c.id
         
@@ -1209,16 +1212,29 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await channel.send(f"{client.mudae_prefix}rt")
                         client.rt_available = False
                         await asyncio.sleep(0.7)
-                        await claim_character(client, channel, msg_rt, is_rt_claim=True)
+                        await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
                     except Exception:
                         pass
 
 
-    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False):
+    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None):
         if not msg or not msg.embeds: return False
         embed = msg.embeds[0]
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
+        
+        # Kakera value logging logic
+        kakera_str = ""
+        if not is_kakera and not is_free_claim:
+            val = kakera_value
+            if val is None:
+                desc = embed.description or ""
+                match_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
+                if match_k:
+                    val = re.sub(r"[^\d]", "", match_k.group(1))
+            
+            if val is not None:
+                kakera_str = f" ({val} ka)"
         
         # Authorization check
         # For snipe operations, check with is_external_snipe flag
@@ -1290,7 +1306,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         try:
                             await btn.click()
                             log_type = "CLAIM" if not is_free_claim else "INFO"
-                            log_function(f"[{client.muda_name}] Claiming {char_name}", client.preset_name, log_type)
+                            log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str}", client.preset_name, log_type)
                             clicked_claim = True
                             await asyncio.sleep(1.5)
                             return True
@@ -1301,7 +1317,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
             try:
                 await msg.add_reaction("💖")
-                log_function(f"[{client.muda_name}] Claiming {char_name} (Reaction)", client.preset_name, "CLAIM")
+                log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction)", client.preset_name, "CLAIM")
                 await asyncio.sleep(1.5)
                 return True
             except Exception:
@@ -1396,12 +1412,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
             if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
-            is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
+            # Dynamic wishlist check for reactive self-snipe:
+            # Check if character is in local list OR if bot is mentioned in "Wished by" message content
+            bot_is_wished = any(user.id == client.user.id for user in message.mentions) and (message.content and "wished by" in message.content.lower())
+            is_wl = c_name in client.wishlist or bot_is_wished or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
                 if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
-                if await claim_character(client, message.channel, message):
+                if await claim_character(client, message.channel, message, kakera_value=k_val):
                     client.interrupt_rolling = True
                     process = False
 
@@ -1440,7 +1459,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                              client.series_snipe_happened = True; process = False
 
             # Wishlist Snipe
-            if process and client.snipe_mode and c_name in client.wishlist and has_claim_option(message, embed, client.claim_emojis):
+            # Check if character is in local list OR if bot is mentioned in "Wished by" message content
+            bot_is_wished = any(user.id == client.user.id for user in message.mentions) and (message.content and "wished by" in message.content.lower())
+            
+            if process and client.snipe_mode and (c_name in client.wishlist or bot_is_wished) and has_claim_option(message, embed, client.claim_emojis):
                 if not is_character_snipe_allowed(is_external_snipe=True):
                     pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                 else:
@@ -1460,7 +1482,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                     else:
                         await asyncio.sleep(client.snipe_delay)
-                        if await claim_character(client, message.channel, message, is_snipe=True):
+                        if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
                             client.snipe_happened = True; process = False
 
             # Free Event Card Snipe (Regardless of mode)
