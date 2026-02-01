@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.6"
+CURRENT_VERSION = "3.3.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -379,6 +379,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # If rt_only_self_rolls is enabled, don't count RT as available for external snipes
         rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
         return client.claim_right_available or rt_usable or client.key_mode
+
+    def is_key_mode_kakera_only() -> bool:
+        """
+        Returns True when key_mode is active but neither claim nor RT is available.
+        In this state, the bot should ONLY click kakera buttons and NOT claim characters.
+        This prevents wasting keys on characters we cannot actually claim.
+        """
+        return client.key_mode and not client.claim_right_available and not client.rt_available
 
     def parse_hours_minutes(match_obj):
         if not match_obj: return 0, 0
@@ -1208,7 +1216,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claimed_post = False
         msg_claimed_id = -1
         
-        if is_character_snipe_allowed(is_external_snipe=False):
+        # Key Mode Kakera-Only: If key_mode is ON but no claim/RT available, skip all character claims
+        if key_mode_only_kakera_param or is_key_mode_kakera_only():
+            log_function(f"[{client.muda_name}] Key mode active, no claim/RT. Skipping character claims (kakera only).", preset_name, "INFO")
+        elif is_character_snipe_allowed(is_external_snipe=False):
             if client.claim_right_available:
                 if wl_claims_post:
                     msg_c, n, v = wl_claims_post[0]
@@ -1222,8 +1233,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         claimed_post = True
                         msg_claimed_id = msg_c.id
         
-        # RT check
-        if (key_mode_only_kakera_param or claimed_post) and client.rt_available:
+        # RT check: Only attempt RT claim if RT is actually available and we're not in kakera-only mode
+        if claimed_post and client.rt_available and not is_key_mode_kakera_only():
             rt_targets = [i for i in wl_claims_post if i[0].id != msg_claimed_id] + [i for i in char_claims_post if i[0].id != msg_claimed_id]
             rt_targets.sort(key=lambda x: x[2], reverse=True)
             if rt_targets:
@@ -1445,10 +1456,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
-                if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
-                if await claim_character(client, message.channel, message, kakera_value=k_val):
-                    client.interrupt_rolling = True
-                    process = False
+                # Skip reactive claim if key_mode is active but no claim/RT available
+                if is_key_mode_kakera_only():
+                    pass  # Will fall through to kakera handling below
+                else:
+                    if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
+                    if await claim_character(client, message.channel, message, kakera_value=k_val):
+                        client.interrupt_rolling = True
+                        process = False
 
         # Snipe other users
         if process and not client.is_actively_rolling:
@@ -1477,7 +1492,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 desc = embed.description or ""
                 series = desc.splitlines()[0].lower() if desc else ""
                 if any(s in series for s in client.series_wishlist) and has_claim_option(message, embed, client.claim_emojis):
-                    if not is_character_snipe_allowed(is_external_snipe=True):
+                    if is_key_mode_kakera_only():
+                        pass  # Key mode kakera-only: skip character claims
+                    elif not is_character_snipe_allowed(is_external_snipe=True):
                         pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                     else:
                         await asyncio.sleep(client.series_snipe_delay)
@@ -1487,7 +1504,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Wishlist Snipe (includes "Wished by" detection from Mudae)
             is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id)
             if process and client.snipe_mode and is_on_wishlist and has_claim_option(message, embed, client.claim_emojis):
-                if not is_character_snipe_allowed(is_external_snipe=True):
+                if is_key_mode_kakera_only():
+                    pass  # Key mode kakera-only: skip character claims
+                elif not is_character_snipe_allowed(is_external_snipe=True):
                     pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                 else:
                     await asyncio.sleep(client.snipe_delay)
@@ -1502,7 +1521,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 
                 if k_val >= client.kakera_snipe_threshold and has_claim_option(message, embed, client.claim_emojis):
-                    if not is_character_snipe_allowed(is_external_snipe=True):
+                    if is_key_mode_kakera_only():
+                        pass  # Key mode kakera-only: skip character claims
+                    elif not is_character_snipe_allowed(is_external_snipe=True):
                         pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                     else:
                         await asyncio.sleep(client.snipe_delay)
