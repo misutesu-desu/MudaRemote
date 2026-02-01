@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.5"
+CURRENT_VERSION = "3.3.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -212,6 +212,32 @@ def get_character_owner(embed):
         return match.group(1).strip().rstrip().lower()
     
     return None
+
+def is_wished_by_self(message, client_user_id: int) -> bool:
+    """
+    Checks if the Mudae message indicates this character is wished by the bot's user.
+    Mudae format: "Wished by @user1, @user2" in message.content with users in mentions.
+    
+    This provides authoritative wishlist detection directly from Mudae, complementing
+    the local wishlist. Characters detected this way are treated as wishlist characters
+    for claiming purposes.
+    
+    Args:
+        message: The Discord message object from Mudae
+        client_user_id: The bot user's Discord ID
+        
+    Returns:
+        True if the bot user is mentioned in a "Wished by" context
+    """
+    if not message or not message.content:
+        return False
+    
+    content_lower = message.content.lower()
+    if "wished by" not in content_lower:
+        return False
+    
+    # Check if the bot user is among the mentioned users
+    return client_user_id in [m.id for m in message.mentions]
 
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
@@ -1164,10 +1190,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     
                     series = desc.splitlines()[0].lower() if desc else ""
                     
-                    # Dynamic wishlist check: Bot's name in local list OR Bot mentioned by Mudae in "Wished by" text
-                    bot_is_wished = any(user.id == client.user.id for user in msg.mentions) and (msg.content and "wished by" in msg.content.lower())
-                    is_wl = (char_n in client.wishlist) or bot_is_wished or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
-                    
+                    # Check if character is on wishlist OR Mudae indicates we wished for it
+                    is_wl = (char_n in client.wishlist) or \
+                            (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
+                            is_wished_by_self(msg, client.user.id)
                     if is_wl:
                         wl_claims_post.append((msg, char_n, k_v))
                     elif k_v >= min_kak_post:
@@ -1412,10 +1438,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
             if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
-            # Dynamic wishlist check for reactive self-snipe:
-            # Check if character is in local list OR if bot is mentioned in "Wished by" message content
-            bot_is_wished = any(user.id == client.user.id for user in message.mentions) and (message.content and "wished by" in message.content.lower())
-            is_wl = c_name in client.wishlist or bot_is_wished or (client.series_snipe_mode and any(s in series for s in client.series_wishlist))
+            # Check if character is on wishlist OR Mudae indicates we wished for it
+            is_wl = c_name in client.wishlist or \
+                    (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
+                    is_wished_by_self(message, client.user.id)
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             
             if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
@@ -1458,11 +1484,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if await claim_character(client, message.channel, message, is_snipe=True):
                              client.series_snipe_happened = True; process = False
 
-            # Wishlist Snipe
-            # Check if character is in local list OR if bot is mentioned in "Wished by" message content
-            bot_is_wished = any(user.id == client.user.id for user in message.mentions) and (message.content and "wished by" in message.content.lower())
-            
-            if process and client.snipe_mode and (c_name in client.wishlist or bot_is_wished) and has_claim_option(message, embed, client.claim_emojis):
+            # Wishlist Snipe (includes "Wished by" detection from Mudae)
+            is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id)
+            if process and client.snipe_mode and is_on_wishlist and has_claim_option(message, embed, client.claim_emojis):
                 if not is_character_snipe_allowed(is_external_snipe=True):
                     pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                 else:
