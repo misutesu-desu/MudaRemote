@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 
-| Feature | Ordinary Mudae Bots | **MudaRemote v3.3.3** |
+| Feature | Ordinary Mudae Bots | **MudaRemote v3.3.8** |
 | :--- | :--- | :--- |
 | **Roll Timing** | Constant/Random Timers | **Strategic Boundary Sync (Claims perfectly)** |
 | **Command Engine** | Text Only | **Slash Commands (Modern API Support)** |
@@ -43,6 +43,8 @@ Don't settle for 2021-era scripts. Upgrade to the 2025 standard.
 *   **Sphere Specialist:** Detects and secures **Spheres** (SpU, SpD, etc.) using a zero-power bypass mechanism—ensuring you never miss these rare drops.
 *   **Global Kakera Farming:** Scans all messages for crystals. Includes **Smart Filtering** to only take from specific users (like your alts) to stay under the radar.
 *   **Chaos Mode:** Specialized logic for Chaos Keys (10+ key characters).
+*   **Minimized $tu Footprint:** Automatically detects and verifies claims via chat messages (Married/Claimed), drastically reducing the need for `$tu` command spam and keeping your account under the radar.
+*   **Smart Snipe Verifier:** Reads church messages to confirm if you successfully claimed a character or someone else beat you to it.
 
 ### 🤖 Intelligent Automation (The "Brain")
 *   **Strategic Roll Timing:** The bot holds rolls until just before your claim reset, ensuring you never waste a roll while your claim is on cooldown.
@@ -88,7 +90,9 @@ Define multiple profiles for different accounts or servers.
     "time_rolls_to_claim_reset": true, // Unique Feature
     "min_kakera": 200,
     "humanization_enabled": true,
-    "wishlist": ["Makima", "Rem"]
+    "wishlist": ["Makima", "Rem"],
+    "claim_interval": 180,              // Manual interval fallback
+    "roll_interval": 60 
   }
 }
 ```

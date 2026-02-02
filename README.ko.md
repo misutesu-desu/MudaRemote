@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 과거의 스크립트에 안주하지 마세요. 2025년 표준으로 업그레이드하십시오.
 
-| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.3.3** |
+| 기능 | 일반적인 Mudae 봇 | **MudaRemote v3.3.8** |
 | :--- | :--- | :--- |
 | **롤 타이밍** | 일정/랜덤 타이머 | **전략적 경계 동기화 (완벽한 클레임)** |
 | **커맨드 엔진** | 텍스트 전용 | **슬래시 커맨드 (현대적 API 지원)** |
@@ -42,6 +42,8 @@
 *   **지능형 카케라(Kakera) 스나이퍼:** 임계값(예: 200+)을 설정하면 자동으로 가치 있는 카케라를 확보합니다.
 *   **글로벌 카케라 파밍:** 모든 메시지에서 크리스탈을 스캔합니다. 특정 사용자(예: 부계정)에게서만 가져오도록 설정하는 **스마트 필터링**을 통해 탐지 위험을 낮춥니다.
 *   **카오스 모드:** 카오스 키(10개 이상의 키 캐릭터)를 위한 특화된 로직을 제공합니다.
+*   **$tu 사용 최소화:** 채팅 메시지(결혼/추가)를 통해 클레임을 자동으로 감지하고 확인하여, `$tu` 명령어 남용을 획기적으로 줄이고 계정 탐지 위험을 낮춥니다.
+*   **지능형 스나이프 검증기:** 캐릭터를 성공적으로 클레임했는지, 혹은 다른 사람이 먼저 가져갔는지 채팅 메시지를 통해 확인합니다.
 
 ### 🤖 지능형 자동화 (브레인)
 *   **전략적 롤 타이밍:** 클레임 초기화 직전까지 롤을 아껴두어, 클레임 쿨타임 중에 롤을 낭비하는 일이 없도록 합니다.
@@ -87,7 +89,9 @@
     "time_rolls_to_claim_reset": true, // 독보적인 기능
     "min_kakera": 200,
     "humanization_enabled": true,
-    "wishlist": ["Makima", "Rem"]
+    "wishlist": ["Makima", "Rem"],
+    "claim_interval": 180,              // 수동 클레임 초기화 간격 (분)
+    "roll_interval": 60 
   }
 }
 ```

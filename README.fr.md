@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Actif_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Rejoindre%20le%20serveur-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 
-| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.3.3** |
+| Fonctionnalité | Bots Mudae ordinaires | **MudaRemote v3.3.8** |
 | :--- | :--- | :--- |
 | **Timing des Rolls** | Timers constants/aléatoires | **Synchronisation stratégique (Claim parfait)** |
 | **Moteur de commandes** | Texte uniquement | **Commandes Slash (Support API moderne)** |
@@ -43,6 +43,8 @@ Ne vous contentez pas de scripts datant de 2021. Passez au standard de 2025.
 *   **Spécialiste de Sphères :** Détecte et sécurise les **Sphères** (SpU, SpD, etc.) via un mécanisme de bypass sans énergie — garantissant de ne jamais rater ces drops rares.
 *   **Farming de Kakera Global :** Scanne tous les messages pour les cristaux. Inclut un **filtrage intelligent** pour ne prendre que chez des utilisateurs spécifiques (comme vos alts) afin de rester discret.
 *   **Mode Chaos :** Logique spécialisée pour les Chaos Keys (personnages à 10+ clés).
+*   **Empreinte $tu Minimisée :** Détecte et vérifie automatiquement les claims via les messages du chat (Marié/Réclamé), réduisant considérablement le spam de commandes `$tu`.
+*   **Vérificateur de Snipe Intelligent :** Lit les messages pour confirmer si vous avez réussi à claim un personnage veya si quelqu'un d'autre vous a devancé.
 
 ### 🤖 Automatisation Intelligente (Le "Cerveau")
 *   **Timing de Roll Stratégique :** Le bot retient les rolls juste avant la réinitialisation de votre claim, garantissant que vous ne gaspillez jamais un roll pendant que votre claim est en recharge.
@@ -88,7 +90,9 @@ Définissez plusieurs profils pour différents comptes ou serveurs.
     "time_rolls_to_claim_reset": true, // Fonctionnalité unique
     "min_kakera": 200,
     "humanization_enabled": true,
-    "wishlist": ["Makima", "Rem"]
+    "wishlist": ["Makima", "Rem"],
+    "claim_interval": 180,              // Intervalle manuel de reset
+    "roll_interval": 60 
   }
 }
 ```

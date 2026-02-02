@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.7"
+CURRENT_VERSION = "3.3.8"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -252,7 +252,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             reactive_snipe_delay, time_rolls_to_claim_reset_preset,
             rt_ignore_min_kakera_for_wishlist_preset,
             claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
-            rt_only_self_rolls_preset, reactive_kakera_delay_range_preset):
+            rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
+            claim_interval_preset, roll_interval_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -342,6 +343,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.reactive_kakera_delay_range = (float(reactive_kakera_delay_range_preset[0]), float(reactive_kakera_delay_range_preset[1]))
     else:
         client.reactive_kakera_delay_range = (0.3, 1.0)
+
+    # Manual Intervals (in minutes) for minimized $tu usage
+    client.claim_interval = claim_interval_preset if claim_interval_preset else 180
+    client.roll_interval = roll_interval_preset if roll_interval_preset else 60
     
     # Custom Emojis
     # Use explicit None check to respect intentionally empty lists.
@@ -775,29 +780,41 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 log_function(f"[{client.muda_name}] Snipe-only status check error: {e}", preset_name, "ERROR")
 
-            # Determine next poll time
+            # Determine next sleep duration using strict logic
             now_utc = datetime.datetime.now(datetime.timezone.utc)
-            next_poll_seconds = FALLBACK_POLL_INTERVAL_SECONDS
+            sleep_duration = 60 # Default fallback
 
-            # Check if we have a known cooldown to wait for
-            if not client.claim_right_available and client.claim_cooldown_until_utc:
-                diff = (client.claim_cooldown_until_utc - now_utc).total_seconds()
-                if diff > 0:
-                    # Poll shortly after the cooldown ends
-                    next_poll_seconds = min(next_poll_seconds, diff + 30)
+            if not client.claim_right_available:
+                # We used our claim. Wait for the next reset.
+                if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
+                    sleep_duration = (client.next_claim_reset_at_utc - now_utc).total_seconds()
+                    log_function(f"[{client.muda_name}] Snipe-only: Claim used. Sleeping until reset in {sleep_duration/60:.1f}m.", preset_name, "RESET")
+                else:
+                    # If we don't know the reset time (startup error?), fallback to claim_interval as a cycle
+                    # But ideally we parsed it at startup/first $tu
+                    sleep_duration = 60
+                    log_function(f"[{client.muda_name}] Snipe-only: Reset time unknown. Checking in 1m.", preset_name, "WARN")
+            else:
+                 # Claim is available. We are actively creating tasks (sniping).
+                 # We don't need to loop fast; just keep the loop alive to monitor health/disconnects
+                 # In this mode, we mainly wait for on_message events.
+                 # We can check $tu rarely to sync up drift, but user requested minimized $tu.
+                 # So we just sleep for a long time (e.g. 1 hour) or until we expect a state change?
+                 # Actually, if claim is available, we just wait.
+                 sleep_duration = 3600
+                 log_function(f"[{client.muda_name}] Snipe-only: Ready to claim. Monitoring chat...", preset_name, "CHECK")
             
-            # Also check if claim is available but reset is coming (to catch the reset)
-            if client.claim_right_available and client.next_claim_reset_at_utc:
-                diff = (client.next_claim_reset_at_utc - now_utc).total_seconds()
-                if diff > 0:
-                    # Poll shortly after the reset to update state
-                    next_poll_seconds = min(next_poll_seconds, diff + 30)
+            # Ensure non-negative
+            sleep_duration = max(5, sleep_duration)
+            
+            # Add a small buffer (2s) to ensure we are past the reset time
+            await asyncio.sleep(sleep_duration + 2)
+            
+            # After waking up from a Reset Sleep, we locally restore claim right
+            if not client.claim_right_available and client.next_claim_reset_at_utc and datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
+                 client.claim_right_available = True
+                 log_function(f"[{client.muda_name}] Snipe-only: Claim reset time passed. Claim restored locally.", preset_name, "CLAIM")
 
-            # Clamp to min/max bounds
-            next_poll_seconds = max(MIN_POLL_INTERVAL_SECONDS, min(next_poll_seconds, MAX_POLL_INTERVAL_SECONDS))
-
-            log_function(f"[{client.muda_name}] Snipe-only: Next $tu check in {next_poll_seconds/60:.1f}m.", preset_name, "CHECK")
-            await asyncio.sleep(next_poll_seconds)
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
         log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
@@ -1158,9 +1175,70 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception as e:
             log_function(f"[{client.muda_name}] Post-roll processing error: {e}", preset_name, "ERROR")
         
+        
+        
         await asyncio.sleep(2)
         await asyncio.sleep(1)
+        # Always check status (send $tu) after rolling sequence, as requested
         await check_status(client, channel, client.mudae_prefix)
+
+
+    async def verify_snipe_outcome(client, channel, char_name, is_snipe_action=True):
+        """
+        Outcome Verifier:
+        Checks the last few messages to see who actually got the character.
+        If the bot got it -> Update local state (consume claim), set next reset.
+        If someone else got it -> Keep claim available.
+        """
+        await asyncio.sleep(2.0) # Wait for message to appear
+        
+        found_marriage = False
+        winner_name = None
+        
+        log_label = "Snipe Verification" if is_snipe_action else "Claim Verification"
+        
+        # Scan recent history
+        async for msg in channel.history(limit=5):
+            if not msg.content: continue
+            # Format: 💖 **Username** and **Charname** are now married! 💖
+            if "and" in msg.content and "are now married" in msg.content:
+                 # Check if this marriage message relates to the target character
+                 # Simple substring check (char_name might be partial, but usually sufficient)
+                 if char_name.lower() in msg.content.lower():
+                     found_marriage = True
+                     # Extract username: **User**
+                     match = re.search(r"\*\*(.+?)\*\*", msg.content)
+                     if match:
+                         winner_name = match.group(1).lower()
+                     break
+        
+        if found_marriage and winner_name:
+            bot_name = client.user.name.lower()
+            bot_nick = client.user.display_name.lower()
+            
+            if winner_name == bot_name or winner_name == bot_nick:
+                log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
+                # Update State LOCALLY (No $tu)
+                client.claim_right_available = False
+                
+                # Calculate next reset based on fixed interval
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                reset_delta = datetime.timedelta(minutes=client.claim_interval)
+                client.next_claim_reset_at_utc = now_utc + reset_delta
+                
+                # Align to minute for neatness
+                client.next_claim_reset_at_utc = client.next_claim_reset_at_utc.replace(second=0, microsecond=0)
+                
+                # If we are in timing mode, ensure we don't double-wait or get confused.
+                # The reset is now far in the future, so timing logic will naturally disable until next window.
+                
+                log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Calc)", client.preset_name, "INFO")
+            else:
+                log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
+                # Do NOT set claim_right_available = False. We still have it!
+        else:
+             log_function(f"[{client.muda_name}] {log_label}: Inconclusive. Assuming failure/no-message.", client.preset_name, "WARN")
+
 
 
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
@@ -1345,7 +1423,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             log_type = "CLAIM" if not is_free_claim else "INFO"
                             log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str}", client.preset_name, log_type)
                             clicked_claim = True
-                            await asyncio.sleep(1.5)
+                            
+                            # Snipe Verification Logic (is_snipe tells us if it was external)
+                            # If we clicked, we verify if we actually won
+                            # For regular rolling (not snipes), is_snipe is False -> "Claim Verification"
+                            await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
                             return True
                         except Exception:
                             continue
@@ -1355,7 +1437,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             try:
                 await msg.add_reaction("💖")
                 log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction)", client.preset_name, "CLAIM")
-                await asyncio.sleep(1.5)
+                # Reaction fallback
+                await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
                 return True
             except Exception:
                 return False
@@ -1421,6 +1504,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     client.kakera_reaction_sniped_messages.add(message.id)
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
+                    # Snipe flag is True here
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
 
@@ -1588,7 +1672,9 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("kakera_emojis", None),
                 preset_data.get("chaos_emojis", None),
                 preset_data.get("rt_only_self_rolls", False),
-                preset_data.get("reactive_kakera_delay_range", [0.3, 1.0])
+                preset_data.get("reactive_kakera_delay_range", [0.3, 1.0]),
+                preset_data.get("claim_interval", 180),
+                preset_data.get("roll_interval", 60)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

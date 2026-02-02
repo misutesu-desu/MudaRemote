@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.3-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 2021 model scriptlerle yetinmeyin. 2025 standardına yükseltin.
 
-| Özellik | Sıradan Mudae Botları | **MudaRemote v3.3.3** |
+| Özellik | Sıradan Mudae Botları | **MudaRemote v3.3.8** |
 | :--- | :--- | :--- |
 | **Roll Zamanlaması** | Sabit/Rastgele Zamanlayıcılar | **Stratejik Sınır Senkronizasyonu (Mükemmel claimleme)** |
 | **Komut Motoru** | Sadece Metin | **Slash Komutları (Modern API Desteği)** |
@@ -42,6 +42,8 @@
 *   **Akıllı Kakera Sniper:** Bir eşik değeri belirleyin (örneğin 200+) ve botun değeri otomatik olarak güvence altına almasına izin verin.
 *   **Küresel Kakera Farming:** Tüm mesajları kristaller için tarar. Radara yakalanmamak için sadece belirli kullanıcılardan (yan hesaplarınız gibi) alım yapacak **Akıllı Filtreleme** içerir.
 *   **Kaos Modu:** Chaos Key (10+ anahtarlı karakterler) için özelleşmiş mantık.
+*   **Minimize Edilmiş $tu İzleri:** Claim ve evlilik mesajlarını (Married) chat üzerinden otomatik takip eder. Böylece sürekli `$tu` yazarak dikkat çekmez ve hesabınızı korur.
+*   **Akıllı Snipe Doğrulayıcı:** Karakterin size mi yoksa başkasına mı gittiğini mesajlardan okuyarak doğrular.
 
 ### 🤖 Akıllı Otomasyon ("Beyin")
 *   **Stratejik Roll Zamanlaması:** Bot, claim sıfırlamanızdan hemen öncesine kadar rolleri tutar; böylece claim hakkınız bekleme süresindeyken asla roll israf etmezsiniz.
@@ -87,7 +89,9 @@ Farklı hesaplar veya sunucular için birden fazla profil tanımlayın.
     "time_rolls_to_claim_reset": true, // Benzersiz Özellik
     "min_kakera": 200,
     "humanization_enabled": true,
-    "wishlist": ["Makima", "Rem"]
+    "wishlist": ["Makima", "Rem"],
+    "claim_interval": 180,              // Sunucu claim sıfırlama süresi (dakika)
+    "roll_interval": 60 
   }
 }
 ```
