@@ -33,6 +33,8 @@ DEFAULTS = {
     "humanization_inactivity_seconds": 5,
     "reactive_snipe_delay": 0,
     "reactive_kakera_delay_range": [0.3, 1.0],
+    "claim_interval": 180,
+    "roll_interval": 60,
 }
 
 # Boolean settings with their display names and defaults
@@ -68,6 +70,8 @@ NUMERIC_SETTINGS = [
     ("humanization_window_minutes", "Humanization Window (min)", 40, int),
     ("humanization_inactivity_seconds", "Humanization Inactivity (s)", 5, int),
     ("reactive_snipe_delay", "Reactive Snipe Delay (s)", 0, float),
+    ("claim_interval", "Claim Reset Interval (min)", 180, int),
+    ("roll_interval", "Roll Reset Interval (min)", 60, int),
 ]
 
 # Text/list settings
@@ -287,6 +291,7 @@ class PresetEditor:
         self.add_number_field(roll_frame, "roll_speed", "Roll Speed (seconds)", 0.4)
         self.add_number_field(roll_frame, "delay_seconds", "Delay Between Rolls (seconds)", 0)
         self.add_number_field(roll_frame, "start_delay", "Start Delay (seconds)", 0)
+        self.add_number_field(roll_frame, "roll_interval", "Roll Reset Interval (min)", 60)
         self.add_checkbox(roll_frame, "time_rolls_to_claim_reset", "Time Rolls to Claim Reset")
         
         # --- Claim Settings ---
@@ -294,6 +299,7 @@ class PresetEditor:
         claim_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Kakera", 100)
+        self.add_number_field(claim_frame, "claim_interval", "Claim Reset Interval (min)", 180)
         self.add_checkbox(claim_frame, "key_mode", "Key Mode (Always Roll even with no claim)")
         self.add_checkbox(claim_frame, "only_chaos", "Only Chaos Kakera")
         
@@ -473,7 +479,8 @@ class PresetEditor:
                     "min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
-                    "humanization_inactivity_seconds", "reactive_snipe_delay"]:
+                    "humanization_inactivity_seconds", "reactive_snipe_delay",
+                    "claim_interval", "roll_interval"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -572,14 +579,16 @@ class PresetEditor:
         for key in ["min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
-                    "humanization_inactivity_seconds", "reactive_snipe_delay"]:
+                    "humanization_inactivity_seconds", "reactive_snipe_delay",
+                    "claim_interval", "roll_interval"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     try:
                         # Determine type
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
-                                   "humanization_window_minutes", "humanization_inactivity_seconds"]:
+                                   "humanization_window_minutes", "humanization_inactivity_seconds",
+                                   "claim_interval", "roll_interval"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
