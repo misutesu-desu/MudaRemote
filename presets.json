@@ -40,13 +40,44 @@
     "kakera_reaction_snipe_mode": true,
     "kakera_reaction_snipe_delay": 0.3,
     "kakera_reaction_snipe_targets": [],
-    "reactive_kakera_delay_range": [0.3, 0.8],
+    "claim_interval": 180,
+    "roll_interval": 60,
+    "reactive_kakera_delay_range": [
+      0.3,
+      0.8
+    ],
     "humanization_enabled": true,
     "humanization_window_minutes": 20,
     "humanization_inactivity_seconds": 180,
-    "claim_emojis": ["💖", "💗", "💘", "❤️", "💓", "💕", "♥️"],
-    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"],
-    "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"]
+    "claim_emojis": [
+      "💖",
+      "💗",
+      "💘",
+      "❤️",
+      "💓",
+      "💕",
+      "♥️"
+    ],
+    "kakera_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ],
+    "chaos_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ]
   },
   "Secondary_Account_Farmer": {
     "token": "TOKEN",
@@ -81,12 +112,43 @@
     "kakera_reaction_snipe_mode": true,
     "kakera_reaction_snipe_delay": 1.0,
     "kakera_reaction_snipe_targets": [],
-    "reactive_kakera_delay_range": [0.5, 1.5],
+    "claim_interval": 180,
+    "roll_interval": 60,
+    "reactive_kakera_delay_range": [
+      0.5,
+      1.5
+    ],
     "humanization_enabled": false,
     "humanization_window_minutes": 10,
     "humanization_inactivity_seconds": 60,
-    "claim_emojis": ["💖", "💗", "💘", "❤️", "💓", "💕", "♥️"],
-    "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"],
-    "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC"]
+    "claim_emojis": [
+      "💖",
+      "💗",
+      "💘",
+      "❤️",
+      "💓",
+      "💕",
+      "♥️"
+    ],
+    "kakera_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ],
+    "chaos_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ]
   }
 }
