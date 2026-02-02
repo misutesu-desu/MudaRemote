@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.8"
+CURRENT_VERSION = "3.3.9"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -814,6 +814,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not client.claim_right_available and client.next_claim_reset_at_utc and datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
                  client.claim_right_available = True
                  log_function(f"[{client.muda_name}] Snipe-only: Claim reset time passed. Claim restored locally.", preset_name, "CLAIM")
+                 
+                 # Perpetually chain the next reset time to maintain minute precision (e.g. :28 -> :28)
+                 # We increment by claim_interval until the timer is in the future
+                 reset_delta = datetime.timedelta(minutes=client.claim_interval)
+                 while client.next_claim_reset_at_utc <= datetime.datetime.now(datetime.timezone.utc):
+                     client.next_claim_reset_at_utc += reset_delta
+                 
+                 log_function(f"[{client.muda_name}] Snipe-only: Next scheduled reset anchored at {client.next_claim_reset_at_utc.strftime('%H:%M')} (Minute Sync).", preset_name, "INFO")
 
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
@@ -986,7 +994,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                       tu_message_content, 
                                       (client.current_min_kakera_for_roll_claim == 0),
-                                      ((client.key_mode or client.rt_available) and not client.claim_right_available))
+                                      (client.key_mode and not client.rt_available and not client.claim_right_available))
         elif client.rolling_enabled and proceed_to_rolls:
             # Decide best sleep target using a prioritized candidate list to avoid "Dead Zones"
             sleep_choices = []
@@ -1221,18 +1229,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Update State LOCALLY (No $tu)
                 client.claim_right_available = False
                 
-                # Calculate next reset based on fixed interval
+                # REFINED MINUTE-LOCK LOGIC:
+                # We calculate the next reset relative to the PAST reset point to maintain the exact minute.
                 now_utc = datetime.datetime.now(datetime.timezone.utc)
-                reset_delta = datetime.timedelta(minutes=client.claim_interval)
-                client.next_claim_reset_at_utc = now_utc + reset_delta
+                interval_delta = datetime.timedelta(minutes=client.claim_interval)
                 
-                # Align to minute for neatness
-                client.next_claim_reset_at_utc = client.next_claim_reset_at_utc.replace(second=0, microsecond=0)
-                
-                # If we are in timing mode, ensure we don't double-wait or get confused.
-                # The reset is now far in the future, so timing logic will naturally disable until next window.
-                
-                log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Calc)", client.preset_name, "INFO")
+                # If we have a known reset time, we increment it by the interval
+                if client.next_claim_reset_at_utc:
+                    # If current time is past the target reset, it means the 'next' reset is actually one interval further
+                    base_reset = client.next_claim_reset_at_utc
+                    while base_reset <= now_utc:
+                        base_reset += interval_delta
+                    
+                    client.next_claim_reset_at_utc = base_reset.replace(second=0, microsecond=0)
+                    log_function(f"[{client.muda_name}] Claim used. Next reset synced to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Minute-Locked)", client.preset_name, "INFO")
+                else:
+                    # Fallback if bot just started and hasn't done $tu yet
+                    client.next_claim_reset_at_utc = (now_utc + interval_delta).replace(second=0, microsecond=0)
+                    log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Est.)", client.preset_name, "INFO")
             else:
                 log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
                 # Do NOT set claim_right_available = False. We still have it!
@@ -1298,7 +1312,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if key_mode_only_kakera_param or is_key_mode_kakera_only():
             log_function(f"[{client.muda_name}] Key mode active, no claim/RT. Skipping character claims (kakera only).", preset_name, "INFO")
         elif is_character_snipe_allowed(is_external_snipe=False):
-            if client.claim_right_available:
+            # Allow claiming if claim right is available OR if RT is available (for RT claim)
+            if client.claim_right_available or client.rt_available:
                 if wl_claims_post:
                     msg_c, n, v = wl_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
