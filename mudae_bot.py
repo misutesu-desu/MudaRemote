@@ -722,12 +722,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def snipe_only_status_loop(client, channel):
         """
-        Background loop for snipe-only mode (rolling disabled).
-        Periodically calls $tu to update claim_right_available and rt_available.
-        """
-        MIN_POLL_INTERVAL_SECONDS = 10 * 60  # 10 minutes minimum
-        MAX_POLL_INTERVAL_SECONDS = 60 * 60  # 60 minutes maximum
-        FALLBACK_POLL_INTERVAL_SECONDS = 30 * 60  # 30 minutes if no cooldown info
         Ghost Mode Loop:
         1. Initial Handshake: Check $tu ONCE to sync minute/status.
         2. Silent Phase: Sleep until next calculated reset. Never send commands automatically.
