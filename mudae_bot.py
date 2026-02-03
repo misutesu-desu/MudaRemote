@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.5"
+CURRENT_VERSION = "3.5.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -318,6 +318,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.snipe_watch = {} 
     client.snipe_watch_expiry_seconds = 180 
     client.snipe_globally_disabled_until = None
+
+    # Kakera Power Management (Local Tracking)
+    client.current_dk_power = 100
+    client.dk_consumption = 35 # Default fallback
+    client.dk_consumption_chaos = 18 # Default fallback
+
 
     # Slash command internal state
     client.use_slash_rolls = bool(use_slash_rolls and Route is not None)
@@ -851,6 +857,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, channel, tu_message_content)
+
+        # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
+        try:
+            power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
+            # Support EN, PT, ES, FR for consumption regex
+            consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", c_lower)
+            
+            if power_match and consumption_match:
+                client.current_dk_power = int(power_match.group(1))
+                client.dk_consumption = int(consumption_match.group(1))
+                # Halved cost for "chaos" (characters with 10+ keys) -> integers floor or close enough
+                client.dk_consumption_chaos = int(client.dk_consumption / 2)
+                # log_function(f"[{client.muda_name}] Power Synced: {client.current_dk_power}% (Cost: {client.dk_consumption}%)", preset_name, "INFO")
+        except Exception:
+            pass  # Non-critical, fallback to conservative local tracking
+
 
         c_lower = tu_message_content.lower()
         now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -1414,19 +1436,63 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return False
 
             if msg.components:
+                # Collect all valid buttons first
+                all_raw_buttons = []
                 for comp in msg.components:
                     for btn in comp.children:
-                        if hasattr(btn.emoji, 'name') and btn.emoji.name in target_list:
-                            name = btn.emoji.name
-                            if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis:
-                                continue
-                            try:
-                                await btn.click()
-                                log_function(f"[{client.muda_name}] Kakera clicked: {char_name}", client.preset_name, "KAKERA")
-                                clicked = True
-                                await asyncio.sleep(0.5)
-                            except Exception:
-                                pass
+                         if hasattr(btn.emoji, 'name') and btn.emoji.name in target_list:
+                             all_raw_buttons.append(btn)
+
+                # Priority Map (User Request: C > L > W > R > O > D > Y > T > kakera)
+                # Spheres and KakeraP get max priority (999) as they are usually free/special.
+                prio_map = {
+                    'kakeraP': 999,
+                    'kakeraC': 100,
+                    'kakeraL': 90,
+                    'kakeraW': 80,
+                    'kakeraR': 70,
+                    'kakeraO': 60,
+                    'kakeraD': 50,
+                    'kakeraY': 40,
+                    'kakeraT': 30,
+                    'kakera': 20
+                }
+                # Ensure Spheres are top priority
+                for s in client.sphere_emojis: prio_map[s] = 999
+                
+                # Sort descending by priority value
+                all_raw_buttons.sort(key=lambda b: prio_map.get(b.emoji.name, 0), reverse=True)
+
+                # Iterate through sorted buttons
+                for btn in all_raw_buttons:
+                    name = btn.emoji.name
+                    if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis:
+                        continue
+
+                    # Exempt KakeraP and Spheres from power consumption logic
+                    if name == 'kakeraP' or name in client.sphere_emojis:
+                        cost = 0
+                    else:
+                        cost = client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption
+                    
+                    # Check local power availability before clicking to avoid warnings
+                    if client.current_dk_power < cost:
+                        name_display = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
+                        if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
+                            log_function(f"[{client.muda_name}] Insufficient Power ({client.current_dk_power}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
+                            client.last_power_warn = time.time()
+                        continue
+
+                    try:
+                        await btn.click()
+                        # Debit power locally to prevent immediate subsequent spam
+                        client.current_dk_power = max(0, client.current_dk_power - cost)
+                        
+                        log_function(f"[{client.muda_name}] Kakera clicked: {char_name} (Pw: {client.current_dk_power}%)", client.preset_name, "KAKERA")
+                        clicked = True
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        pass
             return clicked
 
         # Character Claim Logic
