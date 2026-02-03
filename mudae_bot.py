@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.3"
+CURRENT_VERSION = "3.4.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -828,7 +828,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
                     # "rolls" is common across all tested languages (EN, FR, ES, PT)
                     # "reset" is also very common. "min" is universal for minutes.
-                    if ("rolls" in c and "min" in c) or ("rolls" in c and "**" in c):
+                    if ("roll" in c and "min" in c) or ("roll" in c and "**" in c):
                         # Validate this response is for OUR user, not someone else's $tu
                         if is_tu_response_for_self(msg.content):
                             tu_message_content = msg.content
