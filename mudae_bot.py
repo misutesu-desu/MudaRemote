@@ -28,7 +28,7 @@ CURRENT_VERSION = "3.3.10"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
-UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/" 
+UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/" 
 
 def check_for_updates():
     if not UPDATE_URL:
