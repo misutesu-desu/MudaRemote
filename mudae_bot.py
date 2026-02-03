@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.2"
+CURRENT_VERSION = "3.4.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -699,7 +699,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", content_lower)
             
             # Handling PT-BR translation variance: "reação" vs "botão", Spanish/French: "botón"/"bouton"
-            consumption_match = re.search(r"(?:each kakera reaction consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", content_lower)
+            consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", content_lower)
             
             if not power_match or not consumption_match:
                 log_function(f"[{client.muda_name}] DK: Parse failed (power/consumption).", preset_name, "WARN")
@@ -865,7 +865,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Supports "$rt is in...", "$rt... time left:", "recarga do $rt", etc.
         # Captures: ... <text> ... (Hh)? Mm min
-        match_rt_reset = re.search(r"(\$rt|recarga|enfriamiento|cool).*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+        match_rt_reset = re.search(r"(?:\$rt|recarga|enfriamiento|cool).*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
         if match_rt_reset:
             h_rt, m_rt = parse_hours_minutes(match_rt_reset)
             rt_reset_minutes = h_rt * 60 + m_rt
@@ -884,9 +884,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         can_claim = False
         wait_time = 0
 
-        # Claim Status
-        can_claim = False
-        wait_time = 0
+
 
         # Regex for Claim Ready (Positive)
         # EN: you __can__ claim
