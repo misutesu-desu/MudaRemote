@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.3.9"
+CURRENT_VERSION = "3.3.10"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -728,100 +728,68 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         MIN_POLL_INTERVAL_SECONDS = 10 * 60  # 10 minutes minimum
         MAX_POLL_INTERVAL_SECONDS = 60 * 60  # 60 minutes maximum
         FALLBACK_POLL_INTERVAL_SECONDS = 30 * 60  # 30 minutes if no cooldown info
-
-        log_function(f"[{client.muda_name}] Snipe-only mode: Starting status monitor.", preset_name, "INFO")
-
+        Ghost Mode Loop:
+        1. Initial Handshake: Check $tu ONCE to sync minute/status.
+        2. Silent Phase: Sleep until next calculated reset. Never send commands automatically.
+        """
+        log_function(f"[{client.muda_name}] Snipe-only: Performing initial handshake...", client.preset_name, "INFO")
+        
+        # --- INITIAL HANDSHAKE ---
+        handshake_success = False
         while not client.is_closed():
-            # Inactivity check before sending $tu (humanization)
-            if client.humanization_enabled:
-                inactivity_wait_count = 0
-                max_inactivity_waits = 10  # Prevent infinite loops (max ~50s extra wait)
-                while inactivity_wait_count < max_inactivity_waits:
-                    try:
-                        last_msg = None
-                        async for m in channel.history(limit=1):
-                            last_msg = m
-                        
-                        if not last_msg:
-                            break  # Empty channel, proceed
-                        
-                        diff = (datetime.datetime.now(datetime.timezone.utc) - last_msg.created_at).total_seconds()
-                        if diff >= client.humanization_inactivity_seconds:
-                            break  # Channel is quiet, proceed
-                        else:
-                            # Wait for remaining inactivity period + small buffer
-                            wait_time = client.humanization_inactivity_seconds - diff + 0.5
-                            log_function(f"[{client.muda_name}] Snipe-only: Channel active, waiting {wait_time:.1f}s for inactivity.", preset_name, "INFO")
-                            await asyncio.sleep(wait_time)
-                            inactivity_wait_count += 1
-                    except Exception:
-                        break  # On error, proceed anyway
-
-            # Final guard check: If channel became active right before send, wait
-            if client.humanization_enabled:
-                try:
-                    last_msg = None
-                    async for m in channel.history(limit=1):
-                        last_msg = m
-                    if last_msg:
-                        diff = (datetime.datetime.now(datetime.timezone.utc) - last_msg.created_at).total_seconds()
-                        if diff < client.humanization_inactivity_seconds:
-                            # Someone just typed! Wait the remaining time + random jitter
-                            remaining = client.humanization_inactivity_seconds - diff
-                            jitter = random.uniform(1.0, 3.0)
-                            log_function(f"[{client.muda_name}] Snipe-only: Last-second activity detected. Waiting {remaining + jitter:.1f}s.", preset_name, "INFO")
-                            await asyncio.sleep(remaining + jitter)
-                except Exception:
-                    pass  # On error, proceed anyway
-
-            # Perform status check
             try:
+                # Proceed to rolls=False, we just want data
                 await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
+                if client.next_claim_reset_at_utc:
+                    handshake_success = True
+                    break
+                log_function(f"[{client.muda_name}] Snipe-only: Handshake incomplete. Retrying in 30s...", client.preset_name, "WARN")
+                await asyncio.sleep(30)
             except Exception as e:
-                log_function(f"[{client.muda_name}] Snipe-only status check error: {e}", preset_name, "ERROR")
+                log_function(f"[{client.muda_name}] Handshake error: {e}. Retrying in 30s...", client.preset_name, "ERROR")
+                await asyncio.sleep(30)
+        
+        if not handshake_success: return # Client closed
 
-            # Determine next sleep duration using strict logic
+        log_function(f"[{client.muda_name}] Snipe-only: Handshake complete. Entering Ghost Mode.", client.preset_name, "INFO")
+
+        # --- GHOST LOOP ---
+        while not client.is_closed():
             now_utc = datetime.datetime.now(datetime.timezone.utc)
-            sleep_duration = 60 # Default fallback
-
+            
             if not client.claim_right_available:
-                # We used our claim. Wait for the next reset.
+                # STATE: COOLDOWN -> Sleep until reset
                 if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
-                    sleep_duration = (client.next_claim_reset_at_utc - now_utc).total_seconds()
-                    log_function(f"[{client.muda_name}] Snipe-only: Claim used. Sleeping until reset in {sleep_duration/60:.1f}m.", preset_name, "RESET")
+                    wait_seconds = (client.next_claim_reset_at_utc - now_utc).total_seconds()
+                    # Add buffer to ensure we wake up AFTER the minute flips
+                    real_wait = max(5, wait_seconds + 2.0)
+                    
+                    log_function(f"[{client.muda_name}] Snipe-only: Silent. Sleeping {real_wait/60:.1f}m until reset.", client.preset_name, "RESET")
+                    try:
+                        await asyncio.sleep(real_wait)
+                    except asyncio.CancelledError:
+                        break # Allow clean ext
+                    
+                    # WAKE UP: Internal State Update
+                    # Double check time just in case
+                    if datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
+                        client.claim_right_available = True
+                        log_function(f"[{client.muda_name}] Snipe-only: Reset time reached. Claim restored locally.", client.preset_name, "CLAIM")
+                        
+                        # Chain the minute anchor
+                        reset_delta = datetime.timedelta(minutes=client.claim_interval)
+                        while client.next_claim_reset_at_utc <= datetime.datetime.now(datetime.timezone.utc):
+                             client.next_claim_reset_at_utc += reset_delta
+                        
+                        log_function(f"[{client.muda_name}] Snipe-only: Next reset anchored to {client.next_claim_reset_at_utc.strftime('%H:%M')}", client.preset_name, "INFO")
                 else:
-                    # If we don't know the reset time (startup error?), fallback to claim_interval as a cycle
-                    # But ideally we parsed it at startup/first $tu
-                    sleep_duration = 60
-                    log_function(f"[{client.muda_name}] Snipe-only: Reset time unknown. Checking in 1m.", preset_name, "WARN")
+                    # Fallback (Should be rare)
+                    await asyncio.sleep(10)
             else:
-                 # Claim is available. We are actively creating tasks (sniping).
-                 # We don't need to loop fast; just keep the loop alive to monitor health/disconnects
-                 # In this mode, we mainly wait for on_message events.
-                 # We can check $tu rarely to sync up drift, but user requested minimized $tu.
-                 # So we just sleep for a long time (e.g. 1 hour) or until we expect a state change?
-                 # Actually, if claim is available, we just wait.
-                 sleep_duration = 3600
-                 log_function(f"[{client.muda_name}] Snipe-only: Ready to claim. Monitoring chat...", preset_name, "CHECK")
-            
-            # Ensure non-negative
-            sleep_duration = max(5, sleep_duration)
-            
-            # Add a small buffer (2s) to ensure we are past the reset time
-            await asyncio.sleep(sleep_duration + 2)
-            
-            # After waking up from a Reset Sleep, we locally restore claim right
-            if not client.claim_right_available and client.next_claim_reset_at_utc and datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
-                 client.claim_right_available = True
-                 log_function(f"[{client.muda_name}] Snipe-only: Claim reset time passed. Claim restored locally.", preset_name, "CLAIM")
-                 
-                 # Perpetually chain the next reset time to maintain minute precision (e.g. :28 -> :28)
-                 # We increment by claim_interval until the timer is in the future
-                 reset_delta = datetime.timedelta(minutes=client.claim_interval)
-                 while client.next_claim_reset_at_utc <= datetime.datetime.now(datetime.timezone.utc):
-                     client.next_claim_reset_at_utc += reset_delta
-                 
-                 log_function(f"[{client.muda_name}] Snipe-only: Next scheduled reset anchored at {client.next_claim_reset_at_utc.strftime('%H:%M')} (Minute Sync).", preset_name, "INFO")
+                # STATE: READY -> Passive Monitor
+                # We are waiting for on_message to trigger 'claim_character' -> 'verify_snipe_outcome'
+                # Passively sleep in short bursts to allow for responsive shutdown or state checks
+                await asyncio.sleep(10)
 
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
