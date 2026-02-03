@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.4"
+CURRENT_VERSION = "3.4.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1196,64 +1196,69 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def verify_snipe_outcome(client, channel, char_name, is_snipe_action=True):
         """
         Outcome Verifier:
-        Checks the last few messages to see who actually got the character.
-        If the bot got it -> Update local state (consume claim), set next reset.
-        If someone else got it -> Keep claim available.
+        Checks the last few messages from Mudae to see who actually got the character.
+        Language-agnostic: Searches for both the bot's user/display name AND the character name
+        wrapped in bold tags (**), which is the universal format for marriage messages.
         """
         await asyncio.sleep(2.0) # Wait for message to appear
         
-        found_marriage = False
+        found_our_marriage = False
         winner_name = None
         
         log_label = "Snipe Verification" if is_snipe_action else "Claim Verification"
+        bot_username = client.user.name.lower()
+        char_tag = f"**{char_name.lower()}**"
         
         # Scan recent history
-        async for msg in channel.history(limit=5):
-            if not msg.content: continue
-            # Format: 💖 **Username** and **Charname** are now married! 💖
-            if "and" in msg.content and "are now married" in msg.content:
-                 # Check if this marriage message relates to the target character
-                 # Simple substring check (char_name might be partial, but usually sufficient)
-                 if char_name.lower() in msg.content.lower():
-                     found_marriage = True
-                     # Extract username: **User**
-                     match = re.search(r"\*\*(.+?)\*\*", msg.content)
-                     if match:
-                         winner_name = match.group(1).lower()
-                     break
-        
-        if found_marriage and winner_name:
-            bot_name = client.user.name.lower()
-            bot_nick = client.user.display_name.lower()
+        async for msg in channel.history(limit=8):
+            if msg.author.id != TARGET_BOT_ID or not msg.content:
+                continue
             
-            if winner_name == bot_name or winner_name == bot_nick:
-                log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
-                # Update State LOCALLY (No $tu)
-                client.claim_right_available = False
+            content_lower = msg.content.lower()
+            
+            # Mudae marriage messages across ALL languages use double asterisks for names:
+            # e.g., "**Username** and **CharacterName** are now married!"
+            if char_tag in content_lower:
+                # Extract all bolded segments
+                bold_segments = re.findall(r"\*\*(.+?)\*\*", content_lower)
                 
-                # REFINED MINUTE-LOCK LOGIC:
-                # We calculate the next reset relative to the PAST reset point to maintain the exact minute.
-                now_utc = datetime.datetime.now(datetime.timezone.utc)
-                interval_delta = datetime.timedelta(minutes=client.claim_interval)
+                # Check if any bolded segment matches our bot's names
+                for segment in bold_segments:
+                    s_val = segment.lower()
+                    if s_val == bot_username:
+                        found_our_marriage = True
+                        break
+                    elif s_val != char_name.lower():
+                        winner_name = segment # Keep track of who won if it wasn't us
                 
-                # If we have a known reset time, we increment it by the interval
-                if client.next_claim_reset_at_utc:
-                    # If current time is past the target reset, it means the 'next' reset is actually one interval further
-                    base_reset = client.next_claim_reset_at_utc
-                    while base_reset <= now_utc:
-                        base_reset += interval_delta
-                    
-                    client.next_claim_reset_at_utc = base_reset.replace(second=0, microsecond=0)
-                    log_function(f"[{client.muda_name}] Claim used. Next reset synced to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Minute-Locked)", client.preset_name, "INFO")
-                else:
-                    # Fallback if bot just started and hasn't done $tu yet
-                    client.next_claim_reset_at_utc = (now_utc + interval_delta).replace(second=0, microsecond=0)
-                    log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Est.)", client.preset_name, "INFO")
+                # Stop scanning once we find the relevant marriage message for this character
+                if found_our_marriage or winner_name:
+                    break
+        
+        if found_our_marriage:
+            log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
+            # Update State LOCALLY (No $tu needed)
+            client.claim_right_available = False
+            
+            # REFINED MINUTE-LOCK LOGIC:
+            # Calculate next reset relative to the PAST reset point to maintain exact minute precision.
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            interval_delta = datetime.timedelta(minutes=client.claim_interval)
+            
+            if client.next_claim_reset_at_utc:
+                base_reset = client.next_claim_reset_at_utc
+                while base_reset <= now_utc:
+                    base_reset += interval_delta
+                
+                client.next_claim_reset_at_utc = base_reset.replace(second=0, microsecond=0)
+                log_function(f"[{client.muda_name}] Claim used. Next reset synced to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Minute-Locked)", client.preset_name, "INFO")
             else:
-                log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
-                # Do NOT set claim_right_available = False. We still have it!
+                client.next_claim_reset_at_utc = (now_utc + interval_delta).replace(second=0, microsecond=0)
+                log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Est.)", client.preset_name, "INFO")
+        elif winner_name:
+            log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
         else:
-             log_function(f"[{client.muda_name}] {log_label}: Inconclusive. Assuming failure/no-message.", client.preset_name, "WARN")
+            log_function(f"[{client.muda_name}] {log_label}: Inconclusive. Assuming failure or no marriage message.", client.preset_name, "WARN")
 
 
 
