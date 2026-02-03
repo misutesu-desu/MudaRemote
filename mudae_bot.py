@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.1"
+CURRENT_VERSION = "3.4.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -681,6 +681,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         # Check stock
         dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", content_lower)
+        if dk_stock_match:
             client.dk_stock_count = int(dk_stock_match.group(1))
             log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
         elif "$dk" in content_lower and any(x in content_lower for x in ["listo", "ready", "prêt", "pronto"]):
