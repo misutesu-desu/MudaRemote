@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.4.0"
+CURRENT_VERSION = "3.4.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -681,11 +681,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         # Check stock
         dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", content_lower)
-        if dk_stock_match:
             client.dk_stock_count = int(dk_stock_match.group(1))
             log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
-        elif "¡$dk está listo!" in content_lower or "$dk está listo" in content_lower or "$dk est prêt" in content_lower:
-            # Fallback for Spanish and French where it might say ready without a number
+        elif "$dk" in content_lower and any(x in content_lower for x in ["listo", "ready", "prêt", "pronto"]):
+            # Fallback for Spanish/French/Portuguese/English where it might say ready without a number or with different formatting
+            # "Prochain $dk" means next (cooldown), so we exclude that if possible, but "ready" usually implies available.
             client.dk_stock_count = 1
             log_function(f"[{client.muda_name}] DK Stock: 1 (Derived)", preset_name, "INFO")
         else:
@@ -824,7 +824,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             async for msg in channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
-                    if ("rolls" in c and "claim" in c) or ("rolls" in c and "casar" in c) or ("rolls" in c and "reclamar" in c) or ("rolls" in c and "marier" in c):
+                    # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
+                    # "rolls" is common across all tested languages (EN, FR, ES, PT)
+                    # "reset" is also very common. "min" is universal for minutes.
+                    if ("rolls" in c and "min" in c) or ("rolls" in c and "**" in c):
                         # Validate this response is for OUR user, not someone else's $tu
                         if is_tu_response_for_self(msg.content):
                             tu_message_content = msg.content
@@ -852,11 +855,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # $rt Status
-        rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt"])
+        # Multilingual support: EN, PT, ES, FR
+        # Keywords: available, pronto, disponible, prêt
+        rt_ready_keywords = ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", 
+                             "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"]
+        rt_ready = any(x in c_lower for x in rt_ready_keywords)
         rt_reset_minutes = None
 
-        # Supports "$rt is in...", "$rt... time left:", etc.
-        match_rt_reset = re.search(r"\$rt.*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+        # Supports "$rt is in...", "$rt... time left:", "recarga do $rt", etc.
+        # Captures: ... <text> ... (Hh)? Mm min
+        match_rt_reset = re.search(r"(\$rt|recarga|enfriamiento|cool).*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
         if match_rt_reset:
             h_rt, m_rt = parse_hours_minutes(match_rt_reset)
             rt_reset_minutes = h_rt * 60 + m_rt
@@ -866,26 +874,48 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.rt_available = True
             log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
         else:
+            # Fallback: If we didn't find a timer AND didn't find "Ready", assume cooldown/unavailable
+            # (Safety default)
             client.rt_available = False
-            log_function(f"[{client.muda_name}] RT: Cooldown", preset_name, "INFO")
+            log_function(f"[{client.muda_name}] RT: Cooldown (Derived)", preset_name, "INFO")
 
         # Claim Status
         can_claim = False
         wait_time = 0
 
-        # Try to parse claim reset time first (available in both states)
+        # Claim Status
+        can_claim = False
+        wait_time = 0
+
+        # Regex for Claim Ready (Positive)
+        # EN: you __can__ claim
+        # PT: você __pode__ se casar
+        # ES: __puedes__ reclamar
+        # FR: vous __pouvez__ vous marier / remarier
+        claim_ready_pattern = r"__(?:can|pode|puedes|pouvez)__\s+(?:claim|se casar|reclamar|vous (?:re)?marier)"
+        claim_ready = bool(re.search(claim_ready_pattern, c_lower))
+        
+        # Regex for Claim Reset Time (Cooldown)
+        # Covers: "Next claim reset is in...", "temps restant...", "falta um tempo...", "no puedes reclamar..."
+        # We look for keywords "claim/casar/marier/reclamar" OR "reset/tempo/temps/falta" followed eventually by time.
+        # This broad regex attempts to catch the specific minutes line.
         claim_reset_minutes = None
-        match_claim_reset = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset|tiempo restante).*?(?:in|em|en|dans|left|restante|restant|tempo|tiempo|falta|restam)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower, re.IGNORECASE)
-        if match_claim_reset:
-            h_c, m_c = parse_hours_minutes(match_claim_reset)
-            claim_reset_minutes = h_c * 60 + m_c
         
-        claim_ready_pt = "você __pode__ se casar agora même" in c_lower or "você __pode__ se casar agora mesmo" in c_lower
-        claim_ready_en = "you __can__ claim" in c_lower
-        claim_ready_es = "puedes__ reclamar" in c_lower or ("puedes reclamar" in c_lower and "no puedes reclamar" not in c_lower)
-        claim_ready_fr = "vous __pouvez__ vous marier" in c_lower
+        # Priority check for the "reset is in X min" line which usually appears when claiming is available (for next reset)
+        # or when on cooldown.
+        match_claim_reset = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
         
-        if claim_ready_en or claim_ready_pt or claim_ready_es or claim_ready_fr:
+        # Alternative strict check for simple cooldown lines like "no puedes... 20 min"
+        match_claim_wait = re.search(r"(?:can't|não pode|no puedes|avant de).*?(?:claim|casar|reclamar|remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+
+        # Extract time from best match
+        best_match = match_claim_reset or match_claim_wait
+        if best_match:
+             h_c, m_c = parse_hours_minutes(best_match)
+             claim_reset_minutes = h_c * 60 + m_c
+             wait_time = claim_reset_minutes # In cooldown context, this is the wait time
+
+        if claim_ready:
             client.claim_right_available = True
             log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
@@ -905,20 +935,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             client.claim_right_available = False
             client.current_min_kakera_for_roll_claim = client.min_kakera  # Reset to normal rules
-            # Parse wait time
-            match_wait = re.search(r"(?:can't claim|falta um tempo|no puedes|pouvez vous remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-            if match_wait:
-                h, m = parse_hours_minutes(match_wait)
-                wait_time = h * 60 + m
-                log_function(f"[{client.muda_name}] Claim: Cooldown ({h}h {m}m)", preset_name, "INFO")
-                
-                # Align to next minute for precision
-                target_time = (now_utc + datetime.timedelta(minutes=wait_time)).replace(second=0, microsecond=0)
-                client.claim_cooldown_until_utc = target_time
-                client.next_claim_reset_at_utc = target_time
-                
-                if claim_reset_minutes is None:
-                    claim_reset_minutes = wait_time
+            
+            if claim_reset_minutes is not None and claim_reset_minutes > 0:
+                 log_function(f"[{client.muda_name}] Claim: Cooldown ({int(claim_reset_minutes/60)}h {claim_reset_minutes%60}m)", preset_name, "INFO")
+                 
+                 # Align to next minute for precision
+                 target_time = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
+                 client.claim_cooldown_until_utc = target_time
+                 client.next_claim_reset_at_utc = target_time
+            else:
+                 # Backup generic finder if specific regex failed (e.g. "20 min" floating alone in context)
+                 # Only rely on this if we are SURE it's not a claim-ready state
+                 match_generic = re.search(r"\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower.split('\n')[0]) # Usually first line
+                 if match_generic:
+                      h_g, m_g = parse_hours_minutes(match_generic)
+                      wait_time = h_g * 60 + m_g
+                      log_function(f"[{client.muda_name}] Claim: Cooldown ({int(wait_time/60)}h {wait_time%60}m) (Generic)", preset_name, "INFO")
+                      target_time = (now_utc + datetime.timedelta(minutes=wait_time)).replace(second=0, microsecond=0)
+                      client.claim_cooldown_until_utc = target_time
+                      client.next_claim_reset_at_utc = target_time
+                      claim_reset_minutes = wait_time
             
         # Roll Reset Status (New in check_status for better sleep awareness)
         roll_reset_minutes = None
@@ -1007,12 +1043,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return int(digits) if digits else 0
 
         # Regex for rolls (singular/plural support for all languages)
-        main_match_en = re.search(r"you have\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left\b)", content_lower, re.DOTALL)
-        main_match_pt = re.search(r"você tem\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes?\b)", content_lower, re.DOTALL)
-        main_match_es = re.search(r"tienes\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restantes?\b)", content_lower, re.DOTALL)
-        main_match_fr = re.search(r"vous avez\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:restants?\b)", content_lower, re.DOTALL)
-
-        main_match = main_match_en or main_match_pt or main_match_es or main_match_fr
+        # Unified Regex: "You have/Vous avez/Tienes/Você tem" ... (count) ... "rolls"
+        # Captures: 1=count, 2=middle_text
+        main_match = re.search(r"(?:you have|vous avez|tienes|você tem)\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left|restantes?|restants?\b)", content_lower, re.DOTALL)
         
         if main_match:
             rolls_left = parse_int_from_fragment(main_match.group(1))
@@ -1030,7 +1063,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass 
 
             # Parse reset time
-            match_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
+            # Parse reset time
+            # Unified Reset Regex: "Reset in... X min"
+            # Matches: reset ... in/em/en/dans ... (Hh) Mm min
+            match_reset = re.search(r"(?:reset|reinicialização|reinicio).*?(?:in|em|en|dans)\s+(?:.*?)\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
+            
             if match_reset:
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
@@ -1050,10 +1087,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 sleep_candidates = [(float(reset_time_r if reset_time_r > 0 else 60), "rolls reset")]
                 
                 # Check claim reset and timing window awareness
-                match_c = re.search(r"(?:next claim reset|próximo reset de casamento|siguiente reclamo|prochain reset|tiempo restante).*?(?:in|em|en|dans|left|restante|restant|tempo|tiempo|falta|restam)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
+                # Check claim reset and timing window awareness
+                # Reuse the regex strategy from check_status for localized parsing
+                match_c = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
                 if match_c:
-                    h_c, m_c = parse_hours_minutes(match_c) # Note: parse_hours_minutes is defined in check_status; we'll need to handle this or use local regex
-                    c_min = h_c * 60 + m_c
+                    # parse_hours_minutes is not in scope here, so we manual parse using local helper
+                    hours = parse_int_from_fragment(match_c.group(1))
+                    minutes = parse_int_from_fragment(match_c.group(2))
+                    c_min = hours * 60 + minutes
                     if c_min > 0:
                         sleep_candidates.append((float(c_min), "claim reset"))
                         if client.time_rolls_to_claim_reset and c_min > 60:
