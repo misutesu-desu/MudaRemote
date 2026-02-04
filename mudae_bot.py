@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.1"
+CURRENT_VERSION = "3.5.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -856,6 +856,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await asyncio.sleep(1800) # Long sleep on failure
             return
 
+        c_lower = tu_message_content.lower()
+
         if client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, channel, tu_message_content)
 
@@ -871,12 +873,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if consumption_match:
                 client.dk_consumption = int(consumption_match.group(1))
                 client.dk_consumption_chaos = int(client.dk_consumption / 2)
-                
-        except Exception:
-            pass  # Non-critical, fallback to conservative local tracking
+            
+            # Update dk_stock_count while we are here, in case dk_power_management was off
+            # This ensures logs reflect reality even if management is disabled
+            dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", c_lower)
+            if dk_stock_match:
+                client.dk_stock_count = int(dk_stock_match.group(1))
+
+        except Exception as e:
+            log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
 
 
-        c_lower = tu_message_content.lower()
         now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # $rt Status
