@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.0"
+CURRENT_VERSION = "3.5.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -323,6 +323,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.current_dk_power = 100
     client.dk_consumption = 35 # Default fallback
     client.dk_consumption_chaos = 18 # Default fallback
+    client.kakera_reacted_messages = set() # Track processed kakera messages to prevent double counting
 
 
     # Slash command internal state
@@ -861,15 +862,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
         try:
             power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
+            if power_match:
+                client.current_dk_power = int(power_match.group(1))
+                # log_function(f"[{client.muda_name}] Power Synced: {client.current_dk_power}%", preset_name, "INFO")
+
             # Support EN, PT, ES, FR for consumption regex
             consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", c_lower)
-            
-            if power_match and consumption_match:
-                client.current_dk_power = int(power_match.group(1))
+            if consumption_match:
                 client.dk_consumption = int(consumption_match.group(1))
-                # Halved cost for "chaos" (characters with 10+ keys) -> integers floor or close enough
                 client.dk_consumption_chaos = int(client.dk_consumption / 2)
-                # log_function(f"[{client.muda_name}] Power Synced: {client.current_dk_power}% (Cost: {client.dk_consumption}%)", preset_name, "INFO")
+                
         except Exception:
             pass  # Non-critical, fallback to conservative local tracking
 
@@ -1435,6 +1437,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if cooldown_active and not has_p_or_sphere:
                 return False
 
+            # Double Deduction Prevention: Check if we already reacted to this message
+            if msg.id in client.kakera_reacted_messages:
+                return False
+            
+            # Maintenance: Clean up tracking set if it gets too large
+            if len(client.kakera_reacted_messages) > 2000:
+                client.kakera_reacted_messages.clear()
+
             if msg.components:
                 # Collect all valid buttons first
                 all_raw_buttons = []
@@ -1487,6 +1497,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await btn.click()
                         # Debit power locally to prevent immediate subsequent spam
                         client.current_dk_power = max(0, client.current_dk_power - cost)
+                        client.kakera_reacted_messages.add(msg.id)
                         
                         log_function(f"[{client.muda_name}] Kakera clicked: {char_name} (Pw: {client.current_dk_power}%)", client.preset_name, "KAKERA")
                         clicked = True
