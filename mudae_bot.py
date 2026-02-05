@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.2"
+CURRENT_VERSION = "3.5.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -123,7 +123,7 @@ KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP
 CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 
 # Sphere Emojis (Do not consume power)
-SPHERE_EMOJIS = ['SpU', 'SpD', 'SpL', 'SpW', 'SpR', 'SpO', 'SpY', 'SpG', 'SpT', 'SpB', 'SpP']
+SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'spW', 'spL', 'spD', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 
 def color_log(message, preset_name, log_type="INFO"):
@@ -691,9 +691,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if dk_stock_match:
             client.dk_stock_count = int(dk_stock_match.group(1))
             log_function(f"[{client.muda_name}] DK Stock: {client.dk_stock_count}", preset_name, "INFO")
-        elif "$dk" in content_lower and any(x in content_lower for x in ["listo", "ready", "prêt", "pronto"]):
-            # Fallback for Spanish/French/Portuguese/English where it might say ready without a number or with different formatting
-            # "Prochain $dk" means next (cooldown), so we exclude that if possible, but "ready" usually implies available.
+        elif re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", content_lower):
+            # Fallback for cases where it says "ready" without a stock number on the same line
             client.dk_stock_count = 1
             log_function(f"[{client.muda_name}] DK Stock: 1 (Derived)", preset_name, "INFO")
         else:
@@ -879,6 +878,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", c_lower)
             if dk_stock_match:
                 client.dk_stock_count = int(dk_stock_match.group(1))
+            elif re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
+                client.dk_stock_count = 1
 
         except Exception as e:
             log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
@@ -1298,6 +1299,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_claims_post = []
         wl_claims_post = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
+        
+        # Track attempted character names in this burst to prevent duplicate claims (e.g. via $rt)
+        attempted_char_names = set()
 
         for msg in mudae_messages:
             if not msg.embeds: continue
@@ -1305,7 +1309,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_character_embed(embed): continue
             
             all_kakera_emojis = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
-            is_kakera = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_kakera_emojis for c in msg.components for b in c.children)
+            is_kakera = False
+            if msg.components:
+                for c in msg.components:
+                    for b in c.children:
+                        if hasattr(b.emoji, 'name') and b.emoji.name:
+                            name = b.emoji.name
+                            if name in all_kakera_emojis or name.rstrip('2') in all_kakera_emojis:
+                                is_kakera = True
+                                break
+                    if is_kakera: break
             
             if is_kakera:
                 kakera_claims.append(msg)
@@ -1357,12 +1370,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         claimed_post = True
                         msg_claimed_id = msg_c.id
+                        attempted_char_names.add(n.lower())
                 elif char_claims_post:
                     char_claims_post.sort(key=lambda x: x[2], reverse=True)
                     msg_c, n, v = char_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         claimed_post = True
                         msg_claimed_id = msg_c.id
+                        attempted_char_names.add(n.lower())
         
         # RT check: Only attempt RT claim if RT is actually available and we're not in kakera-only mode
         if claimed_post and client.rt_available and not is_key_mode_kakera_only():
@@ -1372,6 +1387,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 msg_rt, n_rt, v_rt = rt_targets[0]
                 is_wl_rt = n_rt in client.wishlist
                 
+                # Check if we already attempted to claim this character name in this burst
+                if n_rt.lower() in attempted_char_names:
+                    # Look for the next best target that is NOT the same character
+                    next_targets = [t for t in rt_targets if t[1].lower() not in attempted_char_names]
+                    if not next_targets:
+                        return # No other unique character to claim with RT
+                    msg_rt, n_rt, v_rt = next_targets[0]
+                    is_wl_rt = n_rt in client.wishlist
+
                 # Check if we should ignore min_kakera for wishlist or if value is enough
                 bypass_min = is_wl_rt and client.rt_ignore_min_kakera_for_wishlist
                 if bypass_min or v_rt >= client.min_kakera:
@@ -1379,6 +1403,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     try:
                         await channel.send(f"{client.mudae_prefix}rt")
                         client.rt_available = False
+                        attempted_char_names.add(n_rt.lower())
                         await asyncio.sleep(0.7)
                         await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
                     except Exception:
@@ -1457,8 +1482,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 all_raw_buttons = []
                 for comp in msg.components:
                     for btn in comp.children:
-                         if hasattr(btn.emoji, 'name') and btn.emoji.name in target_list:
-                             all_raw_buttons.append(btn)
+                         if hasattr(btn.emoji, 'name') and btn.emoji.name:
+                             emoji_name = btn.emoji.name
+                             if emoji_name in target_list or emoji_name.rstrip('2') in target_list:
+                                 all_raw_buttons.append(btn)
 
                 # Priority Map (User Request: C > L > W > R > O > D > Y > T > kakera)
                 # Spheres and KakeraP get max priority (999) as they are usually free/special.
@@ -1478,7 +1505,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 for s in client.sphere_emojis: prio_map[s] = 999
                 
                 # Sort descending by priority value
-                all_raw_buttons.sort(key=lambda b: prio_map.get(b.emoji.name, 0), reverse=True)
+                all_raw_buttons.sort(key=lambda b: prio_map.get(b.emoji.name.rstrip('2') if hasattr(b.emoji, 'name') and b.emoji.name else "", 0), reverse=True)
 
                 # Iterate through sorted buttons
                 for btn in all_raw_buttons:
@@ -1598,8 +1625,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Logic for sniping loose kakera if enabled
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                  # Verify it's actually a drop via buttons
-                all_k = client.kakera_emojis + client.chaos_emojis
-                has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
+                all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
+                has_btn = False
+                if message.components:
+                    for c in message.components:
+                        for b in c.children:
+                            if hasattr(b.emoji, 'name') and b.emoji.name:
+                                e_name = b.emoji.name
+                                if e_name in all_k or e_name.rstrip('2') in all_k:
+                                    has_btn = True; break
+                        if has_btn: break
                 
                 if has_btn:
                     # Check owner targets
@@ -1661,8 +1696,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
             # External Kakera Snipe on Character Rolls
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages and process:
-                 all_k = client.kakera_emojis + client.chaos_emojis
-                 has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children)
+                 all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
+                 has_btn = False
+                 if message.components:
+                    for c in message.components:
+                        for b in c.children:
+                            if hasattr(b.emoji, 'name') and b.emoji.name:
+                                e_name = b.emoji.name
+                                if e_name in all_k or e_name.rstrip('2') in all_k:
+                                    has_btn = True; break
+                        if has_btn: break
                  if has_btn:
                     # Check owner
                     target_ok = True
@@ -1730,7 +1773,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
             # Check if kakera button exists and value is high enough
             all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
-            if any(hasattr(b.emoji, 'name') and b.emoji.name in all_k for c in message.components for b in c.children):
+            has_btn = False
+            if message.components:
+                for c in message.components:
+                    for b in c.children:
+                        if hasattr(b.emoji, 'name') and b.emoji.name:
+                            e_name = b.emoji.name
+                            if e_name in all_k or e_name.rstrip('2') in all_k:
+                                has_btn = True; break
+                    if has_btn: break
+            
+            if has_btn:
                  # Apply humanized delay before clicking kakera on own rolls
                  delay_min, delay_max = client.reactive_kakera_delay_range
                  if delay_max > 0:
