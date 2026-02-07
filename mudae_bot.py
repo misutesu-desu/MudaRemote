@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.3"
+CURRENT_VERSION = "3.5.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -324,6 +324,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.dk_consumption = 35 # Default fallback
     client.dk_consumption_chaos = 18 # Default fallback
     client.kakera_reacted_messages = set() # Track processed kakera messages to prevent double counting
+    client.processed_claim_messages = set() # Track already processed/claimed message IDs
+    client.last_successfully_claimed_character = None # Prevent redundant RT on same name
 
 
     # Slash command internal state
@@ -775,6 +777,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # Double check time just in case
                     if datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
                         client.claim_right_available = True
+                        client.last_successfully_claimed_character = None
                         log_function(f"[{client.muda_name}] Snipe-only: Reset time reached. Claim restored locally.", client.preset_name, "CLAIM")
                         
                         # Chain the minute anchor
@@ -948,6 +951,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if claim_ready:
             client.claim_right_available = True
+            client.last_successfully_claimed_character = None # Reset last claim on new cycle
             log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
             client.current_min_kakera_for_roll_claim = client.min_kakera
             
@@ -1271,6 +1275,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
             # Update State LOCALLY (No $tu needed)
             client.claim_right_available = False
+            client.last_successfully_claimed_character = char_name.lower()
             
             # REFINED MINUTE-LOCK LOGIC:
             # Calculate next reset relative to the PAST reset point to maintain exact minute precision.
@@ -1412,9 +1417,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None):
         if not msg or not msg.embeds: return False
+        
+        # Global deduplication: Never process the same message ID twice for claims/kakera
+        if msg.id in client.processed_claim_messages:
+            return False
+
         embed = msg.embeds[0]
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
+        
+        # Redundancy check: If we just successfully claimed this exact character, skip it
+        # This prevents the bot from using RT on a character it already won via normal claim
+        if not is_kakera and not is_free_claim and char_name.lower() == getattr(client, 'last_successfully_claimed_character', ''):
+            return False
+
+        # Add to processed set (with periodic cleanup)
+        client.processed_claim_messages.add(msg.id)
+        if len(client.processed_claim_messages) > 1000:
+            client.processed_claim_messages.clear()
         
         # Kakera value logging logic
         kakera_str = ""
