@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.5.5-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 2021 model scriptlerle yetinmeyin. 2025 standardına yükseltin.
 
-| Özellik | Sıradan Mudae Botları | **MudaRemote v3.3.8** |
+| Özellik | Sıradan Mudae Botları | **MudaRemote v3.5.5** |
 | :--- | :--- | :--- |
 | **Roll Zamanlaması** | Sabit/Rastgele Zamanlayıcılar | **Stratejik Sınır Senkronizasyonu (Mükemmel claimleme)** |
 | **Komut Motoru** | Sadece Metin | **Slash Komutları (Modern API Desteği)** |
@@ -43,6 +43,7 @@
 *   **Küresel Kakera Farming:** Tüm mesajları kristaller için tarar. Radara yakalanmamak için sadece belirli kullanıcılardan (yan hesaplarınız gibi) alım yapacak **Akıllı Filtreleme** içerir.
 *   **Kaos Modu:** Chaos Key (10+ anahtarlı karakterler) için özelleşmiş mantık.
 *   **Minimize Edilmiş $tu İzleri:** Claim ve evlilik mesajlarını (Married) chat üzerinden otomatik takip eder. Böylece sürekli `$tu` yazarak dikkat çekmez ve hesabınızı korur.
+*   **Avoid List (Anti-Wishlist):** Belirli karakterleri kara listeye alarak, yüksek değerli olsalar bile botun claim haklarını onlara harcamasını önler.
 *   **Akıllı Snipe Doğrulayıcı:** Karakterin size mi yoksa başkasına mı gittiğini mesajlardan okuyarak doğrular.
 
 ### 🤖 Akıllı Otomasyon ("Beyin")

@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.4"
+CURRENT_VERSION = "3.5.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -253,7 +253,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_ignore_min_kakera_for_wishlist_preset,
             claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
             rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
-            claim_interval_preset, roll_interval_preset):
+            claim_interval_preset, roll_interval_preset, avoid_list):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -273,6 +273,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.series_snipe_mode = series_snipe_mode
     client.series_snipe_delay = series_snipe_delay
     client.series_wishlist = set([sw.lower() for sw in series_wishlist])
+    client.avoid_list = set([a.lower() for a in avoid_list])
     client.muda_name = BOT_NAME
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
@@ -1346,13 +1347,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     
                     series = desc.splitlines()[0].lower() if desc else ""
                     
+                    is_avoided = char_n in client.avoid_list
+                    
                     # Check if character is on wishlist OR Mudae indicates we wished for it
                     is_wl = (char_n in client.wishlist) or \
                             (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
                             is_wished_by_self(msg, client.user.id)
-                    if is_wl:
+                    
+                    if is_wl and not is_avoided:
                         wl_claims_post.append((msg, char_n, k_v))
-                    elif k_v >= min_kak_post:
+                    elif k_v >= min_kak_post and not is_avoided:
                         char_claims_post.append((msg, char_n, k_v))
 
         # Kakera first
@@ -1699,8 +1703,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
                     is_wished_by_self(message, client.user.id)
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
+            is_avoided = c_name in client.avoid_list
             
-            if (is_wl or is_val) and has_claim_option(message, embed, client.claim_emojis):
+            if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
                 # Skip reactive claim if key_mode is active but no claim/RT available
                 if is_key_mode_kakera_only():
                     pass  # Will fall through to kakera handling below
@@ -1744,7 +1749,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.series_snipe_mode and client.series_wishlist:
                 desc = embed.description or ""
                 series = desc.splitlines()[0].lower() if desc else ""
-                if any(s in series for s in client.series_wishlist) and has_claim_option(message, embed, client.claim_emojis):
+                is_avoided = c_name in client.avoid_list
+                if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
                     if is_key_mode_kakera_only():
                         pass  # Key mode kakera-only: skip character claims
                     elif not is_character_snipe_allowed(is_external_snipe=True):
@@ -1756,7 +1762,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             # Wishlist Snipe (includes "Wished by" detection from Mudae)
             is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id)
-            if process and client.snipe_mode and is_on_wishlist and has_claim_option(message, embed, client.claim_emojis):
+            is_avoided = c_name in client.avoid_list
+            if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
                 if is_key_mode_kakera_only():
                     pass  # Key mode kakera-only: skip character claims
                 elif not is_character_snipe_allowed(is_external_snipe=True):
@@ -1773,7 +1780,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 m_k = re.search(r"\**([\d,.]+)\**<:kakera:", desc)
                 if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 
-                if k_val >= client.kakera_snipe_threshold and has_claim_option(message, embed, client.claim_emojis):
+                is_avoided = c_name in client.avoid_list
+                if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
                     if is_key_mode_kakera_only():
                         pass  # Key mode kakera-only: skip character claims
                     elif not is_character_snipe_allowed(is_external_snipe=True):
@@ -1853,7 +1861,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("rt_only_self_rolls", False),
                 preset_data.get("reactive_kakera_delay_range", [0.3, 1.0]),
                 preset_data.get("claim_interval", 180),
-                preset_data.get("roll_interval", 60)
+                preset_data.get("roll_interval", 60),
+                preset_data.get("avoid_list", [])
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

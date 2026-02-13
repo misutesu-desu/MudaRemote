@@ -35,6 +35,7 @@ DEFAULTS = {
     "reactive_kakera_delay_range": [0.3, 1.0],
     "claim_interval": 180,
     "roll_interval": 60,
+    "avoid_list": [],
 }
 
 # Boolean settings with their display names and defaults
@@ -83,6 +84,7 @@ TEXT_SETTINGS = [
     ("roll_command", "Roll Command", "wa", False),
     ("wishlist", "Wishlist (comma-separated)", [], True),
     ("series_wishlist", "Series Wishlist (comma-separated)", [], True),
+    ("avoid_list", "Avoid List (comma-separated)", [], True),
     ("kakera_reaction_snipe_targets", "Kakera Snipe Targets (comma-separated)", [], True),
 ]
 
@@ -333,6 +335,7 @@ class PresetEditor:
         
         self.add_list_field(list_frame, "wishlist", "Character Wishlist (comma-separated)")
         self.add_list_field(list_frame, "series_wishlist", "Series Wishlist (comma-separated)")
+        self.add_list_field(list_frame, "avoid_list", "Avoid List (Character names to ignore)")
         self.add_list_field(list_frame, "kakera_reaction_snipe_targets", "Kakera Snipe Targets (comma-separated)")
         
         # --- Emoji Settings ---
@@ -504,7 +507,7 @@ class PresetEditor:
                     var.set(data.get(key, default))
         
         # Populate list fields
-        for key in ["wishlist", "series_wishlist", "kakera_reaction_snipe_targets"]:
+        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -606,7 +609,7 @@ class PresetEditor:
                 data[key] = self.widgets[key].get()
         
         # Collect list fields
-        for key in ["wishlist", "series_wishlist", "kakera_reaction_snipe_targets"]:
+        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:

@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.5.5-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2026-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 不要满足于 2021 年的老旧脚本。请升级到 2025 年的新标准。
 
-| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.3.8** |
+| 功能 | 普通 Mudae 机器人 | **MudaRemote v3.5.5** |
 | :--- | :--- | :--- |
 | **抽卡时机** | 固定/随机定时器 | **战略性边界同步（完美认领）** |
 | **命令引擎** | 仅限文本 | **斜杠命令 Slash Commands（支持现代 API）** |
@@ -43,6 +43,7 @@
 *   **全局 Kakera 刷取：** 扫描所有消息中的晶体。包含**智能过滤**功能，仅从特定用户（如您的副号）处获取，以保持低调。
 *   **混沌模式 (Chaos Mode)：** 针对混沌钥匙（10+ 钥匙角色）的专门逻辑。
 *   **最小化 $tu 指令：** 通过监控聊天消息（结婚/认领）自动更新状态，最大限度减少 `$tu` 指令的使用频率。
+*   **忽略列表 (Avoid List)：** 将特定角色列入黑名单，防止机器人即使在角色具有高价值时也浪费认领权。
 *   **智能狙击校验：** 通过读取教堂公告信息，验证角色是否被成功认领，还是被他人抢先。
 
 ### 🤖 智能自动化（“大脑”）

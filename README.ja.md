@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/badge/Discord-Selfbot-7289DA.svg)](https://discord.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.3.8-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
+[![Version](https://img.shields.io/badge/Version-3.5.5-orange.svg)](https://github.com/misutesu-desu/MudaRemote/releases)
 [![Status](https://img.shields.io/badge/Status-Active_2025-success.svg)]()
 [![Discord Server](https://img.shields.io/badge/Discord-Join%20Server-7289DA?logo=discord&logoColor=white)](https://discord.gg/4WHXkDzuZx)
 
@@ -19,7 +19,7 @@
 
 2021年時代の古いスクリプトで妥協しないでください。2025年のスタンダードにアップグレードしましょう。
 
-| 機能 | 一般的なMudae Bot | **MudaRemote v3.3.8** |
+| 機能 | 一般的なMudae Bot | **MudaRemote v3.5.5** |
 | :--- | :--- | :--- |
 | **ロールのタイミング** | 固定/ランダムタイマー | **戦略的な境界同期（完璧なクレーム）** |
 | **コマンドエンジン** | テキストのみ | **スラッシュコマンド（最新APIサポート）** |
@@ -43,6 +43,7 @@
 *   **グローバル・カケラファーミング:** 全メッセージをスキャンしてクリスタルを探します。特定のユーザー（サブ垢など）からのみ取得する**スマートフィルタリング**を搭載し、検知を回避します。
 *   **カオスモード:** カオスキー（10個以上のキーを持つキャラ）専用のロジック。
 *   **$tuコマンドの最小化:** チャットメッセージ（結婚/取得）からクレーム状態を自動検出・検証。`$tu`コマンドの乱用を劇的に減らし、アカウントの安全性を高めます。
+*   **回避リスト（アンチウィッシュリスト）:** 特定のキャラクターをブラックリストに登録し、カケラ値が高くてもボットがクレーム権を消費するのを防ぎます。
 *   **スマートスナイプ検証:** キャラクターが自分に取得されたか、あるいは他の人に取られたかをメッセージから読み取って確認します。
 
 ### 🤖 インテリジェント・オートメーション（「頭脳」）
