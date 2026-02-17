@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.5"
+CURRENT_VERSION = "3.5.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -327,6 +327,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_reacted_messages = set() # Track processed kakera messages to prevent double counting
     client.processed_claim_messages = set() # Track already processed/claimed message IDs
     client.last_successfully_claimed_character = None # Prevent redundant RT on same name
+    client._has_initialized = False # Tracks whether on_ready setup has already run (prevents duplicate $tu on reconnect)
 
 
     # Slash command internal state
@@ -634,9 +635,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_ready():
+        _refresh_session_id()
+
+        # Gateway reconnect: skip full setup, just restore session
+        if client._has_initialized:
+            log_function(f"[{client.muda_name}] Reconnected: {client.user}. Keeping previous timers.", preset_name, "INFO")
+            return
+
+        client._has_initialized = True
         log_function(f"[{client.muda_name}] Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
-        _refresh_session_id()
         
         # Retrieve target channel and validate
         try:
