@@ -360,6 +360,16 @@ class PresetEditor:
         self.add_number_field(human_frame, "humanization_window_minutes", "Activity Window (minutes)", 40)
         self.add_number_field(human_frame, "humanization_inactivity_seconds", "Inactivity Threshold (seconds)", 5)
         
+        # Inactive hours
+        inactive_row = ttk.Frame(human_frame)
+        inactive_row.pack(fill=tk.X, pady=5)
+        ttk.Label(inactive_row, text="Inactive Hours (e.g. 1-7, 23-6):").pack(anchor=tk.W)
+        ttk.Label(inactive_row, text="Bot goes fully silent during these local-time ranges (24h format)",
+                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        inactive_entry = ttk.Entry(inactive_row)
+        inactive_entry.pack(fill=tk.X)
+        self.widgets["inactive_hours"] = inactive_entry
+        
         # Reactive kakera delay range
         range_row = ttk.Frame(human_frame)
         range_row.pack(fill=tk.X, pady=5)
@@ -541,6 +551,17 @@ class PresetEditor:
                     entry.insert(0, ", ".join(defaults))
                     entry.configure(state="disabled")
         
+        # Populate inactive hours
+        inactive_val = data.get("inactive_hours", [])
+        self.widgets["inactive_hours"].delete(0, tk.END)
+        if isinstance(inactive_val, list) and inactive_val:
+            # Convert [[1,7],[23,6]] -> "1-7, 23-6"
+            parts = []
+            for window in inactive_val:
+                if isinstance(window, (list, tuple)) and len(window) == 2:
+                    parts.append(f"{window[0]}-{window[1]}")
+            self.widgets["inactive_hours"].insert(0, ", ".join(parts))
+        
         # Populate reactive kakera delay range
         range_val = data.get("reactive_kakera_delay_range", [0.3, 1.0])
         if isinstance(range_val, (list, tuple)) and len(range_val) == 2:
@@ -632,6 +653,23 @@ class PresetEditor:
                     else:
                         data[key] = []  # Explicitly empty
                 # else: checkbox unchecked, don't include key (use defaults)
+        
+        # Collect inactive hours
+        inactive_text = self.widgets["inactive_hours"].get().strip()
+        if inactive_text:
+            # Parse "1-7, 23-6" -> [[1,7],[23,6]]
+            inactive_parsed = []
+            for part in inactive_text.split(","):
+                part = part.strip()
+                if "-" in part:
+                    try:
+                        s, e = part.split("-", 1)
+                        inactive_parsed.append([int(s.strip()), int(e.strip())])
+                    except ValueError:
+                        pass
+            data["inactive_hours"] = inactive_parsed
+        else:
+            data["inactive_hours"] = []
         
         # Collect reactive kakera delay range
         try:
