@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.6"
+CURRENT_VERSION = "3.5.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -253,7 +253,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_ignore_min_kakera_for_wishlist_preset,
             claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
             rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
-            claim_interval_preset, roll_interval_preset, avoid_list):
+            claim_interval_preset, roll_interval_preset, avoid_list,
+            inactive_hours_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -305,6 +306,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     # Humanization config
     client.humanization_enabled = humanization_enabled
     client.humanization_window_minutes = humanization_window_minutes
+    client.inactive_hours = inactive_hours_preset if inactive_hours_preset else []
     client.humanization_inactivity_seconds = humanization_inactivity_seconds
     
     # Power and key settings
@@ -390,6 +392,50 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 except Exception:
                     pass
                 return
+
+    def is_inactive_hour() -> bool:
+        """Returns True if the current local time falls within any configured inactive hour range."""
+        if not client.inactive_hours:
+            return False
+        now_hour = datetime.datetime.now().hour
+        for window in client.inactive_hours:
+            if not isinstance(window, (list, tuple)) or len(window) != 2:
+                continue
+            start_h, end_h = int(window[0]), int(window[1])
+            if start_h <= end_h:
+                # Same-day range: e.g. [9, 17]
+                if start_h <= now_hour < end_h:
+                    return True
+            else:
+                # Overnight range: e.g. [23, 7] means 23:00 -> 07:00
+                if now_hour >= start_h or now_hour < end_h:
+                    return True
+        return False
+
+    def seconds_until_active() -> float:
+        """Returns seconds until the current inactive period ends. 0 if not inactive."""
+        if not is_inactive_hour():
+            return 0
+        now = datetime.datetime.now()
+        now_hour = now.hour
+        best = float('inf')
+        for window in client.inactive_hours:
+            if not isinstance(window, (list, tuple)) or len(window) != 2:
+                continue
+            start_h, end_h = int(window[0]), int(window[1])
+            in_this = False
+            if start_h <= end_h:
+                in_this = start_h <= now_hour < end_h
+            else:
+                in_this = now_hour >= start_h or now_hour < end_h
+            if in_this:
+                # Calculate seconds until end_h:00:00
+                wake = now.replace(hour=end_h, minute=0, second=0, microsecond=0)
+                if wake <= now:
+                    wake += datetime.timedelta(days=1)
+                diff = (wake - now).total_seconds()
+                best = min(best, diff)
+        return best if best != float('inf') else 0
 
     def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
         # If rt_only_self_rolls is enabled, don't count RT as available for external snipes
@@ -674,6 +720,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         log_function(f"[{client.muda_name}] Starting in {start_delay}s...", preset_name, "INFO")
         await asyncio.sleep(start_delay)
+
+        # Wait out inactive hours before starting
+        if is_inactive_hour():
+            wait_s = seconds_until_active()
+            log_function(f"[{client.muda_name}] Inactive hours active. Sleeping {wait_s/60:.0f}m until active period.", preset_name, "RESET")
+            await asyncio.sleep(wait_s)
 
         if client.rolling_enabled:
             try:
@@ -1519,7 +1571,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                              if emoji_name in target_list or emoji_name.rstrip('2') in target_list:
                                  all_raw_buttons.append(btn)
 
-                # Priority Map (User Request: C > L > W > R > O > D > Y > T > kakera)
+                # Priority Map (User Request: C > L > W > R > O > D > Y > G > T > kakera)
                 # Spheres and KakeraP get max priority (999) as they are usually free/special.
                 prio_map = {
                     'kakeraP': 999,
@@ -1530,6 +1582,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     'kakeraO': 60,
                     'kakeraD': 50,
                     'kakeraY': 40,
+                    'kakeraG': 35,
                     'kakeraT': 30,
                     'kakera': 20
                 }
@@ -1626,6 +1679,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] {log_prefix}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         await asyncio.sleep(wait_seconds)
 
+        # Inactive hours gate: sleep until active period resumes
+        if is_inactive_hour():
+            wait_s = seconds_until_active()
+            log_function(f"[{client.muda_name}] Inactive hours. Sleeping {wait_s/60:.0f}m until active.", preset_name, "RESET")
+            await asyncio.sleep(wait_s)
+
         # Inactivity check (anti-detection)
         if client.humanization_enabled:
             while True:
@@ -1648,6 +1707,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Filter for relevant messages
         if message.author.id != TARGET_BOT_ID or message.channel.id != client.target_channel_id:
             if client.rolling_enabled: await client.process_commands(message)
+            return
+        # Suppress all activity during inactive hours
+        if is_inactive_hour():
             return
         if not message.embeds: return
         embed = message.embeds[0]
@@ -1870,7 +1932,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("reactive_kakera_delay_range", [0.3, 1.0]),
                 preset_data.get("claim_interval", 180),
                 preset_data.get("roll_interval", 60),
-                preset_data.get("avoid_list", [])
+                preset_data.get("avoid_list", []),
+                preset_data.get("inactive_hours", [])
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
