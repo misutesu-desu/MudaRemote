@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.7"
+CURRENT_VERSION = "3.5.8"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -254,7 +254,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
             rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
             claim_interval_preset, roll_interval_preset, avoid_list,
-            inactive_hours_preset):
+            inactive_hours_preset,
+            auto_us_enabled, auto_us_limit, auto_us_stop_on_claim):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -314,6 +315,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.skip_initial_commands = skip_initial_commands
     client.dk_stock_count = 0 
     client.only_chaos = only_chaos
+
+    # Auto $us Configuration
+    client.auto_us_enabled = auto_us_enabled
+    client.auto_us_limit = auto_us_limit
+    client.auto_us_stop_on_claim = auto_us_stop_on_claim
+    client.us_pulled_this_cycle = 0
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -1159,7 +1166,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass 
 
             # Parse reset time
-            # Parse reset time
             # Unified Reset Regex: "Reset in... X min"
             # Matches: reset ... in/em/en/dans ... (Hh) Mm min
             match_reset = re.search(r"(?:reset|reinicialização|reinicio).*?(?:in|em|en|dans)\s+(?:.*?)\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", content_lower[main_match.end():])
@@ -1169,7 +1175,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 m_r = parse_int_from_fragment(match_reset.group(2))
                 reset_time_r = h_r * 60 + m_r
                 # Align to the next minute boundary (:00)
-                client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
+                new_roll_reset_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
+                
+                # Detect new reset cycle to reset US pulled track
+                if getattr(client, 'roll_reset_at_utc', None):
+                    if (new_roll_reset_utc - client.roll_reset_at_utc).total_seconds() > 600:
+                        client.us_pulled_this_cycle = 0
+                
+                client.roll_reset_at_utc = new_roll_reset_utc
             else:
                 reset_time_r = 60 # Default safe fallback
                 client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
@@ -1178,16 +1191,32 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_rolls = rolls_left + us_rolls_left
 
             if total_rolls == 0:
+                # AUTO $US LOGIC
+                if getattr(client, 'auto_us_enabled', False):
+                    stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
+                    hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
+                    
+                    if not stop_due_to_claim and not hit_limit:
+                        amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
+                        
+                        await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
+                        await asyncio.sleep(2.0)
+                        
+                        client.us_pulled_this_cycle += amount_to_pull
+                        limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
+                        log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
+                        
+                        await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                        return
+
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
                 # Parse claim reset again from local context to be safe
                 sleep_candidates = [(float(reset_time_r if reset_time_r > 0 else 60), "rolls reset")]
                 
                 # Check claim reset and timing window awareness
-                # Check claim reset and timing window awareness
                 # Reuse the regex strategy from check_status for localized parsing
                 match_c = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
                 if match_c:
-                    # parse_hours_minutes is not in scope here, so we manual parse using local helper
                     hours = parse_int_from_fragment(match_c.group(1))
                     minutes = parse_int_from_fragment(match_c.group(2))
                     c_min = hours * 60 + minutes
@@ -1933,7 +1962,10 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("claim_interval", 180),
                 preset_data.get("roll_interval", 60),
                 preset_data.get("avoid_list", []),
-                preset_data.get("inactive_hours", [])
+                preset_data.get("inactive_hours", []),
+                preset_data.get("auto_us_enabled", False),
+                preset_data.get("auto_us_limit", 0),
+                preset_data.get("auto_us_stop_on_claim", True)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
