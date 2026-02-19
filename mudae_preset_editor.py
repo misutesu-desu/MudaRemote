@@ -36,6 +36,9 @@ DEFAULTS = {
     "claim_interval": 180,
     "roll_interval": 60,
     "avoid_list": [],
+    "auto_us_enabled": False,
+    "auto_us_limit": 0,
+    "auto_us_stop_on_claim": True,
 }
 
 # Boolean settings with their display names and defaults
@@ -56,6 +59,8 @@ BOOL_SETTINGS = [
     ("time_rolls_to_claim_reset", "Time Rolls to Claim Reset", False),
     ("rt_ignore_min_kakera_for_wishlist", "RT: Ignore Min Kakera for Wishlist", False),
     ("rt_only_self_rolls", "RT: Only Self Rolls", False),
+    ("auto_us_enabled", "Auto $us (Stacked Rolls)", False),
+    ("auto_us_stop_on_claim", "Auto $us: Stop on Claim", True),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -73,6 +78,7 @@ NUMERIC_SETTINGS = [
     ("reactive_snipe_delay", "Reactive Snipe Delay (s)", 0, float),
     ("claim_interval", "Claim Reset Interval (min)", 180, int),
     ("roll_interval", "Roll Reset Interval (min)", 60, int),
+    ("auto_us_limit", "Auto $us Limit (0 = \u221E)", 0, int),
 ]
 
 # Text/list settings
@@ -296,6 +302,14 @@ class PresetEditor:
         self.add_number_field(roll_frame, "roll_interval", "Roll Reset Interval (min)", 60)
         self.add_checkbox(roll_frame, "time_rolls_to_claim_reset", "Time Rolls to Claim Reset")
         
+        # --- Auto $us Settings ---
+        us_frame = ttk.LabelFrame(frame, text="Auto $us (Stacked Rolls)", padding=15)
+        us_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        self.add_checkbox(us_frame, "auto_us_enabled", "Enable Auto $us")
+        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Stop when character claim available")
+        self.add_number_field(us_frame, "auto_us_limit", "Pull Limit per Cycle (0 = Infinite)", 0)
+        
         # --- Claim Settings ---
         claim_frame = ttk.LabelFrame(frame, text="Claim Settings", padding=15)
         claim_frame.pack(fill=tk.X, pady=(0, 15))
@@ -493,7 +507,7 @@ class PresetEditor:
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
-                    "claim_interval", "roll_interval"]:
+                    "claim_interval", "roll_interval", "auto_us_limit"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -508,7 +522,7 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -604,7 +618,7 @@ class PresetEditor:
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
-                    "claim_interval", "roll_interval"]:
+                    "claim_interval", "roll_interval", "auto_us_limit"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -612,7 +626,7 @@ class PresetEditor:
                         # Determine type
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
-                                   "claim_interval", "roll_interval"]:
+                                   "claim_interval", "roll_interval", "auto_us_limit"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
@@ -625,7 +639,7 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -705,6 +719,9 @@ class PresetEditor:
                 "rolling": True,
                 "wishlist": [],
                 "series_wishlist": [],
+                "auto_us_enabled": False,
+                "auto_us_limit": 0,
+                "auto_us_stop_on_claim": True,
             }
             
             self.refresh_preset_list()
