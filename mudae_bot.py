@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.8"
+CURRENT_VERSION = "3.5.9"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -731,6 +731,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Wait out inactive hours before starting
         if is_inactive_hour():
             wait_s = seconds_until_active()
+            if client.humanization_enabled:
+                wait_s += random.uniform(0, max(0.0, client.humanization_window_minutes * 60))
             log_function(f"[{client.muda_name}] Inactive hours active. Sleeping {wait_s/60:.0f}m until active period.", preset_name, "RESET")
             await asyncio.sleep(wait_s)
 
@@ -1631,7 +1633,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if name == 'kakeraP' or name in client.sphere_emojis:
                         cost = 0
                     else:
-                        cost = client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption
+                        base_cost = client.dk_consumption
+                        desc_text = embed.description or ""
+                        has_sphere_perk = "💎 ➗ 2️⃣" in desc_text
+                        
+                        calc_cost = base_cost
+                        if chaos_count > 0:
+                            calc_cost = int(calc_cost / 2)
+                        if has_sphere_perk:
+                            calc_cost = int(calc_cost / 2)
+                        
+                        cost = calc_cost
                     
                     # Check local power availability before clicking to avoid warnings
                     if client.current_dk_power < cost:
@@ -1711,6 +1723,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Inactive hours gate: sleep until active period resumes
         if is_inactive_hour():
             wait_s = seconds_until_active()
+            if client.humanization_enabled:
+                wait_s += random.uniform(0, max(0.0, client.humanization_window_minutes * 60))
             log_function(f"[{client.muda_name}] Inactive hours. Sleeping {wait_s/60:.0f}m until active.", preset_name, "RESET")
             await asyncio.sleep(wait_s)
 
