@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.5.9"
+CURRENT_VERSION = "3.6.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -251,7 +251,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
             reactive_snipe_delay, time_rolls_to_claim_reset_preset,
             rt_ignore_min_kakera_for_wishlist_preset,
-            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset,
+            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset, sphere_perk_emojis_preset,
             rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
             claim_interval_preset, roll_interval_preset, avoid_list,
             inactive_hours_preset,
@@ -376,6 +376,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.claim_emojis = claim_emojis_preset if claim_emojis_preset is not None else ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
     client.kakera_emojis = kakera_emojis_preset if kakera_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.chaos_emojis = chaos_emojis_preset if chaos_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+    client.sphere_perk_emojis = sphere_perk_emojis_preset if sphere_perk_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.sphere_emojis = SPHERE_EMOJIS
 
 
@@ -480,6 +481,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return False
         except Exception:
             return True
+
+    def get_current_dk_power() -> int:
+        power = client.current_dk_power
+        if not hasattr(client, 'last_dk_power_update_utc'):
+            return power
+        now = datetime.datetime.now(datetime.timezone.utc)
+        elapsed = (now - client.last_dk_power_update_utc).total_seconds()
+        regenerated = int(elapsed / 180) # 1% every 3 minutes
+        if regenerated > 0:
+            power = min(100, power + regenerated)
+            client.current_dk_power = power
+            client.last_dk_power_update_utc += datetime.timedelta(minutes=3 * regenerated)
+        return power
 
 
     def _refresh_session_id():
@@ -938,6 +952,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
             if power_match:
                 client.current_dk_power = int(power_match.group(1))
+                client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
                 # log_function(f"[{client.muda_name}] Power Synced: {client.current_dk_power}%", preset_name, "INFO")
 
             # Support EN, PT, ES, FR for consumption regex
@@ -1573,8 +1588,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_snipe and client.only_chaos and chaos_count == 0:
                 return False
             
-            # If sniping, treat as normal character (ignore chaos logic)
-            target_list = (client.chaos_emojis if (chaos_count > 0 and not is_snipe) else client.kakera_emojis) + client.sphere_emojis
+            has_sphere_perk = "💎 ➗ 2️⃣" in (embed.description or "")
+            if is_snipe:
+                target_list = client.kakera_emojis
+            elif has_sphere_perk:
+                target_list = client.sphere_perk_emojis
+            elif chaos_count > 0:
+                target_list = client.chaos_emojis
+            else:
+                target_list = client.kakera_emojis
+            target_list = target_list + client.sphere_emojis
+
             cooldown_active = not is_kakera_reaction_allowed()
             clicked = False
             
@@ -1646,17 +1670,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         cost = calc_cost
                     
                     # Check local power availability before clicking to avoid warnings
-                    if client.current_dk_power < cost:
+                    if get_current_dk_power() < cost:
                         name_display = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
                         if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
-                            log_function(f"[{client.muda_name}] Insufficient Power ({client.current_dk_power}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
+                            log_function(f"[{client.muda_name}] Insufficient Power ({get_current_dk_power()}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
                             client.last_power_warn = time.time()
                         continue
 
                     try:
                         await btn.click()
                         # Debit power locally to prevent immediate subsequent spam
-                        client.current_dk_power = max(0, client.current_dk_power - cost)
+                        client.current_dk_power = max(0, get_current_dk_power() - cost)
                         client.kakera_reacted_messages.add(msg.id)
                         
                         log_function(f"[{client.muda_name}] Kakera clicked: {char_name} (Pw: {client.current_dk_power}%)", client.preset_name, "KAKERA")
@@ -1971,6 +1995,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("claim_emojis", None),
                 preset_data.get("kakera_emojis", None),
                 preset_data.get("chaos_emojis", None),
+                preset_data.get("sphere_perk_emojis", None),
                 preset_data.get("rt_only_self_rolls", False),
                 preset_data.get("reactive_kakera_delay_range", [0.3, 1.0]),
                 preset_data.get("claim_interval", 180),
