@@ -98,6 +98,7 @@ TEXT_SETTINGS = [
 DEFAULT_CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
 DEFAULT_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 DEFAULT_CHAOS_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+DEFAULT_SPHERE_PERK_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 
 
 class PresetEditor:
@@ -365,6 +366,8 @@ class PresetEditor:
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
         self.add_optional_list_field(emoji_frame, "chaos_emojis", "Chaos Emojis", 
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
+        self.add_optional_list_field(emoji_frame, "sphere_perk_emojis", "Sphere Perk Emojis", 
+                                     ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
         
         # --- Humanization ---
         human_frame = ttk.LabelFrame(frame, text="Humanization", padding=15)
@@ -543,7 +546,8 @@ class PresetEditor:
         # Populate optional emoji fields
         for key, defaults in [("claim_emojis", DEFAULT_CLAIM_EMOJIS), 
                               ("kakera_emojis", DEFAULT_KAKERA_EMOJIS),
-                              ("chaos_emojis", DEFAULT_CHAOS_EMOJIS)]:
+                              ("chaos_emojis", DEFAULT_CHAOS_EMOJIS),
+                              ("sphere_perk_emojis", DEFAULT_SPHERE_PERK_EMOJIS)]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 var = self.widgets[enabled_key]
@@ -657,7 +661,7 @@ class PresetEditor:
         # - Checkbox unchecked → key NOT in data (use defaults)
         # - Checkbox checked + empty → key = [] (disable)
         # - Checkbox checked + values → key = [values]
-        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis"]:
+        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis"]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 if self.widgets[enabled_key].get():  # Checkbox is checked
