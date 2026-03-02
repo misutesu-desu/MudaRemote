@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.1"
+CURRENT_VERSION = "3.6.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1480,12 +1480,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # 1. Primary Claim (uses claim_right_available, respects ignore_limit_param)
             if client.claim_right_available:
                 if wl_claims_post:
+                    wl_claims_post.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     msg_c, n, v = wl_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         msg_claimed_id = msg_c.id
                         attempted_char_names.add(n.lower())
                 elif char_claims_post:
-                    char_claims_post.sort(key=lambda x: x[2], reverse=True)
+                    char_claims_post.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     msg_c, n, v = char_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         msg_claimed_id = msg_c.id
@@ -1495,12 +1496,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             elif client.key_mode and not client.rt_available:
                 valid_char_claims = [x for x in char_claims_post if x[2] >= client.min_kakera]
                 if wl_claims_post:
+                    wl_claims_post.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     msg_c, n, v = wl_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         msg_claimed_id = msg_c.id
                         attempted_char_names.add(n.lower())
                 elif valid_char_claims:
-                    valid_char_claims.sort(key=lambda x: x[2], reverse=True)
+                    valid_char_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     msg_c, n, v = valid_char_claims[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         msg_claimed_id = msg_c.id
@@ -1525,7 +1527,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if bypass_min or v >= client.min_kakera:
                     rt_targets.append((msg, n, v, is_wl_rt))
             
-            rt_targets.sort(key=lambda x: x[2], reverse=True)
+            rt_targets.sort(key=lambda x: (x[2], x[0].id), reverse=True)
             
             for msg_rt, n_rt, v_rt, is_wl_rt in rt_targets:
                 if n_rt.lower() in attempted_char_names:
