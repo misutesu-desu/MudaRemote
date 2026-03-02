@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.0"
+CURRENT_VERSION = "3.6.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1471,58 +1471,76 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(0.3)
         
         # Claims
-        claimed_post = False
         msg_claimed_id = -1
         
         # Key Mode Kakera-Only: If key_mode is ON but no claim/RT available, skip all character claims
         if key_mode_only_kakera_param or is_key_mode_kakera_only():
             log_function(f"[{client.muda_name}] Key mode active, no claim/RT. Skipping character claims (kakera only).", preset_name, "INFO")
         elif is_character_snipe_allowed(is_external_snipe=False):
-            # Allow claiming if claim right is available OR if RT is available (for RT claim)
-            if client.claim_right_available or client.rt_available:
+            # 1. Primary Claim (uses claim_right_available, respects ignore_limit_param)
+            if client.claim_right_available:
                 if wl_claims_post:
                     msg_c, n, v = wl_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
-                        claimed_post = True
                         msg_claimed_id = msg_c.id
                         attempted_char_names.add(n.lower())
                 elif char_claims_post:
                     char_claims_post.sort(key=lambda x: x[2], reverse=True)
                     msg_c, n, v = char_claims_post[0]
                     if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
-                        claimed_post = True
+                        msg_claimed_id = msg_c.id
+                        attempted_char_names.add(n.lower())
+            
+            # 2. Key Mode Claim (if no claim right and no RT available, use keys but strictly respect min_kakera)
+            elif client.key_mode and not client.rt_available:
+                valid_char_claims = [x for x in char_claims_post if x[2] >= client.min_kakera]
+                if wl_claims_post:
+                    msg_c, n, v = wl_claims_post[0]
+                    if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
+                        msg_claimed_id = msg_c.id
+                        attempted_char_names.add(n.lower())
+                elif valid_char_claims:
+                    valid_char_claims.sort(key=lambda x: x[2], reverse=True)
+                    msg_c, n, v = valid_char_claims[0]
+                    if await claim_character(client, channel, msg_c, is_kakera=False, kakera_value=v):
                         msg_claimed_id = msg_c.id
                         attempted_char_names.add(n.lower())
         
-        # RT check: Only attempt RT claim if RT is actually available and we're not in kakera-only mode
-        if claimed_post and client.rt_available and not is_key_mode_kakera_only():
-            rt_targets = [i for i in wl_claims_post if i[0].id != msg_claimed_id] + [i for i in char_claims_post if i[0].id != msg_claimed_id]
-            rt_targets.sort(key=lambda x: x[2], reverse=True)
-            if rt_targets:
-                msg_rt, n_rt, v_rt = rt_targets[0]
-                is_wl_rt = n_rt in client.wishlist
+        # 3. RT Claim (Strictly respects min_kakera / wishlist)
+        if client.rt_available and not is_key_mode_kakera_only():
+            rt_targets = []
+            for msg, n, v in (wl_claims_post + char_claims_post):
+                if msg.id == msg_claimed_id:
+                    continue
                 
-                # Check if we already attempted to claim this character name in this burst
-                if n_rt.lower() in attempted_char_names:
-                    # Look for the next best target that is NOT the same character
-                    next_targets = [t for t in rt_targets if t[1].lower() not in attempted_char_names]
-                    if not next_targets:
-                        return # No other unique character to claim with RT
-                    msg_rt, n_rt, v_rt = next_targets[0]
-                    is_wl_rt = n_rt in client.wishlist
-
-                # Check if we should ignore min_kakera for wishlist or if value is enough
+                # Verify wishlist status locally since list merging loses the context
+                desc = msg.embeds[0].description or ""
+                series = desc.splitlines()[0].lower() if desc else ""
+                is_wl_rt = (n in client.wishlist) or \
+                           (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
+                           is_wished_by_self(msg, client.user.id)
+                           
                 bypass_min = is_wl_rt and client.rt_ignore_min_kakera_for_wishlist
-                if bypass_min or v_rt >= client.min_kakera:
-                    log_function(f"[{client.muda_name}] Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
-                    try:
-                        await channel.send(f"{client.mudae_prefix}rt")
-                        client.rt_available = False
-                        attempted_char_names.add(n_rt.lower())
-                        await asyncio.sleep(0.7)
-                        await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
-                    except Exception:
-                        pass
+                
+                if bypass_min or v >= client.min_kakera:
+                    rt_targets.append((msg, n, v, is_wl_rt))
+            
+            rt_targets.sort(key=lambda x: x[2], reverse=True)
+            
+            for msg_rt, n_rt, v_rt, is_wl_rt in rt_targets:
+                if n_rt.lower() in attempted_char_names:
+                    continue
+                    
+                log_function(f"[{client.muda_name}] Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
+                try:
+                    await channel.send(f"{client.mudae_prefix}rt")
+                    client.rt_available = False
+                    attempted_char_names.add(n_rt.lower())
+                    await asyncio.sleep(0.7)
+                    await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
+                    break # Only 1 RT allowed per cycle
+                except Exception:
+                    pass
 
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None):
