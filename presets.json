@@ -46,9 +46,14 @@
       0.3,
       0.8
     ],
+    "kakera_power_thresholds": {
+      "kakeraY": 70,
+      "kakeraO": 80
+    },
     "humanization_enabled": true,
     "humanization_window_minutes": 20,
     "humanization_inactivity_seconds": 180,
+    "autostart": true,
     "claim_emojis": [
       "💖",
       "💗",
@@ -118,9 +123,14 @@
       0.5,
       1.5
     ],
+    "kakera_power_thresholds": {
+      "kakeraY": 80,
+      "kakeraO": 90
+    },
     "humanization_enabled": false,
     "humanization_window_minutes": 10,
     "humanization_inactivity_seconds": 60,
+    "autostart": false,
     "claim_emojis": [
       "💖",
       "💗",
