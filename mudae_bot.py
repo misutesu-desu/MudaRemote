@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.2"
+CURRENT_VERSION = "3.6.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -255,7 +255,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
             claim_interval_preset, roll_interval_preset, avoid_list,
             inactive_hours_preset,
-            auto_us_enabled, auto_us_limit, auto_us_stop_on_claim):
+            auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
+            kakera_power_thresholds):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -378,6 +379,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.chaos_emojis = chaos_emojis_preset if chaos_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.sphere_perk_emojis = sphere_perk_emojis_preset if sphere_perk_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.sphere_emojis = SPHERE_EMOJIS
+    client.kakera_power_thresholds = kakera_power_thresholds or {}
 
 
     async def health_monitor_task():
@@ -1512,7 +1514,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rt_available and not is_key_mode_kakera_only():
             rt_targets = []
             for msg, n, v in (wl_claims_post + char_claims_post):
+                # Skip if claimed natively in this specific loop batch
                 if msg.id == msg_claimed_id:
+                    continue
+                
+                # Prevent RT on characters we already clicked/claimed (e.g., from reactive self-snipe)
+                if msg.id in client.processed_claim_messages:
+                    continue
+                
+                if n.lower() == getattr(client, 'last_successfully_claimed_character', ''):
                     continue
                 
                 # Verify wishlist status locally since list merging loses the context
@@ -1524,6 +1534,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                            
                 bypass_min = is_wl_rt and client.rt_ignore_min_kakera_for_wishlist
                 
+                # RT strictly ignores the temporary "last hour" min kakera bypass (min_kak_post).
+                # It relies on the original client.min_kakera, unless it's a wishlist target with bypass.
                 if bypass_min or v >= client.min_kakera:
                     rt_targets.append((msg, n, v, is_wl_rt))
             
@@ -1625,7 +1637,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Check for KakeraP or Spheres (always safe)
             has_p_or_sphere = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis) for c in msg.components for b in c.children)
             
-            if cooldown_active and not has_p_or_sphere:
+            # Only abort early if cooldown is active AND there are no potential discounts/spheres
+            if cooldown_active and not has_p_or_sphere and chaos_count == 0 and not has_sphere_perk:
                 return False
 
             # Double Deduction Prevention: Check if we already reacted to this message
@@ -1670,7 +1683,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Iterate through sorted buttons
                 for btn in all_raw_buttons:
                     name = btn.emoji.name
-                    if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis:
+                    
+                    # If this kakera is perfectly normal (no chaos, no perks) and we are on cooldown, skip it.
+                    # Otherwise, rely on get_current_dk_power() < cost to block it.
+                    if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis and chaos_count == 0 and not has_sphere_perk:
                         continue
 
                     # Exempt KakeraP and Spheres from power consumption logic
@@ -1690,12 +1706,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         cost = calc_cost
                     
                     # Check local power availability before clicking to avoid warnings
-                    if get_current_dk_power() < cost:
+                    current_pow = get_current_dk_power()
+                    if current_pow < cost:
                         name_display = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
                         if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
-                            log_function(f"[{client.muda_name}] Insufficient Power ({get_current_dk_power()}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
+                            log_function(f"[{client.muda_name}] Insufficient Power ({current_pow}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
                             client.last_power_warn = time.time()
                         continue
+                        
+                    # Check custom power thresholds for specific kakera
+                    # For example, if user sets kakeraY: 80, we only click if current power >= 80%
+                    if cost > 0 and hasattr(client, 'kakera_power_thresholds') and client.kakera_power_thresholds:
+                        base_name = name.rstrip('2')
+                        threshold = client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
+                        if threshold is not None and current_pow < threshold:
+                            log_function(f"[{client.muda_name}] Power ({current_pow}%) below threshold ({threshold}%) for {name}. Waiting for better kakera.", client.preset_name, "INFO")
+                            continue
 
                     try:
                         await btn.click()
@@ -2024,7 +2050,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("inactive_hours", []),
                 preset_data.get("auto_us_enabled", False),
                 preset_data.get("auto_us_limit", 0),
-                preset_data.get("auto_us_stop_on_claim", True)
+                preset_data.get("auto_us_stop_on_claim", True),
+                preset_data.get("kakera_power_thresholds", {})
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

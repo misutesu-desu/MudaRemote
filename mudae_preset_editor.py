@@ -61,6 +61,7 @@ BOOL_SETTINGS = [
     ("rt_only_self_rolls", "RT: Only Self Rolls", False),
     ("auto_us_enabled", "Auto $us (Stacked Rolls)", False),
     ("auto_us_stop_on_claim", "Auto $us: Stop on Claim", True),
+    ("autostart", "Autostart on Boot", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -406,6 +407,7 @@ class PresetEditor:
         
         self.add_checkbox(power_frame, "dk_power_management", "DK Power Management")
         self.add_checkbox(power_frame, "skip_initial_commands", "Skip Initial Commands")
+        self.add_text_field(power_frame, "kakera_power_thresholds", "Kakera Power Thresholds (e.g. kakeraY:80, kakeraO:90)")
         
         # --- Action Buttons ---
         btn_frame = ttk.Frame(frame)
@@ -587,6 +589,14 @@ class PresetEditor:
             self.widgets["reactive_kakera_delay_min"].insert(0, str(range_val[0]))
             self.widgets["reactive_kakera_delay_max"].delete(0, tk.END)
             self.widgets["reactive_kakera_delay_max"].insert(0, str(range_val[1]))
+            
+        # Populate kakera power thresholds
+        thresholds = data.get("kakera_power_thresholds", {})
+        if "kakera_power_thresholds" in self.widgets:
+            self.widgets["kakera_power_thresholds"].delete(0, tk.END)
+            if isinstance(thresholds, dict) and thresholds:
+                thresh_str = ", ".join([f"{k}:{v}" for k, v in thresholds.items()])
+                self.widgets["kakera_power_thresholds"].insert(0, thresh_str)
         
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
@@ -696,11 +706,59 @@ class PresetEditor:
             data["reactive_kakera_delay_range"] = [min_val, max_val]
         except ValueError:
             data["reactive_kakera_delay_range"] = [0.3, 1.0]
+
+        # Collect kakera power thresholds
+        thresh_text = ""
+        if "kakera_power_thresholds" in self.widgets:
+            thresh_text = self.widgets["kakera_power_thresholds"].get().strip()
+            
+        data["kakera_power_thresholds"] = {}
+        if thresh_text:
+            for part in thresh_text.split(","):
+                part = part.strip()
+                if ":" in part:
+                    k, v = part.split(":", 1)
+                    k = k.strip()
+                    try:
+                        v_int = int(v.strip())
+                        data["kakera_power_thresholds"][k] = v_int
+                    except ValueError:
+                        pass
         
         # Update and save
         self.presets[self.current_preset] = data
         if self.save_presets():
             messagebox.showinfo("Success", f"Preset '{self.current_preset}' saved!")
+            
+        # Manage autostart
+        self._manage_autostart(self.current_preset, data.get("autostart", False))
+            
+    def _manage_autostart(self, preset_name, enable):
+        """Manage Windows Startup shortcut for the given preset."""
+        if sys.platform != "win32":
+            return
+            
+        startup_dir = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+        bat_path = os.path.join(startup_dir, f"MudaRemote_{preset_name}.bat")
+        
+        if enable:
+            cwd = os.path.abspath(os.path.dirname(os.path.abspath(sys.argv[0])))
+            python_exe = sys.executable
+            bot_script = os.path.join(cwd, BOT_SCRIPT)
+            
+            try:
+                with open(bat_path, "w", encoding="utf-8") as f:
+                    f.write(f'@echo off\n')
+                    f.write(f'cd /d "{cwd}"\n')
+                    f.write(f'start "{preset_name} - MudaRemote" "{python_exe}" "{bot_script}" --preset "{preset_name}"\n')
+            except Exception as e:
+                print(f"Failed to create autostart script: {e}")
+        else:
+            if os.path.exists(bat_path):
+                try:
+                    os.remove(bat_path)
+                except Exception as e:
+                    print(f"Failed to remove autostart script: {e}")
     
     def create_preset(self):
         """Create a new preset."""
@@ -761,6 +819,7 @@ class PresetEditor:
         
         if messagebox.askyesno("Confirm Delete", 
                                f"Are you sure you want to delete preset '{self.current_preset}'?"):
+            self._manage_autostart(self.current_preset, False)
             del self.presets[self.current_preset]
             self.save_presets()
             self.current_preset = None
