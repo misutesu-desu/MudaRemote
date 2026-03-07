@@ -311,6 +311,7 @@ class PresetEditor:
         self.add_checkbox(us_frame, "auto_us_enabled", "Enable Auto $us")
         self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Stop when character claim available")
         self.add_number_field(us_frame, "auto_us_limit", "Pull Limit per Cycle (0 = Infinite)", 0)
+        self.add_checkbox(us_frame, "autostart", "Autostart on Boot")
         
         # --- Claim Settings ---
         claim_frame = ttk.LabelFrame(frame, text="Claim Settings", padding=15)
@@ -527,7 +528,7 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -653,7 +654,7 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
