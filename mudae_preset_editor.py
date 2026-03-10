@@ -44,43 +44,43 @@ DEFAULTS = {
 # Boolean settings with their display names and defaults
 BOOL_SETTINGS = [
     ("rolling", "Enable Rolling", True),
-    ("use_slash_rolls", "Use Slash Commands", False),
-    ("snipe_mode", "Snipe Mode", False),
-    ("snipe_ignore_min_kakera_reset", "Snipe: Ignore Min Kakera on Reset", False),
-    ("series_snipe_mode", "Series Snipe Mode", False),
-    ("kakera_snipe_mode", "Kakera Value Snipe Mode", False),
-    ("kakera_reaction_snipe_mode", "Kakera Reaction Snipe Mode", False),
-    ("reactive_snipe_on_own_rolls", "Reactive Snipe on Own Rolls", True),
-    ("key_mode", "Key Mode (Always Roll even with no claim)", False),
-    ("only_chaos", "Only Chaos Kakera", False),
-    ("humanization_enabled", "Humanization Enabled", False),
-    ("dk_power_management", "DK Power Management", False),
-    ("skip_initial_commands", "Skip Initial Commands", False),
-    ("time_rolls_to_claim_reset", "Time Rolls to Claim Reset", False),
-    ("rt_ignore_min_kakera_for_wishlist", "RT: Ignore Min Kakera for Wishlist", False),
-    ("rt_only_self_rolls", "RT: Only Self Rolls", False),
-    ("auto_us_enabled", "Auto $us (Stacked Rolls)", False),
-    ("auto_us_stop_on_claim", "Auto $us: Stop on Claim", True),
+    ("use_slash_rolls", "Use Slash Commands (+10% kakera bonus)", False),
+    ("snipe_mode", "Snipe Characters from Others", False),
+    ("snipe_ignore_min_kakera_reset", "Claim Anything Before Claim Reset Expires", False),
+    ("series_snipe_mode", "Snipe by Series Name", False),
+    ("kakera_snipe_mode", "Snipe High-Value Characters from Others", False),
+    ("kakera_reaction_snipe_mode", "Auto-Click Kakera on Others' Rolls", False),
+    ("reactive_snipe_on_own_rolls", "Instantly Claim Good Characters from Own Rolls", True),
+    ("key_mode", "Keep Rolling Without a Claim Right (farm keys/kakera)", False),
+    ("only_chaos", "Only Click Chaos Kakera (10+ keys, half power cost)", False),
+    ("humanization_enabled", "Enable Anti-Detection (random delays & activity checks)", False),
+    ("dk_power_management", "Auto $dk When Power Runs Low", False),
+    ("skip_initial_commands", "Skip Startup Commands (only send $tu)", False),
+    ("time_rolls_to_claim_reset", "Time Rolls to End at Claim Reset", False),
+    ("rt_ignore_min_kakera_for_wishlist", "Use $rt for Wishlist Even Below Min Kakera", False),
+    ("rt_only_self_rolls", "Only Use $rt on Your Own Rolls", False),
+    ("auto_us_enabled", "Auto $us (Spend Stacked Rolls)", False),
+    ("auto_us_stop_on_claim", "Stop $us When Claim Available", True),
     ("autostart", "Autostart on Boot", False),
-    ("debug_mode", "Debug Mode (Log all rolls)", False),
+    ("debug_mode", "Debug Mode (log every roll to console)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
 NUMERIC_SETTINGS = [
-    ("min_kakera", "Minimum Kakera", 100, int),
-    ("delay_seconds", "Delay Between Rolls (s)", 0, float),
-    ("start_delay", "Start Delay (s)", 0, int),
-    ("roll_speed", "Roll Speed (s)", 0.4, float),
+    ("min_kakera", "Min Kakera to Claim", 100, int),
+    ("delay_seconds", "Internal Check Delay (s)", 0, float),
+    ("start_delay", "Startup Delay (s)", 0, int),
+    ("roll_speed", "Delay Between Rolls (s)", 0.4, float),
     ("snipe_delay", "Snipe Delay (s)", 2, float),
     ("series_snipe_delay", "Series Snipe Delay (s)", 3, float),
-    ("kakera_snipe_threshold", "Kakera Snipe Threshold", 0, int),
-    ("kakera_reaction_snipe_delay", "Kakera Reaction Snipe Delay (s)", 0.75, float),
-    ("humanization_window_minutes", "Humanization Window (min)", 40, int),
-    ("humanization_inactivity_seconds", "Humanization Inactivity (s)", 5, int),
-    ("reactive_snipe_delay", "Reactive Snipe Delay (s)", 0, float),
+    ("kakera_snipe_threshold", "Min Kakera for Value Sniping", 0, int),
+    ("kakera_reaction_snipe_delay", "Kakera Click Delay on Others' Rolls (s)", 0.75, float),
+    ("humanization_window_minutes", "Random Extra Wait After Reset (min)", 40, int),
+    ("humanization_inactivity_seconds", "Wait for Channel Silence (s)", 5, int),
+    ("reactive_snipe_delay", "Reactive Claim Delay (s)", 0, float),
     ("claim_interval", "Claim Reset Interval (min)", 180, int),
     ("roll_interval", "Roll Reset Interval (min)", 60, int),
-    ("auto_us_limit", "Auto $us Limit (0 = \u221E)", 0, int),
+    ("auto_us_limit", "Max Stacked Rolls per Cycle (0 = no limit)", 0, int),
 ]
 
 # Text/list settings
@@ -274,88 +274,82 @@ class PresetEditor:
         self.title_label = ttk.Label(frame, text="Select a preset", font=("Segoe UI", 18, "bold"))
         self.title_label.pack(anchor=tk.W, pady=(0, 20))
         
-        # --- Core Settings ---
-        core_frame = ttk.LabelFrame(frame, text="Core Settings", padding=15)
+        # --- Connection ---
+        core_frame = ttk.LabelFrame(frame, text="Connection", padding=15)
         core_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Token
         self.add_text_field(core_frame, "token", "Discord Token", show="*")
-        
-        # Channel ID
         self.add_text_field(core_frame, "channel_id", "Channel ID")
         
-        # Prefixes
         prefix_row = ttk.Frame(core_frame)
         prefix_row.pack(fill=tk.X, pady=5)
-        self.add_text_field(prefix_row, "prefix", "Bot Prefix", pack_side=tk.LEFT)
+        self.add_text_field(prefix_row, "prefix", "Self-Bot Prefix", pack_side=tk.LEFT)
         self.add_text_field(prefix_row, "mudae_prefix", "Mudae Prefix", pack_side=tk.LEFT)
         
-        # Roll command
-        self.add_text_field(core_frame, "roll_command", "Roll Command")
+        self.add_text_field(core_frame, "roll_command", "Roll Command (wa, ha, ma, etc.)")
+        self.add_checkbox(core_frame, "autostart", "Autostart on Boot")
         
-        # --- Rolling Settings ---
-        roll_frame = ttk.LabelFrame(frame, text="Rolling Settings", padding=15)
+        # --- Rolling ---
+        roll_frame = ttk.LabelFrame(frame, text="Rolling", padding=15)
         roll_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(roll_frame, "rolling", "Enable Rolling")
-        self.add_checkbox(roll_frame, "use_slash_rolls", "Use Slash Commands")
-        self.add_number_field(roll_frame, "roll_speed", "Roll Speed (seconds)", 0.4)
-        self.add_number_field(roll_frame, "delay_seconds", "Delay Between Rolls (seconds)", 0)
-        self.add_number_field(roll_frame, "start_delay", "Start Delay (seconds)", 0)
+        self.add_checkbox(roll_frame, "rolling", "Enable Rolling (off = Ghost Mode, snipe only)")
+        self.add_checkbox(roll_frame, "use_slash_rolls", "Use Slash Commands (+10% kakera bonus)")
+        self.add_number_field(roll_frame, "roll_speed", "Delay Between Rolls (seconds)", 0.4)
+        self.add_number_field(roll_frame, "delay_seconds", "Internal Check Delay (seconds)", 0)
+        self.add_number_field(roll_frame, "start_delay", "Startup Delay (seconds)", 0)
         self.add_number_field(roll_frame, "roll_interval", "Roll Reset Interval (min)", 60)
-        self.add_checkbox(roll_frame, "time_rolls_to_claim_reset", "Time Rolls to Claim Reset")
+        self.add_checkbox(roll_frame, "time_rolls_to_claim_reset", "Time Rolls to End at Claim Reset")
         
-        # --- Auto $us Settings ---
-        us_frame = ttk.LabelFrame(frame, text="Auto $us (Stacked Rolls)", padding=15)
+        # --- Stacked Rolls ($us) ---
+        us_frame = ttk.LabelFrame(frame, text="Stacked Rolls ($us)", padding=15)
         us_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(us_frame, "auto_us_enabled", "Enable Auto $us")
-        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Stop when character claim available")
-        self.add_number_field(us_frame, "auto_us_limit", "Pull Limit per Cycle (0 = Infinite)", 0)
-        self.add_checkbox(us_frame, "autostart", "Autostart on Boot")
+        self.add_checkbox(us_frame, "auto_us_enabled", "Spend Stacked Rolls Automatically")
+        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Stop When Claim Becomes Available")
+        self.add_number_field(us_frame, "auto_us_limit", "Max Stacked Rolls per Cycle (0 = no limit)", 0)
         
-        # --- Claim Settings ---
-        claim_frame = ttk.LabelFrame(frame, text="Claim Settings", padding=15)
+        # --- Claiming ---
+        claim_frame = ttk.LabelFrame(frame, text="Claiming", padding=15)
         claim_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_number_field(claim_frame, "min_kakera", "Minimum Kakera", 100)
+        self.add_number_field(claim_frame, "min_kakera", "Min Kakera to Claim (0 = claim all)", 100)
         self.add_number_field(claim_frame, "claim_interval", "Claim Reset Interval (min)", 180)
-        self.add_checkbox(claim_frame, "key_mode", "Key Mode (Always Roll even with no claim)")
-        self.add_checkbox(claim_frame, "only_chaos", "Only Chaos Kakera")
-        self.add_checkbox(claim_frame, "debug_mode", "Debug Mode (Log all incoming rolls)")
+        self.add_checkbox(claim_frame, "key_mode", "Keep Rolling Without a Claim Right (farm keys/kakera)")
         
-        # --- Snipe Settings ---
-        snipe_frame = ttk.LabelFrame(frame, text="Snipe Settings", padding=15)
+        # --- Sniping ---
+        snipe_frame = ttk.LabelFrame(frame, text="Sniping", padding=15)
         snipe_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(snipe_frame, "snipe_mode", "Snipe Mode")
+        self.add_checkbox(snipe_frame, "snipe_mode", "Snipe Characters from Others")
         self.add_number_field(snipe_frame, "snipe_delay", "Snipe Delay (seconds)", 2)
-        self.add_checkbox(snipe_frame, "snipe_ignore_min_kakera_reset", "Ignore Min Kakera on Reset")
-        self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Reactive Snipe on Own Rolls")
-        self.add_number_field(snipe_frame, "reactive_snipe_delay", "Reactive Snipe Delay (seconds)", 0)
+        self.add_checkbox(snipe_frame, "snipe_ignore_min_kakera_reset", "Claim Anything Before Claim Reset Expires")
+        self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Instantly Claim Good Characters from Own Rolls")
+        self.add_number_field(snipe_frame, "reactive_snipe_delay", "Reactive Claim Delay (seconds)", 0)
         
         # Series snipe
-        self.add_checkbox(snipe_frame, "series_snipe_mode", "Series Snipe Mode")
+        self.add_checkbox(snipe_frame, "series_snipe_mode", "Snipe by Series Name")
         self.add_number_field(snipe_frame, "series_snipe_delay", "Series Snipe Delay (seconds)", 3)
         
         # Kakera snipe
-        self.add_checkbox(snipe_frame, "kakera_snipe_mode", "Kakera Value Snipe Mode")
-        self.add_number_field(snipe_frame, "kakera_snipe_threshold", "Kakera Snipe Threshold", 0)
-        self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Kakera Reaction Snipe Mode")
-        self.add_number_field(snipe_frame, "kakera_reaction_snipe_delay", "Kakera Reaction Snipe Delay (seconds)", 0.75)
+        self.add_checkbox(snipe_frame, "kakera_snipe_mode", "Snipe High-Value Characters from Others")
+        self.add_number_field(snipe_frame, "kakera_snipe_threshold", "Min Kakera for Value Sniping", 0)
+        self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Auto-Click Kakera on Others' Rolls")
+        self.add_number_field(snipe_frame, "kakera_reaction_snipe_delay", "Kakera Click Delay (seconds)", 0.75)
+        self.add_checkbox(snipe_frame, "only_chaos", "Only Click Chaos Kakera (10+ keys, half power cost)")
         
-        # RT settings
-        self.add_checkbox(snipe_frame, "rt_only_self_rolls", "RT: Only Self Rolls")
-        self.add_checkbox(snipe_frame, "rt_ignore_min_kakera_for_wishlist", "RT: Ignore Min Kakera for Wishlist")
+        # $rt settings
+        self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Only Use $rt on Your Own Rolls")
+        self.add_checkbox(snipe_frame, "rt_ignore_min_kakera_for_wishlist", "Use $rt for Wishlist Even Below Min Kakera")
         
-        # --- Wishlists ---
-        list_frame = ttk.LabelFrame(frame, text="Wishlists", padding=15)
+        # --- Wishlists & Filters ---
+        list_frame = ttk.LabelFrame(frame, text="Wishlists & Filters", padding=15)
         list_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_list_field(list_frame, "wishlist", "Character Wishlist (comma-separated)")
         self.add_list_field(list_frame, "series_wishlist", "Series Wishlist (comma-separated)")
-        self.add_list_field(list_frame, "avoid_list", "Avoid List (Character names to ignore)")
-        self.add_list_field(list_frame, "kakera_reaction_snipe_targets", "Kakera Snipe Targets (comma-separated)")
+        self.add_list_field(list_frame, "avoid_list", "Never Claim These Characters (comma-separated)")
+        self.add_list_field(list_frame, "kakera_reaction_snipe_targets", "Only Click Kakera From These Users (comma-separated, empty = everyone)")
         
         # --- Emoji Settings ---
         emoji_frame = ttk.LabelFrame(frame, text="Emoji Overrides", padding=15)
@@ -373,19 +367,19 @@ class PresetEditor:
         self.add_optional_list_field(emoji_frame, "sphere_perk_emojis", "Sphere Perk Emojis", 
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
         
-        # --- Humanization ---
-        human_frame = ttk.LabelFrame(frame, text="Humanization", padding=15)
+        # --- Anti-Detection ---
+        human_frame = ttk.LabelFrame(frame, text="Anti-Detection", padding=15)
         human_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(human_frame, "humanization_enabled", "Enable Humanization")
-        self.add_number_field(human_frame, "humanization_window_minutes", "Activity Window (minutes)", 40)
-        self.add_number_field(human_frame, "humanization_inactivity_seconds", "Inactivity Threshold (seconds)", 5)
+        self.add_checkbox(human_frame, "humanization_enabled", "Enable Anti-Detection (random delays & activity checks)")
+        self.add_number_field(human_frame, "humanization_window_minutes", "Random Extra Wait After Reset (min)", 40)
+        self.add_number_field(human_frame, "humanization_inactivity_seconds", "Wait for Channel Silence (seconds)", 5)
         
         # Inactive hours
         inactive_row = ttk.Frame(human_frame)
         inactive_row.pack(fill=tk.X, pady=5)
-        ttk.Label(inactive_row, text="Inactive Hours (e.g. 1-7, 23-6):").pack(anchor=tk.W)
-        ttk.Label(inactive_row, text="Bot goes fully silent during these local-time ranges (24h format)",
+        ttk.Label(inactive_row, text="Sleep Hours (e.g. 1-7, 23-6):").pack(anchor=tk.W)
+        ttk.Label(inactive_row, text="Bot goes fully silent during these hours (24h local time)",
                  foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
         inactive_entry = ttk.Entry(inactive_row)
         inactive_entry.pack(fill=tk.X)
@@ -394,7 +388,7 @@ class PresetEditor:
         # Reactive kakera delay range
         range_row = ttk.Frame(human_frame)
         range_row.pack(fill=tk.X, pady=5)
-        ttk.Label(range_row, text="Reactive Kakera Delay Range (seconds):").pack(anchor=tk.W)
+        ttk.Label(range_row, text="Kakera Click Delay on Own Rolls (random range, seconds):").pack(anchor=tk.W)
         range_inputs = ttk.Frame(range_row)
         range_inputs.pack(fill=tk.X)
         
@@ -404,13 +398,14 @@ class PresetEditor:
         self.widgets["reactive_kakera_delay_max"] = ttk.Entry(range_inputs, width=10)
         self.widgets["reactive_kakera_delay_max"].pack(side=tk.LEFT, padx=(5, 0))
         
-        # --- Power Management ---
-        power_frame = ttk.LabelFrame(frame, text="Power Management", padding=15)
+        # --- Advanced ---
+        power_frame = ttk.LabelFrame(frame, text="Advanced", padding=15)
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(power_frame, "dk_power_management", "DK Power Management")
-        self.add_checkbox(power_frame, "skip_initial_commands", "Skip Initial Commands")
-        self.add_text_field(power_frame, "kakera_power_thresholds", "Kakera Power Thresholds (e.g. kakeraY:80, kakeraO:90)")
+        self.add_checkbox(power_frame, "dk_power_management", "Auto $dk When Power Runs Low")
+        self.add_checkbox(power_frame, "skip_initial_commands", "Skip Startup Commands (only send $tu)")
+        self.add_text_field(power_frame, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, kakeraO:90)")
+        self.add_checkbox(power_frame, "debug_mode", "Debug Mode (log every roll to console)")
         
         # --- Action Buttons ---
         btn_frame = ttk.Frame(frame)
