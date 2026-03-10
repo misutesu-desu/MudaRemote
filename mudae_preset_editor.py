@@ -62,6 +62,7 @@ BOOL_SETTINGS = [
     ("auto_us_enabled", "Auto $us (Stacked Rolls)", False),
     ("auto_us_stop_on_claim", "Auto $us: Stop on Claim", True),
     ("autostart", "Autostart on Boot", False),
+    ("debug_mode", "Debug Mode (Log all rolls)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -321,6 +322,7 @@ class PresetEditor:
         self.add_number_field(claim_frame, "claim_interval", "Claim Reset Interval (min)", 180)
         self.add_checkbox(claim_frame, "key_mode", "Key Mode (Always Roll even with no claim)")
         self.add_checkbox(claim_frame, "only_chaos", "Only Chaos Kakera")
+        self.add_checkbox(claim_frame, "debug_mode", "Debug Mode (Log all incoming rolls)")
         
         # --- Snipe Settings ---
         snipe_frame = ttk.LabelFrame(frame, text="Snipe Settings", padding=15)
@@ -528,7 +530,8 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart",
+                    "debug_mode"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -654,7 +657,8 @@ class PresetEditor:
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart"]:
+                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart",
+                    "debug_mode"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
