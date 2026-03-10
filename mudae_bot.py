@@ -37,7 +37,7 @@ def check_for_updates():
     print(f"[{BOT_NAME}] Checking for updates... (Current: v{CURRENT_VERSION})")
     try:
         # Check version.json
-        # Format: {"version": "2.6.0", "download_url": "..."}
+        # Format: {"version": "2.6.0", "download_url": "...", "editor_download_url": "..."}
         response = requests.get(f"{UPDATE_URL}version.json", timeout=10)
         if response.status_code == 200:
             data = response.json()
@@ -61,6 +61,23 @@ def check_for_updates():
                     with open(current_script, "wb") as f:
                         f.write(update_res.content)
                     
+                    # Also update the preset editor
+                    script_dir = os.path.dirname(current_script)
+                    editor_path = os.path.join(script_dir, "mudae_preset_editor.py")
+                    editor_url = data.get("editor_download_url", f"{UPDATE_URL}mudae_preset_editor.py")
+                    try:
+                        editor_res = requests.get(editor_url, timeout=30)
+                        if editor_res.status_code == 200:
+                            if os.path.exists(editor_path):
+                                shutil.copy2(editor_path, editor_path + ".bak")
+                            with open(editor_path, "wb") as f:
+                                f.write(editor_res.content)
+                            print(f"[{BOT_NAME}] Preset editor updated.")
+                        else:
+                            print(f"[{BOT_NAME}] Failed to download preset editor update.")
+                    except Exception as e:
+                        print(f"[{BOT_NAME}] Preset editor update failed: {e}")
+                    
                     print(f"[{BOT_NAME}] Update applied. Starting new version in a fresh window...")
                     # Restart process
                     if os.name == 'nt':
@@ -77,15 +94,17 @@ def check_for_updates():
         print(f"[{BOT_NAME}] Update check failed: {e}")
 
 def cleanup_after_update():
-    """Removes the backup file created during the update process."""
+    """Removes the backup files created during the update process."""
     current_script = os.path.abspath(__file__)
-    backup_file = current_script + ".bak"
-    if os.path.exists(backup_file):
-        try:
-            os.remove(backup_file)
-            print(f"[{BOT_NAME}] Previous version backup (.bak) cleaned up.")
-        except Exception:
-            pass
+    script_dir = os.path.dirname(current_script)
+    
+    for bak_file in [current_script + ".bak", os.path.join(script_dir, "mudae_preset_editor.py.bak")]:
+        if os.path.exists(bak_file):
+            try:
+                os.remove(bak_file)
+                print(f"[{BOT_NAME}] Backup cleaned: {os.path.basename(bak_file)}")
+            except Exception:
+                pass
 
 # Load config
 presets = {}
@@ -256,7 +275,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             claim_interval_preset, roll_interval_preset, avoid_list,
             inactive_hours_preset,
             auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
-            kakera_power_thresholds):
+            kakera_power_thresholds, debug_mode):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -380,6 +399,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.sphere_perk_emojis = sphere_perk_emojis_preset if sphere_perk_emojis_preset is not None else ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
     client.sphere_emojis = SPHERE_EMOJIS
     client.kakera_power_thresholds = kakera_power_thresholds or {}
+    client.debug_mode = debug_mode
 
 
     async def health_monitor_task():
@@ -1421,6 +1441,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not msg.embeds: continue
             embed = msg.embeds[0]
             if not is_character_embed(embed): continue
+
+            # Debug Mode: Log every incoming character
+            if client.debug_mode:
+                dbg_name = embed.author.name if embed.author else "Unknown"
+                dbg_desc = embed.description or ""
+                dbg_kv = 0
+                dbg_k_match = re.search(r"\**([\d,.]+)\**<:kakera:", dbg_desc)
+                if dbg_k_match:
+                    dbg_kv = int(re.sub(r"[^\d]", "", dbg_k_match.group(1)))
+                dbg_series = dbg_desc.splitlines()[0] if dbg_desc else ""
+                dbg_owner = get_character_owner(embed) or "unclaimed"
+                log_function(f"[{client.muda_name}] [DEBUG] Roll: {dbg_name} | {dbg_series} | {dbg_kv} ka | {dbg_owner}", preset_name, "INFO")
             
             all_kakera_emojis = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
             is_kakera = False
@@ -1620,7 +1652,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_snipe and client.only_chaos and chaos_count == 0:
                 return False
             
-            has_sphere_perk = "💎 ➗ 2️⃣" in (embed.description or "")
+            has_sphere_perk = "💎/2" in (embed.description or "")
             if is_snipe:
                 target_list = client.kakera_emojis
             elif has_sphere_perk:
@@ -1695,7 +1727,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     else:
                         base_cost = client.dk_consumption
                         desc_text = embed.description or ""
-                        has_sphere_perk = "💎 ➗ 2️⃣" in desc_text
+                        has_sphere_perk = "💎/2" in desc_text
                         
                         calc_cost = base_cost
                         if chaos_count > 0:
@@ -2051,7 +2083,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_us_enabled", False),
                 preset_data.get("auto_us_limit", 0),
                 preset_data.get("auto_us_stop_on_claim", True),
-                preset_data.get("kakera_power_thresholds", {})
+                preset_data.get("kakera_power_thresholds", {}),
+                preset_data.get("debug_mode", False)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
