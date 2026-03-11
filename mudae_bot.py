@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.4"
+CURRENT_VERSION = "3.6.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -341,6 +341,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_us_limit = auto_us_limit
     client.auto_us_stop_on_claim = auto_us_stop_on_claim
     client.us_pulled_this_cycle = 0
+    client.mk_rolls_left = 0
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -1130,6 +1131,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         immediate_roll = (client.rolling_enabled and proceed_to_rolls and 
                          (can_claim or client.key_mode or client.rt_available or is_timing_window))
         
+        # Globally parse $mk available from $tu
+        mk_match = re.search(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)", c_lower)
+        if mk_match:
+            client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1)))
+        else:
+            client.mk_rolls_left = 0
+            
+        if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
+            # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
+            if client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+                await process_mk_rolls(client, channel)
+                await asyncio.sleep(2)
+                await check_status(client, channel, mudae_prefix)
+                return
+        
         if immediate_roll:
             await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                       tu_message_content, 
@@ -1194,7 +1210,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             middle_text = main_match.group(2)
             
             # Separate $us and $mk parsing.
-            # $us are actual rolls we can use. $mk are passive and should be ignored for calculation.
+            # $us are actual rolls we can use. $mk summon guaranteed kakera characters.
             for bonus_match in re.finditer(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$(us|mk)\)", middle_text):
                 amount = parse_int_from_fragment(bonus_match.group(1))
                 bonus_type = bonus_match.group(2).lower()
@@ -1202,7 +1218,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if bonus_type == "us":
                     us_rolls_left += amount
                 elif bonus_type == "mk":
-                    pass 
+                    client.mk_rolls_left = amount
 
             # Parse reset time
             # Unified Reset Regex: "Reset in... X min"
@@ -1278,7 +1294,37 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Could not parse roll count.", preset_name, "ERROR")
             await asyncio.sleep(30); await check_status(client, channel, mudae_prefix); return
 
+    async def process_mk_rolls(client, channel):
+        if client.mk_rolls_left > 0:
+            current_pow = get_current_dk_power()
+            if current_pow >= client.dk_consumption:
+                mk_used = 0
+                while client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+                    log_function(f"[{client.muda_name}] Using $mk ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", client.preset_name, "KAKERA")
+                    await channel.send(f"{client.mudae_prefix}mk")
+                    client.mk_rolls_left -= 1
+                    mk_used += 1
+                    await asyncio.sleep(3)  # Wait for Mudae to respond with character + kakera
+                    
+                    # Find and click the kakera on the $mk response
+                    mk_start = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=5)
+                    async for mk_msg in channel.history(limit=5, after=mk_start, oldest_first=False):
+                        if mk_msg.author.id == TARGET_BOT_ID and mk_msg.embeds:
+                            mk_embed = mk_msg.embeds[0]
+                            if is_character_embed(mk_embed) and mk_msg.components:
+                                await claim_character(client, channel, mk_msg, is_kakera=True)
+                                break
+                    await asyncio.sleep(1)
+                
+                if mk_used > 0:
+                    log_function(f"[{client.muda_name}] Used {mk_used} $mk rolls.", client.preset_name, "KAKERA")
+            else:
+                log_function(f"[{client.muda_name}] Skipping $mk: Insufficient power ({current_pow}% < {client.dk_consumption}%).", client.preset_name, "INFO")
+
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
+        # Auto $mk: Use $mk rolls before normal rolls if we have enough power
+        await process_mk_rolls(client, channel)
+        
         log_text = f"Rolling {rolls_left} times"
         log_text += " (Reactive)" if client.enable_reactive_self_snipe else ""
         log_function(f"[{client.muda_name}] {log_text}", client.preset_name, "INFO")
@@ -1350,10 +1396,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception as e:
             log_function(f"[{client.muda_name}] Post-roll processing error: {e}", preset_name, "ERROR")
         
-        
-        
-        await asyncio.sleep(2)
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
         # Always check status (send $tu) after rolling sequence, as requested
         await check_status(client, channel, client.mudae_prefix)
 
