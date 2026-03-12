@@ -39,6 +39,7 @@ DEFAULTS = {
     "auto_us_enabled": False,
     "auto_us_limit": 0,
     "auto_us_stop_on_claim": True,
+    "auto_mk_enabled": True,
 }
 
 # Boolean settings with their display names and defaults
@@ -63,6 +64,7 @@ BOOL_SETTINGS = [
     ("auto_us_stop_on_claim", "Stop $us When Claim Available", True),
     ("autostart", "Autostart on Boot", False),
     ("debug_mode", "Debug Mode (log every roll to console)", False),
+    ("auto_mk_enabled", "Auto use $mk rolls", True),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -308,6 +310,7 @@ class PresetEditor:
         self.add_checkbox(us_frame, "auto_us_enabled", "Spend Stacked Rolls Automatically")
         self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Stop When Claim Becomes Available")
         self.add_number_field(us_frame, "auto_us_limit", "Max Stacked Rolls per Cycle (0 = no limit)", 0)
+        self.add_checkbox(us_frame, "auto_mk_enabled", "Auto use $mk rolls")
         
         # --- Claiming ---
         claim_frame = ttk.LabelFrame(frame, text="Claiming", padding=15)
@@ -404,7 +407,7 @@ class PresetEditor:
         
         self.add_checkbox(power_frame, "dk_power_management", "Auto $dk When Power Runs Low")
         self.add_checkbox(power_frame, "skip_initial_commands", "Skip Startup Commands (only send $tu)")
-        self.add_text_field(power_frame, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, kakeraO:90)")
+        self.add_text_field(power_frame, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
         self.add_checkbox(power_frame, "debug_mode", "Debug Mode (log every roll to console)")
         
         # --- Action Buttons ---
