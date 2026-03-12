@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.5"
+CURRENT_VERSION = "3.6.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -275,7 +275,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             claim_interval_preset, roll_interval_preset, avoid_list,
             inactive_hours_preset,
             auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
-            kakera_power_thresholds, debug_mode):
+            kakera_power_thresholds, debug_mode, auto_mk_enabled_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -342,6 +342,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_us_stop_on_claim = auto_us_stop_on_claim
     client.us_pulled_this_cycle = 0
     client.mk_rolls_left = 0
+    client.auto_mk_enabled = auto_mk_enabled_preset
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -823,9 +824,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             current_power = int(power_match.group(1))
             consumption_cost = int(consumption_match.group(1))
             
-            # Use item if power is too low for a reaction
-            if current_power < consumption_cost:
-                log_function(f"[{client.muda_name}] DK: Activating. ({current_power}% < {consumption_cost}%)", preset_name, "KAKERA")
+            effective_cost = consumption_cost
+            if getattr(client, 'only_chaos', False):
+                effective_cost = int(consumption_cost / 2)
+
+            # Use item if power is too low for the required reaction type
+            if current_power < effective_cost:
+                log_function(f"[{client.muda_name}] DK: Activating. ({current_power}% < {effective_cost}%)", preset_name, "KAKERA")
                 await channel.send(f"{client.mudae_prefix}dk")
                 await asyncio.sleep(1.5) 
                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
@@ -1140,7 +1145,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
         if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
             # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
-            if client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+            if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
                 await process_mk_rolls(client, channel)
                 await asyncio.sleep(2)
                 await check_status(client, channel, mudae_prefix)
@@ -1295,6 +1300,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(30); await check_status(client, channel, mudae_prefix); return
 
     async def process_mk_rolls(client, channel):
+        if not getattr(client, 'auto_mk_enabled', True):
+            return
         if client.mk_rolls_left > 0:
             current_pow = get_current_dk_power()
             if current_pow >= client.dk_consumption:
@@ -1793,9 +1800,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # For example, if user sets kakeraY: 80, we only click if current power >= 80%
                     if cost > 0 and hasattr(client, 'kakera_power_thresholds') and client.kakera_power_thresholds:
                         base_name = name.rstrip('2')
-                        threshold = client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
+                        
+                        # Determine specific prefix for chaos
+                        prefix = "chaos_" if chaos_count > 0 else ""
+                        specific_name = f"{prefix}{base_name}" if prefix else base_name
+                        
+                        # Check specific first (e.g. chaos_kakeraY), then fallback to base (e.g. kakeraY), then raw name
+                        threshold = client.kakera_power_thresholds.get(specific_name)
+                        if threshold is None:
+                            threshold = client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
+                            
                         if threshold is not None and current_pow < threshold:
-                            log_function(f"[{client.muda_name}] Power ({current_pow}%) below threshold ({threshold}%) for {name}. Waiting for better kakera.", client.preset_name, "INFO")
+                            log_function(f"[{client.muda_name}] Power ({current_pow}%) below threshold ({threshold}%) for {specific_name}. Waiting for better kakera.", client.preset_name, "INFO")
                             continue
 
                     try:
@@ -2127,7 +2143,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_us_limit", 0),
                 preset_data.get("auto_us_stop_on_claim", True),
                 preset_data.get("kakera_power_thresholds", {}),
-                preset_data.get("debug_mode", False)
+                preset_data.get("debug_mode", False),
+                preset_data.get("auto_mk_enabled", True)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
