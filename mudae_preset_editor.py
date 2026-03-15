@@ -529,7 +529,7 @@ class PresetEditor:
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart",
-                    "debug_mode"]:
+                    "debug_mode", "auto_mk_enabled"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -656,7 +656,7 @@ class PresetEditor:
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim", "autostart",
-                    "debug_mode"]:
+                    "debug_mode", "auto_mk_enabled"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -787,6 +787,7 @@ class PresetEditor:
                 "auto_us_enabled": False,
                 "auto_us_limit": 0,
                 "auto_us_stop_on_claim": True,
+                "auto_mk_enabled": True,
             }
             
             self.refresh_preset_list()
