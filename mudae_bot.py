@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.8"
+CURRENT_VERSION = "3.6.9"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1774,6 +1774,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Iterate through sorted buttons
                 for btn in all_raw_buttons:
                     name = btn.emoji.name
+                    
+                    # only_chaos gate: When only_chaos allowed this message through because
+                    # it has free kakera, restrict clicks to ONLY the free buttons.
+                    if not is_snipe and client.only_chaos and chaos_count == 0:
+                        if name != 'kakeraP' and name not in client.sphere_emojis:
+                            continue
                     
                     # If this kakera is perfectly normal (no chaos, no perks) and we are on cooldown, skip it.
                     # Otherwise, rely on get_current_dk_power() < cost to block it.
