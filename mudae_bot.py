@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.6.9"
+CURRENT_VERSION = "3.7.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1494,18 +1494,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not msg.embeds: continue
             embed = msg.embeds[0]
             if not is_character_embed(embed): continue
-
-            # Debug Mode: Log every incoming character
-            if client.debug_mode:
-                dbg_name = embed.author.name if embed.author else "Unknown"
-                dbg_desc = embed.description or ""
-                dbg_kv = 0
-                dbg_k_match = re.search(r"\**([\d,.]+)\**<:kakera:", dbg_desc)
-                if dbg_k_match:
-                    dbg_kv = int(re.sub(r"[^\d]", "", dbg_k_match.group(1)))
-                dbg_series = dbg_desc.splitlines()[0] if dbg_desc else ""
-                dbg_owner = get_character_owner(embed) or "unclaimed"
-                log_function(f"[{client.muda_name}] [DEBUG] Roll: {dbg_name} | {dbg_series} | {dbg_kv} ka | {dbg_owner}", preset_name, "INFO")
             
             all_kakera_emojis = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
             is_kakera = False
@@ -1932,6 +1920,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if not message.embeds: return
         embed = message.embeds[0]
+
+        # Debug Mode: Log every character in real-time as it arrives
+        if client.debug_mode and is_character_embed(embed):
+            dbg_name = embed.author.name if embed.author else "Unknown"
+            dbg_desc = embed.description or ""
+            dbg_kv = 0
+            dbg_k_match = re.search(r"\**([\d,.]+)\**<:kakera:", dbg_desc)
+            if dbg_k_match:
+                dbg_kv = int(re.sub(r"[^\d]", "", dbg_k_match.group(1)))
+            dbg_series = dbg_desc.splitlines()[0] if dbg_desc else ""
+            dbg_owner = get_character_owner(embed) or "unclaimed"
+            log_function(f"[{client.muda_name}] [DEBUG] Roll: {dbg_name} | {dbg_series} | {dbg_kv} ka | {dbg_owner}", preset_name, "INFO")
 
         # Handle Kakera Drops (non-character messages)
         if not is_character_embed(embed):
