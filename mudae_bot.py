@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.0"
+CURRENT_VERSION = "3.7.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1921,8 +1921,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not message.embeds: return
         embed = message.embeds[0]
 
-        # Debug Mode: Log every character in real-time as it arrives
-        if client.debug_mode and is_character_embed(embed):
+        # Debug Mode: Log every character in real-time as it arrives (own rolls only)
+        if client.debug_mode and client.is_actively_rolling and is_character_embed(embed):
             dbg_name = embed.author.name if embed.author else "Unknown"
             dbg_desc = embed.description or ""
             dbg_kv = 0
