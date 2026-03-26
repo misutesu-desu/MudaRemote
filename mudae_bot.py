@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.1"
+CURRENT_VERSION = "3.7.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -781,10 +781,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 else:
                     await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
                     if not client.dk_power_management:
-                        await channel.send(f"{client.mudae_prefix}dk"); await asyncio.sleep(1.0)
-                    else:
-                        pass # Managed later in $tu
-                    await channel.send(f"{client.mudae_prefix}daily"); await asyncio.sleep(1.0)
+                        # DK and Daily are now handled automatically via $tu status parsing
+                        pass 
                     await check_status(client, channel, client.mudae_prefix)
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
@@ -977,6 +975,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, channel, tu_message_content)
+
+        # Automatic $daily and $dk handling
+        if client.rolling_enabled:
+            # Check if $daily is available and send if so
+            if "$daily is available" in c_lower or "$daily está disponível" in c_lower or \
+               "$daily está disponible" in c_lower or "$daily est disponible" in c_lower:
+                log_function(f"[{client.muda_name}] $daily is available! Sending command...", preset_name, "INFO")
+                await channel.send(f"{client.mudae_prefix}daily")
+                await asyncio.sleep(2.0)
+
+            # Check if $dk is ready (only when power management is OFF)
+            if not client.dk_power_management:
+                if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
+                    log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
+                    await channel.send(f"{client.mudae_prefix}dk")
+                    await asyncio.sleep(2.0)
 
         # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
         try:
