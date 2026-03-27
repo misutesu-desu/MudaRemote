@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.2"
+CURRENT_VERSION = "3.7.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1660,11 +1660,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not is_kakera and not is_free_claim and char_name.lower() == getattr(client, 'last_successfully_claimed_character', ''):
             return False
 
-        # Add to processed set (with periodic cleanup)
-        client.processed_claim_messages.add(msg.id)
-        if len(client.processed_claim_messages) > 1000:
-            client.processed_claim_messages.clear()
-        
         # Kakera value logging logic
         kakera_str = ""
         if not is_kakera and not is_free_claim:
@@ -1682,6 +1677,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # For snipe operations, check with is_external_snipe flag
         if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed(is_external_snipe=is_snipe):
             return False
+
+        # Add to processed set (with periodic cleanup)
+        # This is marked AFTER authorization so that failed attempts (due to no claim right) 
+        # can be re-evaluated later in the same cycle (e.g. after a claim reset or via RT).
+        client.processed_claim_messages.add(msg.id)
+        if len(client.processed_claim_messages) > 1000:
+            client.processed_claim_messages.clear()
 
         # RT Handling: If we are claiming a character and have no claim right but RT is ready, use it now.
         # If rt_only_self_rolls is enabled and this is an external snipe, don't use RT.
