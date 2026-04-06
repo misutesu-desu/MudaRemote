@@ -64,7 +64,7 @@ BOOL_SETTINGS = [
     ("rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)", False),
     ("rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)", False),
     ("auto_us_enabled", "Automatically Use Saved Rolls ($us)", False),
-    ("auto_us_stop_on_claim", "Save Rolls (Stop using $us once you have a claim right)", True),
+    ("auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)", True),
     ("auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)", False),
     ("auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)", False),
     ("autostart", "Start with Windows", False),
@@ -317,7 +317,7 @@ class PresetEditor:
         us_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_checkbox(us_frame, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
-        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Save Rolls (Stop using $us once you have a claim right)")
+        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
         self.add_number_field(us_frame, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
         
