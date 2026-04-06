@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.4"
+CURRENT_VERSION = "3.7.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -276,7 +276,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             inactive_hours_preset,
             auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
             kakera_power_thresholds, debug_mode, auto_mk_enabled_preset,
-            auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode):
+            auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode,
+            panic_roll_minutes_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -351,6 +352,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_rolls_in_key_mode = auto_rolls_in_key_mode
     client.rolls_item_used_count = 0
     client.rolls_used_this_interval_utc = None
+    client.panic_roll_minutes = panic_roll_minutes_preset if panic_roll_minutes_preset is not None else 5
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -1158,8 +1160,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60:
             is_timing_window = True
 
+        # Panic Roll Logic (Lurker Strategy)
+        is_panic_window = False
+        is_lurking = False
+        if client.claim_right_available and claim_reset_minutes is not None:
+            if claim_reset_minutes <= client.panic_roll_minutes:
+                is_panic_window = True
+                client.current_min_kakera_for_roll_claim = 0
+                log_function(f"[{client.muda_name}] Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
+            else:
+                is_lurking = True
+                log_function(f"[{client.muda_name}] Lurking Mode: Waiting for others to roll. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
+
         immediate_roll = (client.rolling_enabled and proceed_to_rolls and 
-                         (can_claim or client.key_mode or client.rt_available or is_timing_window))
+                         ((can_claim and not is_lurking) or client.key_mode or client.rt_available or is_timing_window or is_panic_window))
         
         # Globally parse $mk available from $tu
         mk_match = re.search(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)", c_lower)
@@ -1193,6 +1207,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes > 60:
                 # Wake up right as we enter the window where "Timing" becomes possible
                 sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
+            
+            # 2.5 Panic Roll window arrival
+            if is_lurking and claim_reset_minutes is not None:
+                sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
             
             # 3. $rt reset
             if rt_reset_minutes is not None and rt_reset_minutes > 0:
@@ -1276,41 +1294,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_rolls = rolls_left + us_rolls_left
 
             if total_rolls == 0:
-                # AUTO $US LOGIC (1st Priority)
-                us_will_execute = False
-                if getattr(client, 'auto_us_enabled', False):
-                    stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
-                    hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
-                    
-                    if not stop_due_to_claim and not hit_limit:
-                        us_will_execute = True
-                        amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
-                        
-                        await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
-                        await asyncio.sleep(2.0)
-                        
-                        client.us_pulled_this_cycle += amount_to_pull
-                        limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
-                        log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
-                        
-                        await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
-                        return
-
-                # AUTO $ROLLS LOGIC (2nd Priority — only if $us did NOT execute)
-                if not us_will_execute and getattr(client, 'auto_rolls_enabled', False):
+                # AUTO $ROLLS LOGIC (1st Priority)
+                rolls_executed = False
+                if getattr(client, 'auto_rolls_enabled', False):
                     rolls_limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
                     
-                    # Reset once-per-interval flag when roll reset changes
                     if client.rolls_used_this_interval_utc is not None and hasattr(client, 'roll_reset_at_utc'):
                         if client.rolls_used_this_interval_utc != client.roll_reset_at_utc:
                             client.rolls_used_this_interval_utc = None
                     
                     not_used_this_interval = client.rolls_used_this_interval_utc is None
-                    
-                    # Claim right check with key mode bypass
                     claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
                     
                     if rolls_limit_ok and not_used_this_interval and claim_ok:
+                        rolls_executed = True
                         log_function(f"[{client.muda_name}] Auto $rolls triggered.", preset_name, "INFO")
                         await channel.send(f"{client.mudae_prefix}rolls")
                         client.rolls_item_used_count += 1
@@ -1321,6 +1318,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         
                         await asyncio.sleep(2.0)
                         await check_status(client, channel, mudae_prefix)
+                        return
+
+                # AUTO $US LOGIC (2nd Priority — only if $rolls did NOT execute)
+                if not rolls_executed and getattr(client, 'auto_us_enabled', False):
+                    stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
+                    hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
+                    
+                    if not stop_due_to_claim and not hit_limit:
+                        amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
+                        
+                        await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
+                        await asyncio.sleep(2.0)
+                        
+                        client.us_pulled_this_cycle += amount_to_pull
+                        limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
+                        log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
+                        
+                        await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
                         return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
@@ -1338,6 +1353,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         sleep_candidates.append((float(c_min), "claim reset"))
                         if client.time_rolls_to_claim_reset and c_min > 60:
                             sleep_candidates.append((float(c_min - 60), "timing window arrival"))
+                        if client.claim_right_available and c_min > client.panic_roll_minutes:
+                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival"))
                 
                 sleep_candidates.sort(key=lambda x: x[0])
                 wait_m, reason = sleep_candidates[0]
@@ -2215,7 +2232,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_mk_enabled", True),
                 preset_data.get("auto_rolls_enabled", False),
                 preset_data.get("auto_rolls_limit", 0),
-                preset_data.get("auto_rolls_in_key_mode", False)
+                preset_data.get("auto_rolls_in_key_mode", False),
+                preset_data.get("panic_roll_minutes", 5)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
