@@ -43,6 +43,7 @@ DEFAULTS = {
     "auto_rolls_enabled": False,
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": False,
+    "panic_roll_minutes": 5,
 }
 
 # Boolean settings with their display names and defaults
@@ -89,6 +90,7 @@ NUMERIC_SETTINGS = [
     ("roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60, int),
     ("auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0, int),
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
+    ("panic_roll_minutes", "Panic Roll Start (Minutes before claim reset)", 5, int),
 ]
 
 # Text/list settings
@@ -327,6 +329,7 @@ class PresetEditor:
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
         self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
         
         # --- Sniping ---
@@ -523,7 +526,7 @@ class PresetEditor:
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit"]:
+                    "auto_rolls_limit", "panic_roll_minutes"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -646,7 +649,7 @@ class PresetEditor:
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit"]:
+                    "auto_rolls_limit", "panic_roll_minutes"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -654,7 +657,8 @@ class PresetEditor:
                         # Determine type
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
-                                   "claim_interval", "roll_interval", "auto_us_limit", "auto_rolls_limit"]:
+                                   "claim_interval", "roll_interval", "auto_us_limit", 
+                                   "auto_rolls_limit", "panic_roll_minutes"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
