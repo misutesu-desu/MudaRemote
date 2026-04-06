@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.5"
+CURRENT_VERSION = "3.7.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -277,7 +277,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
             kakera_power_thresholds, debug_mode, auto_mk_enabled_preset,
             auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode,
-            panic_roll_minutes_preset):
+            panic_roll_minutes_preset, lurker_mode_preset):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -353,6 +353,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.rolls_item_used_count = 0
     client.rolls_used_this_interval_utc = None
     client.panic_roll_minutes = panic_roll_minutes_preset if panic_roll_minutes_preset is not None else 5
+    client.lurker_mode = lurker_mode_preset
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -1163,7 +1164,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Panic Roll Logic (Lurker Strategy)
         is_panic_window = False
         is_lurking = False
-        if client.claim_right_available and claim_reset_minutes is not None:
+        if client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
             if claim_reset_minutes <= client.panic_roll_minutes:
                 is_panic_window = True
                 client.current_min_kakera_for_roll_claim = 0
@@ -2233,7 +2234,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_rolls_enabled", False),
                 preset_data.get("auto_rolls_limit", 0),
                 preset_data.get("auto_rolls_in_key_mode", False),
-                preset_data.get("panic_roll_minutes", 5)
+                preset_data.get("panic_roll_minutes", 5),
+                preset_data.get("lurker_mode", False)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
