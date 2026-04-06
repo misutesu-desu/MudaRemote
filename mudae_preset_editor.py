@@ -44,6 +44,7 @@ DEFAULTS = {
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": False,
     "panic_roll_minutes": 5,
+    "lurker_mode": False,
 }
 
 # Boolean settings with their display names and defaults
@@ -71,6 +72,7 @@ BOOL_SETTINGS = [
     ("autostart", "Start with Windows", False),
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
+    ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -329,6 +331,7 @@ class PresetEditor:
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
         self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        self.add_checkbox(claim_frame, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
         self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
         
@@ -543,7 +546,7 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
-                    "autostart", "debug_mode", "auto_mk_enabled"]:
+                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -673,7 +676,7 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
-                    "autostart", "debug_mode", "auto_mk_enabled"]:
+                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
