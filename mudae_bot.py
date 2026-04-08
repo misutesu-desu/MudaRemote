@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.6"
+CURRENT_VERSION = "3.7.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1285,6 +1285,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if getattr(client, 'roll_reset_at_utc', None):
                     if (new_roll_reset_utc - client.roll_reset_at_utc).total_seconds() > 600:
                         client.us_pulled_this_cycle = 0
+                        client.us_failed_this_cycle = False
                 
                 client.roll_reset_at_utc = new_roll_reset_utc
             else:
@@ -1295,9 +1296,51 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_rolls = rolls_left + us_rolls_left
 
             if total_rolls == 0:
-                # AUTO $ROLLS LOGIC (1st Priority)
-                rolls_executed = False
-                if getattr(client, 'auto_rolls_enabled', False):
+                # AUTO $US LOGIC (1st Priority)
+                us_will_execute = False
+                if getattr(client, 'auto_us_enabled', False) and not getattr(client, 'us_failed_this_cycle', False):
+                    stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
+                    hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
+                    
+                    if not stop_due_to_claim and not hit_limit:
+                        last_attempt = getattr(client, 'last_us_attempt_utc', None)
+                        if last_attempt and (now_utc - last_attempt).total_seconds() < 15:
+                            # We just attempted $us and still have 0 rolls (possibly limits or unknown error).
+                            client.us_failed_this_cycle = True
+                            log_function(f"[{client.muda_name}] Auto $us failed repeatedly. Halting $us for this cycle.", preset_name, "WARN")
+                        else:
+                            us_will_execute = True
+                            amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
+                            
+                            await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
+                            client.last_us_attempt_utc = datetime.datetime.now(datetime.timezone.utc)
+                            
+                            # Fast-check response without an extra $tu
+                            await asyncio.sleep(2.0)
+                            us_failed = False
+                            async for msg in channel.history(limit=5):
+                                if msg.author.id == TARGET_BOT_ID and not msg.embeds:
+                                    c_lower = msg.content.lower()
+                                    if "kakera" in c_lower and ("enough" in c_lower or "pas assez" in c_lower or "insuficiente" in c_lower):
+                                        us_failed = True
+                                        break
+                                        
+                            if us_failed:
+                                client.us_failed_this_cycle = True
+                                log_function(f"[{client.muda_name}] Auto $us failed (Not enough Kakera). Halting $us for this cycle.", preset_name, "WARN")
+                                await check_status(client, channel, mudae_prefix)
+                                return
+                            
+                            client.us_pulled_this_cycle += amount_to_pull
+                            limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
+                            log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
+                            
+                            # Plunge directly into rolls without another $tu (fast mode)
+                            await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                            return
+
+                # AUTO $ROLLS LOGIC (2nd Priority — only if $us did NOT execute)
+                if not us_will_execute and getattr(client, 'auto_rolls_enabled', False):
                     rolls_limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
                     
                     if client.rolls_used_this_interval_utc is not None and hasattr(client, 'roll_reset_at_utc'):
@@ -1308,7 +1351,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
                     
                     if rolls_limit_ok and not_used_this_interval and claim_ok:
-                        rolls_executed = True
                         log_function(f"[{client.muda_name}] Auto $rolls triggered.", preset_name, "INFO")
                         await channel.send(f"{client.mudae_prefix}rolls")
                         client.rolls_item_used_count += 1
@@ -1319,24 +1361,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         
                         await asyncio.sleep(2.0)
                         await check_status(client, channel, mudae_prefix)
-                        return
-
-                # AUTO $US LOGIC (2nd Priority — only if $rolls did NOT execute)
-                if not rolls_executed and getattr(client, 'auto_us_enabled', False):
-                    stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
-                    hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
-                    
-                    if not stop_due_to_claim and not hit_limit:
-                        amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
-                        
-                        await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
-                        await asyncio.sleep(2.0)
-                        
-                        client.us_pulled_this_cycle += amount_to_pull
-                        limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
-                        log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
-                        
-                        await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
                         return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
@@ -1980,12 +2004,45 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 except Exception:
                     break
 
+    async def handle_birthday_candle(msg):
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+        if msg.components:
+            for comp in msg.components:
+                for btn in comp.children:
+                    if hasattr(btn.emoji, 'name') and btn.emoji.name == '🕯️':
+                        try:
+                            await btn.click()
+                            
+                            char_name = "Unknown"
+                            if msg.embeds:
+                                embed = msg.embeds[0]
+                                if embed.author and embed.author.name:
+                                    char_name = embed.author.name
+                                    
+                            log_function(f"[{client.muda_name}] 🕯️ Clicked candle for {char_name}", preset_name, "CLAIM")
+                        except Exception:
+                            pass
+                        return
+
     @client.event
     async def on_message(message):
         # Filter for relevant messages
         if message.author.id != TARGET_BOT_ID or message.channel.id != client.target_channel_id:
             if client.rolling_enabled: await client.process_commands(message)
             return
+
+        # --- BIRTHDAY EVENT CANDLE DETECTION ---
+        if message.components:
+            for comp in message.components:
+                candle_found = False
+                for btn in comp.children:
+                    if hasattr(btn.emoji, 'name') and btn.emoji.name == '🕯️':
+                        client.loop.create_task(handle_birthday_candle(message))
+                        candle_found = True
+                        break
+                if candle_found:
+                    break
+
         # Suppress all activity during inactive hours
         if is_inactive_hour():
             return
