@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.1"
+CURRENT_VERSION = "4.0.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -2208,19 +2208,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if main_id_int is not None and message.embeds:
                 embed_ma = message.embeds[0]
                 if is_character_embed(embed_ma):
-                    # Signal 1: The roll was triggered by the main account (slash command interaction)
-                    is_main_roll = (message.interaction and str(message.interaction.user.id) == client.main_account_id)
-                    # Signal 2: Mudae says "Wished by @MainAccount" in the message content
+                    # Smart Sync: Only trigger when Mudae explicitly says "Wished by @MainAccount"
                     main_is_wished = is_wished_by_self(message, main_id_int)
 
-                    if is_main_roll or main_is_wished:
+                    if main_is_wished:
                         c_name_ma = embed_ma.author.name.lower() if embed_ma.author else ""
                         is_avoided_ma = c_name_ma in client.avoid_list
 
                         if not is_avoided_ma and has_claim_option(message, embed_ma, client.claim_emojis):
                             if is_character_snipe_allowed(is_external_snipe=True):
-                                trigger = "rolled by Main" if is_main_roll else "wished by Main"
-                                log_function(f"[{client.muda_name}] Main Account Sync ({trigger}): {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
+                                log_function(f"[{client.muda_name}] Main Account Sync (wished by Main): {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
                                 # Bypass standard snipe delays for main account syncing
                                 await asyncio.sleep(0.1)
                                 if await claim_character(client, message.channel, message, is_snipe=True):
