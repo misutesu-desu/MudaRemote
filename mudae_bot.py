@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.0"
+CURRENT_VERSION = "4.0.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -2196,25 +2196,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
 
         # [NEW] Task 6: Main Account Wishlist Syncing (Alt Account Targeter)
-        # If a roll comes from the main account, treat it as high-priority claim for wishlist characters
-        if client.main_account_id and message.interaction and str(message.interaction.user.id) == client.main_account_id:
-            if message.embeds:
+        # If a roll comes from the main account OR Mudae flags a character as wished by
+        # the main account, treat it as a high-priority claim — bypassing local wishlist.
+        if client.main_account_id:
+            # Safely convert main_account_id to int for mention comparison
+            try:
+                main_id_int = int(client.main_account_id)
+            except (ValueError, TypeError):
+                main_id_int = None
+
+            if main_id_int is not None and message.embeds:
                 embed_ma = message.embeds[0]
                 if is_character_embed(embed_ma):
-                    c_name_ma = embed_ma.author.name.lower() if embed_ma.author else ""
-                    desc_ma = embed_ma.description or ""
-                    series_ma = desc_ma.splitlines()[0].lower() if desc_ma else ""
-                    is_wl_ma = (c_name_ma in client.wishlist) or \
-                               (client.series_snipe_mode and any(s in series_ma for s in client.series_wishlist)) or \
-                               is_wished_by_self(message, client.user.id)
-                    is_avoided_ma = c_name_ma in client.avoid_list
-                    if is_wl_ma and not is_avoided_ma and has_claim_option(message, embed_ma, client.claim_emojis):
-                        if is_character_snipe_allowed(is_external_snipe=True):
-                            log_function(f"[{client.muda_name}] Main account rolled wishlist target: {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
-                            # Bypass standard snipe delays for main account syncing
-                            await asyncio.sleep(0.1)
-                            if await claim_character(client, message.channel, message, is_snipe=True):
-                                return
+                    # Signal 1: The roll was triggered by the main account (slash command interaction)
+                    is_main_roll = (message.interaction and str(message.interaction.user.id) == client.main_account_id)
+                    # Signal 2: Mudae says "Wished by @MainAccount" in the message content
+                    main_is_wished = is_wished_by_self(message, main_id_int)
+
+                    if is_main_roll or main_is_wished:
+                        c_name_ma = embed_ma.author.name.lower() if embed_ma.author else ""
+                        is_avoided_ma = c_name_ma in client.avoid_list
+
+                        if not is_avoided_ma and has_claim_option(message, embed_ma, client.claim_emojis):
+                            if is_character_snipe_allowed(is_external_snipe=True):
+                                trigger = "rolled by Main" if is_main_roll else "wished by Main"
+                                log_function(f"[{client.muda_name}] Main Account Sync ({trigger}): {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
+                                # Bypass standard snipe delays for main account syncing
+                                await asyncio.sleep(0.1)
+                                if await claim_character(client, message.channel, message, is_snipe=True):
+                                    return
 
         if not message.embeds: return
         embed = message.embeds[0]
