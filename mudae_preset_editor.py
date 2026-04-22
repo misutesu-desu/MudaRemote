@@ -45,6 +45,11 @@ DEFAULTS = {
     "auto_rolls_in_key_mode": False,
     "panic_roll_minutes": 5,
     "lurker_mode": False,
+    "max_dk_power": 100,
+    "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
+    "main_account_id": "",
+    "scheduled_roll_times": [],
+    "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
 }
 
 # Boolean settings with their display names and defaults
@@ -113,6 +118,12 @@ DEFAULT_CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥�
 DEFAULT_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 DEFAULT_CHAOS_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 DEFAULT_SPHERE_PERK_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+
+# [NEW] Task 5: Default randomized claim reaction emojis
+DEFAULT_RANDOMIZED_CLAIM_REACTIONS = ['💖', '💗', '💘', '❤️', '👍', '🔥']
+
+# [NEW] Task 8: Default kakera priority order
+DEFAULT_KAKERA_PRIORITY_ORDER = ['kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera']
 
 
 class PresetEditor:
@@ -385,6 +396,14 @@ class PresetEditor:
         self.add_optional_list_field(emoji_frame, "sphere_perk_emojis", "Sphere Perk Emojis", 
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
         
+        # [NEW] Task 5: Randomized claim reaction emojis
+        self.add_list_field(emoji_frame, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
+        
+        # [NEW] Task 8: Customizable kakera/sphere priority map
+        self.add_list_field(emoji_frame, "kakera_priority_order", "Kakera Priority Order (Highest priority first, comma-separated)")
+        ttk.Label(emoji_frame, text="Default: kakeraP, kakeraC, kakeraL, kakeraW, kakeraR, kakeraO, kakeraD, kakeraY, kakeraG, kakeraT, kakera",
+                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        
         # --- Anti-Detection ---
         human_frame = ttk.LabelFrame(frame, text="Anti-Ban (Stealth Mode)", padding=15)
         human_frame.pack(fill=tk.X, pady=(0, 15))
@@ -421,9 +440,24 @@ class PresetEditor:
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_checkbox(power_frame, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
+        # [NEW] Task 1: Max DK Power setting
+        self.add_number_field(power_frame, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
         self.add_checkbox(power_frame, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
         self.add_text_field(power_frame, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
         self.add_checkbox(power_frame, "debug_mode", "Expert Logs (Show technical data for every single roll)")
+        
+        # [NEW] Task 6: Main account ID for wishlist syncing
+        self.add_text_field(power_frame, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
+        
+        # [NEW] Task 7: Scheduled roll times
+        sched_row = ttk.Frame(power_frame)
+        sched_row.pack(fill=tk.X, pady=5)
+        ttk.Label(sched_row, text="Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):").pack(anchor=tk.W)
+        ttk.Label(sched_row, text="If set, the bot will roll at these specific times instead of interval loops. Respects humanization.",
+                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        sched_entry = ttk.Entry(sched_row)
+        sched_entry.pack(fill=tk.X)
+        self.widgets["scheduled_roll_times"] = sched_entry
         
         # --- Action Buttons ---
         btn_frame = ttk.Frame(frame)
@@ -523,13 +557,15 @@ class PresetEditor:
         self.title_label.config(text=f"Editing: {preset_name}")
         
         # Populate text/number fields
+        # [NEW] Include max_dk_power and main_account_id in text/number population
         for key in ["token", "prefix", "mudae_prefix", "channel_id", "roll_command", 
                     "min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit", "panic_roll_minutes"]:
+                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                    "main_account_id"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -555,7 +591,9 @@ class PresetEditor:
                     var.set(data.get(key, default))
         
         # Populate list fields
-        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets"]:
+        # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
+        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
+                    "randomized_claim_reactions", "kakera_priority_order"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -617,6 +655,13 @@ class PresetEditor:
                 thresh_str = ", ".join([f"{k}:{v}" for k, v in thresholds.items()])
                 self.widgets["kakera_power_thresholds"].insert(0, thresh_str)
         
+        # [NEW] Task 7: Populate scheduled roll times
+        sched_val = data.get("scheduled_roll_times", [])
+        if "scheduled_roll_times" in self.widgets:
+            self.widgets["scheduled_roll_times"].delete(0, tk.END)
+            if isinstance(sched_val, list) and sched_val:
+                self.widgets["scheduled_roll_times"].insert(0, ", ".join(sched_val))
+        
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
             if self.preset_listbox.get(i) == preset_name:
@@ -633,7 +678,8 @@ class PresetEditor:
         data = {}
         
         # Collect text fields
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "roll_command"]:
+        # [NEW] Include main_account_id in text fields collection
+        for key in ["token", "prefix", "mudae_prefix", "channel_id", "roll_command", "main_account_id"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -647,12 +693,13 @@ class PresetEditor:
                         data[key] = value
         
         # Collect numeric fields
+        # [NEW] Include max_dk_power in numeric fields
         for key in ["min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit", "panic_roll_minutes"]:
+                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -661,7 +708,7 @@ class PresetEditor:
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit", 
-                                   "auto_rolls_limit", "panic_roll_minutes"]:
+                                   "auto_rolls_limit", "panic_roll_minutes", "max_dk_power"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
@@ -681,7 +728,9 @@ class PresetEditor:
                 data[key] = self.widgets[key].get()
         
         # Collect list fields
-        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets"]:
+        # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
+        for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
+                    "randomized_claim_reactions", "kakera_priority_order"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -747,6 +796,14 @@ class PresetEditor:
                         data["kakera_power_thresholds"][k] = v_int
                     except ValueError:
                         pass
+        
+        # [NEW] Task 7: Collect scheduled roll times
+        if "scheduled_roll_times" in self.widgets:
+            sched_text = self.widgets["scheduled_roll_times"].get().strip()
+            if sched_text:
+                data["scheduled_roll_times"] = [t.strip() for t in sched_text.split(",") if t.strip()]
+            else:
+                data["scheduled_roll_times"] = []
         
         # Update and save
         self.presets[self.current_preset] = data

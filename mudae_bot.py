@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "3.7.7"
+CURRENT_VERSION = "4.0.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -277,7 +277,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
             kakera_power_thresholds, debug_mode, auto_mk_enabled_preset,
             auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode,
-            panic_roll_minutes_preset, lurker_mode_preset):
+            panic_roll_minutes_preset, lurker_mode_preset,
+            max_dk_power_preset=100,  # [NEW] Task 1: Configurable max DK power cap
+            randomized_claim_reactions_preset=None,  # [NEW] Task 5: Randomized claim reaction emojis
+            main_account_id_preset="",  # [NEW] Task 6: Main account wishlist syncing
+            scheduled_roll_times_preset=None,  # [NEW] Task 7: Scheduled roll times
+            kakera_priority_order_preset=None):  # [NEW] Task 8: Customizable kakera priority
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -336,6 +341,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.dk_power_management = dk_power_management
     client.skip_initial_commands = skip_initial_commands
     client.dk_stock_count = 0 
+    client.max_dk_power = max_dk_power_preset  # [NEW] Task 1: Max DK power cap
+    client.maintenance_until = None  # [NEW] Task 3: Mudae maintenance cooldown timestamp
     client.only_chaos = only_chaos
 
     # Auto $us Configuration
@@ -354,6 +361,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.rolls_used_this_interval_utc = None
     client.panic_roll_minutes = panic_roll_minutes_preset if panic_roll_minutes_preset is not None else 5
     client.lurker_mode = lurker_mode_preset
+
+    # [NEW] Task 5: Randomized claim reaction emojis
+    client.randomized_claim_reactions = randomized_claim_reactions_preset if randomized_claim_reactions_preset else ["💖", "💗", "💘", "❤️", "👍", "🔥"]
+
+    # [NEW] Task 6: Main account wishlist syncing (Alt Account Targeter)
+    client.main_account_id = str(main_account_id_preset).strip() if main_account_id_preset else ""
+
+    # [NEW] Task 7: Scheduled roll times
+    client.scheduled_roll_times = scheduled_roll_times_preset if scheduled_roll_times_preset else []
+
+    # [NEW] Task 8: Customizable kakera priority order
+    client.kakera_priority_order = kakera_priority_order_preset if kakera_priority_order_preset else [
+        'kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera'
+    ]
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -525,10 +546,91 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         elapsed = (now - client.last_dk_power_update_utc).total_seconds()
         regenerated = int(elapsed / 180) # 1% every 3 minutes
         if regenerated > 0:
-            power = min(100, power + regenerated)
+            # [FIX] Task 1: Use configurable max_dk_power instead of hardcoded 100
+            power = min(client.max_dk_power, power + regenerated)
             client.current_dk_power = power
             client.last_dk_power_update_utc += datetime.timedelta(minutes=3 * regenerated)
         return power
+
+    # [NEW] Task 3: Check if bot is under maintenance pause
+    # [FIX] Post-maintenance: respect humanization settings and expect channel inactivity
+    def is_maintenance_active() -> bool:
+        if client.maintenance_until is None:
+            return False
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if now_utc >= client.maintenance_until:
+            # Phase 1: Apply humanized jitter before resuming (one-time extension)
+            if client.humanization_enabled and not getattr(client, '_maintenance_jitter_applied', False):
+                jitter_seconds = random.uniform(0, client.humanization_window_minutes * 60)
+                client.maintenance_until = now_utc + datetime.timedelta(seconds=jitter_seconds)
+                client._maintenance_jitter_applied = True
+                log_function(f"[{client.muda_name}] Maintenance ended. Humanized re-entry: waiting {jitter_seconds/60:.1f}m before resuming.", preset_name, "RESET")
+                return True  # Still paused during jitter phase
+
+            # Phase 2: Jitter complete (or humanization disabled) — clear maintenance state
+            client.maintenance_until = None
+            client._maintenance_jitter_applied = False
+            # Set flag so on_message waits for channel inactivity before processing
+            client._post_maintenance_inactivity_needed = True
+            client._post_maint_last_msg_utc = None
+            log_function(f"[{client.muda_name}] Maintenance period ended. Waiting for channel inactivity before resuming.", preset_name, "INFO")
+            return False
+        return True
+
+    # [NEW] Task 7: Scheduled roll times task
+    async def scheduled_roll_task(channel):
+        """Waits for specific scheduled times to execute rolls instead of interval loops."""
+        log_function(f"[{client.muda_name}] Scheduled roll mode active. Times: {client.scheduled_roll_times}", preset_name, "INFO")
+        while not client.is_closed():
+            try:
+                now = datetime.datetime.now()
+                next_time = None
+                min_wait = float('inf')
+
+                for time_str in client.scheduled_roll_times:
+                    try:
+                        parts = time_str.strip().split(':')
+                        target_hour = int(parts[0])
+                        target_minute = int(parts[1]) if len(parts) > 1 else 0
+                        target = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+                        if target <= now:
+                            target += datetime.timedelta(days=1)
+                        wait = (target - now).total_seconds()
+                        if wait < min_wait:
+                            min_wait = wait
+                            next_time = target
+                    except (ValueError, IndexError):
+                        continue
+
+                if next_time is None:
+                    await asyncio.sleep(60)
+                    continue
+
+                log_function(f"[{client.muda_name}] Next scheduled roll at {next_time.strftime('%H:%M')} (in {min_wait/60:.1f}m)", preset_name, "RESET")
+                await asyncio.sleep(min_wait)
+
+                # [NEW] Task 7 CRITICAL: Respect humanization setting
+                if client.humanization_enabled and client.humanization_window_minutes > 0:
+                    jitter = random.uniform(0, client.humanization_window_minutes * 60)
+                    log_function(f"[{client.muda_name}] Humanized delay: waiting {jitter/60:.1f}m before scheduled roll.", preset_name, "INFO")
+                    await asyncio.sleep(jitter)
+
+                # Skip if maintenance is active
+                if is_maintenance_active():
+                    continue
+
+                # Skip if inactive hour
+                if is_inactive_hour():
+                    continue
+
+                log_function(f"[{client.muda_name}] Executing scheduled roll.", preset_name, "INFO")
+                await check_status(client, channel, client.mudae_prefix)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log_function(f"[{client.muda_name}] Scheduled roll error: {e}", preset_name, "ERROR")
+                await asyncio.sleep(60)
 
 
     def _refresh_session_id():
@@ -777,7 +879,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Starting in {start_delay}s...", preset_name, "INFO")
         await asyncio.sleep(start_delay)
 
-        # Wait out inactive hours before starting
         if is_inactive_hour():
             wait_s = seconds_until_active()
             if client.humanization_enabled:
@@ -791,18 +892,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await check_status(client, channel, client.mudae_prefix)
                 else:
                     await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
-                    if not client.dk_power_management:
-                        # DK and Daily are now handled automatically via $tu status parsing
-                        pass 
                     await check_status(client, channel, client.mudae_prefix)
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
+
+            if client.scheduled_roll_times:
+                client.loop.create_task(scheduled_roll_task(channel))
         else:
-            # Snipe only logic: Start a background loop to periodically check $tu
             client.loop.create_task(snipe_only_status_loop(client, channel))
 
     async def handle_dk_power_management(client, channel, tu_content):
-        # Manage $dk usage. Check if power is low and we have stock.
         content_lower = tu_content.lower()
         
         # Check stock
@@ -843,8 +942,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await channel.send(f"{client.mudae_prefix}dk")
                 await asyncio.sleep(1.5) 
                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
-                # $dk restores power to 100% — update local tracking
-                client.current_dk_power = 100
+                # [FIX] Task 1: $dk restores to max_dk_power instead of hardcoded 100
+                client.current_dk_power = client.max_dk_power
                 client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
             else:
                 pass
@@ -1833,23 +1932,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                              if emoji_name in target_list or emoji_name.rstrip('2') in target_list:
                                  all_raw_buttons.append(btn)
 
-                # Priority Map (User Request: C > L > W > R > O > D > Y > G > T > kakera)
-                # Spheres and KakeraP get max priority (999) as they are usually free/special.
-                prio_map = {
-                    'kakeraP': 999,
-                    'kakeraC': 100,
-                    'kakeraL': 90,
-                    'kakeraW': 80,
-                    'kakeraR': 70,
-                    'kakeraO': 60,
-                    'kakeraD': 50,
-                    'kakeraY': 40,
-                    'kakeraG': 35,
-                    'kakeraT': 30,
-                    'kakera': 20
-                }
-                # Ensure Spheres are top priority
+                # [NEW] Task 8: Dynamic priority map from configurable kakera_priority_order
+                # Higher index in the list = higher priority. Spheres always get max priority.
+                prio_map = {}
+                priority_list = list(reversed(client.kakera_priority_order))
+                for idx, kakera_name in enumerate(priority_list):
+                    prio_map[kakera_name.strip()] = (idx + 1) * 10
+                # Ensure Spheres are top priority (999) regardless of user config
                 for s in client.sphere_emojis: prio_map[s] = 999
+                # Ensure kakeraP is always top priority if not already
+                if 'kakeraP' not in prio_map or prio_map['kakeraP'] < 999:
+                    prio_map['kakeraP'] = 999
                 
                 # Sort descending by priority value
                 all_raw_buttons.sort(key=lambda b: prio_map.get(b.emoji.name.rstrip('2') if hasattr(b.emoji, 'name') and b.emoji.name else "", 0), reverse=True)
@@ -1878,7 +1971,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         has_sphere_perk = "💎/2" in desc_text
                         
                         calc_cost = base_cost
-                        if chaos_count > 0:
+                        # [FIX] Task 2: Only apply chaos key discount if we are the roller (not sniping)
+                        if chaos_count > 0 and not is_snipe:
                             calc_cost = int(calc_cost / 2)
                         if has_sphere_perk:
                             calc_cost = int(calc_cost / 2)
@@ -1936,8 +2030,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_heart = has_emoji and btn.emoji.name in client.claim_emojis
                     
                     if is_free_claim or is_heart:
-                        try:
-                            await btn.click()
+                        # [NEW] Task 4: Retry mechanism for button clicks (up to 3 attempts)
+                        claim_success = False
+                        for attempt in range(3):
+                            try:
+                                await btn.click()
+                                claim_success = True
+                                break
+                            except Exception as e:
+                                if attempt < 2:
+                                    log_function(f"[{client.muda_name}] Claim click failed (attempt {attempt+1}/3): {e}. Retrying...", client.preset_name, "WARN")
+                                    await asyncio.sleep(0.5)
+                                else:
+                                    log_function(f"[{client.muda_name}] Claim click failed after 3 attempts: {e}", client.preset_name, "ERROR")
+                        
+                        if claim_success:
                             log_type = "CLAIM" if not is_free_claim else "INFO"
                             log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str}", client.preset_name, log_type)
                             clicked_claim = True
@@ -1947,14 +2054,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             # For regular rolling (not snipes), is_snipe is False -> "Claim Verification"
                             await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
                             return True
-                        except Exception:
-                            continue
         
         # Reaction fallback
         if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
             try:
-                await msg.add_reaction("💖")
-                log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction)", client.preset_name, "CLAIM")
+                # [NEW] Task 5: Use randomized claim reaction emoji instead of hardcoded heart
+                reaction_emoji = random.choice(client.randomized_claim_reactions)
+                await msg.add_reaction(reaction_emoji)
+                log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction: {reaction_emoji})", client.preset_name, "CLAIM")
                 # Reaction fallback
                 await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
                 return True
@@ -2031,6 +2138,47 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.rolling_enabled: await client.process_commands(message)
             return
 
+        # [NEW] Task 3: Mudae Maintenance Auto-Pause detection
+        if message.content and "Command under maintenance!" in message.content:
+            maint_match = re.search(r"For (\d+) minutes", message.content)
+            if maint_match:
+                maint_minutes = int(maint_match.group(1))
+                client.maintenance_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=maint_minutes)
+                log_function(f"[{client.muda_name}] Mudae is under maintenance! Pausing all operations for {maint_minutes} minutes.", preset_name, "ERROR")
+            else:
+                # Fallback: pause for 10 minutes if we can't parse duration
+                client.maintenance_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
+                log_function(f"[{client.muda_name}] Mudae is under maintenance! Pausing all operations for 10 minutes (fallback).", preset_name, "ERROR")
+            return
+
+        # [NEW] Task 3: Skip all processing if maintenance is active
+        if is_maintenance_active():
+            return
+
+        # [FIX] Post-maintenance inactivity gate: wait for channel to go quiet before resuming
+        # Mirrors the same inactivity check used in humanized_wait_and_proceed.
+        if getattr(client, '_post_maintenance_inactivity_needed', False):
+            if client.humanization_enabled and client.humanization_inactivity_seconds > 0:
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                last_seen = getattr(client, '_post_maint_last_msg_utc', None)
+                client._post_maint_last_msg_utc = now_utc
+
+                if last_seen is None:
+                    # First message after maintenance — start tracking, skip this one
+                    return
+
+                gap = (now_utc - last_seen).total_seconds()
+                if gap < client.humanization_inactivity_seconds:
+                    # Channel is still active, keep waiting silently
+                    return
+
+                # Channel has been quiet long enough — resume operations
+                log_function(f"[{client.muda_name}] Post-maintenance: Channel inactive for {gap:.0f}s. Resuming operations.", preset_name, "INFO")
+
+            # Clear the flag (either inactivity passed, or humanization is off)
+            client._post_maintenance_inactivity_needed = False
+            client._post_maint_last_msg_utc = None
+
         # --- BIRTHDAY EVENT CANDLE DETECTION ---
         if message.components:
             for comp in message.components:
@@ -2046,6 +2194,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Suppress all activity during inactive hours
         if is_inactive_hour():
             return
+
+        # [NEW] Task 6: Main Account Wishlist Syncing (Alt Account Targeter)
+        # If a roll comes from the main account, treat it as high-priority claim for wishlist characters
+        if client.main_account_id and message.interaction and str(message.interaction.user.id) == client.main_account_id:
+            if message.embeds:
+                embed_ma = message.embeds[0]
+                if is_character_embed(embed_ma):
+                    c_name_ma = embed_ma.author.name.lower() if embed_ma.author else ""
+                    desc_ma = embed_ma.description or ""
+                    series_ma = desc_ma.splitlines()[0].lower() if desc_ma else ""
+                    is_wl_ma = (c_name_ma in client.wishlist) or \
+                               (client.series_snipe_mode and any(s in series_ma for s in client.series_wishlist)) or \
+                               is_wished_by_self(message, client.user.id)
+                    is_avoided_ma = c_name_ma in client.avoid_list
+                    if is_wl_ma and not is_avoided_ma and has_claim_option(message, embed_ma, client.claim_emojis):
+                        if is_character_snipe_allowed(is_external_snipe=True):
+                            log_function(f"[{client.muda_name}] Main account rolled wishlist target: {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
+                            # Bypass standard snipe delays for main account syncing
+                            await asyncio.sleep(0.1)
+                            if await claim_character(client, message.channel, message, is_snipe=True):
+                                return
+
         if not message.embeds: return
         embed = message.embeds[0]
 
@@ -2292,7 +2462,13 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_rolls_limit", 0),
                 preset_data.get("auto_rolls_in_key_mode", False),
                 preset_data.get("panic_roll_minutes", 5),
-                preset_data.get("lurker_mode", False)
+                preset_data.get("lurker_mode", False),
+                # [NEW] Task 1-8: New preset parameters with backwards-compatible defaults
+                preset_data.get("max_dk_power", 100),
+                preset_data.get("randomized_claim_reactions", None),
+                preset_data.get("main_account_id", ""),
+                preset_data.get("scheduled_roll_times", None),
+                preset_data.get("kakera_priority_order", None)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
