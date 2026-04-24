@@ -45,6 +45,8 @@ DEFAULTS = {
     "auto_rolls_in_key_mode": False,
     "panic_roll_minutes": 5,
     "lurker_mode": False,
+    "auto_rt_after_claim": False,
+    "auto_dk_enabled": True,
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
     "main_account_id": "",
@@ -64,7 +66,9 @@ BOOL_SETTINGS = [
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
     ("only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)", False),
+    ("mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)", False),
     ("humanization_enabled", "Anti-Ban Stealth (Randomizes timing to look like a real human)", False),
+    ("auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)", True),
     ("dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)", False),
     ("skip_initial_commands", "Fast Start (Skip initial setup commands on startup)", False),
     ("time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)", False),
@@ -78,6 +82,7 @@ BOOL_SETTINGS = [
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
+    ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -345,6 +350,7 @@ class PresetEditor:
         self.add_checkbox(claim_frame, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
         self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
+        self.add_checkbox(claim_frame, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
         
         # --- Sniping ---
         snipe_frame = ttk.LabelFrame(frame, text="Sniping & Stealing", padding=15)
@@ -366,6 +372,7 @@ class PresetEditor:
         self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
         self.add_number_field(snipe_frame, "kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75)
         self.add_checkbox(snipe_frame, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
+        self.add_checkbox(snipe_frame, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
         
         # $rt settings
         self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
@@ -439,6 +446,7 @@ class PresetEditor:
         power_frame = ttk.LabelFrame(frame, text="Power & Expert Settings", padding=15)
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
+        self.add_checkbox(power_frame, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
         self.add_checkbox(power_frame, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
@@ -582,7 +590,8 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
-                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode"]:
+                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
+                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -723,7 +732,8 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
-                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode"]:
+                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
+                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -868,6 +878,9 @@ class PresetEditor:
                 "auto_rolls_limit": 0,
                 "auto_rolls_in_key_mode": False,
                 "auto_mk_enabled": True,
+                "auto_rt_after_claim": False,
+                "mk_only": False,
+                "auto_dk_enabled": True,
             }
             
             self.refresh_preset_list()
