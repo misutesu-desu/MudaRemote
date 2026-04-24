@@ -1,10 +1,11 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — The #1 Mudae Bot for Discord</h1>
+  <h1 align="center">⚡ MudaRemote — The Best Mudae Bot for Discord</h1>
   <p align="center">
-    <strong>Advanced Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
+    <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    The most powerful open-source <strong>Mudae bot</strong> automation engine. Auto roll, auto claim, auto kakera, character sniping,<br>multi-account sync, anti-ban stealth, and a full graphical UI — all in one <strong>Mudae script</strong>.
+    A smart <strong>Mudae bot</strong> that plays Mudae for you.<br>
+    It rolls, claims characters, clicks kakera, and looks like a real person — so you don't get banned.
   </p>
 </p>
 
@@ -27,208 +28,241 @@
 
 ---
 
-## 🔥 What is MudaRemote?
+## ❓ What Does This Do?
 
-**MudaRemote** is the most advanced **Mudae bot** automation tool for Discord. Unlike basic **Mudae macros** or scripts that blindly spam roll commands, MudaRemote acts as a full **Mudae auto claim** and **Mudae auto kakera** engine — it parses `$tu` responses in real-time, tracks your claim/roll/kakera cooldowns, detects character values from embeds, and executes humanized actions that mimic a real player.
+**MudaRemote** is a **Mudae bot** — a program that plays the Mudae game on Discord **for you**, automatically.
 
-Whether you need a **Discord Mudae sniper** to steal high-value characters from other players, **auto roll Mudae** to execute your rolls at the optimal time, or **Mudae multi-account sync** to coordinate wishlists across alts — MudaRemote does it all through a beautiful **Tkinter GUI** with zero JSON editing required.
+Here is what it can do:
 
-> **⚠️ IMPORTANT DISCLAIMER:** MudaRemote is a **self-bot** tool. Using self-bots **violates Discord's Terms of Service** and can result in a **permanent account ban**. This project is provided for **educational purposes only**. The developers are not responsible for any consequences resulting from the use of this software. **Use entirely at your own risk.**
+- 🎲 **Auto roll Mudae** — It sends roll commands (`$wa`, `$ha`, etc.) for you.
+- 💍 **Mudae auto claim** — It sees a good character? It claims it. Instantly.
+- 💎 **Mudae auto kakera** — It clicks the kakera crystals on rolls to earn you money.
+- 🎯 **Discord Mudae sniper** — Someone else rolls a character you want? The bot steals it.
+- 🤖 **Mudae slash commands bot** — It can use `/wa` instead of `$wa` for a 10% kakera bonus.
+- 👥 **Mudae multi-account sync** — You have alt accounts? They can work together.
+- 🛡️ **Anti-ban stealth** — It acts like a human so Discord doesn't ban you.
+- 🖥️ **Easy GUI** — No code editing. Just click buttons to set everything up.
+
+> **⚠️ WARNING:** This is a **self-bot**. Self-bots are **against Discord's rules**. You **can get banned**. This is for **learning only**. If you use it, that is **your choice and your risk**. We are not responsible.
 
 ---
 
-## 🏆 Why MudaRemote? Feature Comparison
+## 🏆 Why Is This Better Than Other Mudae Scripts?
 
-Stop using outdated 2021-era **Mudae scripts**. Here's how MudaRemote compares:
-
-| Feature | Basic Mudae Bots / Scripts | **MudaRemote v4.0** |
+| | Old Mudae Bots | **MudaRemote** |
 | :--- | :---: | :---: |
-| **Roll Execution** | Text commands only | ✅ **Slash commands** (`/wa`, `/ha`, `/mx`) — 10% kakera bonus |
-| **Claim Intelligence** | Claim anything above threshold | ✅ **Wishlist + Series + Value + "Wished by" detection** |
-| **Timing Strategy** | Fixed interval timers | ✅ **Strategic Boundary Sync** — rolls finish exactly at claim reset |
-| **Anti-Ban Stealth** | Static delays | ✅ **Humanized jitter, inactivity watcher, sleep schedules, randomized reactions** |
-| **Multi-Account** | None | ✅ **Main account wishlist sync** across alts |
-| **Kakera Management** | Click everything | ✅ **Priority ordering, power tracking, DK management, chaos/sphere specialization** |
-| **Configuration** | Edit JSON manually | ✅ **Full dark-themed GUI** with one-click bot launch |
-| **Updates** | Manual re-download | ✅ **Built-in auto-updater** with backup + restart |
-| **Localization** | English only | ✅ **EN, PT-BR, ES, FR** — parses Mudae in all 4 languages |
-| **Recovery** | Crashes and stays dead | ✅ **Auto-restart, health monitor, maintenance detection** |
+| Rolling | Text only (`$wa`) | ✅ Slash commands (`/wa`) — 10% more kakera |
+| Claiming | Claims anything | ✅ Only claims what YOU want |
+| Timing | Same time every hour | ✅ Waits for the perfect moment |
+| Safety | Easy to detect | ✅ Acts like a real human |
+| Accounts | One account only | ✅ Many accounts at the same time |
+| Setup | Edit code files | ✅ Easy graphical window |
+| Updates | Download again | ✅ Updates itself automatically |
+| Language | English only | ✅ English, Portuguese, Spanish, French |
 
 ---
 
-## ✨ Core Features
+## ✨ All Features (Simple Explanation)
 
-### 🎯 Advanced Character Sniping & Mudae Auto Claim
+### 🎯 Claiming Characters — Mudae Auto Claim
 
-MudaRemote's **Mudae auto claim** system is built around a layered sniping ecosystem that handles every claiming scenario:
+The bot watches every roll (yours and other people's) and claims the best characters for you.
 
-| Snipe Mode | How It Works |
+| Feature | What It Does |
 | :--- | :--- |
-| **Wishlist Snipe** | Instantly claims any character on your wishlist — from your own rolls or other players' rolls. Detects Mudae's native `Wished by @You` tags. |
-| **Series Snipe** | Auto-claims ANY character from specific anime/manga/game series (substring matching: "naruto" catches "Naruto Shippūden"). |
-| **Value Snipe** | Steals characters above a kakera threshold from other players (e.g., snipe anything ≥ 500 ka). |
-| **Reactive Self-Claim** | Monitors your own rolls in real-time and **instantly** claims wishlist/high-value characters mid-roll — no waiting for the batch to finish. |
-| **Panic Claim** | When your claim timer is about to expire (< 60min), the bot drops all value restrictions and claims **anything** to avoid wasting a claim right. |
-| **Free Event Card Snipe** | Detects seasonal event cards (Christmas Art Contest, New Year's Contest) with the `"it's free!"` tag and claims them without consuming a claim right. |
-| **$rt Auto-Utilization** | Detects `$rt` availability and automatically uses it for high-priority targets. Configurable to only use on your own rolls (`rt_only_self_rolls`). |
-| **Auto $rt After Claim** | Instantly sends `$rt` after a successful claim to regain your claim right mid-roll (skips if reset < 60m or no rolls left). |
-
-**Avoid List (Anti-Wishlist):** Blacklist characters you never want to claim, even if they pass every other filter.
-
-**Smart Snipe Verifier:** After every claim attempt, the bot reads Mudae's marriage confirmation messages to determine if you won or if someone beat you — and updates internal state accordingly. No extra `$tu` needed.
+| **Wishlist Claim** | You make a list of characters you want. The bot claims them instantly when they appear. |
+| **Series Claim** | You like "Naruto"? The bot claims ANY character from Naruto. |
+| **Value Claim** | The bot can steal expensive characters (example: anything worth 500+ kakera) from other people. |
+| **Instant Self-Claim** | While the bot is rolling, if something good appears, it claims it RIGHT NOW — it doesn't wait. |
+| **Panic Claim** | Your claim timer is almost done? The bot claims ANYTHING so you don't waste your claim. |
+| **Free Event Cards** | Christmas or New Year event characters are free to claim. The bot grabs them automatically. |
+| **Auto $rt** | `$rt` gives you an extra claim. The bot uses it automatically when you need it. |
+| **Auto $rt After Claim** | After claiming someone, the bot instantly uses `$rt` so it can claim again. |
+| **Avoid List** | Characters you NEVER want? Put them on the avoid list. The bot will ignore them forever. |
+| **Claim Checker** | After trying to claim, the bot checks if it actually worked — no guessing. |
 
 ---
 
-### 💎 Mudae Auto Kakera & Smart Power Management
+### 💎 Kakera — Mudae Auto Kakera
 
-MudaRemote doesn't just click every kakera crystal blindly. It uses an intelligent **Mudae auto kakera** system with local power tracking:
+Kakera are the crystals (colored buttons) that appear on character rolls. Clicking them gives you money. The bot clicks them for you — but it's smart about it.
 
-- **🔋 DK Power Regeneration Tracking** — Locally simulates your kakera power regeneration (1% every 3 minutes), so the bot knows if it can afford to click before wasting a reaction.
-- **⚡ Auto $dk Management** — Automatically uses `$dk` when your power drops below the reaction cost. Respects `only_chaos` mode by halving the expected cost. Configurable max power cap (`max_dk_power`) for late-game users with upgrades (e.g., 320%).
-- **🎯 Configurable Kakera Priority Order** — Choose which kakera types to click first when multiple buttons appear. Default priority: `kakeraP > kakeraC > kakeraL > kakeraW > kakeraR > kakeraO > kakeraD > kakeraY`. Spheres are **always** top priority.
-- **💎 Sphere Specialist** — Detects `💎/2` sphere perks on characters and applies half-cost calculation. Spheres (`spP`, `spB`, `spT`, `spG`, etc.) consume **zero** power and are always clicked.
-- **🔑 Chaos Kakera Mode** — Targets characters with 10+ keys (Chaos Keys). Chaos reactions cost 50% less power. When `only_chaos` is enabled, normal kakera is skipped entirely (except free kakeraP and spheres).
-- **🔒 MK Kakera Only** — An exclusive mode that ignores ALL normal kakera buttons. Only clicks crystals generated by `$mk` rolls — perfect for conserving power when you have limited `$dk`.
-- **📊 Per-Kakera Power Thresholds** — Set minimum power requirements per emoji (e.g., `kakeraY: 80`, `chaos_kakeraY: 50`). The bot skips a kakera type if your power is below its custom threshold.
-- **🛡️ Double-Click Prevention** — Tracks every reacted message ID to ensure the bot never clicks the same kakera twice, preventing wasted power deductions.
-
----
-
-### 🤖 Intelligent Auto Roll Mudae Engine
-
-The rolling engine is where MudaRemote separates itself from every other **Mudae macro** or **auto roll Mudae** tool:
-
-- **📡 Real-Time `$tu` Parser** — Parses `$tu` responses multilinguistically (EN, PT-BR, ES, FR) to extract: rolls remaining, `$us` stacked rolls, `$mk` kakera rolls, claim status, `$rt` availability, next reset timers, kakera power, and `$dk` stock.
-- **⏱️ Strategic Boundary Sync** — The bot calculates how long your rolls will take (rolls × speed), then delays the start so your **last roll finishes exactly 1 second after your claim resets**. This gives you a fresh claim right for anything good from your own batch.
-- **🗓️ Scheduled Roll Times** — Instead of rolling on a fixed interval loop, set exact times (e.g., `14:00`, `18:30`) in 24-hour format. The bot sleeps until the scheduled time, applies humanization jitter, then executes. 
-- **🔄 Auto $us (Stacked Rolls)** — Automatically spends leftover rolls from the previous cycle. Configurable limit per hour, with auto-stop when a claim becomes available.
-- **🎰 Auto $mk (Kakera Rolls)** — Uses `$mk` rolls before normal rolls when power is sufficient. Finds and clicks the kakera on each `$mk` response automatically.
-- **📦 Auto $rolls (Daily Rolls)** — Automatically uses the `$rolls` command when normal rolls run out. Configurable limit and optional key-mode support.
-- **🎯 Bonus Roll Detection** — When clicking certain kakera grants bonus rolls (e.g., `+5 rolls this hour`), the bot detects the message and triggers a status sync to use them immediately.
-- **😈 Lurker Strategy** — The bot stays silent while others roll, sniping valuable characters. Then, in the final minutes before your claim expires (`panic_roll_minutes`), it dumps all rolls at once with `min_kakera = 0` to guarantee a claim.
-- **📡 Slash Command Engine** — Sends rolls as Discord interactions (`/wa`, `/ha`, `/mx`) instead of text commands. Never falls back to text mode — if slash fails, the bot stays silent (pure stealth). Includes automatic rate-limit handling and retry logic.
-
----
-
-### 🛡️ Ghost Mode / Anti-Ban Stealth Technology
-
-MudaRemote's stealth system is what makes it safe for long-term use. Every other **Mudae bot** or **Mudae script** exposes you with perfectly timed, robotic behavior. MudaRemote doesn't:
-
-| Stealth Feature | Description |
+| Feature | What It Does |
 | :--- | :--- |
-| **Humanized Timing Jitter** | After every reset, waits a random 0–N extra minutes (configurable window, default 40min) before the next cycle. No perfectly timed loops. |
-| **Channel Inactivity Watcher** | Before rolling, checks if the channel has been quiet for X seconds. If people are chatting, the bot waits — just like a real user would. |
-| **Randomized Claim Reactions** | When the bot falls back to emoji reactions (no buttons), it randomly selects from a configurable pool (`💖`, `💗`, `💘`, `❤️`, `👍`, `🔥`) instead of always using the same emoji. |
-| **Reactive Kakera Delay** | On your own rolls, applies a random humanized delay (default 0.3–1.0s) before clicking kakera — not instant, not fixed. |
-| **Configurable Sleep Schedule** | Set `inactive_hours` (e.g., `1-7, 23-6`) and the bot goes fully silent during those hours — like you're sleeping. Supports overnight ranges. |
-| **Post-Maintenance Inactivity Gate** | After Mudae maintenance ends, the bot doesn't immediately resume. It waits for the channel to go quiet first, then resumes with a humanized delay. |
-| **Key Limit Protection** | If you hit the 1,000-key daily cap, the bot auto-pauses for 1 hour + random jitter. No suspicious immediate retries. |
-| **Slash-Only Mode** | When slash commands are enabled, the bot **never** falls back to text commands — even if slash fails. Your account never sends `$wa` in chat. |
+| **Auto Click** | The bot clicks kakera buttons automatically on your rolls and other people's rolls. |
+| **Priority Order** | Multiple buttons? The bot clicks the best one first (you choose the order). |
+| **Power Tracking** | Clicking kakera costs power. The bot tracks your power so it never clicks when you can't afford it. |
+| **Auto $dk** | Power too low? The bot uses `$dk` to refill it. |
+| **Chaos Mode** | Characters with 10+ keys have "chaos kakera" — costs 50% less power. The bot can target only these. |
+| **MK Only Mode** | Only clicks kakera from `$mk` rolls. Ignores everything else — saves lots of power. |
+| **Sphere Detection** | Spheres cost ZERO power. The bot ALWAYS clicks them, no matter what. |
+| **Custom Thresholds** | You can say "only click kakeraY if I have 80%+ power." The bot listens. |
+| **No Double Clicks** | The bot remembers what it already clicked. It never wastes power clicking the same thing twice. |
 
 ---
 
-### 🔗 Mudae Multi-Account Sync
+### 🎲 Rolling — Auto Roll Mudae
 
-Run MudaRemote on multiple accounts simultaneously with **Mudae multi-account sync** — the `presets.json` system supports unlimited account profiles:
+The bot sends roll commands for you and does it at the smartest possible time.
 
-- **Main Account Wishlist Syncing** — Set `main_account_id` on your alt accounts. When the main account rolls a character flagged as `Wished by @MainAccount`, all configured alts instantly priority-claim it with near-zero delay — bypassing the normal sniping flow.
-- **Per-Account Profiles** — Each preset has its own token, channel, wishlist, series list, avoid list, roll settings, and stealth configuration.
-- **Simultaneous Execution** — Run all presets at once with `--all` or select multiple from the console menu. Each account runs in its own thread with auto-restart on crash.
-- **Staggered Starts** — Use `start_delay` to offset each account's boot time, preventing suspiciously synchronized activity.
-
----
-
-### 🎨 Graphical Preset Editor (Tkinter GUI)
-
-No more manual JSON editing. MudaRemote includes `mudae_preset_editor.py` — a full-featured **dark-themed GUI** built with Tkinter:
-
-- **Visual Configuration** — Every setting has a human-readable label, organized into logical sections: Connection, Rolling, Stacked Rolls, Claim Rules, Sniping & Stealing, Wishlists, Custom Emojis, Anti-Ban, and Power & Expert Settings.
-- **One-Click Bot Launch** — Save your preset and launch the bot directly from the editor. Opens in a new console window.
-- **Preset Management** — Create, duplicate, and delete presets. Each preset is a complete independent configuration.
-- **Windows Autostart** — Toggle `Start with Windows` to create a startup script that launches your preset automatically on boot.
-- **Smart Defaults** — Every field shows its default value. Boolean settings have clear descriptive labels (e.g., *"Lurker Strategy: Wait for others to roll while sniping — Panic dump at the end"*).
+| Feature | What It Does |
+| :--- | :--- |
+| **Auto Roll** | Sends `$wa`, `$ha`, `$ma`, or any roll command you want, automatically. |
+| **Slash Commands** | Uses `/wa` instead of `$wa` — this gives 10% more kakera and is harder to detect. |
+| **Smart Timing** | The bot waits and rolls so the last roll finishes RIGHT when your claim resets. This way you get a new claim for your best roll. |
+| **Scheduled Times** | You can say "roll at 14:00 and 18:30 every day" and it will. |
+| **Auto $us** | You have saved rolls? The bot uses them automatically. You can set a limit. |
+| **Auto $mk** | Uses `$mk` to get extra kakera rolls, and clicks the kakera that appears. |
+| **Auto $rolls** | Uses the `$rolls` command when you run out of rolls. |
+| **Bonus Roll Detection** | Sometimes clicking kakera gives you extra rolls. The bot detects this and uses them. |
+| **Lurker Mode** | The bot stays quiet while others roll (and steals their good characters). Then, in the last few minutes, it dumps all its rolls. |
+| **Key Farming** | Even without a claim, the bot keeps rolling so you earn keys for your next claim. |
 
 ---
 
-### 🔄 Auto-Update System
+### 🛡️ Stealth — Anti-Ban / Ghost Mode
 
-MudaRemote checks for updates on every launch:
+This is what makes MudaRemote safe. Other **Mudae macros** act like robots and get you banned. MudaRemote acts like a human.
 
-1. Fetches `version.json` from the GitHub repository.
-2. If a newer version exists, downloads the updated `mudae_bot.py` and `mudae_preset_editor.py`.
-3. Creates `.bak` backups of your current files.
-4. Replaces the scripts and **restarts in a new console window** — zero downtime.
+| Feature | What It Does |
+| :--- | :--- |
+| **Random Delays** | After each cycle, the bot waits a random amount of time (0–40 min). Not the same every time. |
+| **Channel Watcher** | People are chatting? The bot waits until the channel is quiet. Just like a real person would do. |
+| **Random Reactions** | When claiming with emoji reactions, it picks a random heart each time — not the same one. |
+| **Kakera Delay** | Before clicking kakera, it waits a small random time (0.3–1.0 seconds). Not instant, not slow. |
+| **Sleep Schedule** | Tell the bot "sleep from 1 AM to 7 AM." It goes fully silent — like you're sleeping. |
+| **Maintenance Detection** | Mudae goes down for maintenance? The bot detects it and pauses. When Mudae comes back, it waits for the channel to be quiet before starting again. |
+| **Key Limit Protection** | You hit 1,000 keys? The bot stops for 1 hour. No suspicious behavior. |
+| **Slash Only** | When using slash commands, the bot NEVER sends text commands. If `/wa` fails, it stays silent. |
 
 ---
 
-## 🛠️ Setup & Installation
+### 👥 Multi-Account — Mudae Multi-Account Sync
 
-### Prerequisites
+Run the bot on many accounts at the same time. Each account has its own settings.
 
-- **[Python 3.8+](https://www.python.org/downloads/)** (check `Add to PATH` during installation)
-- A Discord account token ([see below](#-how-to-get-your-discord-token))
+| Feature | What It Does |
+| :--- | :--- |
+| **Main Account Sync** | Your alt sees that the main account wants a character ("Wished by @Main"). The alt claims it INSTANTLY. |
+| **Separate Profiles** | Each account has its own token, channel, wishlist, and settings. |
+| **Run All at Once** | Use `--all` to start every account at the same time. |
+| **Staggered Start** | Each account starts at a different time so they don't look like bots. |
+| **Auto Restart** | If one account crashes, it restarts itself after 60 seconds. |
 
-### Step 1: Download MudaRemote
+---
+
+### 🖥️ Easy Setup Window (GUI)
+
+You don't need to edit any files. The program `mudae_preset_editor.py` gives you a nice window where you can:
+
+- ✅ Enter your token and channel ID
+- ✅ Turn features on/off with checkboxes
+- ✅ Add characters to your wishlist
+- ✅ Set your kakera rules
+- ✅ Save your settings with one click
+- ✅ Start the bot with one click
+- ✅ Copy presets (to make a new alt config fast)
+- ✅ Set "Start with Windows" so the bot runs when your PC turns on
+
+The window has a **dark theme** and is organized into sections: Connection, Rolling, Claiming, Sniping, Wishlists, Emojis, Anti-Ban, and Power Settings.
+
+---
+
+### 🔄 Auto Updates
+
+Every time you start the bot, it checks GitHub for a new version. If there is one:
+
+1. It downloads the new files
+2. It makes a backup of your old files (just in case)
+3. It replaces the files
+4. It restarts itself in a new window
+
+You never need to download anything manually.
+
+---
+
+## 🛠️ How to Install (Step by Step)
+
+### You Need
+
+- **[Python 3.8 or newer](https://www.python.org/downloads/)** — When installing, check ✅ **"Add to PATH"**
+- A Discord token ([see below](#-how-to-get-your-discord-token))
+
+### Step 1: Download the Bot
 
 ```bash
 git clone https://github.com/misutesu-desu/MudaRemote.git
 cd MudaRemote
 ```
 
-Or download the [latest release](https://github.com/misutesu-desu/MudaRemote/releases) as a ZIP.
+Or just click **"Code" → "Download ZIP"** on GitHub, then unzip it.
 
-### Step 2: Install Dependencies
+### Step 2: Install What the Bot Needs
+
+Open a terminal (Command Prompt or PowerShell) in the MudaRemote folder and type:
 
 ```bash
 pip install discord.py-self inquirer requests
 ```
 
-### Step 3: Launch the Preset Editor
+Wait for it to finish.
+
+### Step 3: Open the Settings Window
 
 ```bash
 python mudae_preset_editor.py
 ```
 
-This opens the graphical configuration tool. Fill in your **token**, **channel ID**, and desired settings, then click **💾 Save Changes**.
+A window will open. Fill in:
+1. Your **Discord token** (see below how to get it)
+2. The **channel ID** (right-click the channel → "Copy Channel ID")
+3. Your **roll command** (usually `wa`)
+4. Any other settings you want
+
+Then click **💾 Save Changes**.
 
 ### Step 4: Start the Bot
 
-**Option A — From the GUI:** Click **▶ Launch Bot** in the Preset Editor.
+**Easy way:** Click the **▶ Launch Bot** button in the settings window.
 
-**Option B — From the terminal:**
+**Or from the terminal:**
 ```bash
-# Run a specific preset
+# Start one preset
 python mudae_bot.py --preset "MyAccount"
 
-# Run all presets simultaneously
+# Start ALL presets at once
 python mudae_bot.py --all
 
-# Interactive menu
+# Open the menu and choose
 python mudae_bot.py
 ```
+
+**That's it. The bot is now running.** 🎉
 
 ---
 
 ## 🔑 How to Get Your Discord Token
 
-1. Open **Discord in your browser** (not the desktop app).
-2. Press `F12` → go to the **Console** tab.
-3. Paste this snippet and press Enter:
+1. Open **Discord in your web browser** (not the app)
+2. Press **F12** on your keyboard
+3. Click the **Console** tab
+4. Paste this and press Enter:
    ```javascript
    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
    ```
-4. Copy the token that appears. **Never share this token with anyone.**
+5. A long text will appear — that's your token
+6. **🚨 NEVER give this token to anyone. They can steal your account.**
 
 ---
 
-## ⚙️ Configuration Reference
+## ⚙️ Example Settings File
 
-All settings are managed through `presets.json` (or the GUI). Here's a sample configuration:
+Your settings are saved in `presets.json`. Here is an example:
 
 ```json
 {
-  "MainAccount": {
-    "token": "YOUR_TOKEN_HERE",
+  "MyAccount": {
+    "token": "your-token-here",
     "prefix": "/////////////",
     "mudae_prefix": "$",
     "channel_id": 123456789012345678,
@@ -237,145 +271,114 @@ All settings are managed through `presets.json` (or the GUI). Here's a sample co
     "use_slash_rolls": true,
     "min_kakera": 200,
     "humanization_enabled": true,
-    "humanization_window_minutes": 40,
-    "humanization_inactivity_seconds": 5,
-    "time_rolls_to_claim_reset": true,
     "wishlist": ["Makima", "Rem", "Zero Two"],
     "series_wishlist": ["Jujutsu Kaisen"],
-    "avoid_list": ["Character I Hate"],
+    "avoid_list": ["Character I Dont Want"],
     "snipe_mode": true,
-    "snipe_delay": 1.5,
-    "kakera_reaction_snipe_mode": true,
     "dk_power_management": true,
-    "auto_dk_enabled": true,
-    "key_mode": false,
     "claim_interval": 180,
     "roll_interval": 60,
-    "inactive_hours": [[1, 7]],
-    "auto_us_enabled": true,
-    "auto_us_limit": 20,
-    "auto_mk_enabled": true,
-    "lurker_mode": false,
-    "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY"]
+    "inactive_hours": [[1, 7]]
   }
 }
 ```
 
-📖 **Full configuration documentation →** [Configuration Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)
+But you **don't need to edit this file**. Just use the settings window (`python mudae_preset_editor.py`).
+
+📖 **Want to know every setting?** → [Full Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)
 
 ---
 
-## 📊 All Settings at a Glance
+## 📋 Quick Settings List
 
 <details>
-<summary><strong>🟢 Connection Settings</strong></summary>
+<summary>Click to see all settings</summary>
 
-| Setting | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `token` | string | — | Your Discord account token |
-| `channel_id` | int | — | Target channel ID for rolling |
-| `prefix` | string | `"/////////////"` | Self-bot command prefix |
-| `mudae_prefix` | string | `"$"` | Mudae's command prefix on your server |
-| `roll_command` | string | `"wa"` | Roll command (`wa`, `ha`, `ma`, `wg`, etc.) |
-| `autostart` | bool | `false` | Create Windows startup script |
+### Connection
+| Setting | What It Does | Default |
+| :--- | :--- | :---: |
+| `token` | Your Discord token | — |
+| `channel_id` | Which channel the bot works in | — |
+| `roll_command` | What roll to use (wa, ha, ma) | `wa` |
+| `mudae_prefix` | Mudae's prefix (usually $) | `$` |
 
-</details>
+### Rolling
+| Setting | What It Does | Default |
+| :--- | :--- | :---: |
+| `rolling` | Turn rolling on/off | `true` |
+| `use_slash_rolls` | Use /commands (10% more kakera) | `false` |
+| `roll_speed` | Seconds between rolls | `0.4` |
+| `time_rolls_to_claim_reset` | Smart timing mode | `false` |
+| `auto_us_enabled` | Use saved rolls ($us) | `false` |
+| `auto_mk_enabled` | Use extra kakera rolls ($mk) | `true` |
+| `auto_rolls_enabled` | Use daily rolls ($rolls) | `false` |
+| `scheduled_roll_times` | Roll at specific times | `[]` |
+| `lurker_mode` | Stay quiet, then panic roll | `false` |
 
-<details>
-<summary><strong>🎲 Rolling Options</strong></summary>
+### Claiming
+| Setting | What It Does | Default |
+| :--- | :--- | :---: |
+| `min_kakera` | Only claim if worth this much | `100` |
+| `snipe_mode` | Steal from others' rolls | `false` |
+| `series_snipe_mode` | Claim by anime/game series | `false` |
+| `kakera_snipe_mode` | Steal expensive characters | `false` |
+| `key_mode` | Keep rolling for keys | `false` |
+| `auto_rt_after_claim` | Use $rt after claiming | `false` |
+| `main_account_id` | Sync alts to main | `""` |
 
-| Setting | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `rolling` | bool | `true` | Master rolling switch. `false` = Ghost Mode (snipe only) |
-| `use_slash_rolls` | bool | `false` | Use slash commands for +10% kakera bonus |
-| `roll_speed` | float | `0.4` | Seconds between each roll (0.4 text, 2.0+ slash) |
-| `roll_interval` | int | `60` | Roll reset interval in minutes |
-| `time_rolls_to_claim_reset` | bool | `false` | Strategic Boundary Sync |
-| `scheduled_roll_times` | list | `[]` | Exact roll times (e.g., `["14:00", "18:30"]`) |
-| `auto_rolls_enabled` | bool | `false` | Auto `$rolls` when out of rolls |
-| `auto_us_enabled` | bool | `false` | Auto `$us` stacked rolls |
-| `auto_mk_enabled` | bool | `true` | Auto `$mk` kakera rolls |
+### Anti-Ban
+| Setting | What It Does | Default |
+| :--- | :--- | :---: |
+| `humanization_enabled` | Act like a human | `false` |
+| `humanization_window_minutes` | Random extra wait time | `40` |
+| `inactive_hours` | Sleep hours (e.g. [[1,7]]) | `[]` |
 
-</details>
-
-<details>
-<summary><strong>🎯 Claiming & Sniping</strong></summary>
-
-| Setting | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `min_kakera` | int | `100` | Minimum kakera value to auto-claim |
-| `snipe_mode` | bool | `false` | Snipe wishlist characters from other players |
-| `snipe_delay` | float | `2` | Seconds before sniping (humanization) |
-| `series_snipe_mode` | bool | `false` | Snipe by anime/game series name |
-| `kakera_snipe_mode` | bool | `false` | Value-based sniping above threshold |
-| `kakera_reaction_snipe_mode` | bool | `false` | Auto-click kakera on others' rolls |
-| `lurker_mode` | bool | `false` | Wait and snipe, panic-roll at end |
-| `key_mode` | bool | `false` | Keep rolling for keys without claim right |
-| `auto_rt_after_claim` | bool | `false` | Auto `$rt` after successful claim |
-| `main_account_id` | string | `""` | Alt-to-main wishlist sync ID |
-
-</details>
-
-<details>
-<summary><strong>🛡️ Anti-Ban & Stealth</strong></summary>
-
-| Setting | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `humanization_enabled` | bool | `false` | Enable all humanization features |
-| `humanization_window_minutes` | int | `40` | Random extra wait time after reset |
-| `humanization_inactivity_seconds` | int | `5` | Wait for channel silence before rolling |
-| `inactive_hours` | list | `[]` | Sleep schedule (e.g., `[[1, 7], [23, 6]]`) |
-| `reactive_kakera_delay_range` | list | `[0.3, 1.0]` | Random kakera click delay range |
-| `randomized_claim_reactions` | list | `["💖","💗","💘","❤️","👍","🔥"]` | Randomized fallback claim emojis |
-
-</details>
-
-<details>
-<summary><strong>⚡ Power & Advanced</strong></summary>
-
-| Setting | Type | Default | Description |
-| :--- | :---: | :---: | :--- |
-| `dk_power_management` | bool | `false` | Auto `$dk` when power is low |
-| `auto_dk_enabled` | bool | `true` | Master `$dk` toggle |
-| `max_dk_power` | int | `100` | Your max power cap (late-game: 320+) |
-| `only_chaos` | bool | `false` | Only click Chaos Kakera (50% power cost) |
-| `mk_only` | bool | `false` | Only click kakera from `$mk` rolls |
-| `kakera_priority_order` | list | `[see docs]` | Kakera click priority (highest first) |
-| `kakera_power_thresholds` | dict | `{}` | Per-emoji min power (e.g., `kakeraY: 80`) |
-| `debug_mode` | bool | `false` | Log every incoming roll |
+### Power
+| Setting | What It Does | Default |
+| :--- | :--- | :---: |
+| `dk_power_management` | Auto use $dk for power | `false` |
+| `auto_dk_enabled` | Master $dk switch | `true` |
+| `max_dk_power` | Your max power % | `100` |
+| `only_chaos` | Only click chaos kakera | `false` |
+| `mk_only` | Only click kakera from $mk | `false` |
 
 </details>
 
 ---
 
-## 🤝 Contributing
+## 🤝 Need Help?
 
-Contributions, issues, and feature requests are welcome!  
-Feel free to check the [Issues page](https://github.com/misutesu-desu/MudaRemote/issues).
+- 💬 Join our **[Discord Server](https://discord.gg/4WHXkDzuZx)**
+- 🐛 Found a bug? → [Open an Issue](https://github.com/misutesu-desu/MudaRemote/issues)
+- 💡 Have an idea? → [Open an Issue](https://github.com/misutesu-desu/MudaRemote/issues)
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+MIT License — you can use, copy, and change this project for free. See [LICENSE](LICENSE).
 
 ---
 
-## ⚠️ Disclaimer
+## ⚠️ Disclaimer (Read This!)
 
-> **This software is provided for educational and research purposes only.** MudaRemote automates interactions with the Mudae Discord bot through a self-bot, which **violates Discord's Terms of Service**. Using this tool may result in:
-> - **Permanent account suspension** by Discord
-> - **Server bans** from communities that prohibit automation
-> - Loss of all characters, kakera, and progress in Mudae
+> **This program is for learning only.**
 >
-> The authors of MudaRemote are **not responsible** for any bans, data loss, or other consequences arising from the use of this software. By using MudaRemote, you acknowledge and accept these risks entirely.
+> MudaRemote is a self-bot. Self-bots are **against Discord's rules**.
 >
-> **Do not use this on accounts you are not willing to lose.**
+> If you use this, you might get:
+> - ❌ **Banned from Discord** (forever)
+> - ❌ **Kicked from servers**
+> - ❌ **All your Mudae characters deleted**
+>
+> **We are NOT responsible** if anything bad happens to your account.
+>
+> **Only use this on accounts you don't care about losing.**
 
 ---
 
 <p align="center">
-  <strong>⭐ If MudaRemote helped you build your harem, give it a Star! It helps others discover the project. ⭐</strong>
+  <strong>⭐ Like this project? Click the Star button! It helps other people find it. ⭐</strong>
 </p>
 
 <p align="center">
