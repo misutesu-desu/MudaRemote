@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.2"
+CURRENT_VERSION = "4.0.3"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -282,7 +282,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             randomized_claim_reactions_preset=None,  # [NEW] Task 5: Randomized claim reaction emojis
             main_account_id_preset="",  # [NEW] Task 6: Main account wishlist syncing
             scheduled_roll_times_preset=None,  # [NEW] Task 7: Scheduled roll times
-            kakera_priority_order_preset=None):  # [NEW] Task 8: Customizable kakera priority
+            kakera_priority_order_preset=None,  # [NEW] Task 8: Customizable kakera priority
+            auto_rt_after_claim_preset=False,  # [NEW] Auto $rt after successful claim
+            mk_only_preset=False,  # [NEW] MK Kakera Only: ignore normal kakera, only click crystals from $mk rolls
+            auto_dk_enabled_preset=True):  # [NEW] Auto $dk: master toggle for all automatic $dk usage
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -338,12 +341,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.humanization_inactivity_seconds = humanization_inactivity_seconds
     
     # Power and key settings
+    client.auto_dk_enabled = auto_dk_enabled_preset  # [NEW] Master toggle for automatic $dk usage
     client.dk_power_management = dk_power_management
     client.skip_initial_commands = skip_initial_commands
     client.dk_stock_count = 0 
     client.max_dk_power = max_dk_power_preset  # [NEW] Task 1: Max DK power cap
     client.maintenance_until = None  # [NEW] Task 3: Mudae maintenance cooldown timestamp
     client.only_chaos = only_chaos
+    client.mk_only = mk_only_preset  # [NEW] MK Kakera Only mode
 
     # Auto $us Configuration
     client.auto_us_enabled = auto_us_enabled
@@ -361,6 +366,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.rolls_used_this_interval_utc = None
     client.panic_roll_minutes = panic_roll_minutes_preset if panic_roll_minutes_preset is not None else 5
     client.lurker_mode = lurker_mode_preset
+    client.auto_rt_after_claim = auto_rt_after_claim_preset  # [NEW] Auto $rt after successful claim
 
     # [NEW] Task 5: Randomized claim reaction emojis
     client.randomized_claim_reactions = randomized_claim_reactions_preset if randomized_claim_reactions_preset else ["💖", "💗", "💘", "❤️", "👍", "🔥"]
@@ -1083,7 +1089,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         c_lower = tu_message_content.lower()
 
-        if client.dk_power_management and client.rolling_enabled:
+        if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, channel, tu_message_content)
 
         # Automatic $daily and $dk handling
@@ -1095,8 +1101,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await channel.send(f"{client.mudae_prefix}daily")
                 await asyncio.sleep(2.0)
 
-            # Check if $dk is ready (only when power management is OFF)
-            if not client.dk_power_management:
+            # Check if $dk is ready (only when power management is OFF but auto_dk is ON)
+            if client.auto_dk_enabled and not client.dk_power_management:
                 if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
                     log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
                     await channel.send(f"{client.mudae_prefix}dk")
@@ -1514,7 +1520,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if mk_msg.author.id == TARGET_BOT_ID and mk_msg.embeds:
                             mk_embed = mk_msg.embeds[0]
                             if is_character_embed(mk_embed) and mk_msg.components:
-                                await claim_character(client, channel, mk_msg, is_kakera=True)
+                                await claim_character(client, channel, mk_msg, is_kakera=True, is_mk_roll=True)
                                 break
                     await asyncio.sleep(1)
                 
@@ -1666,6 +1672,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             else:
                 client.next_claim_reset_at_utc = (now_utc + interval_delta).replace(second=0, microsecond=0)
                 log_function(f"[{client.muda_name}] Next claim reset set to {client.next_claim_reset_at_utc.strftime('%H:%M')} (Local Est.)", client.preset_name, "INFO")
+
+            # --- AUTO $RT AFTER CLAIM ---
+            # Sends $rt immediately after a successful claim to regain claim right.
+            # Exclusions:
+            #   1. Feature must be enabled
+            #   2. Skip if the normal claim reset is less than 60 minutes away ("last hour")
+            #   3. Skip if the bot has 0 rolls left or has finished its rolling sequence
+            if client.auto_rt_after_claim:
+                # Exclusion 2: "Last hour" check — don't waste $rt if claim resets soon naturally
+                minutes_to_reset = None
+                if client.next_claim_reset_at_utc:
+                    minutes_to_reset = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+
+                if minutes_to_reset is not None and minutes_to_reset < 60:
+                    log_function(f"[{client.muda_name}] Auto $rt: SKIPPED — Claim resets in {minutes_to_reset:.0f}m (< 60m, not worth using $rt).", client.preset_name, "INFO")
+                # Exclusion 3: Skip if rolling is finished (0 rolls left or no longer actively rolling)
+                elif not client.is_actively_rolling:
+                    log_function(f"[{client.muda_name}] Auto $rt: SKIPPED — Rolling sequence finished (no rolls left).", client.preset_name, "INFO")
+                else:
+                    # All conditions met — send $rt
+                    log_function(f"[{client.muda_name}] Auto $rt: Sending $rt to regain claim right after claiming {char_name}.", client.preset_name, "CLAIM")
+                    try:
+                        await channel.send(f"{client.mudae_prefix}rt")
+                        # $rt has been consumed; update local state
+                        client.rt_available = False
+                        # After $rt succeeds, claim right is restored
+                        client.claim_right_available = True
+                        log_function(f"[{client.muda_name}] Auto $rt: Claim right restored. Continuing to roll.", client.preset_name, "CLAIM")
+                    except Exception as e:
+                        log_function(f"[{client.muda_name}] Auto $rt: Failed to send $rt — {e}", client.preset_name, "ERROR")
         elif winner_name:
             log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
         else:
@@ -1822,7 +1858,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass
 
 
-    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None):
+    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False):
         if not msg or not msg.embeds: return False
         
         # Global deduplication: Never process the same message ID twice for claims/kakera
@@ -1883,8 +1919,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera Claim Logic
         if is_kakera:
+            # [NEW] MK Kakera Only gate: If mk_only is enabled and this is NOT a $mk roll,
+            # completely skip all kakera buttons to save reaction power.
+            # $mk rolls (is_mk_roll=True) always bypass this gate unconditionally.
+            if client.mk_only and not is_mk_roll:
+                return False
+
             chaos_count = count_chaos_keys(embed)
-            if not is_snipe and client.only_chaos and chaos_count == 0:
+            # $mk rolls bypass the only_chaos check unconditionally
+            if not is_mk_roll and not is_snipe and client.only_chaos and chaos_count == 0:
                 # Still allow free kakera (kakeraP, spheres) even when only_chaos blocks normal reactions
                 has_free = msg.components and any(
                     hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis)
@@ -2014,6 +2057,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         
                         log_function(f"[{client.muda_name}] Kakera clicked: {char_name} [{name}] (Pw: {client.current_dk_power}%)", client.preset_name, "KAKERA")
                         clicked = True
+                        client._last_kakera_click_ts = time.time()  # Track for bonus roll detection
                         await asyncio.sleep(0.5)
                     except Exception:
                         pass
@@ -2222,6 +2266,32 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 await asyncio.sleep(0.1)
                                 if await claim_character(client, message.channel, message, is_snipe=True):
                                     return
+
+        # [NEW] Kakera Bonus Roll Detection
+        # When the bot clicks certain kakera (e.g. KakeraC/Chaos), Mudae may grant extra rolls
+        # as a plain text message. Detect and use them automatically.
+        # Example: "<:kakeraC:ID> **+5 rolls** this hour."
+        if message.content and not message.embeds and client.rolling_enabled:
+            bonus_roll_match = re.search(r"\+\**(\d+)\**\s*rolls?", message.content, re.IGNORECASE)
+            if bonus_roll_match:
+                # Guard: Only act if WE recently clicked a kakera (within 10 seconds)
+                # This prevents reacting to bonus messages from other users' kakera clicks
+                now_ts = time.time()
+                last_kakera_ts = getattr(client, '_last_kakera_click_ts', 0)
+                if (now_ts - last_kakera_ts) <= 10:
+                    bonus_count = int(bonus_roll_match.group(1))
+                    log_function(f"[{client.muda_name}] Gained +{bonus_count} extra rolls from Kakera! Checking status to use them...", preset_name, "KAKERA")
+                    
+                    async def _delayed_status_check():
+                        try:
+                            await asyncio.sleep(3)
+                            # Skip if we're actively rolling (rolls will finish and check_status runs anyway)
+                            if not client.is_actively_rolling:
+                                await check_status(client, message.channel, client.mudae_prefix)
+                        except Exception as e:
+                            log_function(f"[{client.muda_name}] Bonus roll status check failed: {e}", preset_name, "ERROR")
+                    
+                    client.loop.create_task(_delayed_status_check())
 
         if not message.embeds: return
         embed = message.embeds[0]
@@ -2475,7 +2545,10 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("randomized_claim_reactions", None),
                 preset_data.get("main_account_id", ""),
                 preset_data.get("scheduled_roll_times", None),
-                preset_data.get("kakera_priority_order", None)
+                preset_data.get("kakera_priority_order", None),
+                preset_data.get("auto_rt_after_claim", False),
+                preset_data.get("mk_only", False),
+                preset_data.get("auto_dk_enabled", True)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
