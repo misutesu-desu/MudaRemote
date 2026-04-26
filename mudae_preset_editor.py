@@ -20,6 +20,7 @@ DEFAULTS = {
     "prefix": "/////////////",
     "mudae_prefix": "$",
     "channel_id": "",
+    "command_channel_id": "",
     "roll_command": "wa",
     "min_kakera": 100,
     "delay_seconds": 0,
@@ -308,6 +309,7 @@ class PresetEditor:
         
         self.add_text_field(core_frame, "token", "Discord Account Token (REQUIRED: Your secret account key)", show="*")
         self.add_text_field(core_frame, "channel_id", "Discord Channel ID (Where the bot should roll)")
+        self.add_text_field(core_frame, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
         
         prefix_row = ttk.Frame(core_frame)
         prefix_row.pack(fill=tk.X, pady=5)
@@ -566,7 +568,8 @@ class PresetEditor:
         
         # Populate text/number fields
         # [NEW] Include max_dk_power and main_account_id in text/number population
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "roll_command", 
+        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id",
+                    "roll_command", 
                     "min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
@@ -688,12 +691,12 @@ class PresetEditor:
         
         # Collect text fields
         # [NEW] Include main_account_id in text fields collection
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "roll_command", "main_account_id"]:
+        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "roll_command", "main_account_id"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     # Special handling for channel_id
-                    if key == "channel_id":
+                    if key in ("channel_id", "command_channel_id"):
                         try:
                             data[key] = int(value)
                         except ValueError:
