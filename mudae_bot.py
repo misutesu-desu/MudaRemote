@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.3"
+CURRENT_VERSION = "4.0.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -285,7 +285,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_priority_order_preset=None,  # [NEW] Task 8: Customizable kakera priority
             auto_rt_after_claim_preset=False,  # [NEW] Auto $rt after successful claim
             mk_only_preset=False,  # [NEW] MK Kakera Only: ignore normal kakera, only click crystals from $mk rolls
-            auto_dk_enabled_preset=True):  # [NEW] Auto $dk: master toggle for all automatic $dk usage
+            auto_dk_enabled_preset=True,  # [NEW] Auto $dk: master toggle for all automatic $dk usage
+            command_channel_id_preset=""):  # [NEW] Command Channel: send $tu/$daily/$dk/$rolls here instead of roll channel
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -309,6 +310,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.muda_name = BOT_NAME
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
+    client.command_channel_id_preset = str(command_channel_id_preset).strip() if command_channel_id_preset else ""
     client.roll_speed = roll_speed
     client.mudae_prefix = mudae_prefix
     client.key_mode = key_mode
@@ -843,6 +845,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await channel.send(f"{client.mudae_prefix}tu")
         return True
 
+    def _get_command_channel():
+        """Returns the command channel (for $tu, $daily, $dk, $rolls) or fallback to main channel."""
+        return getattr(client, 'command_channel', None) or getattr(client, '_main_channel', None)
+
     @client.event
     async def on_ready():
         _refresh_session_id()
@@ -877,6 +883,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
             log_function(f"[{client.muda_name}] Err: Channel {target_channel_id_int} is not a messageable channel", preset_name, "ERROR"); await client.close(); return
         
+        # Store main channel reference for _get_command_channel fallback
+        client._main_channel = channel
+
+        # --- Resolve Command Channel (optional) ---
+        # If set, $tu/$daily/$dk/$rolls go here; rolls and claims stay on main channel.
+        client.command_channel = None
+        cmd_ch_id_str = client.command_channel_id_preset
+        if cmd_ch_id_str:
+            try:
+                cmd_ch_id_int = int(cmd_ch_id_str)
+                cmd_ch = client.get_channel(cmd_ch_id_int)
+                if not cmd_ch:
+                    try:
+                        cmd_ch = await client.fetch_channel(cmd_ch_id_int)
+                    except Exception as e:
+                        log_function(f"[{client.muda_name}] Command channel {cmd_ch_id_int} fetch failed: {e}. Falling back to main channel.", preset_name, "WARN")
+                        cmd_ch = None
+                if cmd_ch and isinstance(cmd_ch, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+                    client.command_channel = cmd_ch
+                    log_function(f"[{client.muda_name}] Command channel set: #{cmd_ch.name} ({cmd_ch.id})", preset_name, "INFO")
+                elif cmd_ch:
+                    log_function(f"[{client.muda_name}] Command channel {cmd_ch_id_int} is not messageable. Falling back to main channel.", preset_name, "WARN")
+            except (ValueError, TypeError):
+                log_function(f"[{client.muda_name}] Invalid command_channel_id: '{cmd_ch_id_str}'. Falling back to main channel.", preset_name, "WARN")
+
         if client.rolling_enabled:
              # Permissions check
             can_send = channel.permissions_for(channel.guild.me).send_messages
@@ -897,7 +928,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.skip_initial_commands:
                     await check_status(client, channel, client.mudae_prefix)
                 else:
-                    await channel.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
+                    cmd_ch = _get_command_channel() or channel
+                    await cmd_ch.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
                     await check_status(client, channel, client.mudae_prefix)
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
@@ -1026,6 +1058,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
+        cmd_channel = _get_command_channel() or channel
         log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
         tu_message_content = None
 
@@ -1059,8 +1092,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return response_username == bot_username or response_username == bot_display_name
         
         for _ in range(5):
-            await send_tu_command(channel); await asyncio.sleep(2.5)
-            async for msg in channel.history(limit=10):
+            await send_tu_command(cmd_channel); await asyncio.sleep(2.5)
+            async for msg in cmd_channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
                     # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
@@ -1090,7 +1123,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         c_lower = tu_message_content.lower()
 
         if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
-            await handle_dk_power_management(client, channel, tu_message_content)
+            await handle_dk_power_management(client, cmd_channel, tu_message_content)
 
         # Automatic $daily and $dk handling
         if client.rolling_enabled:
@@ -1098,14 +1131,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if "$daily is available" in c_lower or "$daily está disponível" in c_lower or \
                "$daily está disponible" in c_lower or "$daily est disponible" in c_lower:
                 log_function(f"[{client.muda_name}] $daily is available! Sending command...", preset_name, "INFO")
-                await channel.send(f"{client.mudae_prefix}daily")
+                await cmd_channel.send(f"{client.mudae_prefix}daily")
                 await asyncio.sleep(2.0)
 
             # Check if $dk is ready (only when power management is OFF but auto_dk is ON)
             if client.auto_dk_enabled and not client.dk_power_management:
                 if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
                     log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
-                    await channel.send(f"{client.mudae_prefix}dk")
+                    await cmd_channel.send(f"{client.mudae_prefix}dk")
                     await asyncio.sleep(2.0)
 
         # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
@@ -1457,7 +1490,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     
                     if rolls_limit_ok and not_used_this_interval and claim_ok:
                         log_function(f"[{client.muda_name}] Auto $rolls triggered.", preset_name, "INFO")
-                        await channel.send(f"{client.mudae_prefix}rolls")
+                        rolls_cmd_ch = _get_command_channel() or channel
+                        await rolls_cmd_ch.send(f"{client.mudae_prefix}rolls")
                         client.rolls_item_used_count += 1
                         client.rolls_used_this_interval_utc = getattr(client, 'roll_reset_at_utc', None)
                         
@@ -2548,7 +2582,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("kakera_priority_order", None),
                 preset_data.get("auto_rt_after_claim", False),
                 preset_data.get("mk_only", False),
-                preset_data.get("auto_dk_enabled", True)
+                preset_data.get("auto_dk_enabled", True),
+                preset_data.get("command_channel_id", "")
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
