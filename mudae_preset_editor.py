@@ -53,6 +53,8 @@ DEFAULTS = {
     "main_account_id": "",
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
+    "enable_snipe_chat_reactions": False,
+    "snipe_chat_messages": ["omg", "ezz"],
 }
 
 # Boolean settings with their display names and defaults
@@ -84,6 +86,7 @@ BOOL_SETTINGS = [
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
     ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
+    ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -130,6 +133,9 @@ DEFAULT_RANDOMIZED_CLAIM_REACTIONS = ['💖', '💗', '💘', '❤️', '👍', 
 
 # [NEW] Task 8: Default kakera priority order
 DEFAULT_KAKERA_PRIORITY_ORDER = ['kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera']
+
+# [NEW] Default snipe chat reaction messages
+DEFAULT_SNIPE_CHAT_MESSAGES = ['omg', 'ezz']
 
 
 class PresetEditor:
@@ -380,6 +386,10 @@ class PresetEditor:
         self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
         self.add_checkbox(snipe_frame, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
         
+        # Snipe Chat Reactions
+        self.add_checkbox(snipe_frame, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
+        self.add_list_field(snipe_frame, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        
         # --- Wishlists & Filters ---
         list_frame = ttk.LabelFrame(frame, text="Wishlists & Ignored Characters", padding=15)
         list_frame.pack(fill=tk.X, pady=(0, 15))
@@ -594,7 +604,8 @@ class PresetEditor:
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
-                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled"]:
+                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
+                    "enable_snipe_chat_reactions"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -605,7 +616,8 @@ class PresetEditor:
         # Populate list fields
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
-                    "randomized_claim_reactions", "kakera_priority_order"]:
+                    "randomized_claim_reactions", "kakera_priority_order",
+                    "snipe_chat_messages"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -736,14 +748,16 @@ class PresetEditor:
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
-                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled"]:
+                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
+                    "enable_snipe_chat_reactions"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
         # Collect list fields
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
-                    "randomized_claim_reactions", "kakera_priority_order"]:
+                    "randomized_claim_reactions", "kakera_priority_order",
+                    "snipe_chat_messages"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -884,6 +898,8 @@ class PresetEditor:
                 "auto_rt_after_claim": False,
                 "mk_only": False,
                 "auto_dk_enabled": True,
+                "enable_snipe_chat_reactions": False,
+                "snipe_chat_messages": ["omg", "ezz"],
             }
             
             self.refresh_preset_list()
