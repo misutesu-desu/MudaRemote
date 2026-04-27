@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.5"
+CURRENT_VERSION = "4.0.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -162,6 +162,15 @@ def write_log_to_file(log_message):
 def print_log(message, preset_name, log_type="INFO"):
     log_message_formatted = color_log(message, preset_name, log_type)
     write_log_to_file(log_message_formatted)
+
+def _debug_log_global(client_ref, log_func, preset, message):
+    """Global debug logger. Only prints when client.debug_mode is True.
+    Prefixes all output with [DEBUG] for easy filtering."""
+    try:
+        if getattr(client_ref, 'debug_mode', False):
+            log_func(f"[{getattr(client_ref, 'muda_name', 'MudaRemote')}] [DEBUG] {message}", preset, "INFO")
+    except Exception:
+        pass
 
 def is_character_embed(embed):
     # Reliable check: Characters have an author name, an image, and NO thumbnail
@@ -448,6 +457,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.sphere_emojis = SPHERE_EMOJIS
     client.kakera_power_thresholds = kakera_power_thresholds or {}
     client.debug_mode = debug_mode
+
+    def debug_log(message):
+        """Convenience wrapper: logs only when debug_mode is True. All output prefixed with [DEBUG]."""
+        _debug_log_global(client, log_function, preset_name, message)
 
 
     async def health_monitor_task():
@@ -1127,6 +1140,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
 
         c_lower = tu_message_content.lower()
+        debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
 
         if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, cmd_channel, tu_message_content)
@@ -1153,21 +1167,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if power_match:
                 client.current_dk_power = int(power_match.group(1))
                 client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
-                # log_function(f"[{client.muda_name}] Power Synced: {client.current_dk_power}%", preset_name, "INFO")
+                debug_log(f"Parsed DK Power: {client.current_dk_power}%")
+            else:
+                debug_log("WARN: Could not parse DK Power from $tu. Regex found no match.")
 
             # Support EN, PT, ES, FR for consumption regex
             consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", c_lower)
             if consumption_match:
                 client.dk_consumption = int(consumption_match.group(1))
                 client.dk_consumption_chaos = int(client.dk_consumption / 2)
+                debug_log(f"Parsed DK Consumption: {client.dk_consumption}% (Chaos: {client.dk_consumption_chaos}%)")
+            else:
+                debug_log(f"WARN: Could not parse DK Consumption from $tu. Using fallback: {client.dk_consumption}%")
             
             # Update dk_stock_count while we are here, in case dk_power_management was off
             # This ensures logs reflect reality even if management is disabled
             dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", c_lower)
             if dk_stock_match:
                 client.dk_stock_count = int(dk_stock_match.group(1))
+                debug_log(f"Parsed DK Stock: {client.dk_stock_count}")
             elif re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
                 client.dk_stock_count = 1
+                debug_log("Parsed DK Stock: 1 (derived from ready status)")
+            else:
+                debug_log("DK Stock: 0 (no ready/stock indicators found)")
 
         except Exception as e:
             log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
@@ -1191,14 +1214,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_reset_minutes = h_rt * 60 + m_rt
             client.rt_available = False
             log_function(f"[{client.muda_name}] RT: Cooldown ({h_rt}h {m_rt}m)", preset_name, "INFO")
+            debug_log(f"Parsed RT Reset: {h_rt}h {m_rt}m ({rt_reset_minutes} total min). Raw match: '{match_rt_reset.group(0)}'")
         elif rt_ready:
             client.rt_available = True
             log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
+            debug_log("Parsed RT: Ready (keyword matched)")
         else:
             # Fallback: If we didn't find a timer AND didn't find "Ready", assume cooldown/unavailable
             # (Safety default)
             client.rt_available = False
             log_function(f"[{client.muda_name}] RT: Cooldown (Derived)", preset_name, "INFO")
+            debug_log("WARN: RT status fallback — no timer regex match and no ready keyword. Assuming cooldown.")
 
         # Claim Status
         can_claim = False
@@ -1213,6 +1239,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # FR: vous __pouvez__ vous marier / remarier
         claim_ready_pattern = r"__(?:can|pode|puedes|pouvez)__\s+(?:claim|se casar|reclamar|vous (?:re)?marier)"
         claim_ready = bool(re.search(claim_ready_pattern, c_lower))
+        debug_log(f"Claim Ready regex result: {claim_ready}")
         
         # Regex for Claim Reset Time (Cooldown)
         # Covers: "Next claim reset is in...", "temps restant...", "falta um tempo...", "no puedes reclamar..."
@@ -1233,6 +1260,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
              h_c, m_c = parse_hours_minutes(best_match)
              claim_reset_minutes = h_c * 60 + m_c
              wait_time = claim_reset_minutes # In cooldown context, this is the wait time
+             debug_log(f"Parsed Claim Reset: {h_c}h {m_c}m ({claim_reset_minutes} total min). Raw: '{best_match.group(0)}'")
+        else:
+             debug_log("WARN: No claim reset regex match found. Will attempt generic fallback.")
 
         if claim_ready:
             client.claim_right_available = True
@@ -1282,6 +1312,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if match_roll_reset:
             h_r, m_r = parse_hours_minutes(match_roll_reset)
             roll_reset_minutes = h_r * 60 + m_r
+            debug_log(f"Parsed Roll Reset: {h_r}h {m_r}m ({roll_reset_minutes} total min)")
+        else:
+            debug_log("Roll Reset regex: no match found.")
 
         # Kakera Status
         if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower or "pouvez__ réagir" in c_lower or "pouvez réagir" in c_lower:
@@ -1324,8 +1357,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         mk_match = re.search(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)", c_lower)
         if mk_match:
             client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1)))
+            debug_log(f"Parsed $mk rolls: {client.mk_rolls_left}")
         else:
             client.mk_rolls_left = 0
+            debug_log("$mk rolls: 0 (no match)")
             
         if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
             # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
@@ -1401,6 +1436,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if main_match:
             rolls_left = parse_int_from_fragment(main_match.group(1))
             middle_text = main_match.group(2)
+            debug_log(f"Parsed base rolls: {rolls_left}. Middle text: '{middle_text.strip()[:100]}'")
             
             # Separate $us and $mk parsing.
             # $us are actual rolls we can use. $mk summon guaranteed kakera characters.
@@ -1410,8 +1446,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 
                 if bonus_type == "us":
                     us_rolls_left += amount
+                    debug_log(f"Parsed $us bonus: +{amount} rolls")
                 elif bonus_type == "mk":
                     client.mk_rolls_left = amount
+                    debug_log(f"Parsed $mk bonus: +{amount} rolls")
 
             # Parse reset time
             # Unified Reset Regex: "Reset in... X min"
@@ -1422,6 +1460,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 h_r = parse_int_from_fragment(match_reset.group(1))
                 m_r = parse_int_from_fragment(match_reset.group(2))
                 reset_time_r = h_r * 60 + m_r
+                debug_log(f"Parsed Roll Reset Time: {h_r}h {m_r}m ({reset_time_r} total min)")
                 # Align to the next minute boundary (:00)
                 new_roll_reset_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
                 
@@ -1435,6 +1474,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             else:
                 reset_time_r = 60 # Default safe fallback
                 client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
+                debug_log(f"WARN: Roll reset regex failed. Using fallback: {reset_time_r}m")
             
             # Only add $us to total. Ignoring $mk fixes the 0+1 loop bug.
             total_rolls = rolls_left + us_rolls_left
@@ -1665,18 +1705,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         bot_username = client.user.name.lower()
         char_tag = f"**{char_name.lower()}**"
         
+        debug_log(f"Verify: Searching for char_tag='{char_tag}' by bot_username='{bot_username}'")
+        
+        scanned_messages_raw = []  # Collect for debug dump on failure
+        
         # Scan recent history
         async for msg in channel.history(limit=8):
             if msg.author.id != TARGET_BOT_ID or not msg.content:
                 continue
             
             content_lower = msg.content.lower()
+            scanned_messages_raw.append(msg.content[:200])  # Store for debug
             
             # Mudae marriage messages across ALL languages use double asterisks for names:
             # e.g., "**Username** and **CharacterName** are now married!"
             if char_tag in content_lower:
                 # Extract all bolded segments
                 bold_segments = re.findall(r"\*\*(.+?)\*\*", content_lower)
+                debug_log(f"Verify: Found char_tag in message. Bold segments: {bold_segments}")
                 
                 # Check if any bolded segment matches our bot's names
                 for segment in bold_segments:
@@ -1757,8 +1803,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     log_function(f"[{client.muda_name}] Snipe chat reaction failed: {e}", client.preset_name, "ERROR")
         elif winner_name:
             log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
+            debug_log(f"Verify FAILED: '{char_name}' was taken by '{winner_name}'.")
         else:
             log_function(f"[{client.muda_name}] {log_label}: Inconclusive. Assuming failure or no marriage message.", client.preset_name, "WARN")
+            # Dump scanned messages for diagnosis
+            if client.debug_mode:
+                debug_log(f"Verify INCONCLUSIVE: Scanned {len(scanned_messages_raw)} Mudae messages but char_tag '{char_tag}' not found.")
+                for idx, raw_text in enumerate(scanned_messages_raw):
+                    debug_log(f"  Scanned msg [{idx}]: {raw_text}")
 
 
 
@@ -1767,6 +1819,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_claims_post = []
         wl_claims_post = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
+        
+        debug_log(f"Processing {len(mudae_messages)} Mudae messages. min_kakera_threshold={min_kak_post}, ignore_limit={ignore_limit_param}, key_only_kakera={key_mode_only_kakera_param}")
         
         # Track attempted character names in this burst to prevent duplicate claims (e.g. via $rt)
         attempted_char_names = set()
@@ -1815,6 +1869,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_wl = (char_n in client.wishlist) or \
                             (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
                             is_wished_by_self(msg, client.user.id)
+                    
+                    # --- DEBUG: Per-character evaluation trace ---
+                    if client.debug_mode:
+                        if is_avoided:
+                            action = "Skipped (Avoid List)"
+                        elif is_wl:
+                            action = "Targeted for Claim (Wishlist)"
+                        elif k_v >= min_kak_post:
+                            action = f"Targeted for Claim (Kakera {k_v} >= {min_kak_post})"
+                        else:
+                            action = f"Skipped (Below Min Kakera: {k_v} < {min_kak_post})"
+                        debug_log(f"Eval: {char_n} | Kakera: {k_v} | Series: {series[:60]} | Wishlist: {is_wl} | Avoided: {is_avoided} | Action: {action}")
                     
                     if is_wl and not is_avoided:
                         wl_claims_post.append((msg, char_n, k_v))
@@ -1916,15 +1982,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         # Global deduplication: Never process the same message ID twice for claims/kakera
         if msg.id in client.processed_claim_messages:
+            debug_log(f"Skipping msg {msg.id}: already in processed_claim_messages set.")
             return False
 
         embed = msg.embeds[0]
         char_author = embed.author.name if embed.author else None
         char_name = char_author if char_author else "Unknown"
         
+        debug_log(f"claim_character called: '{char_name}' | kakera={is_kakera} rt={is_rt_claim} snipe={is_snipe} free={is_free_claim} mk={is_mk_roll} kv={kakera_value}")
+        
         # Redundancy check: If we just successfully claimed this exact character, skip it
         # This prevents the bot from using RT on a character it already won via normal claim
         if not is_kakera and not is_free_claim and char_name.lower() == getattr(client, 'last_successfully_claimed_character', ''):
+            debug_log(f"Skipping '{char_name}': matches last_successfully_claimed_character.")
             return False
 
         # Kakera value logging logic
@@ -1943,6 +2013,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Authorization check
         # For snipe operations, check with is_external_snipe flag
         if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed(is_external_snipe=is_snipe):
+            debug_log(f"Authorization DENIED for '{char_name}': claim_right={client.claim_right_available}, rt={client.rt_available}, key_mode={client.key_mode}, is_snipe={is_snipe}")
             return False
 
         # Add to processed set (with periodic cleanup)
@@ -2079,6 +2150,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     current_pow = get_current_dk_power()
                     if current_pow < cost:
                         name_display = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
+                        debug_log(f"Skipped {name_display}: Power ({current_pow}%) < Cost ({cost}%)")
                         if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
                             log_function(f"[{client.muda_name}] Insufficient Power ({current_pow}% < {cost}%). Skipping {name_display}.", client.preset_name, "WARN")
                             client.last_power_warn = time.time()
@@ -2099,8 +2171,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             threshold = client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
                             
                         if threshold is not None and current_pow < threshold:
+                            debug_log(f"Skipped {specific_name}: Power ({current_pow}%) below custom threshold ({threshold}%)")
                             log_function(f"[{client.muda_name}] Power ({current_pow}%) below threshold ({threshold}%) for {specific_name}. Waiting for better kakera.", client.preset_name, "INFO")
                             continue
+
+                    # --- DEBUG: Dump button component data before click (Ghost Click diagnostics) ---
+                    if client.debug_mode:
+                        btn_custom_id = getattr(btn, 'custom_id', 'N/A')
+                        btn_emoji_name = getattr(btn.emoji, 'name', 'N/A') if hasattr(btn, 'emoji') else 'N/A'
+                        btn_emoji_id = getattr(btn.emoji, 'id', 'N/A') if hasattr(btn, 'emoji') else 'N/A'
+                        ws_ref = getattr(client, 'ws', None)
+                        session_id_val = getattr(ws_ref, 'session_id', None) if ws_ref else None
+                        debug_log(f"Kakera Click Pre-flight: custom_id={btn_custom_id} | emoji.name={btn_emoji_name} | emoji.id={btn_emoji_id} | session_id={session_id_val} | cost={cost}%")
+                        if not session_id_val:
+                            debug_log("WARN: session_id is None/stale before kakera click! Ghost click risk.")
 
                     try:
                         await btn.click()
@@ -2111,9 +2195,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] Kakera clicked: {char_name} [{name}] (Pw: {client.current_dk_power}%)", client.preset_name, "KAKERA")
                         clicked = True
                         client._last_kakera_click_ts = time.time()  # Track for bonus roll detection
+                        debug_log(f"Kakera click SUCCESS: {name} on '{char_name}' (msg_id={msg.id})")
                         await asyncio.sleep(0.5)
-                    except Exception:
-                        pass
+                    except discord.HTTPException as e:
+                        debug_log(f"Kakera click HTTPException: status={getattr(e, 'status', '?')} code={getattr(e, 'code', '?')} text={getattr(e, 'text', str(e))[:200]}")
+                        log_function(f"[{client.muda_name}] Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", client.preset_name, "ERROR")
+                    except Exception as e:
+                        debug_log(f"Kakera click EXCEPTION: {type(e).__name__}: {str(e)[:200]}")
             return clicked
 
         # Character Claim Logic
@@ -2127,14 +2215,34 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_heart = has_emoji and btn.emoji.name in client.claim_emojis
                     
                     if is_free_claim or is_heart:
+                        # --- DEBUG: Dump claim button data (Ghost Click diagnostics) ---
+                        if client.debug_mode:
+                            btn_custom_id = getattr(btn, 'custom_id', 'N/A')
+                            btn_emoji_name = getattr(btn.emoji, 'name', 'N/A') if has_emoji else 'N/A'
+                            btn_emoji_id = getattr(btn.emoji, 'id', 'N/A') if has_emoji else 'N/A'
+                            ws_ref = getattr(client, 'ws', None)
+                            session_id_val = getattr(ws_ref, 'session_id', None) if ws_ref else None
+                            debug_log(f"Claim Click Pre-flight: custom_id={btn_custom_id} | emoji.name={btn_emoji_name} | emoji.id={btn_emoji_id} | session_id={session_id_val}")
+                            if not session_id_val:
+                                debug_log("CRITICAL: session_id is None/stale before claim click! High ghost click risk.")
+
                         # [NEW] Task 4: Retry mechanism for button clicks (up to 3 attempts)
                         claim_success = False
                         for attempt in range(3):
                             try:
                                 await btn.click()
                                 claim_success = True
+                                debug_log(f"Claim click SUCCESS on attempt {attempt+1}/3 for '{char_name}' (msg_id={msg.id})")
                                 break
+                            except discord.HTTPException as e:
+                                debug_log(f"Claim click HTTPException (attempt {attempt+1}/3): status={getattr(e, 'status', '?')} code={getattr(e, 'code', '?')} text={getattr(e, 'text', str(e))[:200]}")
+                                if attempt < 2:
+                                    log_function(f"[{client.muda_name}] Claim click failed (attempt {attempt+1}/3): {e}. Retrying...", client.preset_name, "WARN")
+                                    await asyncio.sleep(0.5)
+                                else:
+                                    log_function(f"[{client.muda_name}] Claim click failed after 3 attempts: {e}", client.preset_name, "ERROR")
                             except Exception as e:
+                                debug_log(f"Claim click EXCEPTION (attempt {attempt+1}/3): {type(e).__name__}: {str(e)[:200]}")
                                 if attempt < 2:
                                     log_function(f"[{client.muda_name}] Claim click failed (attempt {attempt+1}/3): {e}. Retrying...", client.preset_name, "WARN")
                                     await asyncio.sleep(0.5)
@@ -2157,12 +2265,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             try:
                 # [NEW] Task 5: Use randomized claim reaction emoji instead of hardcoded heart
                 reaction_emoji = random.choice(client.randomized_claim_reactions)
+                debug_log(f"Using reaction fallback for '{char_name}' with emoji: {reaction_emoji}")
                 await msg.add_reaction(reaction_emoji)
                 log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction: {reaction_emoji})", client.preset_name, "CLAIM")
                 # Reaction fallback
                 await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
                 return True
-            except Exception:
+            except Exception as e:
+                debug_log(f"Reaction fallback FAILED for '{char_name}': {type(e).__name__}: {str(e)[:200]}")
                 return False
 
         return False
@@ -2176,8 +2286,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if min_wait <= 0:
             min_wait = max(client.delay_seconds + 60, 240)
             
-        wait_seconds = min_wait + (random.uniform(0, window) if client.humanization_enabled else 0)
+        human_jitter = random.uniform(0, window) if client.humanization_enabled else 0
+        wait_seconds = min_wait + human_jitter
         end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_seconds)
+        
+        debug_log(f"Sleep calc: Base wait: {min_wait:.1f}s ({base_reset_minutes:.1f}m), Human jitter: {human_jitter:.1f}s, Total sleep: {wait_seconds:.1f}s ({wait_seconds/60:.1f}m). Reason: [{reason}]")
         
         log_prefix = "Humanized " if client.humanization_enabled else ""
         log_function(f"[{client.muda_name}] {log_prefix}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
@@ -2349,8 +2462,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not message.embeds: return
         embed = message.embeds[0]
 
-        # Debug Mode: Log every character in real-time as it arrives (own rolls only)
-        if client.debug_mode and client.is_actively_rolling and is_character_embed(embed):
+        # Debug Mode: Log every character in real-time as it arrives
+        if client.debug_mode and is_character_embed(embed):
             dbg_name = embed.author.name if embed.author else "Unknown"
             dbg_desc = embed.description or ""
             dbg_kv = 0
@@ -2359,7 +2472,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 dbg_kv = int(re.sub(r"[^\d]", "", dbg_k_match.group(1)))
             dbg_series = dbg_desc.splitlines()[0] if dbg_desc else ""
             dbg_owner = get_character_owner(embed) or "unclaimed"
-            log_function(f"[{client.muda_name}] [DEBUG] Roll: {dbg_name} | {dbg_series} | {dbg_kv} ka | {dbg_owner}", preset_name, "INFO")
+            dbg_has_buttons = bool(message.components)
+            dbg_is_wl = dbg_name.lower() in client.wishlist or is_wished_by_self(message, client.user.id)
+            dbg_is_avoided = dbg_name.lower() in client.avoid_list
+            dbg_source = "own roll" if client.is_actively_rolling else "external"
+            
+            # Build action preview
+            if dbg_is_avoided:
+                dbg_action = "Skipped (Avoid List)"
+            elif dbg_is_wl:
+                dbg_action = "Targeted for Claim (Wishlist)"
+            elif dbg_kv >= client.current_min_kakera_for_roll_claim:
+                dbg_action = f"Targeted for Claim (Kakera {dbg_kv} >= {client.current_min_kakera_for_roll_claim})"
+            else:
+                dbg_action = f"Skipped (Below Min Kakera: {dbg_kv} < {client.current_min_kakera_for_roll_claim})"
+            
+            debug_log(f"Eval ({dbg_source}): {dbg_name} | Kakera: {dbg_kv} | Series: {dbg_series[:60]} | Wishlist: {dbg_is_wl} | Owner: {dbg_owner} | Buttons: {dbg_has_buttons} | Action: {dbg_action}")
 
         # Handle Kakera Drops (non-character messages)
         if not is_character_embed(embed):
