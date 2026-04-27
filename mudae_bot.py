@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.4"
+CURRENT_VERSION = "4.0.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -286,7 +286,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_rt_after_claim_preset=False,  # [NEW] Auto $rt after successful claim
             mk_only_preset=False,  # [NEW] MK Kakera Only: ignore normal kakera, only click crystals from $mk rolls
             auto_dk_enabled_preset=True,  # [NEW] Auto $dk: master toggle for all automatic $dk usage
-            command_channel_id_preset=""):  # [NEW] Command Channel: send $tu/$daily/$dk/$rolls here instead of roll channel
+            command_channel_id_preset="",  # [NEW] Command Channel: send $tu/$daily/$dk/$rolls here instead of roll channel
+            enable_snipe_chat_reactions_preset=False,  # [NEW] Snipe Chat Reactions: send random message after external snipe
+            snipe_chat_messages_preset=None):  # [NEW] Snipe Chat Messages: list of messages to randomly pick from
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -383,6 +385,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_priority_order = kakera_priority_order_preset if kakera_priority_order_preset else [
         'kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera'
     ]
+
+    # [NEW] Snipe Chat Reactions: Send a humanized message after external snipes
+    client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
+    client.snipe_chat_messages = snipe_chat_messages_preset if snipe_chat_messages_preset else ["omg", "ezz"]
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -1736,6 +1742,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] Auto $rt: Claim right restored. Continuing to roll.", client.preset_name, "CLAIM")
                     except Exception as e:
                         log_function(f"[{client.muda_name}] Auto $rt: Failed to send $rt — {e}", client.preset_name, "ERROR")
+
+            # --- SNIPE CHAT REACTION ---
+            # After a successful external snipe, send a random chat message to look human.
+            # Only triggers on external snipes (is_snipe_action=True), not self-rolls.
+            if is_snipe_action and client.enable_snipe_chat_reactions and client.snipe_chat_messages:
+                try:
+                    reaction_delay = random.uniform(2.0, 5.0)
+                    await asyncio.sleep(reaction_delay)
+                    chosen_message = random.choice(client.snipe_chat_messages)
+                    await channel.send(chosen_message)
+                    log_function(f"[{client.muda_name}] Sent snipe chat reaction: {chosen_message}", client.preset_name, "INFO")
+                except Exception as e:
+                    log_function(f"[{client.muda_name}] Snipe chat reaction failed: {e}", client.preset_name, "ERROR")
         elif winner_name:
             log_function(f"[{client.muda_name}] {log_label}: FAILED. Taken by {winner_name}.", client.preset_name, "WARN")
         else:
@@ -2583,7 +2602,9 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_rt_after_claim", False),
                 preset_data.get("mk_only", False),
                 preset_data.get("auto_dk_enabled", True),
-                preset_data.get("command_channel_id", "")
+                preset_data.get("command_channel_id", ""),
+                preset_data.get("enable_snipe_chat_reactions", False),
+                preset_data.get("snipe_chat_messages", None)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
