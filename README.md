@@ -204,8 +204,7 @@ Open a terminal (Command Prompt or PowerShell) in the MudaRemote folder and type
 ```bash
 pip install discord.py-self inquirer requests
 ```
-
-Wait for it to finish.
+*(If you get a "pip is not recognized" error, check the [Troubleshooting Guide](https://github.com/misutesu-desu/MudaRemote/wiki/Troubleshooting).*
 
 ### Step 3: Open the Settings Window
 
@@ -346,8 +345,12 @@ But you **don't need to edit this file**. Just use the settings window (`python 
 
 ---
 
-## 🤝 Need Help?
+## 🤝 Need Help & Troubleshooting
 
+Got an error? Bot acting weird? Check the **Troubleshooting Guide** first!
+- 📖 **[Troubleshooting & FAQ (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Troubleshooting)** — *Fixes for `pip` errors, bot not claiming, `$tu` spam, and more.*
+
+Still stuck?
 - 💬 Join our **[Discord Server](https://discord.gg/4WHXkDzuZx)**
 - 🐛 Found a bug? → [Open an Issue](https://github.com/misutesu-desu/MudaRemote/issues)
 - 💡 Have an idea? → [Open an Issue](https://github.com/misutesu-desu/MudaRemote/issues)
