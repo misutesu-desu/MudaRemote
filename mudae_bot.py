@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.6"
+CURRENT_VERSION = "4.0.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1251,8 +1251,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # or when on cooldown.
         match_claim_reset = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
         
+        # [FIX] Reject match_claim_reset if it accidentally matched a $daily/$dk/$rt line
+        if match_claim_reset:
+            matched_text = match_claim_reset.group(0)
+            if any(kw in matched_text for kw in ["$daily", "$dk", "$rt"]):
+                debug_log(f"Claim Reset regex REJECTED (matched wrong timer): '{matched_text}'")
+                match_claim_reset = None
+        
         # Alternative strict check for simple cooldown lines like "no puedes... 20 min"
         match_claim_wait = re.search(r"(?:can't|não pode|no puedes|avant de).*?(?:claim|casar|reclamar|remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+        
+        # [FIX] Portuguese claim cooldown: "falta um tempo antes que você possa se casar novamente **Xh Y** min."
+        # This format is missed by both regexes above because it uses "antes que...casar novamente" instead of
+        # "não pode...casar" or a "reset...em" structure.
+        if not match_claim_wait:
+            match_claim_wait = re.search(r"falta\s+um\s+tempo.*?(?:casar|remarier|claim|reclamar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
 
         # Extract time from best match
         best_match = match_claim_reset or match_claim_wait
@@ -1555,6 +1568,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Check claim reset and timing window awareness
                 # Reuse the regex strategy from check_status for localized parsing
                 match_c = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
+                # [FIX] Reject if it matched a $daily/$dk/$rt line
+                if match_c and any(kw in match_c.group(0) for kw in ["$daily", "$dk", "$rt"]):
+                    match_c = None
+                # [FIX] Portuguese fallback: "falta um tempo...casar novamente"
+                if not match_c:
+                    match_c = re.search(r"falta\s+um\s+tempo.*?(?:casar|remarier|claim|reclamar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", content_lower, re.IGNORECASE)
                 if match_c:
                     hours = parse_int_from_fragment(match_c.group(1))
                     minutes = parse_int_from_fragment(match_c.group(2))
