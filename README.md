@@ -139,7 +139,7 @@ You can also run **multiple alt accounts** at the same time. Main accounts can e
 
 We now offer a **1-Click Windows App (.exe)**! You no longer need to install Python or use the terminal.
 
-### Option 1: The Easy Way (Windows .exe) - Recommended
+### Option 1: The Easy Way - Recommended
 
 1. Go to our **[Releases Page](https://github.com/misutesu-desu/MudaRemote/releases/latest)** and download `MudaRemote.exe`.
 2. Put it in a new folder (e.g., on your Desktop).
