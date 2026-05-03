@@ -13,9 +13,18 @@ import argparse
 import time
 import threading
 
+def get_base_path():
+    """Get the base path for file operations.
+    When running as a PyInstaller --onefile .exe, sys._MEIPASS is the temp folder,
+    but we want the directory where the actual .exe is located to read/write presets.json.
+    """
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
 # --- Constants ---
-PRESETS_FILE = "presets.json"
-BOT_SCRIPT = "mudae_bot.py"
+PRESETS_FILE = os.path.join(get_base_path(), "presets.json")
+BOT_SCRIPT = os.path.join(get_base_path(), "mudae_bot.py")
 
 # Default values (for display hints)
 DEFAULTS = {
@@ -853,7 +862,7 @@ class PresetEditor:
         
         if enable:
             is_frozen = getattr(sys, 'frozen', False)
-            cwd = os.path.abspath(os.path.dirname(os.path.abspath(sys.argv[0])))
+            cwd = get_base_path()
             
             try:
                 with open(bat_path, "w", encoding="utf-8") as f:
@@ -1003,6 +1012,17 @@ class PresetEditor:
 
 def launch_gui():
     """Launch the Tkinter GUI preset editor."""
+    # When built with --console (needed for headless bot mode), hide the console
+    # window in GUI mode so double-clicking the .exe looks clean.
+    if sys.platform == "win32" and getattr(sys, 'frozen', False):
+        try:
+            import ctypes
+            console_window = ctypes.windll.kernel32.GetConsoleWindow()
+            if console_window:
+                ctypes.windll.user32.ShowWindow(console_window, 0)  # SW_HIDE
+        except Exception:
+            pass
+    
     root = tk.Tk()
     app = PresetEditor(root)
     root.mainloop()
@@ -1104,4 +1124,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if len(sys.argv) > 1:
+            input("\nPress Enter to close...")
+        sys.exit(1)
+    except SystemExit as e:
+        if e.code != 0 and e.code is not None and len(sys.argv) > 1:
+            input("\nPress Enter to close...")
+        sys.exit(e.code)
