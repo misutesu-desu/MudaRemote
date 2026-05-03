@@ -24,7 +24,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.0.7"
+CURRENT_VERSION = "4.1.0"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -34,60 +34,109 @@ def check_for_updates():
     if not UPDATE_URL:
         return
     
-    print(f"[{BOT_NAME}] Checking for updates... (Current: v{CURRENT_VERSION})")
+    is_frozen = getattr(sys, 'frozen', False)
+    print(f"[{BOT_NAME}] Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'EXE' if is_frozen else 'Script'})")
     try:
         # Check version.json
-        # Format: {"version": "2.6.0", "download_url": "...", "editor_download_url": "..."}
+        # Format: {"version": "4.0.7", "download_url": "...", "editor_download_url": "...", "exe_download_url": "..."}
         response = requests.get(f"{UPDATE_URL}version.json", timeout=10)
         if response.status_code == 200:
             data = response.json()
             latest_version = data.get("version")
-            download_url = data.get("download_url")
             
             if latest_version and latest_version > CURRENT_VERSION:
                 print(f"[{BOT_NAME}] New version found: v{latest_version}")
                 print(f"[{BOT_NAME}] Downloading update...")
                 
-                # Download new script
-                update_res = requests.get(download_url, timeout=30)
-                if update_res.status_code == 200:
-                    current_script = os.path.abspath(__file__)
-                    backup_script = current_script + ".bak"
+                if is_frozen:
+                    # --- FROZEN (.exe) MODE ---
+                    # An active .exe cannot overwrite itself, so we use a .bat swap strategy.
+                    exe_download_url = data.get("exe_download_url")
+                    if not exe_download_url:
+                        print(f"[{BOT_NAME}] No exe_download_url in version.json. Skipping update.")
+                        return
                     
-                    # Create backup
-                    shutil.copy2(current_script, backup_script)
+                    current_exe = os.path.abspath(sys.executable)
+                    current_dir = os.path.dirname(current_exe)
+                    exe_name = os.path.basename(current_exe)
+                    update_exe = os.path.join(current_dir, "MudaRemote_update.exe")
+                    bat_path = os.path.join(current_dir, "update.bat")
                     
-                    # Replace current script
-                    with open(current_script, "wb") as f:
-                        f.write(update_res.content)
-                    
-                    # Also update the preset editor
-                    script_dir = os.path.dirname(current_script)
-                    editor_path = os.path.join(script_dir, "mudae_preset_editor.py")
-                    editor_url = data.get("editor_download_url", f"{UPDATE_URL}mudae_preset_editor.py")
-                    try:
-                        editor_res = requests.get(editor_url, timeout=30)
-                        if editor_res.status_code == 200:
-                            if os.path.exists(editor_path):
-                                shutil.copy2(editor_path, editor_path + ".bak")
-                            with open(editor_path, "wb") as f:
-                                f.write(editor_res.content)
-                            print(f"[{BOT_NAME}] Preset editor updated.")
-                        else:
-                            print(f"[{BOT_NAME}] Failed to download preset editor update.")
-                    except Exception as e:
-                        print(f"[{BOT_NAME}] Preset editor update failed: {e}")
-                    
-                    print(f"[{BOT_NAME}] Update applied. Starting new version in a fresh window...")
-                    # Restart process
-                    if os.name == 'nt':
-                        # On Windows, launch in a new console window
-                        subprocess.Popen([sys.executable] + sys.argv, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    # Download the new .exe
+                    update_res = requests.get(exe_download_url, timeout=120)
+                    if update_res.status_code == 200:
+                        with open(update_exe, "wb") as f:
+                            f.write(update_res.content)
+                        print(f"[{BOT_NAME}] New exe downloaded ({len(update_res.content)} bytes).")
+                        
+                        # Generate a self-destructing .bat updater
+                        # The bat waits for the old exe to unlock, swaps files, relaunches, and deletes itself.
+                        original_args = ' '.join(f'"{a}"' for a in sys.argv[1:]) if sys.argv[1:] else ''
+                        bat_content = f'''@echo off
+timeout /t 3 /nobreak >nul
+del /f /q "{current_exe}"
+ren "{update_exe}" "{exe_name}"
+start "" "{current_exe}" {original_args}
+del "%~f0"
+'''
+                        with open(bat_path, "w", encoding="utf-8") as f:
+                            f.write(bat_content)
+                        
+                        print(f"[{BOT_NAME}] Update staged. Restarting via updater...")
+                        # Launch the bat hidden (minimized) and exit immediately
+                        subprocess.Popen(
+                            [bat_path],
+                            creationflags=subprocess.CREATE_NO_WINDOW,
+                            shell=True
+                        )
+                        os._exit(0)
                     else:
-                        os.execv(sys.executable, [sys.executable] + sys.argv)
-                    sys.exit()
+                        print(f"[{BOT_NAME}] Failed to download exe update (HTTP {update_res.status_code}).")
                 else:
-                    print(f"[{BOT_NAME}] Failed to download update file.")
+                    # --- SCRIPT (.py) MODE --- (existing logic)
+                    download_url = data.get("download_url")
+                    if not download_url:
+                        print(f"[{BOT_NAME}] No download_url in version.json. Skipping update.")
+                        return
+                    
+                    update_res = requests.get(download_url, timeout=30)
+                    if update_res.status_code == 200:
+                        current_script = os.path.abspath(__file__)
+                        backup_script = current_script + ".bak"
+                        
+                        # Create backup
+                        shutil.copy2(current_script, backup_script)
+                        
+                        # Replace current script
+                        with open(current_script, "wb") as f:
+                            f.write(update_res.content)
+                        
+                        # Also update the preset editor
+                        script_dir = os.path.dirname(current_script)
+                        editor_path = os.path.join(script_dir, "mudae_preset_editor.py")
+                        editor_url = data.get("editor_download_url", f"{UPDATE_URL}mudae_preset_editor.py")
+                        try:
+                            editor_res = requests.get(editor_url, timeout=30)
+                            if editor_res.status_code == 200:
+                                if os.path.exists(editor_path):
+                                    shutil.copy2(editor_path, editor_path + ".bak")
+                                with open(editor_path, "wb") as f:
+                                    f.write(editor_res.content)
+                                print(f"[{BOT_NAME}] Preset editor updated.")
+                            else:
+                                print(f"[{BOT_NAME}] Failed to download preset editor update.")
+                        except Exception as e:
+                            print(f"[{BOT_NAME}] Preset editor update failed: {e}")
+                        
+                        print(f"[{BOT_NAME}] Update applied. Starting new version in a fresh window...")
+                        # Restart process
+                        if os.name == 'nt':
+                            subprocess.Popen([sys.executable] + sys.argv, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                        else:
+                            os.execv(sys.executable, [sys.executable] + sys.argv)
+                        sys.exit()
+                    else:
+                        print(f"[{BOT_NAME}] Failed to download update file.")
             else:
                 print(f"[{BOT_NAME}] You are up to date.")
     except Exception as e:
