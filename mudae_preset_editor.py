@@ -9,6 +9,9 @@ import json
 import os
 import subprocess
 import sys
+import argparse
+import time
+import threading
 
 # --- Constants ---
 PRESETS_FILE = "presets.json"
@@ -849,15 +852,22 @@ class PresetEditor:
         bat_path = os.path.join(startup_dir, f"MudaRemote_{preset_name}.bat")
         
         if enable:
+            is_frozen = getattr(sys, 'frozen', False)
             cwd = os.path.abspath(os.path.dirname(os.path.abspath(sys.argv[0])))
-            python_exe = sys.executable
-            bot_script = os.path.join(cwd, BOT_SCRIPT)
             
             try:
                 with open(bat_path, "w", encoding="utf-8") as f:
                     f.write(f'@echo off\n')
                     f.write(f'cd /d "{cwd}"\n')
-                    f.write(f'start "{preset_name} - MudaRemote" "{python_exe}" "{bot_script}" --preset "{preset_name}"\n')
+                    if is_frozen:
+                        # In frozen (.exe) mode, sys.executable IS the .exe
+                        exe_path = os.path.abspath(sys.executable)
+                        f.write(f'start "{preset_name} - MudaRemote" "{exe_path}" --preset "{preset_name}"\n')
+                    else:
+                        # In script (.py) mode, launch python with the bot script
+                        python_exe = sys.executable
+                        bot_script = os.path.join(cwd, BOT_SCRIPT)
+                        f.write(f'start "{preset_name} - MudaRemote" "{python_exe}" "{bot_script}" --preset "{preset_name}"\n')
             except Exception as e:
                 print(f"Failed to create autostart script: {e}")
         else:
@@ -955,20 +965,34 @@ class PresetEditor:
         # Save first
         self.save_current_preset()
         
-        # Check if bot script exists
-        if not os.path.exists(BOT_SCRIPT):
-            messagebox.showerror("Error", f"{BOT_SCRIPT} not found in current directory.")
-            return
+        is_frozen = getattr(sys, 'frozen', False)
+        
+        if not is_frozen:
+            # In script mode, verify bot script exists on disk
+            if not os.path.exists(BOT_SCRIPT):
+                messagebox.showerror("Error", f"{BOT_SCRIPT} not found in current directory.")
+                return
         
         try:
-            # Launch in new console
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    [sys.executable, BOT_SCRIPT, "--preset", self.current_preset],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
+            if is_frozen:
+                # In frozen (.exe) mode, sys.executable IS the .exe itself.
+                # We relaunch the same .exe with --preset to run in headless bot mode.
+                if sys.platform == "win32":
+                    subprocess.Popen(
+                        [sys.executable, "--preset", self.current_preset],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                    )
+                else:
+                    subprocess.Popen([sys.executable, "--preset", self.current_preset])
             else:
-                subprocess.Popen([sys.executable, BOT_SCRIPT, "--preset", self.current_preset])
+                # In script (.py) mode, launch python with the bot script
+                if sys.platform == "win32":
+                    subprocess.Popen(
+                        [sys.executable, BOT_SCRIPT, "--preset", self.current_preset],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                    )
+                else:
+                    subprocess.Popen([sys.executable, BOT_SCRIPT, "--preset", self.current_preset])
             
             messagebox.showinfo("Bot Started", 
                                f"Bot started with preset '{self.current_preset}'.\n"
@@ -977,10 +1001,106 @@ class PresetEditor:
             messagebox.showerror("Error", f"Failed to start bot:\n{e}")
 
 
-def main():
+def launch_gui():
+    """Launch the Tkinter GUI preset editor."""
     root = tk.Tk()
     app = PresetEditor(root)
     root.mainloop()
+
+
+def run_headless(preset_names):
+    """
+    Headless mode: import mudae_bot and run specified presets in threads.
+    Used when the .exe (or script) is launched with --preset or --all.
+    """
+    import mudae_bot
+    
+    # Load presets from disk
+    if not os.path.exists(PRESETS_FILE):
+        print(f"[MudaRemote] {PRESETS_FILE} not found.")
+        sys.exit(1)
+    
+    try:
+        with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+            all_presets = json.load(f)
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"[MudaRemote] Failed to load {PRESETS_FILE}: {e}")
+        sys.exit(1)
+    
+    # Run update check and cleanup (mirrors mudae_bot.py __main__ behavior)
+    mudae_bot.cleanup_after_update()
+    mudae_bot.check_for_updates()
+    
+    threads = []
+    for name in preset_names:
+        if name not in all_presets:
+            print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
+            continue
+        print(f"[MudaRemote] Starting preset: {name}")
+        t = mudae_bot.start_preset_thread(name, all_presets[name])
+        if t:
+            threads.append(t)
+    
+    if not threads:
+        print("[MudaRemote] No valid presets to run.")
+        sys.exit(1)
+    
+    # Keep the main thread alive so daemon threads don't die
+    print(f"[MudaRemote] {len(threads)} preset(s) running. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[MudaRemote] Shutting down...")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="MudaRemote - Mudae Bot Manager & Preset Editor",
+        prog="MudaRemote"
+    )
+    parser.add_argument(
+        "--preset", 
+        nargs='+', 
+        type=str, 
+        help="Name(s) of preset(s) to run in headless mode (e.g. --preset MyPreset1 MyPreset2)"
+    )
+    parser.add_argument(
+        "--all", 
+        action="store_true", 
+        help="Run ALL presets from presets.json in headless mode"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.all:
+        # Load all preset names and run them all
+        if not os.path.exists(PRESETS_FILE):
+            print(f"[MudaRemote] {PRESETS_FILE} not found.")
+            sys.exit(1)
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                all_presets = json.load(f)
+            preset_names = list(all_presets.keys())
+        except Exception as e:
+            print(f"[MudaRemote] Failed to load presets: {e}")
+            sys.exit(1)
+        
+        if not preset_names:
+            print("[MudaRemote] No presets found in presets.json.")
+            sys.exit(1)
+        
+        print(f"[MudaRemote] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
+        run_headless(preset_names)
+    
+    elif args.preset:
+        # Run specific preset(s) in headless mode
+        print(f"[MudaRemote] Running preset(s): {', '.join(args.preset)}")
+        run_headless(args.preset)
+    
+    else:
+        # No arguments → launch the GUI
+        launch_gui()
 
 
 if __name__ == "__main__":
