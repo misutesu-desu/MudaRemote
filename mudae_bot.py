@@ -7,7 +7,8 @@ import json
 import threading
 import datetime
 from datetime import timezone
-import inquirer
+# NOTE: 'inquirer' is imported lazily inside main_menu() to avoid crashes
+# in PyInstaller --windowed mode where sys.stdin is None.
 import logging
 import time
 import random
@@ -24,11 +25,20 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.0"
+CURRENT_VERSION = "4.1.1"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
 UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/" 
+
+def get_base_path():
+    """Get the base path for file operations.
+    When running as a PyInstaller --onefile .exe, sys._MEIPASS is the temp folder,
+    but we want the directory where the actual .exe is located to read/write presets.json.
+    """
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
 def check_for_updates():
     if not UPDATE_URL:
@@ -57,7 +67,7 @@ def check_for_updates():
                         return
                     
                     current_exe = os.path.abspath(sys.executable)
-                    current_dir = os.path.dirname(current_exe)
+                    current_dir = get_base_path()
                     exe_name = os.path.basename(current_exe)
                     update_exe = os.path.join(current_dir, "MudaRemote_update.exe")
                     bat_path = os.path.join(current_dir, "update.bat")
@@ -145,9 +155,9 @@ del "%~f0"
 def cleanup_after_update():
     """Removes the backup files created during the update process."""
     current_script = os.path.abspath(__file__)
-    script_dir = os.path.dirname(current_script)
+    script_dir = get_base_path()
     
-    for bak_file in [current_script + ".bak", os.path.join(script_dir, "mudae_preset_editor.py.bak")]:
+    for bak_file in [os.path.join(script_dir, "mudae_bot.py.bak"), os.path.join(script_dir, "mudae_preset_editor.py.bak")]:
         if os.path.exists(bak_file):
             try:
                 os.remove(bak_file)
@@ -157,15 +167,20 @@ def cleanup_after_update():
 
 # Load config
 presets = {}
+presets_path = os.path.join(get_base_path(), "presets.json")
 try:
-    with open("presets.json", "r", encoding="utf-8") as f:
+    with open(presets_path, "r", encoding="utf-8") as f:
         presets = json.load(f)
 except FileNotFoundError:
-    print("presets.json not found. Create it first.")
+    print(f"{presets_path} not found. Create it first.")
     sys.exit(1)
 except json.JSONDecodeError:
-    print("presets.json is malformed.")
+    print(f"{presets_path} is malformed.")
     sys.exit(1)
+
+# Enable ANSI escape sequences for Windows 10+ consoles
+if os.name == 'nt':
+    os.system('')
 
 # Mudae's User ID
 TARGET_BOT_ID = 432610292342587392
@@ -203,7 +218,8 @@ def color_log(message, preset_name, log_type="INFO"):
 
 def write_log_to_file(log_message):
     try:
-        with open("logs.txt", "a", encoding='utf-8') as log_file:
+        logs_path = os.path.join(get_base_path(), "logs.txt")
+        with open(logs_path, "a", encoding='utf-8') as log_file:
             log_file.write(log_message + "\n")
     except Exception as e:
         print(f"Log file error: {e}")
@@ -2814,6 +2830,9 @@ def start_preset_thread(preset_name, preset_data):
     return t
 
 def main_menu():
+    # Lazy import: inquirer uses blessed.Terminal which crashes in windowed mode (no stdin)
+    import inquirer
+
     banner = r"""
   __  __ _    _ _____          _____  ______ __  __  ____ _______ ______
  |  \/  | |  | |  __ \   /\   |  __ \|  ____|  \/  |/ __ \__   __|  ____|
