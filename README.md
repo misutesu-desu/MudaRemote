@@ -146,8 +146,6 @@ We now offer a **1-Click Windows App (.exe)**! You no longer need to install Pyt
 3. Double-click `MudaRemote.exe`. The Settings window will open instantly!
 4. Fill in your **Token** and **Channel ID**, then click **▶ Launch Bot**.
 
-> **⚠️ Antivirus Warning:** Because this is a compiled Python bot that interacts with Discord tokens, Windows Defender or your Antivirus will likely flag it as a virus. This is a **False Positive** caused by the compiler. The code is 100% open-source. Just click *"More Info" -> "Run Anyway"*.
-
 ---
 
 ### Option 2: The Developer Way (Mac / Linux / Python)
