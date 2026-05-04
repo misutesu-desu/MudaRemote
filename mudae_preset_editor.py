@@ -68,6 +68,7 @@ DEFAULTS = {
     "enable_snipe_chat_reactions": False,
     "snipe_chat_messages": ["omg", "ezz"],
     "farm_character": "",
+    "farm_character_enabled": False,
     "op_perk_5_only": False,
 }
 
@@ -102,6 +103,7 @@ BOOL_SETTINGS = [
     ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters", False),
+    ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -405,6 +407,7 @@ class PresetEditor:
         # Snipe Chat Reactions
         self.add_checkbox(snipe_frame, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
         self.add_list_field(snipe_frame, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        self.add_checkbox(snipe_frame, "op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters")
         
         # --- Wishlists & Filters ---
         list_frame = ttk.LabelFrame(frame, text="Wishlists & Ignored Characters", padding=15)
@@ -414,6 +417,8 @@ class PresetEditor:
         self.add_list_field(list_frame, "series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)")
         self.add_list_field(list_frame, "avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)")
         self.add_list_field(list_frame, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
+        self.add_checkbox(list_frame, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
+        self.add_text_field(list_frame, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
         
         # --- Emoji Settings ---
         emoji_frame = ttk.LabelFrame(frame, text="Custom Emojis (Advanced)", padding=15)
@@ -602,7 +607,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "main_account_id"]:
+                    "main_account_id", "farm_character"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -621,7 +626,7 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions"]:
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -718,8 +723,8 @@ class PresetEditor:
         data = {}
         
         # Collect text fields
-        # [NEW] Include main_account_id in text fields collection
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "roll_command", "main_account_id"]:
+        # [NEW] Include main_account_id and farm_character in text fields collection
+        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "roll_command", "main_account_id", "farm_character"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -765,7 +770,7 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions"]:
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
