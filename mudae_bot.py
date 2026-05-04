@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.1"
+CURRENT_VERSION = "4.1.2"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -362,7 +362,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_dk_enabled_preset=True,  # [NEW] Auto $dk: master toggle for all automatic $dk usage
             command_channel_id_preset="",  # [NEW] Command Channel: send $tu/$daily/$dk/$rolls here instead of roll channel
             enable_snipe_chat_reactions_preset=False,  # [NEW] Snipe Chat Reactions: send random message after external snipe
-            snipe_chat_messages_preset=None):  # [NEW] Snipe Chat Messages: list of messages to randomly pick from
+            snipe_chat_messages_preset=None, # [NEW] Snipe Chat Messages: list of messages to randomly pick from
+            farm_character_preset="", # [NEW] Kakera Farm Character
+            op_perk_5_only_preset=False): # [NEW] $op Perk 5 Filter
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -463,6 +465,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     # [NEW] Snipe Chat Reactions: Send a humanized message after external snipes
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset if snipe_chat_messages_preset else ["omg", "ezz"]
+    client.farm_character = str(farm_character_preset).strip().lower() if farm_character_preset else ""
+    client.op_perk_5_only = op_perk_5_only_preset
 
     # State tracking
     client.next_claim_reset_at_utc = None
@@ -998,7 +1002,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not can_send: log_function(f"[{client.muda_name}] No Send Permissions", preset_name, "ERROR"); await client.close(); return
         
         log_function(f"[{client.muda_name}] Starting in {start_delay}s...", preset_name, "INFO")
-        await asyncio.sleep(start_delay)
+        await asyncio.sleep(start_delay + random.uniform(0.1, 0.5))
 
         if is_inactive_hour():
             wait_s = seconds_until_active()
@@ -1013,7 +1017,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await check_status(client, channel, client.mudae_prefix)
                 else:
                     cmd_ch = _get_command_channel() or channel
-                    await cmd_ch.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0)
+                    await cmd_ch.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0 + random.uniform(0.1, 0.4))
                     await check_status(client, channel, client.mudae_prefix)
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
@@ -1062,7 +1066,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if current_power < effective_cost:
                 log_function(f"[{client.muda_name}] DK: Activating. ({current_power}% < {effective_cost}%)", preset_name, "KAKERA")
                 await channel.send(f"{client.mudae_prefix}dk")
-                await asyncio.sleep(1.5) 
+                await asyncio.sleep(1.5 + random.uniform(0.1, 0.4)) 
                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
                 # [FIX] Task 1: $dk restores to max_dk_power instead of hardcoded 100
                 client.current_dk_power = client.max_dk_power
@@ -1176,7 +1180,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return response_username == bot_username or response_username == bot_display_name
         
         for _ in range(5):
-            await send_tu_command(cmd_channel); await asyncio.sleep(2.5)
+            await send_tu_command(cmd_channel); await asyncio.sleep(2.5 + random.uniform(0.2, 0.6))
             async for msg in cmd_channel.history(limit=10):
                 if msg.author.id == TARGET_BOT_ID and msg.content:
                     c = msg.content.lower()
@@ -1217,14 +1221,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                "$daily está disponible" in c_lower or "$daily est disponible" in c_lower:
                 log_function(f"[{client.muda_name}] $daily is available! Sending command...", preset_name, "INFO")
                 await cmd_channel.send(f"{client.mudae_prefix}daily")
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
 
             # Check if $dk is ready (only when power management is OFF but auto_dk is ON)
             if client.auto_dk_enabled and not client.dk_power_management:
                 if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
                     log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
                     await cmd_channel.send(f"{client.mudae_prefix}dk")
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
 
         # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
         try:
@@ -1622,7 +1626,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         limit_str = str(client.auto_rolls_limit) if client.auto_rolls_limit > 0 else '∞'
                         log_function(f"[{client.muda_name}] $rolls used ({client.rolls_item_used_count}/{limit_str}). Refreshing status...", preset_name, "INFO")
                         
-                        await asyncio.sleep(2.0)
+                        await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
                         await check_status(client, channel, mudae_prefix)
                         return
 
@@ -1694,6 +1698,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] Skipping $mk: Insufficient power ({current_pow}% < {client.dk_consumption}%).", client.preset_name, "INFO")
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
+        # [NEW] Feature 1: End-Game Kakera Farming (Pre-Roll Phase)
+        if client.farm_character and client.claim_right_available:
+            log_function(f"[{client.muda_name}] Kakera Farm: Preparing {client.farm_character} for rolling.", client.preset_name, "INFO")
+            await channel.send(f"{client.mudae_prefix}forcedivorce {client.farm_character}")
+            await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+            await channel.send("y")
+            await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+
         # Auto $mk: Use $mk rolls before normal rolls if we have enough power
         await process_mk_rolls(client, channel)
         
@@ -1713,7 +1725,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
-                actual_speed = max(client.roll_speed, 0.2 if client.use_slash_rolls else 0)
+                # [NEW] Feature 3: Slash Command Safety Limiter (min 2.0s for slash)
+                actual_speed = max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed
+                # [NEW] Feature 4: Micro-Randomization
+                actual_speed += random.uniform(0.05, 0.25)
+                
                 total_duration = rolls_left * actual_speed
                 
                 # Aim for the last roll to finish ~1s AFTER reset.
@@ -1743,9 +1759,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 break
             try:
                 await send_roll_command(channel, roll_command)
-                await asyncio.sleep(max(client.roll_speed, 0.2 if client.use_slash_rolls else 0))
+                # [NEW] Feature 3 & 4: Slash Safety + Micro-Randomization
+                roll_delay = (max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed) + random.uniform(0.05, 0.25)
+                await asyncio.sleep(roll_delay)
             except Exception:
-                await asyncio.sleep(1)
+                await asyncio.sleep(1.0 + random.uniform(0.1, 0.3))
                 
         client.is_actively_rolling = False
         await asyncio.sleep(5) # Let messages populate
@@ -1780,7 +1798,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         Language-agnostic: Searches for both the bot's user/display name AND the character name
         wrapped in bold tags (**), which is the universal format for marriage messages.
         """
-        await asyncio.sleep(2.0) # Wait for message to appear
+        await asyncio.sleep(2.0 + random.uniform(0.2, 0.6)) # Wait for message to appear
         
         found_our_marriage = False
         winner_name = None
@@ -1872,6 +1890,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] Auto $rt: Claim right restored. Continuing to roll.", client.preset_name, "CLAIM")
                     except Exception as e:
                         log_function(f"[{client.muda_name}] Auto $rt: Failed to send $rt — {e}", client.preset_name, "ERROR")
+
+            # [NEW] Feature 1: End-Game Kakera Farming (Post-Claim Phase / RT Loop)
+            if char_name.lower() == client.farm_character:
+                if client.rt_available:
+                    log_function(f"[{client.muda_name}] Kakera Farm: Resetting {char_name} for next roll.", client.preset_name, "KAKERA")
+                    await channel.send(f"{client.mudae_prefix}rt")
+                    client.rt_available = False
+                    await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+                    await channel.send(f"{client.mudae_prefix}forcedivorce {client.farm_character}")
+                    await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+                    await channel.send("y")
+                    await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+                    # Reset claim right locally as RT was used
+                    client.claim_right_available = True
 
             # --- SNIPE CHAT REACTION ---
             # After a successful external snipe, send a random chat message to look human.
@@ -2116,7 +2148,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 try:
                     await channel.send(f"{client.mudae_prefix}rt")
                     client.rt_available = False
-                    await asyncio.sleep(0.8) # Wait for Mudae to process RT
+                    await asyncio.sleep(random.uniform(0.6, 1.0)) # Wait for Mudae to process RT
                 except Exception as e:
                     log_function(f"[{client.muda_name}] RT Failed: {e}", client.preset_name, "ERROR")
                     return False
@@ -2127,6 +2159,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera Claim Logic
         if is_kakera:
+            # [NEW] Feature 2: $op Perk 5 (Maxed/Sphere) Kakera Filter
+            if client.op_perk_5_only:
+                desc = (embed.description or "").lower()
+                has_sphere = any(f"sp" in line for line in desc.split()) or any(s.lower() in desc for s in client.sphere_emojis)
+                if not has_sphere:
+                    return False
+
             # [NEW] MK Kakera Only gate: If mk_only is enabled and this is NOT a $mk roll,
             # completely skip all kakera buttons to save reaction power.
             # $mk rolls (is_mk_roll=True) always bypass this gate unconditionally.
@@ -2513,7 +2552,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if is_character_snipe_allowed(is_external_snipe=True):
                                 log_function(f"[{client.muda_name}] Main Account Sync (wished by Main): {c_name_ma}! Priority claiming.", preset_name, "CLAIM")
                                 # Bypass standard snipe delays for main account syncing
-                                await asyncio.sleep(0.1)
+                                await asyncio.sleep(0.1 + random.uniform(0.01, 0.05))
                                 if await claim_character(client, message.channel, message, is_snipe=True):
                                     return
 
@@ -2597,7 +2636,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             return
 
                     client.kakera_reaction_sniped_messages.add(message.id)
-                    await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
+                    # [NEW] Feature 4: Micro-Randomization
+                    await asyncio.sleep(client.kakera_reaction_snipe_delay_value + random.uniform(0.05, 0.25))
                     # Snipe flag is True here
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
@@ -2639,7 +2679,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if is_key_mode_kakera_only():
                     pass  # Will fall through to kakera handling below
                 else:
-                    if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay)
+                    # [NEW] Feature 4: Micro-Randomization
+                    if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay + random.uniform(0.05, 0.25))
                     if await claim_character(client, message.channel, message, kakera_value=k_val):
                         client.interrupt_rolling = True
                         process = False
@@ -2685,7 +2726,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     elif not is_character_snipe_allowed(is_external_snipe=True):
                         pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                     else:
-                        await asyncio.sleep(client.series_snipe_delay)
+                        # [NEW] Feature 4: Micro-Randomization
+                        await asyncio.sleep(client.series_snipe_delay + random.uniform(0.05, 0.25))
                         if await claim_character(client, message.channel, message, is_snipe=True):
                              client.series_snipe_happened = True; process = False
 
@@ -2698,7 +2740,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 elif not is_character_snipe_allowed(is_external_snipe=True):
                     pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                 else:
-                    await asyncio.sleep(client.snipe_delay)
+                    # [NEW] Feature 4: Micro-Randomization
+                    await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
                     if await claim_character(client, message.channel, message, is_snipe=True):
                         client.snipe_happened = True; process = False
             
@@ -2716,7 +2759,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     elif not is_character_snipe_allowed(is_external_snipe=True):
                         pass  # Can't snipe without claim right/RT (when rt_only_self_rolls is on)
                     else:
-                        await asyncio.sleep(client.snipe_delay)
+                        # [NEW] Feature 4: Micro-Randomization
+                        await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
                         if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
                             client.snipe_happened = True; process = False
 
@@ -2816,7 +2860,9 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_dk_enabled", True),
                 preset_data.get("command_channel_id", ""),
                 preset_data.get("enable_snipe_chat_reactions", False),
-                preset_data.get("snipe_chat_messages", None)
+                preset_data.get("snipe_chat_messages", None),
+                preset_data.get("farm_character", ""),
+                preset_data.get("op_perk_5_only", False)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
