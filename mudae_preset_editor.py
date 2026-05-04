@@ -67,6 +67,8 @@ DEFAULTS = {
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
     "snipe_chat_messages": ["omg", "ezz"],
+    "farm_character": "",
+    "op_perk_5_only": False,
 }
 
 # Boolean settings with their display names and defaults
@@ -99,6 +101,7 @@ BOOL_SETTINGS = [
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
     ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
+    ("op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -132,6 +135,7 @@ TEXT_SETTINGS = [
     ("series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)", [], True),
     ("avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)", [], True),
     ("kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)", [], True),
+    ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
 ]
 
 # Default emoji values
