@@ -364,7 +364,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_snipe_chat_reactions_preset=False,  # [NEW] Snipe Chat Reactions: send random message after external snipe
             snipe_chat_messages_preset=None, # [NEW] Snipe Chat Messages: list of messages to randomly pick from
             farm_character_preset="", # [NEW] Kakera Farm Character
-            op_perk_5_only_preset=False): # [NEW] $op Perk 5 Filter
+            op_perk_5_only_preset=False, # [NEW] $op Perk 5 Filter
+            farm_character_enabled_preset=False): # [NEW] Kakera Farm Toggle
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -466,6 +467,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset if snipe_chat_messages_preset else ["omg", "ezz"]
     client.farm_character = str(farm_character_preset).strip().lower() if farm_character_preset else ""
+    client.farm_character_enabled = farm_character_enabled_preset
     client.op_perk_5_only = op_perk_5_only_preset
 
     # State tracking
@@ -1699,7 +1701,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
         # [NEW] Feature 1: End-Game Kakera Farming (Pre-Roll Phase)
-        if client.farm_character and client.claim_right_available:
+        if client.farm_character_enabled and client.farm_character and client.claim_right_available:
             log_function(f"[{client.muda_name}] Kakera Farm: Preparing {client.farm_character} for rolling.", client.preset_name, "INFO")
             await channel.send(f"{client.mudae_prefix}forcedivorce {client.farm_character}")
             await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
@@ -1892,7 +1894,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] Auto $rt: Failed to send $rt — {e}", client.preset_name, "ERROR")
 
             # [NEW] Feature 1: End-Game Kakera Farming (Post-Claim Phase / RT Loop)
-            if char_name.lower() == client.farm_character:
+            if client.farm_character_enabled and char_name.lower() == client.farm_character:
                 if client.rt_available:
                     log_function(f"[{client.muda_name}] Kakera Farm: Resetting {char_name} for next roll.", client.preset_name, "KAKERA")
                     await channel.send(f"{client.mudae_prefix}rt")
@@ -2862,7 +2864,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("enable_snipe_chat_reactions", False),
                 preset_data.get("snipe_chat_messages", None),
                 preset_data.get("farm_character", ""),
-                preset_data.get("op_perk_5_only", False)
+                preset_data.get("op_perk_5_only", False),
+                preset_data.get("farm_character_enabled", False)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
