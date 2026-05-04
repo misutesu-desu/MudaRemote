@@ -2914,8 +2914,6 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == "__main__":
-    cleanup_after_update()
-    check_for_updates()
     args = parse_args()
     
     if args.preset:
