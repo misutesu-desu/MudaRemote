@@ -1051,10 +1051,6 @@ def run_headless(preset_names):
         print(f"[MudaRemote] Failed to load {PRESETS_FILE}: {e}")
         sys.exit(1)
     
-    # Run update check and cleanup (mirrors mudae_bot.py __main__ behavior)
-    mudae_bot.cleanup_after_update()
-    mudae_bot.check_for_updates()
-    
     threads = []
     for name in preset_names:
         if name not in all_presets:
@@ -1079,6 +1075,16 @@ def run_headless(preset_names):
 
 
 def main():
+    # [NEW] Feature 5: Move Auto-Update Trigger to GUI Startup
+    # Check for updates and cleanup backup files before doing anything else.
+    # This ensures the batch script swaps the .exe before the UI even appears.
+    try:
+        import mudae_bot
+        mudae_bot.cleanup_after_update()
+        mudae_bot.check_for_updates()
+    except Exception as e:
+        print(f"[MudaRemote] Update check failed: {e}")
+
     parser = argparse.ArgumentParser(
         description="MudaRemote - Mudae Bot Manager & Preset Editor",
         prog="MudaRemote"
