@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.3"
+CURRENT_VERSION = "4.1.4"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -400,6 +400,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.series_snipe_happened = False
     client.kakera_value_sniped_messages = set()
     client.is_actively_rolling = False
+    client.active_cycle_id = 0
+    client.tu_lock = asyncio.Lock()
     client.interrupt_rolling = False
     client.current_min_kakera_for_roll_claim = client.min_kakera
     client.kakera_snipe_mode_active = kakera_snipe_mode_preset
@@ -722,7 +724,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 log_function(f"[{client.muda_name}] Executing scheduled roll.", preset_name, "INFO")
-                await check_status(client, channel, client.mudae_prefix)
+                await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
 
             except asyncio.CancelledError:
                 break
@@ -1016,11 +1018,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled:
             try:
                 if client.skip_initial_commands:
-                    await check_status(client, channel, client.mudae_prefix)
+                    await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
                 else:
                     cmd_ch = _get_command_channel() or channel
                     await cmd_ch.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0 + random.uniform(0.1, 0.4))
-                    await check_status(client, channel, client.mudae_prefix)
+                    await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
             except Exception as e:
                 log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
 
@@ -1147,7 +1149,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await asyncio.sleep(10)
 
 
-    async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True):
+    async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, current_cycle_id=None):
+        if current_cycle_id is None:
+            current_cycle_id = time.time()
+            client.active_cycle_id = current_cycle_id
+
         cmd_channel = _get_command_channel() or channel
         log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
         tu_message_content = None
@@ -1204,14 +1210,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if tu_message_content: break
             await asyncio.sleep(5)
         
-        if not tu_message_content:
             log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
             if client.rolling_enabled and proceed_to_rolls:
                 await asyncio.sleep(1800) # Long sleep on failure
+                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                    return # Kill this ghost loop
+                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
             return
 
-        c_lower = tu_message_content.lower()
-        debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
+        if client.tu_lock.locked():
+            return # Another task is currently checking $tu
+        
+        async with client.tu_lock:
+            c_lower = tu_message_content.lower()
+            debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
 
         if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
             await handle_dk_power_management(client, cmd_channel, tu_message_content)
@@ -1449,16 +1461,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
             # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
             if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
-                await process_mk_rolls(client, channel)
+                await process_mk_rolls(client, channel, current_cycle_id)
                 await asyncio.sleep(2)
-                await check_status(client, channel, mudae_prefix)
+                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                    return # Kill this ghost loop
+                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                 return
         
         if immediate_roll:
             await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                       tu_message_content, 
                                       (client.current_min_kakera_for_roll_claim == 0),
-                                      (client.key_mode and not client.rt_available and not client.claim_right_available))
+                                      (client.key_mode and not client.rt_available and not client.claim_right_available),
+                                      current_cycle_id)
         elif client.rolling_enabled and proceed_to_rolls:
             # Decide best sleep target using a prioritized candidate list to avoid "Dead Zones"
             sleep_choices = []
@@ -1495,13 +1510,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Default safety sleep if no timers could be parsed
                 await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
             
-            await check_status(client, channel, mudae_prefix)
+            if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                return # Kill this ghost loop
+            await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
             return
         else:
             return
 
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
-                                  tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
+                                  tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
         content_lower = tu_message_content_for_rolls.lower()
         rolls_left = 0
         us_rolls_left = 0
@@ -1596,7 +1613,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if us_failed:
                                 client.us_failed_this_cycle = True
                                 log_function(f"[{client.muda_name}] Auto $us failed (Not enough Kakera). Halting $us for this cycle.", preset_name, "WARN")
-                                await check_status(client, channel, mudae_prefix)
+                                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                                    return # Kill this ghost loop
+                                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                                 return
                             
                             client.us_pulled_this_cycle += amount_to_pull
@@ -1604,7 +1623,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
                             
                             # Plunge directly into rolls without another $tu (fast mode)
-                            await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                            await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
                             return
 
                 # AUTO $ROLLS LOGIC (2nd Priority — only if $us did NOT execute)
@@ -1629,7 +1648,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         log_function(f"[{client.muda_name}] $rolls used ({client.rolls_item_used_count}/{limit_str}). Refreshing status...", preset_name, "INFO")
                         
                         await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
-                        await check_status(client, channel, mudae_prefix)
+                        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                            return # Kill this ghost loop
+                        await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                         return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
@@ -1660,17 +1681,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 wait_m, reason = sleep_candidates[0]
                 
                 await humanized_wait_and_proceed(client, channel, wait_m, reason)
-                await check_status(client, channel, mudae_prefix); return
+                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                    return # Kill this ghost loop
+                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
             else:
                 log_detail = f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else ""
                 log_function(f"[{client.muda_name}] Rolls: {total_rolls}{log_detail}. Reset: {reset_time_r}m", preset_name, "INFO")
-                await start_roll_commands(client, channel, total_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                await start_roll_commands(client, channel, total_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
                 return
         else:
             log_function(f"[{client.muda_name}] Could not parse roll count.", preset_name, "ERROR")
-            await asyncio.sleep(30); await check_status(client, channel, mudae_prefix); return
+            await asyncio.sleep(30)
+            if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                return # Kill this ghost loop
+            await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
 
-    async def process_mk_rolls(client, channel):
+    async def process_mk_rolls(client, channel, current_cycle_id):
         if not getattr(client, 'auto_mk_enabled', True):
             return
         if client.mk_rolls_left > 0:
@@ -1699,7 +1725,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             else:
                 log_function(f"[{client.muda_name}] Skipping $mk: Insufficient power ({current_pow}% < {client.dk_consumption}%).", client.preset_name, "INFO")
 
-    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll):
+    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
         # [NEW] Feature 1: End-Game Kakera Farming (Pre-Roll Phase)
         if client.farm_character_enabled and client.farm_character and client.claim_right_available:
             log_function(f"[{client.muda_name}] Kakera Farm: Preparing {client.farm_character} for rolling.", client.preset_name, "INFO")
@@ -1709,7 +1735,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
 
         # Auto $mk: Use $mk rolls before normal rolls if we have enough power
-        await process_mk_rolls(client, channel)
+        await process_mk_rolls(client, channel, current_cycle_id)
         
         log_text = f"Rolling {rolls_left} times"
         log_text += " (Reactive)" if client.enable_reactive_self_snipe else ""
@@ -1790,7 +1816,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         await asyncio.sleep(3)
         # Always check status (send $tu) after rolling sequence, as requested
-        await check_status(client, channel, client.mudae_prefix)
+        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+            return # Kill this ghost loop
+        await check_status(client, channel, client.mudae_prefix, current_cycle_id=current_cycle_id)
 
 
     async def verify_snipe_outcome(client, channel, char_name, is_snipe_action=True):
