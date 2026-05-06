@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.4"
+CURRENT_VERSION = "4.1.5"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -1095,7 +1095,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         while not client.is_closed():
             try:
                 # Proceed to rolls=False, we just want data
-                await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
+                await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False, current_cycle_id=None)
                 if client.next_claim_reset_at_utc:
                     handshake_success = True
                     break
@@ -1187,41 +1187,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Match if either the username or display name matches
             return response_username == bot_username or response_username == bot_display_name
         
-        for _ in range(5):
-            await send_tu_command(cmd_channel); await asyncio.sleep(2.5 + random.uniform(0.2, 0.6))
-            async for msg in cmd_channel.history(limit=10):
-                if msg.author.id == TARGET_BOT_ID and msg.content:
-                    c = msg.content.lower()
-                    # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
-                    # "rolls" is common across all tested languages (EN, FR, ES, PT)
-                    # "reset" is also very common. "min" is universal for minutes.
-                    if ("roll" in c and "min" in c) or ("roll" in c and "**" in c):
-                        # Validate this response is for OUR user, not someone else's $tu
-                        if is_tu_response_for_self(msg.content):
-                            tu_message_content = msg.content
-                            break
-                        else:
-                            # This is another player's $tu response, skip it
-                            # Extract the detected username for debug logging
-                            other_user_match = re.match(r"^\s*\*\*([^*]+)\*\*", msg.content)
-                            other_user = other_user_match.group(1) if other_user_match else "Unknown"
-                            log_function(f"[{client.muda_name}] Skipped $tu response for '{other_user}' (not our user)", preset_name, "INFO")
-                            continue
-            if tu_message_content: break
-            await asyncio.sleep(5)
-        
-            log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
-            if client.rolling_enabled and proceed_to_rolls:
-                await asyncio.sleep(1800) # Long sleep on failure
-                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                    return # Kill this ghost loop
-                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-            return
-
         if client.tu_lock.locked():
             return # Another task is currently checking $tu
         
         async with client.tu_lock:
+            for _ in range(5):
+                await send_tu_command(cmd_channel); await asyncio.sleep(2.5 + random.uniform(0.2, 0.6))
+                async for msg in cmd_channel.history(limit=10):
+                    if msg.author.id == TARGET_BOT_ID and msg.content:
+                        c = msg.content.lower()
+                        # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
+                        # "rolls" is common across all tested languages (EN, FR, ES, PT)
+                        # "reset" is also very common. "min" is universal for minutes.
+                        if ("roll" in c and "min" in c) or ("roll" in c and "**" in c):
+                            # Validate this response is for OUR user, not someone else's $tu
+                            if is_tu_response_for_self(msg.content):
+                                tu_message_content = msg.content
+                                break
+                            else:
+                                # This is another player's $tu response, skip it
+                                # Extract the detected username for debug logging
+                                other_user_match = re.match(r"^\s*\*\*([^*]+)\*\*", msg.content)
+                                other_user = other_user_match.group(1) if other_user_match else "Unknown"
+                                log_function(f"[{client.muda_name}] Skipped $tu response for '{other_user}' (not our user)", preset_name, "INFO")
+                                continue
+                if tu_message_content: break
+                await asyncio.sleep(5)
+            
+            if not tu_message_content:
+                log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
+                if client.rolling_enabled and proceed_to_rolls:
+                    await asyncio.sleep(1800) # Long sleep on failure
+                    if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                        return # Kill this ghost loop
+                    await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
+                return
+
             c_lower = tu_message_content.lower()
             debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
 
@@ -2193,7 +2194,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.op_perk_5_only:
                 desc = (embed.description or "").lower()
                 has_sphere = any(f"sp" in line for line in desc.split()) or any(s.lower() in desc for s in client.sphere_emojis)
-                if not has_sphere:
+                
+                # NEW FIX: Do not skip if a Purple Kakera (kakeraP) button is present on the message
+                has_kakera_p = False
+                if msg.components:
+                    has_kakera_p = any(
+                        hasattr(b.emoji, 'name') and b.emoji.name == 'kakeraP'
+                        for c in msg.components for b in c.children
+                    )
+                
+                # If there is no sphere AND no kakeraP button, then we abort
+                if not has_sphere and not has_kakera_p:
                     return False
 
             # [NEW] MK Kakera Only gate: If mk_only is enabled and this is NOT a $mk roll,
@@ -2606,7 +2617,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(3)
                             # Skip if we're actively rolling (rolls will finish and check_status runs anyway)
                             if not client.is_actively_rolling:
-                                await check_status(client, message.channel, client.mudae_prefix)
+                                await check_status(client, message.channel, client.mudae_prefix, current_cycle_id=None)
                         except Exception as e:
                             log_function(f"[{client.muda_name}] Bonus roll status check failed: {e}", preset_name, "ERROR")
                     
@@ -2683,7 +2694,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] Key Limit Hit. Pausing.", preset_name, "ERROR")
                 # Wait 1 hour + human jitter
                 await asyncio.sleep(3600 + random.randint(0, 600))
-                await check_status(client, message.channel, client.mudae_prefix)
+                await check_status(client, message.channel, client.mudae_prefix, current_cycle_id=None)
                 return
 
         process = True
@@ -2824,6 +2835,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     # Logic to handle the Discord client execution
     try:
+        # NEW FIX: Create and set a new event loop for this specific thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         # log_handler=None prevents logging conflicts within threads on Windows
         # reconnect=True ensures the bot attempts to stay online during minor outages
         client.run(token, reconnect=True)
