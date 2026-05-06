@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.5"
+CURRENT_VERSION = "4.1.6"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -401,7 +401,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_value_sniped_messages = set()
     client.is_actively_rolling = False
     client.active_cycle_id = 0
-    client.tu_lock = asyncio.Lock()
+    client.tu_lock = None  # NEW FIX: Delay lock creation to avoid thread crash
     client.interrupt_rolling = False
     client.current_min_kakera_for_roll_claim = client.min_kakera
     client.kakera_snipe_mode_active = kakera_snipe_mode_preset
@@ -1187,6 +1187,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Match if either the username or display name matches
             return response_username == bot_username or response_username == bot_display_name
         
+        # NEW FIX: Safely create the lock inside the running event loop
+        if client.tu_lock is None:
+            client.tu_lock = asyncio.Lock()
+
         if client.tu_lock.locked():
             return # Another task is currently checking $tu
         
@@ -2835,10 +2839,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     # Logic to handle the Discord client execution
     try:
-        # NEW FIX: Create and set a new event loop for this specific thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         # log_handler=None prevents logging conflicts within threads on Windows
         # reconnect=True ensures the bot attempts to stay online during minor outages
         client.run(token, reconnect=True)
