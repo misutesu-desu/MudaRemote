@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.6"
+CURRENT_VERSION = "4.1.7"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -168,14 +168,24 @@ def cleanup_after_update():
 # Load config
 presets = {}
 presets_path = os.path.join(get_base_path(), "presets.json")
+
+# Ensure presets.json exists
+if not os.path.exists(presets_path):
+    try:
+        with open(presets_path, "w", encoding="utf-8") as f:
+            json.dump({}, f, indent=4)
+        print(f"[{BOT_NAME}] Created missing {presets_path}")
+    except Exception as e:
+        print(f"[{BOT_NAME}] Error creating {presets_path}: {e}")
+
 try:
     with open(presets_path, "r", encoding="utf-8") as f:
         presets = json.load(f)
-except FileNotFoundError:
-    print(f"{presets_path} not found. Create it first.")
-    sys.exit(1)
 except json.JSONDecodeError:
-    print(f"{presets_path} is malformed.")
+    print(f"[{BOT_NAME}] {presets_path} is malformed.")
+    sys.exit(1)
+except Exception as e:
+    print(f"[{BOT_NAME}] Failed to load {presets_path}: {e}")
     sys.exit(1)
 
 # Enable ANSI escape sequences for Windows 10+ consoles
@@ -951,6 +961,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
 
         client._has_initialized = True
+        client.is_processing_cycle = False
         log_function(f"[{client.muda_name}] Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
         
@@ -1150,377 +1161,388 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, current_cycle_id=None):
-        if current_cycle_id is None:
-            current_cycle_id = time.time()
-            client.active_cycle_id = current_cycle_id
-
-        cmd_channel = _get_command_channel() or channel
-        log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
-        tu_message_content = None
-
-
-        # Retrieve $tu message (using slash command if enabled)
-        # IMPORTANT: Validate that the response is addressed to THIS user, not another player
-        def is_tu_response_for_self(message_content: str) -> bool:
-            """
-            Validates that a Mudae $tu response is addressed to the bot's own user.
-            Mudae formats responses as: **Username**, your rolls: ... or **Username**, you __can__ claim...
-            Returns True if the username in the response matches client.user.
-            """
-            if not message_content:
-                return False
-            
-            # Extract the bolded username at the start of the message
-            # Pattern matches: **Username** at the beginning (with optional leading whitespace)
-            username_match = re.match(r"^\s*\*\*([^*]+)\*\*", message_content)
-            if not username_match:
-                # Fallback: some Mudae responses may use different formatting
-                # If we can't extract a username, be conservative and reject
-                return False
-            
-            response_username = username_match.group(1).strip().lower()
-            
-            # Compare against both the bot's username and display name
-            bot_username = (client.user.name or "").strip().lower()
-            bot_display_name = (client.user.display_name or "").strip().lower()
-            
-            # Match if either the username or display name matches
-            return response_username == bot_username or response_username == bot_display_name
+        if getattr(client, 'is_processing_cycle', False):
+            debug_log("check_status called but a cycle is already processing. Aborting duplicate execution.")
+            return
+        client.is_processing_cycle = True
         
-        # NEW FIX: Safely create the lock inside the running event loop
-        if client.tu_lock is None:
-            client.tu_lock = asyncio.Lock()
+        try:
+            if current_cycle_id is None:
+                current_cycle_id = time.time()
+                client.active_cycle_id = current_cycle_id
 
-        if client.tu_lock.locked():
-            return # Another task is currently checking $tu
-        
-        async with client.tu_lock:
-            for _ in range(5):
-                await send_tu_command(cmd_channel); await asyncio.sleep(2.5 + random.uniform(0.2, 0.6))
-                async for msg in cmd_channel.history(limit=10):
-                    if msg.author.id == TARGET_BOT_ID and msg.content:
-                        c = msg.content.lower()
-                        # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
-                        # "rolls" is common across all tested languages (EN, FR, ES, PT)
-                        # "reset" is also very common. "min" is universal for minutes.
-                        if ("roll" in c and "min" in c) or ("roll" in c and "**" in c):
-                            # Validate this response is for OUR user, not someone else's $tu
-                            if is_tu_response_for_self(msg.content):
-                                tu_message_content = msg.content
-                                break
-                            else:
-                                # This is another player's $tu response, skip it
-                                # Extract the detected username for debug logging
-                                other_user_match = re.match(r"^\s*\*\*([^*]+)\*\*", msg.content)
-                                other_user = other_user_match.group(1) if other_user_match else "Unknown"
-                                log_function(f"[{client.muda_name}] Skipped $tu response for '{other_user}' (not our user)", preset_name, "INFO")
-                                continue
-                if tu_message_content: break
-                await asyncio.sleep(5)
+            cmd_channel = _get_command_channel() or channel
+            log_function(f"[{client.muda_name}] Checking $tu...", client.preset_name, "CHECK")
+            tu_message_content = None
+
+
+            # Retrieve $tu message (using slash command if enabled)
+            # IMPORTANT: Validate that the response is addressed to THIS user, not another player
+            def is_tu_response_for_self(message_content: str) -> bool:
+                """
+                Validates that a Mudae $tu response is addressed to the bot's own user.
+                Mudae formats responses as: **Username**, your rolls: ... or **Username**, you __can__ claim...
+                Returns True if the username in the response matches client.user.
+                """
+                if not message_content:
+                    return False
+                
+                # Extract the bolded username at the start of the message
+                # Pattern matches: **Username** at the beginning (with optional leading whitespace)
+                username_match = re.match(r"^\s*\*\*([^*]+)\*\*", message_content)
+                if not username_match:
+                    # Fallback: some Mudae responses may use different formatting
+                    # If we can't extract a username, be conservative and reject
+                    return False
+                
+                response_username = username_match.group(1).strip().lower()
+                
+                # Compare against both the bot's username and display name
+                bot_username = (client.user.name or "").strip().lower()
+                bot_display_name = (client.user.display_name or "").strip().lower()
+                
+                # Match if either the username or display name matches
+                return response_username == bot_username or response_username == bot_display_name
             
-            if not tu_message_content:
-                log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
-                if client.rolling_enabled and proceed_to_rolls:
-                    await asyncio.sleep(1800) # Long sleep on failure
-                    if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                        return # Kill this ghost loop
-                    await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-                return
+            # NEW FIX: Safely create the lock inside the running event loop
+            if client.tu_lock is None:
+                client.tu_lock = asyncio.Lock()
 
-            c_lower = tu_message_content.lower()
-            debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
+            if client.tu_lock.locked():
+                return # Another task is currently checking $tu
+            
+            async with client.tu_lock:
+                for _ in range(5):
+                    await send_tu_command(cmd_channel); await asyncio.sleep(2.5 + random.uniform(0.2, 0.6))
+                    async for msg in cmd_channel.history(limit=10):
+                        if msg.author.id == TARGET_BOT_ID and msg.content:
+                            c = msg.content.lower()
+                            # Broad check for $tu response characteristics (rolls count, reset timers, or specific keywords)
+                            # "rolls" is common across all tested languages (EN, FR, ES, PT)
+                            # "reset" is also very common. "min" is universal for minutes.
+                            if ("roll" in c and "min" in c) or ("roll" in c and "**" in c):
+                                # Validate this response is for OUR user, not someone else's $tu
+                                if is_tu_response_for_self(msg.content):
+                                    tu_message_content = msg.content
+                                    break
+                                else:
+                                    # This is another player's $tu response, skip it
+                                    # Extract the detected username for debug logging
+                                    other_user_match = re.match(r"^\s*\*\*([^*]+)\*\*", msg.content)
+                                    other_user = other_user_match.group(1) if other_user_match else "Unknown"
+                                    log_function(f"[{client.muda_name}] Skipped $tu response for '{other_user}' (not our user)", preset_name, "INFO")
+                                    continue
+                    if tu_message_content: break
+                    await asyncio.sleep(5)
+                
+                if not tu_message_content:
+                    log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
+                    if client.rolling_enabled and proceed_to_rolls:
+                        await asyncio.sleep(1800) # Long sleep on failure
+                        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                            return # Kill this ghost loop
+                        client.is_processing_cycle = False # Reset lock before recursive call
+                        await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
+                    return
 
-        if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
-            await handle_dk_power_management(client, cmd_channel, tu_message_content)
+                c_lower = tu_message_content.lower()
+                debug_log(f"Raw $tu content (first 300 chars): {tu_message_content[:300]}")
 
-        # Automatic $daily and $dk handling
-        if client.rolling_enabled:
-            # Check if $daily is available and send if so
-            if "$daily is available" in c_lower or "$daily está disponível" in c_lower or \
-               "$daily está disponible" in c_lower or "$daily est disponible" in c_lower:
-                log_function(f"[{client.muda_name}] $daily is available! Sending command...", preset_name, "INFO")
-                await cmd_channel.send(f"{client.mudae_prefix}daily")
-                await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
+            if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
+                await handle_dk_power_management(client, cmd_channel, tu_message_content)
 
-            # Check if $dk is ready (only when power management is OFF but auto_dk is ON)
-            if client.auto_dk_enabled and not client.dk_power_management:
-                if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
-                    log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
-                    await cmd_channel.send(f"{client.mudae_prefix}dk")
+            # Automatic $daily and $dk handling
+            if client.rolling_enabled:
+                # Check if $daily is available and send if so
+                if "$daily is available" in c_lower or "$daily está disponível" in c_lower or \
+                   "$daily está disponible" in c_lower or "$daily est disponible" in c_lower:
+                    log_function(f"[{client.muda_name}] $daily is available! Sending command...", preset_name, "INFO")
+                    await cmd_channel.send(f"{client.mudae_prefix}daily")
                     await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
 
-        # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
-        try:
-            power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
-            if power_match:
-                client.current_dk_power = int(power_match.group(1))
-                client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
-                debug_log(f"Parsed DK Power: {client.current_dk_power}%")
+                # Check if $dk is ready (only when power management is OFF but auto_dk is ON)
+                if client.auto_dk_enabled and not client.dk_power_management:
+                    if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
+                        log_function(f"[{client.muda_name}] $dk is ready! Sending command...", preset_name, "INFO")
+                        await cmd_channel.send(f"{client.mudae_prefix}dk")
+                        await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
+
+            # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
+            try:
+                power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
+                if power_match:
+                    client.current_dk_power = int(power_match.group(1))
+                    client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
+                    debug_log(f"Parsed DK Power: {client.current_dk_power}%")
+                else:
+                    debug_log("WARN: Could not parse DK Power from $tu. Regex found no match.")
+
+                # Support EN, PT, ES, FR for consumption regex
+                consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", c_lower)
+                if consumption_match:
+                    client.dk_consumption = int(consumption_match.group(1))
+                    client.dk_consumption_chaos = int(client.dk_consumption / 2)
+                    debug_log(f"Parsed DK Consumption: {client.dk_consumption}% (Chaos: {client.dk_consumption_chaos}%)")
+                else:
+                    debug_log(f"WARN: Could not parse DK Consumption from $tu. Using fallback: {client.dk_consumption}%")
+                
+                # Update dk_stock_count while we are here, in case dk_power_management was off
+                # This ensures logs reflect reality even if management is disabled
+                dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", c_lower)
+                if dk_stock_match:
+                    client.dk_stock_count = int(dk_stock_match.group(1))
+                    debug_log(f"Parsed DK Stock: {client.dk_stock_count}")
+                elif re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
+                    client.dk_stock_count = 1
+                    debug_log("Parsed DK Stock: 1 (derived from ready status)")
+                else:
+                    debug_log("DK Stock: 0 (no ready/stock indicators found)")
+
+            except Exception as e:
+                log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
+
+
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+            # $rt Status
+            # Multilingual support: EN, PT, ES, FR
+            # Keywords: available, pronto, disponible, prêt
+            rt_ready_keywords = ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", 
+                                 "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"]
+            rt_ready = any(x in c_lower for x in rt_ready_keywords)
+            rt_reset_minutes = None
+
+            # Supports "$rt is in...", "$rt... time left:", "recarga do $rt", etc.
+            # Captures: ... <text> ... (Hh)? Mm min
+            match_rt_reset = re.search(r"(?:\$rt|recarga|enfriamiento|cool).*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+            if match_rt_reset:
+                h_rt, m_rt = parse_hours_minutes(match_rt_reset)
+                rt_reset_minutes = h_rt * 60 + m_rt
+                client.rt_available = False
+                log_function(f"[{client.muda_name}] RT: Cooldown ({h_rt}h {m_rt}m)", preset_name, "INFO")
+                debug_log(f"Parsed RT Reset: {h_rt}h {m_rt}m ({rt_reset_minutes} total min). Raw match: '{match_rt_reset.group(0)}'")
+            elif rt_ready:
+                client.rt_available = True
+                log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
+                debug_log("Parsed RT: Ready (keyword matched)")
             else:
-                debug_log("WARN: Could not parse DK Power from $tu. Regex found no match.")
+                # Fallback: If we didn't find a timer AND didn't find "Ready", assume cooldown/unavailable
+                # (Safety default)
+                client.rt_available = False
+                log_function(f"[{client.muda_name}] RT: Cooldown (Derived)", preset_name, "INFO")
+                debug_log("WARN: RT status fallback — no timer regex match and no ready keyword. Assuming cooldown.")
 
-            # Support EN, PT, ES, FR for consumption regex
-            consumption_match = re.search(r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%", c_lower)
-            if consumption_match:
-                client.dk_consumption = int(consumption_match.group(1))
-                client.dk_consumption_chaos = int(client.dk_consumption / 2)
-                debug_log(f"Parsed DK Consumption: {client.dk_consumption}% (Chaos: {client.dk_consumption_chaos}%)")
+            # Claim Status
+            can_claim = False
+            wait_time = 0
+
+
+
+            # Regex for Claim Ready (Positive)
+            # EN: you __can__ claim
+            # PT: você __pode__ se casar
+            # ES: __puedes__ reclamar
+            # FR: vous __pouvez__ vous marier / remarier
+            claim_ready_pattern = r"__(?:can|pode|puedes|pouvez)__\s+(?:claim|se casar|reclamar|vous (?:re)?marier)"
+            claim_ready = bool(re.search(claim_ready_pattern, c_lower))
+            debug_log(f"Claim Ready regex result: {claim_ready}")
+            
+            # Regex for Claim Reset Time (Cooldown)
+            # Covers: "Next claim reset is in...", "temps restant...", "falta um tempo...", "no puedes reclamar..."
+            # We look for keywords "claim/casar/marier/reclamar" OR "reset/tempo/temps/falta" followed eventually by time.
+            # This broad regex attempts to catch the specific minutes line.
+            claim_reset_minutes = None
+            
+            # Priority check for the "reset is in X min" line which usually appears when claiming is available (for next reset)
+            # or when on cooldown.
+            match_claim_reset = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+            
+            # [FIX] Reject match_claim_reset if it accidentally matched a $daily/$dk/$rt line
+            if match_claim_reset:
+                matched_text = match_claim_reset.group(0)
+                if any(kw in matched_text for kw in ["$daily", "$dk", "$rt"]):
+                    debug_log(f"Claim Reset regex REJECTED (matched wrong timer): '{matched_text}'")
+                    match_claim_reset = None
+            
+            # Alternative strict check for simple cooldown lines like "no puedes... 20 min"
+            match_claim_wait = re.search(r"(?:can't|não pode|no puedes|avant de).*?(?:claim|casar|reclamar|remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+            
+            # [FIX] Portuguese claim cooldown: "falta um tempo antes que você possa se casar novamente **Xh Y** min."
+            # This format is missed by both regexes above because it uses "antes que...casar novamente" instead of
+            # "não pode...casar" or a "reset...em" structure.
+            if not match_claim_wait:
+                match_claim_wait = re.search(r"falta\s+um\s+tempo.*?(?:casar|remarier|claim|reclamar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+
+            # Extract time from best match
+            best_match = match_claim_reset or match_claim_wait
+            if best_match:
+                 h_c, m_c = parse_hours_minutes(best_match)
+                 claim_reset_minutes = h_c * 60 + m_c
+                 wait_time = claim_reset_minutes # In cooldown context, this is the wait time
+                 debug_log(f"Parsed Claim Reset: {h_c}h {m_c}m ({claim_reset_minutes} total min). Raw: '{best_match.group(0)}'")
             else:
-                debug_log(f"WARN: Could not parse DK Consumption from $tu. Using fallback: {client.dk_consumption}%")
-            
-            # Update dk_stock_count while we are here, in case dk_power_management was off
-            # This ensures logs reflect reality even if management is disabled
-            dk_stock_match = re.search(r"\*\*(\d+)\*\*\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)", c_lower)
-            if dk_stock_match:
-                client.dk_stock_count = int(dk_stock_match.group(1))
-                debug_log(f"Parsed DK Stock: {client.dk_stock_count}")
-            elif re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
-                client.dk_stock_count = 1
-                debug_log("Parsed DK Stock: 1 (derived from ready status)")
+                 debug_log("WARN: No claim reset regex match found. Will attempt generic fallback.")
+
+            if claim_ready:
+                client.claim_right_available = True
+                client.last_successfully_claimed_character = None # Reset last claim on new cycle
+                log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
+                client.current_min_kakera_for_roll_claim = client.min_kakera
+                
+                if client.snipe_ignore_min_kakera_reset: 
+                     if claim_reset_minutes is not None and claim_reset_minutes <= 60:
+                          client.current_min_kakera_for_roll_claim = 0
+                          log_function(f"[{client.muda_name}] Reset soon ({claim_reset_minutes}m). Ignoring Min Kakera.", preset_name, "WARN")
+                
+                if claim_reset_minutes is not None:
+                    # Align to the next minute boundary (:00) for precision
+                    client.next_claim_reset_at_utc = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
+                else:
+                    client.next_claim_reset_at_utc = now_utc.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+                
+                can_claim = True
             else:
-                debug_log("DK Stock: 0 (no ready/stock indicators found)")
-
-        except Exception as e:
-            log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
-
-
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-        # $rt Status
-        # Multilingual support: EN, PT, ES, FR
-        # Keywords: available, pronto, disponible, prêt
-        rt_ready_keywords = ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", 
-                             "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"]
-        rt_ready = any(x in c_lower for x in rt_ready_keywords)
-        rt_reset_minutes = None
-
-        # Supports "$rt is in...", "$rt... time left:", "recarga do $rt", etc.
-        # Captures: ... <text> ... (Hh)? Mm min
-        match_rt_reset = re.search(r"(?:\$rt|recarga|enfriamiento|cool).*?(?:\:|in|em|en|dans|left|restante|restam|falta|tiempo|temps|tempo|restantes|restant)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-        if match_rt_reset:
-            h_rt, m_rt = parse_hours_minutes(match_rt_reset)
-            rt_reset_minutes = h_rt * 60 + m_rt
-            client.rt_available = False
-            log_function(f"[{client.muda_name}] RT: Cooldown ({h_rt}h {m_rt}m)", preset_name, "INFO")
-            debug_log(f"Parsed RT Reset: {h_rt}h {m_rt}m ({rt_reset_minutes} total min). Raw match: '{match_rt_reset.group(0)}'")
-        elif rt_ready:
-            client.rt_available = True
-            log_function(f"[{client.muda_name}] RT: Ready", preset_name, "INFO")
-            debug_log("Parsed RT: Ready (keyword matched)")
-        else:
-            # Fallback: If we didn't find a timer AND didn't find "Ready", assume cooldown/unavailable
-            # (Safety default)
-            client.rt_available = False
-            log_function(f"[{client.muda_name}] RT: Cooldown (Derived)", preset_name, "INFO")
-            debug_log("WARN: RT status fallback — no timer regex match and no ready keyword. Assuming cooldown.")
-
-        # Claim Status
-        can_claim = False
-        wait_time = 0
-
-
-
-        # Regex for Claim Ready (Positive)
-        # EN: you __can__ claim
-        # PT: você __pode__ se casar
-        # ES: __puedes__ reclamar
-        # FR: vous __pouvez__ vous marier / remarier
-        claim_ready_pattern = r"__(?:can|pode|puedes|pouvez)__\s+(?:claim|se casar|reclamar|vous (?:re)?marier)"
-        claim_ready = bool(re.search(claim_ready_pattern, c_lower))
-        debug_log(f"Claim Ready regex result: {claim_ready}")
-        
-        # Regex for Claim Reset Time (Cooldown)
-        # Covers: "Next claim reset is in...", "temps restant...", "falta um tempo...", "no puedes reclamar..."
-        # We look for keywords "claim/casar/marier/reclamar" OR "reset/tempo/temps/falta" followed eventually by time.
-        # This broad regex attempts to catch the specific minutes line.
-        claim_reset_minutes = None
-        
-        # Priority check for the "reset is in X min" line which usually appears when claiming is available (for next reset)
-        # or when on cooldown.
-        match_claim_reset = re.search(r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-        
-        # [FIX] Reject match_claim_reset if it accidentally matched a $daily/$dk/$rt line
-        if match_claim_reset:
-            matched_text = match_claim_reset.group(0)
-            if any(kw in matched_text for kw in ["$daily", "$dk", "$rt"]):
-                debug_log(f"Claim Reset regex REJECTED (matched wrong timer): '{matched_text}'")
-                match_claim_reset = None
-        
-        # Alternative strict check for simple cooldown lines like "no puedes... 20 min"
-        match_claim_wait = re.search(r"(?:can't|não pode|no puedes|avant de).*?(?:claim|casar|reclamar|remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-        
-        # [FIX] Portuguese claim cooldown: "falta um tempo antes que você possa se casar novamente **Xh Y** min."
-        # This format is missed by both regexes above because it uses "antes que...casar novamente" instead of
-        # "não pode...casar" or a "reset...em" structure.
-        if not match_claim_wait:
-            match_claim_wait = re.search(r"falta\s+um\s+tempo.*?(?:casar|remarier|claim|reclamar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-
-        # Extract time from best match
-        best_match = match_claim_reset or match_claim_wait
-        if best_match:
-             h_c, m_c = parse_hours_minutes(best_match)
-             claim_reset_minutes = h_c * 60 + m_c
-             wait_time = claim_reset_minutes # In cooldown context, this is the wait time
-             debug_log(f"Parsed Claim Reset: {h_c}h {m_c}m ({claim_reset_minutes} total min). Raw: '{best_match.group(0)}'")
-        else:
-             debug_log("WARN: No claim reset regex match found. Will attempt generic fallback.")
-
-        if claim_ready:
-            client.claim_right_available = True
-            client.last_successfully_claimed_character = None # Reset last claim on new cycle
-            log_function(f"[{client.muda_name}] Claim: Ready", preset_name, "INFO")
-            client.current_min_kakera_for_roll_claim = client.min_kakera
-            
-            if client.snipe_ignore_min_kakera_reset: 
-                 if claim_reset_minutes is not None and claim_reset_minutes <= 60:
-                      client.current_min_kakera_for_roll_claim = 0
-                      log_function(f"[{client.muda_name}] Reset soon ({claim_reset_minutes}m). Ignoring Min Kakera.", preset_name, "WARN")
-            
-            if claim_reset_minutes is not None:
-                # Align to the next minute boundary (:00) for precision
-                client.next_claim_reset_at_utc = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
+                client.claim_right_available = False
+                client.current_min_kakera_for_roll_claim = client.min_kakera  # Reset to normal rules
+                
+                if claim_reset_minutes is not None and claim_reset_minutes > 0:
+                     log_function(f"[{client.muda_name}] Claim: Cooldown ({int(claim_reset_minutes/60)}h {claim_reset_minutes%60}m)", preset_name, "INFO")
+                     
+                     # Align to next minute for precision
+                     target_time = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
+                     client.claim_cooldown_until_utc = target_time
+                     client.next_claim_reset_at_utc = target_time
+                else:
+                     # Backup generic finder if specific regex failed (e.g. "20 min" floating alone in context)
+                     # Only rely on this if we are SURE it's not a claim-ready state
+                     match_generic = re.search(r"\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower.split('\n')[0]) # Usually first line
+                     if match_generic:
+                          h_g, m_g = parse_hours_minutes(match_generic)
+                          wait_time = h_g * 60 + m_g
+                          log_function(f"[{client.muda_name}] Claim: Cooldown ({int(wait_time/60)}h {wait_time%60}m) (Generic)", preset_name, "INFO")
+                          target_time = (now_utc + datetime.timedelta(minutes=wait_time)).replace(second=0, microsecond=0)
+                          client.claim_cooldown_until_utc = target_time
+                          client.next_claim_reset_at_utc = target_time
+                          claim_reset_minutes = wait_time
+                
+            # Roll Reset Status (New in check_status for better sleep awareness)
+            roll_reset_minutes = None
+            match_roll_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", c_lower)
+            if match_roll_reset:
+                h_r, m_r = parse_hours_minutes(match_roll_reset)
+                roll_reset_minutes = h_r * 60 + m_r
+                debug_log(f"Parsed Roll Reset: {h_r}h {m_r}m ({roll_reset_minutes} total min)")
             else:
-                client.next_claim_reset_at_utc = now_utc.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+                debug_log("Roll Reset regex: no match found.")
+ 
+            # Kakera Status
+            if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower or "pouvez__ réagir" in c_lower or "pouvez réagir" in c_lower:
+                client.kakera_react_available = True
+                client.kakera_react_cooldown_until_utc = None
+            elif "can't react" in c_lower or "não pode" in c_lower or "no puedes" in c_lower:
+                client.kakera_react_available = False
+                # Try to parse time
+                match_k = re.search(r"(?:react|pegar|reaccionar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+                if match_k:
+                    h, m = parse_hours_minutes(match_k)
+                    client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=(h*60+m))
+
+            if client.key_limit_hit:
+                log_function(f"[{client.muda_name}] Recovering from key limit. Skipping rolls.", preset_name, "INFO")
+                client.key_limit_hit = False
+                return
+
+            # Timing logic: Only roll if claim reset is near (<= 60 mins)
+            is_timing_window = False
+            if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60:
+                is_timing_window = True
+
+            # Panic Roll Logic (Lurker Strategy)
+            is_panic_window = False
+            is_lurking = False
+            if client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
+                if claim_reset_minutes <= client.panic_roll_minutes:
+                    is_panic_window = True
+                    client.current_min_kakera_for_roll_claim = 0
+                    log_function(f"[{client.muda_name}] Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
+                else:
+                    is_lurking = True
+                    log_function(f"[{client.muda_name}] Lurking Mode: Waiting for others to roll. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
+
+            immediate_roll = (client.rolling_enabled and proceed_to_rolls and 
+                             ((can_claim and not is_lurking) or client.key_mode or client.rt_available or is_timing_window or is_panic_window))
             
-            can_claim = True
-        else:
-            client.claim_right_available = False
-            client.current_min_kakera_for_roll_claim = client.min_kakera  # Reset to normal rules
-            
-            if claim_reset_minutes is not None and claim_reset_minutes > 0:
-                 log_function(f"[{client.muda_name}] Claim: Cooldown ({int(claim_reset_minutes/60)}h {claim_reset_minutes%60}m)", preset_name, "INFO")
-                 
-                 # Align to next minute for precision
-                 target_time = (now_utc + datetime.timedelta(minutes=claim_reset_minutes)).replace(second=0, microsecond=0)
-                 client.claim_cooldown_until_utc = target_time
-                 client.next_claim_reset_at_utc = target_time
+            # Globally parse $mk available from $tu
+            mk_match = re.search(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)", c_lower)
+            if mk_match:
+                client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1)))
+                debug_log(f"Parsed $mk rolls: {client.mk_rolls_left}")
             else:
-                 # Backup generic finder if specific regex failed (e.g. "20 min" floating alone in context)
-                 # Only rely on this if we are SURE it's not a claim-ready state
-                 match_generic = re.search(r"\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower.split('\n')[0]) # Usually first line
-                 if match_generic:
-                      h_g, m_g = parse_hours_minutes(match_generic)
-                      wait_time = h_g * 60 + m_g
-                      log_function(f"[{client.muda_name}] Claim: Cooldown ({int(wait_time/60)}h {wait_time%60}m) (Generic)", preset_name, "INFO")
-                      target_time = (now_utc + datetime.timedelta(minutes=wait_time)).replace(second=0, microsecond=0)
-                      client.claim_cooldown_until_utc = target_time
-                      client.next_claim_reset_at_utc = target_time
-                      claim_reset_minutes = wait_time
+                client.mk_rolls_left = 0
+                debug_log("$mk rolls: 0 (no match)")
+                
+            if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
+                # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
+                if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+                    await process_mk_rolls(client, channel, current_cycle_id)
+                    await asyncio.sleep(2)
+                    if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
+                        return # Kill this ghost loop
+                    client.is_processing_cycle = False # Reset lock before recursive call
+                    await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
+                    return
             
-        # Roll Reset Status (New in check_status for better sleep awareness)
-        roll_reset_minutes = None
-        match_roll_reset = re.search(r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min", c_lower)
-        if match_roll_reset:
-            h_r, m_r = parse_hours_minutes(match_roll_reset)
-            roll_reset_minutes = h_r * 60 + m_r
-            debug_log(f"Parsed Roll Reset: {h_r}h {m_r}m ({roll_reset_minutes} total min)")
-        else:
-            debug_log("Roll Reset regex: no match found.")
+            if immediate_roll:
+                await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
+                                          tu_message_content, 
+                                          (client.current_min_kakera_for_roll_claim == 0),
+                                          (client.key_mode and not client.rt_available and not client.claim_right_available),
+                                          current_cycle_id)
+            elif client.rolling_enabled and proceed_to_rolls:
+                # Decide best sleep target using a prioritized candidate list to avoid "Dead Zones"
+                sleep_choices = []
+                
+                # 1. Personal claim cooldown
+                if wait_time > 0:
+                    sleep_choices.append((float(wait_time), "claim cooldown"))
+                
+                # 2. Global claim reset (for timing window threshold entry at 60 mins)
+                if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes > 60:
+                    # Wake up right as we enter the window where "Timing" becomes possible
+                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
+                
+                # 2.5 Panic Roll window arrival
+                if is_lurking and claim_reset_minutes is not None:
+                    sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
+                
+                # 3. $rt reset
+                if rt_reset_minutes is not None and rt_reset_minutes > 0:
+                    sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
+                    
+                # 4. Roll reset
+                if roll_reset_minutes is not None and roll_reset_minutes > 0:
+                    sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
 
-        # Kakera Status
-        if "you __can__ react" in c_lower or "pode reagir" in c_lower or "pegar kakera" in c_lower or "puedes__ reaccionar" in c_lower or "puedes reaccionar" in c_lower or "pouvez__ réagir" in c_lower or "pouvez réagir" in c_lower:
-            client.kakera_react_available = True
-            client.kakera_react_cooldown_until_utc = None
-        elif "can't react" in c_lower or "não pode" in c_lower or "no puedes" in c_lower:
-            client.kakera_react_available = False
-            # Try to parse time
-            match_k = re.search(r"(?:react|pegar|reaccionar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
-            if match_k:
-                h, m = parse_hours_minutes(match_k)
-                client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=(h*60+m))
-
-        if client.key_limit_hit:
-            log_function(f"[{client.muda_name}] Recovering from key limit. Skipping rolls.", preset_name, "INFO")
-            client.key_limit_hit = False
-            return
-
-        # Timing logic: Only roll if claim reset is near (<= 60 mins)
-        is_timing_window = False
-        if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60:
-            is_timing_window = True
-
-        # Panic Roll Logic (Lurker Strategy)
-        is_panic_window = False
-        is_lurking = False
-        if client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
-            if claim_reset_minutes <= client.panic_roll_minutes:
-                is_panic_window = True
-                client.current_min_kakera_for_roll_claim = 0
-                log_function(f"[{client.muda_name}] Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
-            else:
-                is_lurking = True
-                log_function(f"[{client.muda_name}] Lurking Mode: Waiting for others to roll. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
-
-        immediate_roll = (client.rolling_enabled and proceed_to_rolls and 
-                         ((can_claim and not is_lurking) or client.key_mode or client.rt_available or is_timing_window or is_panic_window))
-        
-        # Globally parse $mk available from $tu
-        mk_match = re.search(r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)", c_lower)
-        if mk_match:
-            client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1)))
-            debug_log(f"Parsed $mk rolls: {client.mk_rolls_left}")
-        else:
-            client.mk_rolls_left = 0
-            debug_log("$mk rolls: 0 (no match)")
-            
-        if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
-            # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
-            if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
-                await process_mk_rolls(client, channel, current_cycle_id)
-                await asyncio.sleep(2)
+                if sleep_choices:
+                    # Sort by wait time and pick the smallest logical event
+                    sleep_choices.sort(key=lambda x: x[0])
+                    best_sleep_wait, sleep_reason = sleep_choices[0]
+                    # Ensure we don't sleep for too little or too much (clamped between 0.5 and the choice)
+                    best_sleep_wait = max(0.5, best_sleep_wait)
+                    await humanized_wait_and_proceed(client, channel, best_sleep_wait, sleep_reason)
+                else:
+                    # Default safety sleep if no timers could be parsed
+                    await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
+                
                 if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
                     return # Kill this ghost loop
                 await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                 return
-        
-        if immediate_roll:
-            await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
-                                      tu_message_content, 
-                                      (client.current_min_kakera_for_roll_claim == 0),
-                                      (client.key_mode and not client.rt_available and not client.claim_right_available),
-                                      current_cycle_id)
-        elif client.rolling_enabled and proceed_to_rolls:
-            # Decide best sleep target using a prioritized candidate list to avoid "Dead Zones"
-            sleep_choices = []
-            
-            # 1. Personal claim cooldown
-            if wait_time > 0:
-                sleep_choices.append((float(wait_time), "claim cooldown"))
-            
-            # 2. Global claim reset (for timing window threshold entry at 60 mins)
-            if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes > 60:
-                # Wake up right as we enter the window where "Timing" becomes possible
-                sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
-            
-            # 2.5 Panic Roll window arrival
-            if is_lurking and claim_reset_minutes is not None:
-                sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
-            
-            # 3. $rt reset
-            if rt_reset_minutes is not None and rt_reset_minutes > 0:
-                sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
-                
-            # 4. Roll reset
-            if roll_reset_minutes is not None and roll_reset_minutes > 0:
-                sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
-
-            if sleep_choices:
-                # Sort by wait time and pick the smallest logical event
-                sleep_choices.sort(key=lambda x: x[0])
-                best_sleep_wait, sleep_reason = sleep_choices[0]
-                # Ensure we don't sleep for too little or too much (clamped between 0.5 and the choice)
-                best_sleep_wait = max(0.5, best_sleep_wait)
-                await humanized_wait_and_proceed(client, channel, best_sleep_wait, sleep_reason)
             else:
-                # Default safety sleep if no timers could be parsed
-                await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
-            
-            if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                return # Kill this ghost loop
-            await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-            return
-        else:
-            return
+                return
+
+        finally:
+            client.is_processing_cycle = False
 
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
@@ -1587,6 +1609,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if total_rolls == 0:
                 # AUTO $US LOGIC (1st Priority)
+                if is_inactive_hour():
+                    wait_s = seconds_until_active()
+                    if client.humanization_enabled:
+                        wait_s += random.uniform(0, max(0.0, client.humanization_window_minutes * 60))
+                    log_function(f"[{client.muda_name}] Sleeping until active period (Auto $us interrupted).", preset_name, "RESET")
+                    await asyncio.sleep(wait_s)
+                    return # Break execution flow
+
                 us_will_execute = False
                 if getattr(client, 'auto_us_enabled', False) and not getattr(client, 'us_failed_this_cycle', False):
                     stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
@@ -1620,6 +1650,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 log_function(f"[{client.muda_name}] Auto $us failed (Not enough Kakera). Halting $us for this cycle.", preset_name, "WARN")
                                 if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
                                     return # Kill this ghost loop
+                                client.is_processing_cycle = False # Reset lock before recursive call
                                 await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                                 return
                             
@@ -1655,6 +1686,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
                         if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
                             return # Kill this ghost loop
+                        client.is_processing_cycle = False # Reset lock before recursive call
                         await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
                         return
 
@@ -1688,6 +1720,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await humanized_wait_and_proceed(client, channel, wait_m, reason)
                 if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
                     return # Kill this ghost loop
+                client.is_processing_cycle = False # Reset lock before recursive call
                 await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
             else:
                 log_detail = f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else ""
@@ -1699,6 +1732,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(30)
             if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
                 return # Kill this ghost loop
+            client.is_processing_cycle = False # Reset lock before recursive call
             await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
 
     async def process_mk_rolls(client, channel, current_cycle_id):
@@ -1823,6 +1857,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Always check status (send $tu) after rolling sequence, as requested
         if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
             return # Kill this ghost loop
+            
+        client.is_processing_cycle = False # Reset lock before recursive call
         await check_status(client, channel, client.mudae_prefix, current_cycle_id=current_cycle_id)
 
 
@@ -2621,6 +2657,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             await asyncio.sleep(3)
                             # Skip if we're actively rolling (rolls will finish and check_status runs anyway)
                             if not client.is_actively_rolling:
+                                if getattr(client, 'is_processing_cycle', False):
+                                    debug_log("_delayed_status_check aborted: cycle already processing.")
+                                    return
                                 await check_status(client, message.channel, client.mudae_prefix, current_cycle_id=None)
                         except Exception as e:
                             log_function(f"[{client.muda_name}] Bonus roll status check failed: {e}", preset_name, "ERROR")
