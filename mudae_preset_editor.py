@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import threading
+import pyperclip
 
 def get_base_path():
     """Get the base path for file operations.
@@ -197,6 +198,7 @@ class PresetEditor:
         fg_dim = "#a6adc8"
         accent = "#89b4fa"
         accent_hover = "#b4befe"
+        share = "#f3b88b"
         danger = "#f38ba8"
         success = "#a6e3a1"
         
@@ -213,6 +215,8 @@ class PresetEditor:
         style.map("TButton", background=[("active", accent), ("pressed", accent_hover)])
         style.configure("Accent.TButton", background=accent, foreground=bg_dark)
         style.map("Accent.TButton", background=[("active", accent_hover)])
+        style.configure("Share.TButton", background=share, foreground=bg_dark)
+        style.map("Share.TButton", background=[("active", "#f2c6a5")])
         style.configure("Danger.TButton", background=danger, foreground=bg_dark)
         style.map("Danger.TButton", background=[("active", "#eba0ac")])
         style.configure("Success.TButton", background=success, foreground=bg_dark)
@@ -539,6 +543,8 @@ class PresetEditor:
                   command=self.run_bot).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(btn_frame, text="🗑 Delete Config", style="Danger.TButton",
                   command=self.delete_preset).pack(side=tk.RIGHT)
+        ttk.Button(btn_frame, text="➤ Share Config", style="Share.TButton",
+                   command=self.share_preset).pack(side=tk.RIGHT, padx=(0, 10))
     
     def add_text_field(self, parent, key, label, show=None, pack_side=None):
         """Add a text entry field."""
@@ -1001,6 +1007,13 @@ class PresetEditor:
             
             self.refresh_preset_list()
             self.select_preset(name)
+
+    def share_preset(self):
+        data = self.presets[self.current_preset]
+
+        data["token"] = "REDACTED"
+        pyperclip.copy(json.dumps(data, indent=2))
+
     
     def delete_preset(self):
         """Delete the current preset."""
