@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import threading
+import pyperclip
 
 def get_base_path():
     """Get the base path for file operations.
@@ -961,7 +962,10 @@ class PresetEditor:
             self.select_preset(name)
 
     def share_preset(self):
-        print(self.current_preset)
+        data = self.presets[self.current_preset]
+
+        data["token"] = "REDACTED"
+        pyperclip.copy(json.dumps(data, indent=2))
 
     
     def delete_preset(self):
