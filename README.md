@@ -157,7 +157,7 @@ If you prefer using the source code or you are on Mac/Linux:
    ```bash
    git clone https://github.com/misutesu-desu/MudaRemote.git
    cd MudaRemote
-   pip install discord.py-self inquirer requests
+   pip install discord.py-self inquirer requests pyperclip
    ```
 3. Run the application:
    ```bash
