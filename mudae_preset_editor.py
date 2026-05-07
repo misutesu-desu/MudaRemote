@@ -344,27 +344,38 @@ class PresetEditor:
         self.add_checkbox(core_frame, "autostart", "Start with Windows")
         
         # --- Rolling ---
-        roll_frame = ttk.LabelFrame(frame, text="Rolling Options", padding=15)
-        roll_frame.pack(fill=tk.X, pady=(0, 15))
+        roll_outer = ttk.Frame(frame)
+        roll_outer.pack(fill=tk.X, pady=(0, 15))
+        roll_frame = ttk.LabelFrame(roll_outer, text="Rolling Options", padding=15)
+        roll_frame.pack(fill=tk.X)
         
-        self.add_checkbox(roll_frame, "rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)")
-        self.add_checkbox(roll_frame, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
-        self.add_number_field(roll_frame, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
-        self.add_number_field(roll_frame, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
-        self.add_number_field(roll_frame, "start_delay", "Wait Before Starting (seconds)", 0)
-        self.add_number_field(roll_frame, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
-        self.add_checkbox(roll_frame, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
-        self.add_checkbox(roll_frame, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
-        self.add_number_field(roll_frame, "auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0)
-        self.add_checkbox(roll_frame, "auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)")
+        rolling_var = self.add_checkbox(roll_frame, "rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)")
+        roll_sub = self.create_subframe(roll_frame, rolling_var)
+        
+        self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
+        self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
+        self.add_number_field(roll_sub, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
+        self.add_number_field(roll_sub, "start_delay", "Wait Before Starting (seconds)", 0)
+        self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
+        self.add_checkbox(roll_sub, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
+        
+        auto_rolls_var = self.add_checkbox(roll_sub, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
+        auto_rolls_sub = self.create_subframe(roll_sub, auto_rolls_var)
+        self.add_number_field(auto_rolls_sub, "auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0)
+        
+        self.add_checkbox(roll_sub, "auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)")
         
         # --- Stacked Rolls ($us) ---
-        us_frame = ttk.LabelFrame(frame, text="Saved Rolls ($us)", padding=15)
-        us_frame.pack(fill=tk.X, pady=(0, 15))
+        us_outer = ttk.Frame(frame)
+        us_outer.pack(fill=tk.X, pady=(0, 15))
+        us_frame = ttk.LabelFrame(us_outer, text="Saved Rolls ($us)", padding=15)
+        us_frame.pack(fill=tk.X)
         
-        self.add_checkbox(us_frame, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
-        self.add_checkbox(us_frame, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
-        self.add_number_field(us_frame, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
+        us_enabled_var = self.add_checkbox(us_frame, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
+        us_sub = self.create_subframe(us_frame, us_enabled_var)
+        
+        self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
+        self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
         
         # --- Claiming ---
@@ -379,24 +390,36 @@ class PresetEditor:
         self.add_checkbox(claim_frame, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
         
         # --- Sniping ---
-        snipe_frame = ttk.LabelFrame(frame, text="Sniping & Stealing", padding=15)
-        snipe_frame.pack(fill=tk.X, pady=(0, 15))
+        snipe_outer = ttk.Frame(frame)
+        snipe_outer.pack(fill=tk.X, pady=(0, 15))
+        snipe_frame = ttk.LabelFrame(snipe_outer, text="Sniping & Stealing", padding=15)
+        snipe_frame.pack(fill=tk.X)
         
-        self.add_checkbox(snipe_frame, "snipe_mode", "Snipe Characters (Claim characters rolled by other people)")
-        self.add_number_field(snipe_frame, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
-        self.add_checkbox(snipe_frame, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
-        self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
-        self.add_number_field(snipe_frame, "reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0)
+        snipe_mode_var = self.add_checkbox(snipe_frame, "snipe_mode", "Snipe Characters (Claim characters rolled by other people)")
+        snipe_sub = self.create_subframe(snipe_frame, snipe_mode_var)
+        self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
+        self.add_checkbox(snipe_sub, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
+        
+        reactive_snipe_var = self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
+        reactive_sub = self.create_subframe(snipe_frame, reactive_snipe_var)
+        self.add_number_field(reactive_sub, "reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0)
         
         # Series snipe
-        self.add_checkbox(snipe_frame, "series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)")
-        self.add_number_field(snipe_frame, "series_snipe_delay", "Series Snipe Wait Time (Wait X seconds before stealing from series)", 3)
+        series_snipe_var = self.add_checkbox(snipe_frame, "series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)")
+        series_sub = self.create_subframe(snipe_frame, series_snipe_var)
+        self.add_number_field(series_sub, "series_snipe_delay", "Series Snipe Wait Time (Wait X seconds before stealing from series)", 3)
+        self.add_list_field(series_sub, "series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)")
         
         # Kakera snipe
-        self.add_checkbox(snipe_frame, "kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)")
-        self.add_number_field(snipe_frame, "kakera_snipe_threshold", "Minimum Value to Steal (Only steal if worth this much)", 0)
-        self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
-        self.add_number_field(snipe_frame, "kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75)
+        kakera_snipe_var = self.add_checkbox(snipe_frame, "kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)")
+        kakera_sub = self.create_subframe(snipe_frame, kakera_snipe_var)
+        self.add_number_field(kakera_sub, "kakera_snipe_threshold", "Minimum Value to Steal (Only steal if worth this much)", 0)
+        
+        kakera_react_snipe_var = self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
+        kakera_react_sub = self.create_subframe(snipe_frame, kakera_react_snipe_var)
+        self.add_number_field(kakera_react_sub, "kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75)
+        self.add_list_field(kakera_react_sub, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
+        
         self.add_checkbox(snipe_frame, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
         self.add_checkbox(snipe_frame, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
         
@@ -405,8 +428,10 @@ class PresetEditor:
         self.add_checkbox(snipe_frame, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
         
         # Snipe Chat Reactions
-        self.add_checkbox(snipe_frame, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
-        self.add_list_field(snipe_frame, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        enable_chat_var = self.add_checkbox(snipe_frame, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
+        chat_sub = self.create_subframe(snipe_frame, enable_chat_var)
+        self.add_list_field(chat_sub, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        
         self.add_checkbox(snipe_frame, "op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters")
         
         # --- Wishlists & Filters ---
@@ -414,11 +439,11 @@ class PresetEditor:
         list_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_list_field(list_frame, "wishlist", "Character Wishlist (Names of characters you want to auto-claim)")
-        self.add_list_field(list_frame, "series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)")
         self.add_list_field(list_frame, "avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)")
-        self.add_list_field(list_frame, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
-        self.add_checkbox(list_frame, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
-        self.add_text_field(list_frame, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
+        
+        farm_var = self.add_checkbox(list_frame, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
+        farm_sub = self.create_subframe(list_frame, farm_var)
+        self.add_text_field(farm_sub, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
         
         # --- Emoji Settings ---
         emoji_frame = ttk.LabelFrame(frame, text="Custom Emojis (Advanced)", padding=15)
@@ -445,15 +470,19 @@ class PresetEditor:
                  foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
         
         # --- Anti-Detection ---
-        human_frame = ttk.LabelFrame(frame, text="Anti-Ban (Stealth Mode)", padding=15)
-        human_frame.pack(fill=tk.X, pady=(0, 15))
+        human_outer = ttk.Frame(frame)
+        human_outer.pack(fill=tk.X, pady=(0, 15))
+        human_frame = ttk.LabelFrame(human_outer, text="Anti-Ban (Stealth Mode)", padding=15)
+        human_frame.pack(fill=tk.X)
         
-        self.add_checkbox(human_frame, "humanization_enabled", "Anti-Ban Stealth (Randomizes timing to look like a real human)")
-        self.add_number_field(human_frame, "humanization_window_minutes", "Random Wait Time (minutes) to Look Like a Real Human", 40)
-        self.add_number_field(human_frame, "humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5)
+        human_var = self.add_checkbox(human_frame, "humanization_enabled", "Anti-Ban Stealth (Randomizes timing to look like a real human)")
+        human_sub = self.create_subframe(human_frame, human_var)
+        
+        self.add_number_field(human_sub, "humanization_window_minutes", "Random Wait Time (minutes) to Look Like a Real Human", 40)
+        self.add_number_field(human_sub, "humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5)
         
         # Inactive hours
-        inactive_row = ttk.Frame(human_frame)
+        inactive_row = ttk.Frame(human_sub)
         inactive_row.pack(fill=tk.X, pady=5)
         ttk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 1-7, 23-6):").pack(anchor=tk.W)
         ttk.Label(inactive_row, text="The bot will not roll during these hours (uses your local time)",
@@ -463,7 +492,7 @@ class PresetEditor:
         self.widgets["inactive_hours"] = inactive_entry
         
         # Reactive kakera delay range
-        range_row = ttk.Frame(human_frame)
+        range_row = ttk.Frame(human_sub)
         range_row.pack(fill=tk.X, pady=5)
         ttk.Label(range_row, text="Self-Roll Kakera Delay (Random wait range in seconds):").pack(anchor=tk.W)
         range_inputs = ttk.Frame(range_row)
@@ -540,6 +569,24 @@ class PresetEditor:
         cb = ttk.Checkbutton(parent, text=label, variable=var)
         cb.pack(anchor=tk.W, pady=2)
         self.widgets[key] = var
+        return var
+
+    def create_subframe(self, parent, var):
+        """Create a subframe that shows/hides based on a BooleanVar."""
+        subframe = ttk.Frame(parent)
+        
+        def toggle(*args):
+            if var.get():
+                subframe.pack(fill=tk.X, padx=(20, 0), pady=2, before=None)
+            else:
+                subframe.pack_forget()
+        
+        # Initial state
+        if var.get():
+            subframe.pack(fill=tk.X, padx=(20, 0), pady=2)
+        
+        var.trace_add("write", toggle)
+        return subframe
     
     def add_list_field(self, parent, key, label):
         """Add a comma-separated list field."""
@@ -1044,11 +1091,7 @@ def run_headless(preset_names):
     """
     import mudae_bot
     
-    # Load presets from disk
-    if not os.path.exists(PRESETS_FILE):
-        print(f"[MudaRemote] {PRESETS_FILE} not found.")
-        sys.exit(1)
-    
+    # Load presets from disk (mudae_bot already ensures it exists on import)
     try:
         with open(PRESETS_FILE, "r", encoding="utf-8") as f:
             all_presets = json.load(f)
@@ -1110,9 +1153,6 @@ def main():
     
     if args.all:
         # Load all preset names and run them all
-        if not os.path.exists(PRESETS_FILE):
-            print(f"[MudaRemote] {PRESETS_FILE} not found.")
-            sys.exit(1)
         try:
             with open(PRESETS_FILE, "r", encoding="utf-8") as f:
                 all_presets = json.load(f)
