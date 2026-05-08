@@ -1009,10 +1009,17 @@ class PresetEditor:
             self.select_preset(name)
 
     def share_preset(self):
-        data = self.presets[self.current_preset]
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No preset selected to share.")
+            return
+        data_copy = self.presets[self.current_preset].copy()
+        data_copy["token"] = "REDACTED"
 
-        data["token"] = "REDACTED"
-        pyperclip.copy(json.dumps(data, indent=2))
+        try:
+            pyperclip.copy(json.dumps(data_copy, indent=4))
+            messagebox.showinfo("Success", "Config copied to clipboard! (Token hidden)")
+        except Exception as e:
+            messagebox.showerror("Error", f"failed to copy to clipboard:\n{e}")
 
     
     def delete_preset(self):
