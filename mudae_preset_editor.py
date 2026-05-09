@@ -70,6 +70,9 @@ DEFAULTS = {
     "farm_character": "",
     "farm_character_enabled": False,
     "op_perk_5_only": False,
+    "auto_divorce_enabled": False,
+    "auto_divorce_max_kakera": 50,
+    "auto_divorce_series": [],
 }
 
 # Boolean settings with their display names and defaults
@@ -104,6 +107,7 @@ BOOL_SETTINGS = [
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
+    ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -124,6 +128,7 @@ NUMERIC_SETTINGS = [
     ("auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0, int),
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
     ("panic_roll_minutes", "Panic Roll Start (Minutes before claim reset)", 5, int),
+    ("auto_divorce_max_kakera", "Auto-Divorce Kakera Threshold (Divorce if value <= this)", 50, int),
 ]
 
 # Text/list settings
@@ -138,6 +143,7 @@ TEXT_SETTINGS = [
     ("avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)", [], True),
     ("kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)", [], True),
     ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
+    ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
 ]
 
 # Default emoji values
@@ -445,6 +451,12 @@ class PresetEditor:
         farm_sub = self.create_subframe(list_frame, farm_var)
         self.add_text_field(farm_sub, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
         
+        # --- Auto-Divorce ---
+        divorce_var = self.add_checkbox(list_frame, "auto_divorce_enabled", "Auto-Divorce (Automatically separate low-value characters after claiming)")
+        divorce_sub = self.create_subframe(list_frame, divorce_var)
+        self.add_number_field(divorce_sub, "auto_divorce_max_kakera", "Kakera Threshold (Divorce if character value ≤ this)", 50)
+        self.add_list_field(divorce_sub, "auto_divorce_series", "Divorce Series List (Always divorce characters from these series)")
+        
         # --- Emoji Settings ---
         emoji_frame = ttk.LabelFrame(frame, text="Custom Emojis (Advanced)", padding=15)
         emoji_frame.pack(fill=tk.X, pady=(0, 15))
@@ -654,7 +666,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "main_account_id", "farm_character"]:
+                    "main_account_id", "farm_character", "auto_divorce_max_kakera"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -673,7 +685,8 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled"]:
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
+                    "auto_divorce_enabled"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -685,7 +698,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages"]:
+                    "snipe_chat_messages", "auto_divorce_series"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -791,7 +804,8 @@ class PresetEditor:
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power"]:
+                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                    "auto_divorce_max_kakera"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -800,7 +814,8 @@ class PresetEditor:
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit", 
-                                   "auto_rolls_limit", "panic_roll_minutes", "max_dk_power"]:
+                                   "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                                   "auto_divorce_max_kakera"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
@@ -817,7 +832,8 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled"]:
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
+                    "auto_divorce_enabled"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -825,7 +841,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages"]:
+                    "snipe_chat_messages", "auto_divorce_series"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
