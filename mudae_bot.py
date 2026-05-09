@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.7"
+CURRENT_VERSION = "4.1.8"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -375,7 +375,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             snipe_chat_messages_preset=None, # [NEW] Snipe Chat Messages: list of messages to randomly pick from
             farm_character_preset="", # [NEW] Kakera Farm Character
             op_perk_5_only_preset=False, # [NEW] $op Perk 5 Filter
-            farm_character_enabled_preset=False): # [NEW] Kakera Farm Toggle
+            farm_character_enabled_preset=False, # [NEW] Kakera Farm Toggle
+            auto_divorce_enabled_preset=False, # [NEW] Auto-Divorce Toggle
+            auto_divorce_max_kakera_preset=50, # [NEW] Auto-Divorce Kakera Threshold
+            auto_divorce_series_preset=None): # [NEW] Auto-Divorce Series List
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -501,6 +504,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     # Slash command internal state
     client.use_slash_rolls = bool(use_slash_rolls and Route is not None)
+    client.slash_fallback_active = False  # [NEW] Dynamic slash-to-text fallback state
     client.mudae_slash_cache = {}
     client.mudae_slash_missing = set()
     client.mudae_session_id = None
@@ -510,6 +514,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.slash_max_backoff = 6.0
     client.last_slash_attempt = 0.0
     client.slash_rate_limited_until = 0.0
+
+    # [NEW] Auto-Divorce Configuration
+    client.auto_divorce_enabled = auto_divorce_enabled_preset
+    client.auto_divorce_max_kakera = auto_divorce_max_kakera_preset if auto_divorce_max_kakera_preset is not None else 50
+    client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
     client.key_limit_hit = False
     client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
@@ -890,10 +899,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if invalidate_cache:
             client.mudae_slash_cache.pop(guild.id, None)
-        if client.slash_fail_streak >= client.slash_fail_threshold:
-            # Log the failure streak but do NOT switch to text mode.
-            # Stealth is paramount: we never expose the bot with text commands.
-            log_function(f"[{client.muda_name}] Slash: WARNING - {client.slash_fail_streak} consecutive failures. Slash mode remains active (no text fallback).", preset_name, "WARN")
+        if client.slash_fail_streak >= client.slash_fail_threshold and not client.slash_fallback_active:
+            # [NEW] Activate dynamic text fallback after consecutive slash failures
+            client.slash_fallback_active = True
+            log_function(f"[{client.muda_name}] Slash: {client.slash_fail_streak} consecutive failures. Automatically falling back to text commands ({client.mudae_prefix}).", preset_name, "WARN")
         return False
 
     async def send_roll_command(channel, command_name):
@@ -903,28 +912,29 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         normalized = cmd.lstrip('/')
 
-        if client.use_slash_rolls:
-            # STEALTH MODE: When slash is enabled, NEVER fall back to text.
-            # If slash fails, we stay silent rather than exposing the bot.
+        if client.use_slash_rolls and not client.slash_fallback_active:
+            # Slash mode active and healthy — attempt slash command
             slash_target = normalized
             slash_override_map = {"w": "wx", "h": "hx", "m": "mx"}
             slash_target = slash_override_map.get(slash_target.lower(), slash_target)
             slash_name = slash_target if slash_target.startswith("/") else f"/{slash_target}"
-            await _trigger_mudae_slash(channel, slash_name)
-            # Always return here - no text fallback
-            return
+            success = await _trigger_mudae_slash(channel, slash_name)
+            if success:
+                return
+            # If fallback just activated inside _trigger_mudae_slash, fall through to text
+            if not client.slash_fallback_active:
+                return  # Slash is still preferred, just a transient failure
 
-        # Text mode: Only used when slash is explicitly disabled
+        # Text mode: Used when slash is disabled OR fallback is active
         await channel.send(f"{client.mudae_prefix}{normalized}")
 
     async def send_tu_command(channel):
         """
         Send $tu command via slash (if enabled) or text.
-        If slash is enabled, retries up to 3 times on failure.
-        If all slash attempts fail, waits 30 minutes before returning.
-        Never falls back to text when slash is enabled.
+        If slash is enabled and not in fallback mode, retries up to 3 times on failure.
+        If all slash attempts fail, activates text fallback automatically.
         """
-        if client.use_slash_rolls:
+        if client.use_slash_rolls and not client.slash_fallback_active:
             max_attempts = 3
             retry_delay = 5.0  # seconds between retries
             
@@ -934,16 +944,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if sent:
                     return True
                 
+                # If fallback just activated inside _trigger_mudae_slash, break out and use text
+                if client.slash_fallback_active:
+                    break
+                
                 if attempt < max_attempts:
                     log_function(f"[{client.muda_name}] Retrying /tu in {retry_delay}s... (attempt {attempt}/{max_attempts})", preset_name, "WARN")
                     await asyncio.sleep(retry_delay)
             
-            # All attempts failed - wait 30 minutes
-            log_function(f"[{client.muda_name}] /tu failed after {max_attempts} attempts. Entering 30-minute cooldown before next retry.", preset_name, "ERROR")
-            await asyncio.sleep(30 * 60)
-            return False
+            # If fallback is now active, fall through to text. Otherwise wait.
+            if not client.slash_fallback_active:
+                log_function(f"[{client.muda_name}] /tu failed after {max_attempts} attempts. Entering 30-minute cooldown before next retry.", preset_name, "ERROR")
+                await asyncio.sleep(30 * 60)
+                return False
         
-        # Slash not enabled - use text command
+        # Text mode: Used when slash is disabled OR fallback is active
         await channel.send(f"{client.mudae_prefix}tu")
         return True
 
@@ -1862,7 +1877,79 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await check_status(client, channel, client.mudae_prefix, current_cycle_id=current_cycle_id)
 
 
-    async def verify_snipe_outcome(client, channel, char_name, is_snipe_action=True):
+    async def execute_auto_divorce(client, channel, char_name):
+        """
+        Auto-Divorce Interaction Flow (Language & Text Agnostic).
+        Uses bold (**) markers for validation instead of hardcoded language strings.
+        
+        Step 1: Send $divorce {char_name}
+        Step 2: Wait for Mudae confirmation prompt (contains **char_name** and y/n)
+        Step 3: Send 'y' to confirm
+        Step 4: Validate final response (contains both **char_name** and **bot_name**)
+        """
+        try:
+            # Step 1: Send divorce command
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+            await channel.send(f"{client.mudae_prefix}divorce {char_name}")
+            log_function(f"[{client.muda_name}] Auto-Divorce: Initiating divorce for {char_name}...", client.preset_name, "INFO")
+
+            # Step 2: Wait for Mudae's confirmation prompt
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+            char_tag_lower = f"**{char_name.lower()}**"
+            confirmation_found = False
+
+            async for msg in channel.history(limit=8):
+                if msg.author.id != TARGET_BOT_ID or not msg.content:
+                    continue
+                content_lower = msg.content.lower()
+                # Validate: contains **char_name** AND a y/n or yes/no prompt
+                if char_tag_lower in content_lower and ("(y/n" in content_lower or "yes/no" in content_lower or "(y /" in content_lower):
+                    confirmation_found = True
+                    break
+
+            if not confirmation_found:
+                log_function(f"[{client.muda_name}] Auto-Divorce: No confirmation prompt found for {char_name}. Aborting.", client.preset_name, "WARN")
+                return False
+
+            # Step 3: Send 'y' to confirm
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+            await channel.send("y")
+
+            # Step 4: Wait for final confirmation
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+            bot_username_lower = client.user.name.lower()
+            bot_display_lower = (client.user.display_name or client.user.name).lower()
+            success = False
+            kakera_earned = None
+
+            async for msg in channel.history(limit=8):
+                if msg.author.id != TARGET_BOT_ID or not msg.content:
+                    continue
+                content_lower = msg.content.lower()
+                # Success validation: contains both **char_name** and **bot_name**
+                has_char = char_tag_lower in content_lower
+                has_bot = f"**{bot_username_lower}**" in content_lower or f"**{bot_display_lower}**" in content_lower
+                if has_char and has_bot:
+                    success = True
+                    # Try to parse kakera earned from the message (e.g. "+50<:kakera:")
+                    kakera_match = re.search(r"\+(\d+)\s*<:kakera:", msg.content)
+                    if kakera_match:
+                        kakera_earned = int(kakera_match.group(1))
+                    break
+
+            if success:
+                kakera_str = f" (+{kakera_earned} kakera)" if kakera_earned else ""
+                log_function(f"[{client.muda_name}] Auto-Divorce: Successfully divorced {char_name}{kakera_str}", client.preset_name, "KAKERA")
+                return True
+            else:
+                log_function(f"[{client.muda_name}] Auto-Divorce: Could not confirm divorce for {char_name}. Check manually.", client.preset_name, "WARN")
+                return False
+
+        except Exception as e:
+            log_function(f"[{client.muda_name}] Auto-Divorce: Error during divorce of {char_name}: {e}", client.preset_name, "ERROR")
+            return False
+
+    async def verify_snipe_outcome(client, channel, char_name, is_snipe_action=True, character_kakera=0, character_series=""):
         """
         Outcome Verifier:
         Checks the last few messages from Mudae to see who actually got the character.
@@ -1912,6 +1999,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         if found_our_marriage:
             log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
+
+            # --- AUTO-DIVORCE EVALUATION ---
+            # If enabled, check if the claimed character meets divorce conditions
+            if client.auto_divorce_enabled:
+                should_divorce = False
+                divorce_reason = ""
+                
+                # Condition 1: Kakera value is at or below threshold
+                if character_kakera > 0 and character_kakera <= client.auto_divorce_max_kakera:
+                    should_divorce = True
+                    divorce_reason = f"kakera {character_kakera} <= {client.auto_divorce_max_kakera}"
+                
+                # Condition 2: Character series matches divorce list
+                if not should_divorce and character_series and client.auto_divorce_series:
+                    series_lower = character_series.lower()
+                    if any(s.lower() in series_lower for s in client.auto_divorce_series):
+                        should_divorce = True
+                        divorce_reason = f"series match in '{character_series[:60]}'"
+                
+                if should_divorce:
+                    log_function(f"[{client.muda_name}] Auto-Divorce: {char_name} qualifies ({divorce_reason}). Initiating divorce.", client.preset_name, "INFO")
+                    await execute_auto_divorce(client, channel, char_name)
             # Update State LOCALLY (No $tu needed)
             client.claim_right_available = False
             client.last_successfully_claimed_character = char_name.lower()
@@ -2461,7 +2570,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             # Snipe Verification Logic (is_snipe tells us if it was external)
                             # If we clicked, we verify if we actually won
                             # For regular rolling (not snipes), is_snipe is False -> "Claim Verification"
-                            await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
+                            # Pass kakera value and series for auto-divorce evaluation
+                            _claim_kv = kakera_value if kakera_value else 0
+                            _claim_series = ""
+                            if embed and embed.description:
+                                _claim_series = embed.description.splitlines()[0] if embed.description else ""
+                            await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe, character_kakera=_claim_kv, character_series=_claim_series)
                             return True
         
         # Reaction fallback
@@ -2472,8 +2586,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 debug_log(f"Using reaction fallback for '{char_name}' with emoji: {reaction_emoji}")
                 await msg.add_reaction(reaction_emoji)
                 log_function(f"[{client.muda_name}] Claiming {char_name}{kakera_str} (Reaction: {reaction_emoji})", client.preset_name, "CLAIM")
-                # Reaction fallback
-                await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe)
+                # Reaction fallback — pass kakera/series for auto-divorce
+                _react_kv = kakera_value if kakera_value else 0
+                _react_series = ""
+                if embed and embed.description:
+                    _react_series = embed.description.splitlines()[0] if embed.description else ""
+                await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe, character_kakera=_react_kv, character_series=_react_series)
                 return True
             except Exception as e:
                 debug_log(f"Reaction fallback FAILED for '{char_name}': {type(e).__name__}: {str(e)[:200]}")
@@ -2947,7 +3065,10 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("snipe_chat_messages", None),
                 preset_data.get("farm_character", ""),
                 preset_data.get("op_perk_5_only", False),
-                preset_data.get("farm_character_enabled", False)
+                preset_data.get("farm_character_enabled", False),
+                preset_data.get("auto_divorce_enabled", False),
+                preset_data.get("auto_divorce_max_kakera", 50),
+                preset_data.get("auto_divorce_series", [])
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
