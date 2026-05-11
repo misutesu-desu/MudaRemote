@@ -25,7 +25,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.8"
+CURRENT_VERSION = "4.1.9"
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -500,6 +500,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.processed_claim_messages = set() # Track already processed/claimed message IDs
     client.last_successfully_claimed_character = None # Prevent redundant RT on same name
     client._has_initialized = False # Tracks whether on_ready setup has already run (prevents duplicate $tu on reconnect)
+    client._main_loop_task = None  # [FIX] Track the main status loop asyncio.Task for health checks
+    client._immediate_check_event = None  # [FIX] asyncio.Event to signal immediate status check from external triggers
 
 
     # Slash command internal state
@@ -743,7 +745,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 log_function(f"[{client.muda_name}] Executing scheduled roll.", preset_name, "INFO")
-                await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
+                # [FIX] Signal the main loop to run immediately instead of calling check_status directly
+                if client._immediate_check_event:
+                    client._immediate_check_event.set()
 
             except asyncio.CancelledError:
                 break
@@ -966,17 +970,53 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         """Returns the command channel (for $tu, $daily, $dk, $rolls) or fallback to main channel."""
         return getattr(client, 'command_channel', None) or getattr(client, '_main_channel', None)
 
+    def _is_main_loop_alive():
+        """Check if the main status loop task is still running."""
+        task = client._main_loop_task
+        return task is not None and not task.done()
+
+    async def main_status_loop(client, channel):
+        """
+        [FIX] Centralized main loop: replaces ALL recursive check_status calls.
+        Runs check_status in a flat while-loop. External triggers signal via
+        client._immediate_check_event instead of spawning duplicate tasks.
+        """
+        log_function(f"[{client.muda_name}] Main status loop started.", preset_name, "INFO")
+        while not client.is_closed():
+            try:
+                # Run one cycle of check_status (no longer recursive)
+                await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
+            except asyncio.CancelledError:
+                log_function(f"[{client.muda_name}] Main status loop cancelled.", preset_name, "INFO")
+                break
+            except Exception as e:
+                log_function(f"[{client.muda_name}] Main loop error: {e}. Retrying in 60s.", preset_name, "ERROR")
+                await asyncio.sleep(60)
+        log_function(f"[{client.muda_name}] Main status loop exited.", preset_name, "INFO")
+
     @client.event
     async def on_ready():
         _refresh_session_id()
 
-        # Gateway reconnect: skip full setup, just restore session
+        # [FIX] Gateway reconnect: verify main loop health and restart if dead
         if client._has_initialized:
-            log_function(f"[{client.muda_name}] Reconnected: {client.user}. Keeping previous timers.", preset_name, "INFO")
+            log_function(f"[{client.muda_name}] Reconnected: {client.user}. Verifying loop health...", preset_name, "INFO")
+            if not _is_main_loop_alive():
+                channel = getattr(client, '_main_channel', None)
+                if channel:
+                    log_function(f"[{client.muda_name}] Main loop was dead after reconnect. Restarting.", preset_name, "ERROR")
+                    client._main_loop_task = client.loop.create_task(main_status_loop(client, channel))
+                else:
+                    log_function(f"[{client.muda_name}] Reconnected but no channel reference. Cannot restart loop.", preset_name, "ERROR")
+            else:
+                log_function(f"[{client.muda_name}] Main loop still alive. Signaling immediate check.", preset_name, "INFO")
+                if client._immediate_check_event:
+                    client._immediate_check_event.set()
             return
 
         client._has_initialized = True
         client.is_processing_cycle = False
+        client._immediate_check_event = asyncio.Event()
         log_function(f"[{client.muda_name}] Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
         
@@ -1043,14 +1083,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.rolling_enabled:
             try:
-                if client.skip_initial_commands:
-                    await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
-                else:
+                if not client.skip_initial_commands:
                     cmd_ch = _get_command_channel() or channel
                     await cmd_ch.send(f"{client.mudae_prefix}limroul 1 1 1 1"); await asyncio.sleep(1.0 + random.uniform(0.1, 0.4))
-                    await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
             except Exception as e:
-                log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close()
+                log_function(f"[{client.muda_name}] Setup error: {e}", preset_name, "ERROR"); await client.close(); return
+
+            # [FIX] Launch the centralized main loop instead of a one-shot check_status
+            client._main_loop_task = client.loop.create_task(main_status_loop(client, channel))
 
             if client.scheduled_roll_times:
                 client.loop.create_task(scheduled_roll_task(channel))
@@ -1175,7 +1215,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await asyncio.sleep(10)
 
 
+    async def _interruptible_sleep(seconds):
+        """[FIX] Sleep that can be interrupted by _immediate_check_event.
+        Used for long waits (e.g., 30min failure retry) so reconnect can wake the loop."""
+        evt = client._immediate_check_event
+        if evt:
+            evt.clear()
+            try:
+                await asyncio.wait_for(evt.wait(), timeout=seconds)
+                debug_log(f"_interruptible_sleep interrupted after signal (was sleeping {seconds}s).")
+            except asyncio.TimeoutError:
+                pass  # Normal: sleep completed without interruption
+        else:
+            await asyncio.sleep(seconds)
+
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, current_cycle_id=None):
+        """[FIX] Now a single-execution function. No recursion. The main_status_loop
+        handles looping. Returns a sleep duration (in minutes) for the caller to wait,
+        or 0 to re-check immediately, or -1 to signal the caller to stop."""
         if getattr(client, 'is_processing_cycle', False):
             debug_log("check_status called but a cycle is already processing. Aborting duplicate execution.")
             return
@@ -1253,11 +1310,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if not tu_message_content:
                     log_function(f"[{client.muda_name}] Failed to get $tu response.", preset_name, "ERROR")
                     if client.rolling_enabled and proceed_to_rolls:
-                        await asyncio.sleep(1800) # Long sleep on failure
-                        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                            return # Kill this ghost loop
-                        client.is_processing_cycle = False # Reset lock before recursive call
-                        await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
+                        # [FIX] No recursion. Use Event-aware sleep so reconnect can wake us.
+                        await _interruptible_sleep(1800)
                     return
 
                 c_lower = tu_message_content.lower()
@@ -1501,11 +1555,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
                     await process_mk_rolls(client, channel, current_cycle_id)
                     await asyncio.sleep(2)
-                    if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                        return # Kill this ghost loop
-                    client.is_processing_cycle = False # Reset lock before recursive call
-                    await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-                    return
+                    return  # [FIX] Return to main loop for next iteration (no recursion)
             
             if immediate_roll:
                 await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
@@ -1549,10 +1599,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # Default safety sleep if no timers could be parsed
                     await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
                 
-                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                    return # Kill this ghost loop
-                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-                return
+                return  # [FIX] Return to main loop for next iteration (no recursion)
             else:
                 return
 
@@ -1623,17 +1670,44 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_rolls = rolls_left + us_rolls_left
 
             if total_rolls == 0:
-                # AUTO $US LOGIC (1st Priority)
+                # Inactive hours gate (shared by both $rolls and $us)
                 if is_inactive_hour():
                     wait_s = seconds_until_active()
                     if client.humanization_enabled:
                         wait_s += random.uniform(0, max(0.0, client.humanization_window_minutes * 60))
-                    log_function(f"[{client.muda_name}] Sleeping until active period (Auto $us interrupted).", preset_name, "RESET")
+                    log_function(f"[{client.muda_name}] Sleeping until active period (Auto rolls interrupted).", preset_name, "RESET")
                     await asyncio.sleep(wait_s)
                     return # Break execution flow
 
-                us_will_execute = False
-                if getattr(client, 'auto_us_enabled', False) and not getattr(client, 'us_failed_this_cycle', False):
+                rolls_did_execute = False
+
+                # AUTO $ROLLS LOGIC (1st Priority)
+                if getattr(client, 'auto_rolls_enabled', False):
+                    rolls_limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
+                    
+                    if client.rolls_used_this_interval_utc is not None and hasattr(client, 'roll_reset_at_utc'):
+                        if client.rolls_used_this_interval_utc != client.roll_reset_at_utc:
+                            client.rolls_used_this_interval_utc = None
+                    
+                    not_used_this_interval = client.rolls_used_this_interval_utc is None
+                    claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
+                    
+                    if rolls_limit_ok and not_used_this_interval and claim_ok:
+                        rolls_did_execute = True
+                        log_function(f"[{client.muda_name}] Auto $rolls triggered.", preset_name, "INFO")
+                        rolls_cmd_ch = _get_command_channel() or channel
+                        await rolls_cmd_ch.send(f"{client.mudae_prefix}rolls")
+                        client.rolls_item_used_count += 1
+                        client.rolls_used_this_interval_utc = getattr(client, 'roll_reset_at_utc', None)
+                        
+                        limit_str = str(client.auto_rolls_limit) if client.auto_rolls_limit > 0 else '∞'
+                        log_function(f"[{client.muda_name}] $rolls used ({client.rolls_item_used_count}/{limit_str}). Refreshing status...", preset_name, "INFO")
+                        
+                        await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
+                        return  # [FIX] Return to main loop for next iteration (no recursion)
+
+                # AUTO $US LOGIC (2nd Priority — only if $rolls did NOT execute)
+                if not rolls_did_execute and getattr(client, 'auto_us_enabled', False) and not getattr(client, 'us_failed_this_cycle', False):
                     stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
                     hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
                     
@@ -1644,7 +1718,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             client.us_failed_this_cycle = True
                             log_function(f"[{client.muda_name}] Auto $us failed repeatedly. Halting $us for this cycle.", preset_name, "WARN")
                         else:
-                            us_will_execute = True
                             amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
                             
                             await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
@@ -1663,11 +1736,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if us_failed:
                                 client.us_failed_this_cycle = True
                                 log_function(f"[{client.muda_name}] Auto $us failed (Not enough Kakera). Halting $us for this cycle.", preset_name, "WARN")
-                                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                                    return # Kill this ghost loop
-                                client.is_processing_cycle = False # Reset lock before recursive call
-                                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-                                return
+                                return  # [FIX] Return to main loop for next iteration (no recursion)
                             
                             client.us_pulled_this_cycle += amount_to_pull
                             limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
@@ -1676,34 +1745,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             # Plunge directly into rolls without another $tu (fast mode)
                             await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
                             return
-
-                # AUTO $ROLLS LOGIC (2nd Priority — only if $us did NOT execute)
-                if not us_will_execute and getattr(client, 'auto_rolls_enabled', False):
-                    rolls_limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
-                    
-                    if client.rolls_used_this_interval_utc is not None and hasattr(client, 'roll_reset_at_utc'):
-                        if client.rolls_used_this_interval_utc != client.roll_reset_at_utc:
-                            client.rolls_used_this_interval_utc = None
-                    
-                    not_used_this_interval = client.rolls_used_this_interval_utc is None
-                    claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
-                    
-                    if rolls_limit_ok and not_used_this_interval and claim_ok:
-                        log_function(f"[{client.muda_name}] Auto $rolls triggered.", preset_name, "INFO")
-                        rolls_cmd_ch = _get_command_channel() or channel
-                        await rolls_cmd_ch.send(f"{client.mudae_prefix}rolls")
-                        client.rolls_item_used_count += 1
-                        client.rolls_used_this_interval_utc = getattr(client, 'roll_reset_at_utc', None)
-                        
-                        limit_str = str(client.auto_rolls_limit) if client.auto_rolls_limit > 0 else '∞'
-                        log_function(f"[{client.muda_name}] $rolls used ({client.rolls_item_used_count}/{limit_str}). Refreshing status...", preset_name, "INFO")
-                        
-                        await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
-                        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                            return # Kill this ghost loop
-                        client.is_processing_cycle = False # Reset lock before recursive call
-                        await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id)
-                        return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
                 # Parse claim reset again from local context to be safe
@@ -1733,10 +1774,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 wait_m, reason = sleep_candidates[0]
                 
                 await humanized_wait_and_proceed(client, channel, wait_m, reason)
-                if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                    return # Kill this ghost loop
-                client.is_processing_cycle = False # Reset lock before recursive call
-                await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
+                return  # [FIX] Return to main loop for next iteration (no recursion)
             else:
                 log_detail = f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else ""
                 log_function(f"[{client.muda_name}] Rolls: {total_rolls}{log_detail}. Reset: {reset_time_r}m", preset_name, "INFO")
@@ -1745,10 +1783,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             log_function(f"[{client.muda_name}] Could not parse roll count.", preset_name, "ERROR")
             await asyncio.sleep(30)
-            if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-                return # Kill this ghost loop
-            client.is_processing_cycle = False # Reset lock before recursive call
-            await check_status(client, channel, mudae_prefix, current_cycle_id=current_cycle_id); return
+            return  # [FIX] Return to main loop for next iteration (no recursion)
 
     async def process_mk_rolls(client, channel, current_cycle_id):
         if not getattr(client, 'auto_mk_enabled', True):
@@ -1869,12 +1904,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Post-roll processing error: {e}", preset_name, "ERROR")
         
         await asyncio.sleep(3)
-        # Always check status (send $tu) after rolling sequence, as requested
-        if getattr(client, 'active_cycle_id', 0) != current_cycle_id:
-            return # Kill this ghost loop
-            
-        client.is_processing_cycle = False # Reset lock before recursive call
-        await check_status(client, channel, client.mudae_prefix, current_cycle_id=current_cycle_id)
+        # [FIX] No recursion — return to main loop for next iteration
+        return
 
 
     async def execute_auto_divorce(client, channel, char_name):
@@ -2768,21 +2799,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 last_kakera_ts = getattr(client, '_last_kakera_click_ts', 0)
                 if (now_ts - last_kakera_ts) <= 10:
                     bonus_count = int(bonus_roll_match.group(1))
-                    log_function(f"[{client.muda_name}] Gained +{bonus_count} extra rolls from Kakera! Checking status to use them...", preset_name, "KAKERA")
+                    log_function(f"[{client.muda_name}] Gained +{bonus_count} extra rolls from Kakera! Signaling main loop...", preset_name, "KAKERA")
                     
-                    async def _delayed_status_check():
-                        try:
-                            await asyncio.sleep(3)
-                            # Skip if we're actively rolling (rolls will finish and check_status runs anyway)
-                            if not client.is_actively_rolling:
-                                if getattr(client, 'is_processing_cycle', False):
-                                    debug_log("_delayed_status_check aborted: cycle already processing.")
-                                    return
-                                await check_status(client, message.channel, client.mudae_prefix, current_cycle_id=None)
-                        except Exception as e:
-                            log_function(f"[{client.muda_name}] Bonus roll status check failed: {e}", preset_name, "ERROR")
-                    
-                    client.loop.create_task(_delayed_status_check())
+                    # [FIX] Signal the main loop via Event instead of spawning a duplicate check_status task
+                    if client._immediate_check_event and not client.is_actively_rolling:
+                        client._immediate_check_event.set()
 
         if not message.embeds: return
         embed = message.embeds[0]
@@ -2852,10 +2873,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if "limit of 1,000 keys" in desc or "limite de 1.000 chaves" in desc or "límite de 1.000 llaves" in desc:
                 client.interrupt_rolling = True
                 client.key_limit_hit = True
-                log_function(f"[{client.muda_name}] Key Limit Hit. Pausing.", preset_name, "ERROR")
-                # Wait 1 hour + human jitter
-                await asyncio.sleep(3600 + random.randint(0, 600))
-                await check_status(client, message.channel, client.mudae_prefix, current_cycle_id=None)
+                log_function(f"[{client.muda_name}] Key Limit Hit. Pausing 1h.", preset_name, "ERROR")
+                # [FIX] Wait 1 hour + human jitter, then signal main loop instead of calling check_status
+                async def _key_limit_recovery():
+                    await asyncio.sleep(3600 + random.randint(0, 600))
+                    if client._immediate_check_event:
+                        client._immediate_check_event.set()
+                client.loop.create_task(_key_limit_recovery())
                 return
 
         process = True
