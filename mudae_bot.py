@@ -16,6 +16,7 @@ import os
 import shutil
 import requests
 import subprocess
+import msvcrt
 from discord.utils import time_snowflake
 
 try:
@@ -25,7 +26,69 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.1.9"
+CURRENT_VERSION = "4.2.0"
+
+# --- GLOBAL PAUSE STATE ---
+# Module-level flag: when True, ALL bot instances pause operations.
+_global_paused = False
+_active_clients = []  # Registry of all running bot client instances
+_active_clients_lock = threading.Lock()
+
+def _toggle_global_pause():
+    """Toggle the global pause state and update all registered client instances."""
+    global _global_paused
+    _global_paused = not _global_paused
+    
+    # Propagate to all active client instances
+    with _active_clients_lock:
+        for c in _active_clients:
+            c.is_paused = _global_paused
+    
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if _global_paused:
+        # Yellow/Warning style
+        print(f"\033[1;33m[{timestamp}][{BOT_NAME}] ⏸️  BOT PAUSED. Press 'p' again to resume.\033[0m")
+    else:
+        # Green/Success style
+        print(f"\033[1;32m[{timestamp}][{BOT_NAME}] ▶️  BOT RESUMED. Operations continuing.\033[0m")
+
+def _keyboard_listener_thread():
+    """Background daemon thread: listens for raw 'p' keypress (no Enter needed).
+    Uses msvcrt on Windows for non-blocking, single-keypress detection.
+    Does NOT block the main asyncio event loop."""
+    while True:
+        try:
+            if os.name == 'nt':
+                # Windows: msvcrt.getch() blocks this thread only, returns bytes
+                ch = msvcrt.getch()
+                if ch in (b'p', b'P'):
+                    _toggle_global_pause()
+            else:
+                # Fallback for non-Windows (Linux/macOS): raw terminal mode
+                import tty, termios
+                fd = sys.stdin.fileno()
+                old_settings = termios.tcgetattr(fd)
+                try:
+                    tty.setraw(fd)
+                    ch = sys.stdin.read(1)
+                    if ch.lower() == 'p':
+                        _toggle_global_pause()
+                finally:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            # If stdin is unavailable (e.g., PyInstaller --windowed), silently exit
+            time.sleep(5)
+
+def _start_keyboard_listener():
+    """Start the keyboard listener as a daemon thread (runs once at module level)."""
+    t = threading.Thread(target=_keyboard_listener_thread, daemon=True)
+    t.start()
+
+# Auto-start the keyboard listener when the module loads
+try:
+    _start_keyboard_listener()
+except Exception:
+    pass  # Graceful degradation if terminal is not available
 
 # --- UPDATE CONFIGURATION ---
 # Replace this URL with your GitHub RAW URL for version.json and the script itself
@@ -382,6 +445,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
+    # Global Pause State: Synced from module-level _global_paused
+    client.is_paused = _global_paused
+    with _active_clients_lock:
+        _active_clients.append(client)
+
     # Clean up console logging
     discord_logger = logging.getLogger('discord')
     discord_logger.propagate = False
@@ -704,6 +772,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Scheduled roll mode active. Times: {client.scheduled_roll_times}", preset_name, "INFO")
         while not client.is_closed():
             try:
+                # --- PAUSE GUARD ---
+                if client.is_paused:
+                    await asyncio.sleep(1)
+                    continue
                 now = datetime.datetime.now()
                 next_time = None
                 min_wait = float('inf')
@@ -984,6 +1056,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         log_function(f"[{client.muda_name}] Main status loop started.", preset_name, "INFO")
         while not client.is_closed():
             try:
+                # --- PAUSE GUARD ---
+                if client.is_paused:
+                    await asyncio.sleep(1)
+                    continue
                 # Run one cycle of check_status (no longer recursive)
                 await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
             except asyncio.CancelledError:
@@ -1159,6 +1235,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # --- INITIAL HANDSHAKE ---
         handshake_success = False
         while not client.is_closed():
+            # --- PAUSE GUARD ---
+            if client.is_paused:
+                await asyncio.sleep(1)
+                continue
             try:
                 # Proceed to rolls=False, we just want data
                 await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False, current_cycle_id=None)
@@ -1177,6 +1257,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # --- GHOST LOOP ---
         while not client.is_closed():
+            # --- PAUSE GUARD ---
+            if client.is_paused:
+                await asyncio.sleep(1)
+                continue
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             
             if not client.claim_right_available:
@@ -2696,6 +2780,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_message(message):
+        # --- PAUSE GUARD: Ignore ALL messages while paused ---
+        if client.is_paused:
+            return
+
         # Filter for relevant messages
         if message.author.id != TARGET_BOT_ID or message.channel.id != client.target_channel_id:
             if client.rolling_enabled: await client.process_commands(message)
@@ -3030,6 +3118,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             pass 
         else:
             log_function(f"[{BOT_NAME}] Crash: {e}", preset_name, "ERROR")
+    finally:
+        # Unregister client from global pause registry on shutdown
+        with _active_clients_lock:
+            if client in _active_clients:
+                _active_clients.remove(client)
 
 def bot_lifecycle_wrapper(preset_name, preset_data):
     # Auto-restart wrapper
