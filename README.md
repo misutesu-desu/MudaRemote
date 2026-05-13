@@ -1,11 +1,11 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — The Best Mudae Bot for Discord</h1>
+  <h1 align="center">⚡ MudaRemote — The #1 Mudae Bot for Discord</h1>
   <p align="center">
-    <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
+    <strong>Dominate your server. Farm Kakera while you sleep. Snipe the best waifus before anyone reacts.</strong>
   </p>
   <p align="center">
-    A smart <strong>Mudae bot</strong> that plays Mudae for you.<br>
-    It rolls, claims characters, clicks kakera, and looks like a real person — so you don't get banned.
+    The most advanced Mudae auto claim bot, auto roll engine, and Kakera farming tool — wrapped in a beautiful GUI.<br>
+    No coding. No terminal. No Python. Just download, click, and <em>win</em>.
   </p>
 </p>
 
@@ -13,9 +13,14 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.1.1-f97316?style=for-the-badge" alt="Version 4.1.1"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.2.0-f97316?style=for-the-badge" alt="Version 4.2.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/stargazers"><img src="https://img.shields.io/github/stars/misutesu-desu/MudaRemote?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/github/downloads/misutesu-desu/MudaRemote/total?style=social&label=Downloads" alt="Downloads"></a>
 </p>
 
 <p align="center">
@@ -27,199 +32,219 @@
   <a href="README.pt-BR.md">Português Brasileiro</a>
 </p>
 
----
 
-## ❓ What Does This Do?
-
-**MudaRemote** is a **Mudae bot** — a program that plays the Mudae game on Discord **for you**, automatically.
-
-Here is what it can do:
-
-- 📦 **No Setup Required** — Available as a standalone `.exe` for Windows. Just double-click!
-- 🎲 **Auto roll Mudae** — It sends roll commands (`$wa`, `$ha`, etc.) for you.
-- 💍 **Mudae auto claim** — It sees a good character? It claims it. Instantly.
-- 💎 **Mudae auto kakera** — It clicks the kakera crystals on rolls to earn you money.
-- 🎯 **Discord Mudae sniper** — Someone else rolls a character you want? The bot steals it.
-- 🤖 **Mudae slash commands bot** — It can use `/wa` instead of `$wa` for a 10% kakera bonus.
-- 👥 **Mudae multi-account sync** — You have alt accounts? They can work together.
-- 🛡️ **Anti-ban stealth** — It acts like a human so Discord doesn't ban you.
-- 🖥️ **Easy GUI** — No code editing. Just click buttons to set everything up.
-
-> **⚠️ WARNING:** This is a **self-bot**. Self-bots are **against Discord's rules**. You **can get banned**. This is for **learning only**. If you use it, that is **your choice and your risk**. We are not responsible.
 
 ---
 
-## 🏆 Why Is This Better Than Other Mudae Scripts?
+## 🚀 What Is MudaRemote?
 
-| | Old Mudae Bots | **MudaRemote** |
+**MudaRemote** is the ultimate **Mudae automation tool** — a program that plays the Mudae minigame on Discord **entirely for you**, 24/7.
+
+While you sleep, study, or touch grass — MudaRemote is rolling characters, sniping wishlists, farming Kakera, and stacking your harem. It's the most feature-complete, safest, and easiest-to-use **Mudae selfbot** ever built, and it's **completely free**.
+
+Here's what you get out of the box:
+
+- 📦 **1-Click Windows App** — Download `.exe`, double-click, done. No Python, no terminal, no headaches.
+- 🎲 **Auto Roll Engine** — Sends `$wa`, `$ha`, `/wa`, or any custom roll command on autopilot.
+- 💍 **Instant Auto Claim** — Sees a character you want? Claims it in milliseconds — faster than any human.
+- 💎 **Smart Kakera Farming** — Clicks crystals automatically while respecting your power limits. Never waste power again.
+- 🎯 **Wishlist Sniper** — Someone else rolls YOUR waifu? The bot steals it before they can blink.
+- 🤖 **Slash Command Support** — Uses `/wa` for a free 10% Kakera bonus and harder-to-detect rolls.
+- 👥 **Multi-Account Sync** — Run alt accounts simultaneously. Main + alts working in perfect coordination.
+- 🛡️ **Ghost Mode (Anti-Ban)** — Random delays, sleep schedules, channel awareness. Behaves like a real human.
+- 🖥️ **Beautiful GUI** — No config files. No code. Just a clean settings window with buttons and dropdowns.
+- 🔄 **Auto Updates** — The `.exe` updates itself when a new version drops. You never re-download manually.
+
+> [!WARNING]
+> **This is a self-bot.** Self-bots violate Discord's Terms of Service. Using this software may result in your account being permanently banned. This project exists for **educational purposes only**. You assume all risk. See the [full disclaimer](#%EF%B8%8F-disclaimer).
+
+---
+
+## 🏆 Why MudaRemote Destroys the Competition
+
+Still using a janky Python script from 2022 that makes you edit JSON files in Notepad? Here's reality:
+
+| | 💀 Old Terminal Bots | ⚡ **MudaRemote** |
 | :--- | :---: | :---: |
-| Installation | Install Python, use terminal | ✅ Just download `.exe` and play |
-| Rolling | Text only (`$wa`) | ✅ Slash commands (`/wa`) — 10% more kakera |
-| Claiming | Claims anything | ✅ Only claims what YOU want |
-| Timing | Same time every hour | ✅ Waits for the perfect moment |
-| Safety | Easy to detect | ✅ Acts like a real human |
-| Accounts | One account only | ✅ Many accounts at the same time |
-| Setup | Edit code files | ✅ Easy graphical window |
-| Updates | Download again | ✅ Updates itself automatically |
+| **Setup** | Install Python, pip, edit config files, pray | ✅ Download `.exe` → Double-click → Play |
+| **Rolling** | Text commands only (`$wa`) | ✅ Slash commands (`/wa`) — **+10% Kakera bonus** |
+| **Claiming** | Claims random garbage | ✅ Surgically claims only YOUR wishlist & high-value targets |
+| **Timing** | Rolls at the same second every hour (sus 🚩) | ✅ Randomized human-like timing. Invisible. |
+| **Safety** | Gets you banned in a week | ✅ Ghost Mode — random delays, sleep schedule, channel awareness |
+| **Accounts** | One account, one terminal | ✅ Unlimited accounts running simultaneously in sync |
+| **Interface** | Scary black terminal window | ✅ Beautiful graphical settings editor with live preview |
+| **Updates** | Re-download the whole repo | ✅ Self-updating `.exe` — always on the latest version |
+| **Support** | Abandoned repo, no Discord | ✅ Active dev + 140+ member community on Discord |
 
 ---
 
-## ✨ All Features (Simple Explanation)
+## ✨ Full Feature Breakdown
 
-### 🎯 Claiming Characters — Mudae Auto Claim
-The bot watches every roll (yours and other people's) and claims the best characters for you.
+### 🎯 Claiming — Never Miss Your Waifu Again
 
-| Feature | What It Does |
+The bot watches **every single roll** in your channel — yours and everyone else's — and claims the perfect characters for you with zero reaction time.
+
+| Feature | What You Get |
 | :--- | :--- |
-| **Wishlist Claim** | You make a list of characters you want. The bot claims them instantly when they appear. |
-| **Series Claim** | You like "Naruto"? The bot claims ANY character from Naruto. |
-| **Value Claim** | The bot can steal expensive characters (example: anything worth 500+ kakera) from other people. |
-| **Instant Self-Claim** | While the bot is rolling, if something good appears, it claims it RIGHT NOW — it doesn't wait. |
-| **Panic Claim** | Your claim timer is almost done? The bot claims ANYTHING so you don't waste your claim. |
-| **Free Event Cards** | Christmas or New Year event characters are free to claim. The bot grabs them automatically. |
-| **Auto $rt** | `$rt` gives you an extra claim. The bot uses it automatically when you need it. |
-| **Auto $rt After Claim** | After claiming someone, the bot instantly uses `$rt` so it can claim again. |
-| **Avoid List** | Characters you NEVER want? Put them on the avoid list. The bot will ignore them forever. |
+| **Wishlist Claim** | Build your dream list. The moment a wishlist character appears, it's yours — claimed in under a second. |
+| **Series Claim** | Love "Naruto"? "Jujutsu Kaisen"? The bot claims **any** character from your favorite series automatically. |
+| **Value Snipe** | Set a Kakera threshold (e.g., 500+). The bot hijacks expensive characters from other people's rolls. |
+| **Instant Self-Claim** | Mid-roll and something incredible appears? Claimed on the spot — no waiting for the batch to finish. |
+| **Panic Claim** | Claim timer expiring and nothing good showed up? The bot grabs the best available so you never waste a claim. |
+| **Event Card Grab** | Holiday events (Christmas, New Year, etc.) spawn free characters. The bot snatches every single one. |
+| **Auto $rt** | Automatically uses `$rt` to unlock extra claims exactly when you need them most. |
+| **Auto $rt After Claim** | Immediately fires `$rt` after claiming — reloads your claim so you can double-tap back-to-back. |
+| **Avoid List** | Certain characters you'd never want? Blacklist them forever. The bot won't touch them. |
 
 ---
 
-### 💎 Kakera — Mudae Auto Kakera
-Kakera are the crystals (colored buttons) that appear on character rolls. Clicking them gives you money. The bot clicks them for you — but it's smart about it.
+### 💎 Kakera — Automated Crystal Farming on Autopilot
 
-| Feature | What It Does |
+Kakera crystals are money. The bot clicks them **instantly** on every roll — but it's smart enough to manage your power budget so you never go broke.
+
+| Feature | What You Get |
 | :--- | :--- |
-| **Auto Click** | The bot clicks kakera buttons automatically on your rolls and other people's rolls. |
-| **Priority Order** | Multiple buttons? The bot clicks the best one first (you choose the order). |
-| **Power Tracking** | Clicking kakera costs power. The bot tracks your power so it never clicks when you can't afford it. |
-| **Auto $dk** | Power too low? The bot uses `$dk` to refill it. |
-| **Chaos Mode** | Characters with 10+ keys have "chaos kakera" — costs 50% less power. The bot can target only these. |
-| **MK Only Mode** | Only clicks kakera from `$mk` rolls. Ignores everything else — saves lots of power. |
-| **Sphere Detection** | Spheres cost ZERO power. The bot ALWAYS clicks them, no matter what. |
-| **Custom Thresholds** | You can say "only click kakeraY if I have 80%+ power." The bot listens. |
+| **Auto Click** | Every Kakera crystal, every roll, every time — clicked instantly without you lifting a finger. |
+| **Priority Order** | Multiple crystals on one roll? The bot clicks the most valuable one first. You set the priority. |
+| **Power Tracking** | Clicking costs power. The bot monitors your power in real-time and stops clicking before you hit zero. |
+| **Auto $dk** | Power running low? The bot automatically uses `$dk` to refill — keeps the farm running non-stop. |
+| **Chaos Mode** | Characters with 10+ keys have "Chaos Kakera" that costs 50% less power. Target only these for maximum efficiency. |
+| **MK Only Mode** | Only farm Kakera from `$mk` rolls. Ignore everything else. Surgical power conservation. |
+| **Sphere Detection** | Spheres cost **zero** power. The bot **always** clicks them — free money, no exceptions. |
+| **Custom Thresholds** | Fine-tune per crystal type: *"Only click Purple Kakera if I have 80%+ power."* The bot obeys. |
 
 ---
 
-### 🎲 Rolling — Auto Roll Mudae
-The bot sends roll commands for you and does it at the smartest possible time.
+### 🎲 Rolling — The Smartest Roll Engine Ever Built
 
-| Feature | What It Does |
+The bot doesn't just spam rolls. It calculates the **optimal moment** to roll so your last roll lands right when your claim resets — maximizing every single cycle.
+
+| Feature | What You Get |
 | :--- | :--- |
-| **Auto Roll** | Sends `$wa`, `$ha`, `$ma`, or any roll command you want, automatically. |
-| **Slash Commands** | Uses `/wa` instead of `$wa` — this gives 10% more kakera and is harder to detect. |
-| **Smart Timing** | The bot waits and rolls so the last roll finishes RIGHT when your claim resets. This way you get a new claim for your best roll. |
-| **Scheduled Times** | You can say "roll at 14:00 and 18:30 every day" and it will. |
-| **Auto $us & $mk** | The bot automatically uses your saved rolls and extra kakera rolls. |
-| **Lurker Mode** | The bot stays quiet while others roll (and steals their good characters). Then, in the last few minutes, it dumps all its rolls. |
-| **Key Farming** | Even without a claim, the bot keeps rolling so you earn keys for your next claim. |
+| **Auto Roll** | Sends `$wa`, `$ha`, `$ma`, or any custom command — fully automatic, fully configurable. |
+| **Slash Commands** | Uses `/wa` instead of `$wa` for a **10% Kakera bonus** and reduced detection footprint. |
+| **Smart Timing** | Calculates roll timing so your final roll finishes exactly when your claim resets. Perfect sync, every cycle. |
+| **Scheduled Rolls** | Set specific times — *"Roll at 14:00 and 18:30 every day."* The bot shows up on time, every time. |
+| **Auto $us & $mk** | Automatically fires your saved rolls (`$us`) and bonus Kakera rolls (`$mk`). Nothing goes to waste. |
+| **Lurker Mode** | Stays silent while others roll (and snipes their good characters). Then, in the last minutes, dumps all your rolls at once. Predator strategy. |
+| **Key Farming** | No claim available? The bot keeps rolling anyway — farming keys so your next claimed character is worth even more. |
 
 ---
 
-### 🛡️ Stealth — Anti-Ban / Ghost Mode
-This is what makes MudaRemote safe. Other **Mudae macros** act like robots and get you banned. MudaRemote acts like a human.
+### 🛡️ Ghost Mode — Anti-Ban Stealth System
 
-| Feature | What It Does |
+This is what separates MudaRemote from every other **Mudae macro** and **Mudae script**. Other bots get you banned in days. MudaRemote is **designed to be invisible**.
+
+| Feature | What You Get |
 | :--- | :--- |
-| **Random Delays** | After each cycle, the bot waits a random amount of time (0–40 min). Not the same every time. |
-| **Channel Watcher** | People are chatting? The bot waits until the channel is quiet. Just like a real person would do. |
-| **Random Reactions** | When claiming with emoji reactions, it picks a random heart each time — not the same one. |
-| **Sleep Schedule** | Tell the bot "sleep from 1 AM to 7 AM." It goes fully silent — like you're sleeping. |
-| **Maintenance Detection** | Mudae goes down for maintenance? The bot detects it and pauses. |
-| **Slash Only** | When using slash commands, the bot NEVER sends text commands. If `/wa` fails, it stays silent. |
+| **Random Delays** | Every cycle has a randomized wait (0–40 min). No two cycles look the same. Unpredictable = undetectable. |
+| **Channel Awareness** | People chatting in the channel? The bot waits for silence. Just like a real player would. |
+| **Random Reactions** | Claims with emoji reactions? It picks a different heart emoji each time. No patterns. |
+| **Sleep Schedule** | Set a sleep window — *"Go dark from 1 AM to 7 AM."* The bot shuts off completely, like you're actually sleeping. |
+| **Maintenance Detection** | Mudae goes offline for maintenance? The bot detects it and pauses automatically. No wasted commands. |
+| **Slash-Only Silence** | In slash command mode, the bot **never** falls back to text commands. If `/wa` fails, it stays silent. Zero text footprint. |
 
 ---
 
-### 🖥️ Auto Updates & Multi-Account
-Every time you start the bot, it checks GitHub for a new version. If there is one, **the `.exe` updates itself automatically** and restarts. You never need to download anything manually again!
+### 🔄 Auto Updates & Multi-Account Sync
 
-You can also run **multiple alt accounts** at the same time. Main accounts can even sync with alts so they instantly claim your wishlist characters.
+Every time you launch MudaRemote, it checks for updates. If a new version exists, **the `.exe` patches itself and restarts** — you're always running the latest features and fixes without lifting a finger.
+
+Running multiple accounts? Your **main account and alts sync in real-time**. If an alt rolls your wishlist character, your main claims it instantly. Full coordination, zero effort.
 
 ---
 
-## 🛠️ How to Install (Step by Step)
+## 🛠️ Installation
 
-We now offer a **1-Click Windows App (.exe)**! You no longer need to install Python or use the terminal.
+### 🚀 The Easy Way — For Gamers (Takes 30 Seconds)
 
-### Option 1: The Easy Way - Recommended
+**No coding. No Python. No terminal. Just click and play.**
 
-1. Go to our **[Releases Page](https://github.com/misutesu-desu/MudaRemote/releases/latest)** and download `MudaRemote.exe`.
+1. **[⬇️ Download `MudaRemote.exe`](https://github.com/misutesu-desu/MudaRemote/releases/latest)** from the Releases page.
 2. Put it in a new folder (e.g., on your Desktop).
-3. Double-click `MudaRemote.exe`. The Settings window will open instantly!
-4. Fill in your **Token** and **Channel ID**, then click **▶ Launch Bot**.
+3. **Double-click** `MudaRemote.exe` — the settings window opens instantly.
+4. Paste your **Discord Token** and **Channel ID**, then hit **▶ Launch Bot**.
+5. That's it. You're farming. Go do something else. 🎉
 
 ---
 
-### Option 2: The Developer Way (Mac / Linux / Python)
+### 🧑‍💻 The Developer Way (Python / Mac / Linux)
 
-If you prefer using the source code or you are on Mac/Linux:
+For developers or non-Windows users who want to run from source:
 
-1. Install **[Python 3.8 or newer](https://www.python.org/downloads/)**.
-2. Clone the repository and install requirements:
+1. Install **[Python 3.8+](https://www.python.org/downloads/)**.
+2. Clone and install:
    ```bash
    git clone https://github.com/misutesu-desu/MudaRemote.git
    cd MudaRemote
    pip install discord.py-self inquirer requests
    ```
-3. Run the application:
+3. Launch the GUI:
    ```bash
    python mudae_preset_editor.py
    ```
-   *(You can also use `python mudae_preset_editor.py --preset "MyAccount"` to bypass the GUI and run a specific profile directly).*
+   > **💡 Pro tip:** Run a specific preset headlessly with `python mudae_preset_editor.py --preset "MyAccount"`
 
 ---
 
 ## 🔑 How to Get Your Discord Token
 
-1. Open **Discord in your web browser** (not the app).
-2. Press **F12** on your keyboard.
+> [!CAUTION]
+> **Your token is your password.** Anyone who has it can fully access your Discord account. **NEVER share it with anyone.**
+
+1. Open **Discord in your web browser** (not the desktop app).
+2. Press **`F12`** to open Developer Tools.
 3. Click the **Console** tab.
-4. Paste this and press Enter:
+4. Paste this snippet and press **Enter**:
    ```javascript
    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
    ```
-5. A long text will appear — that's your token.
-6. **🚨 NEVER give this token to anyone. They can steal your account.**
+5. A long string will appear — **that's your token**. Copy it into MudaRemote.
 
 ---
 
-## 🤝 Need Help & Troubleshooting
+## 💬 Join the Community
 
-Got an error? Bot acting weird? Check the **Troubleshooting Guide** first!
-- 📖 **[Troubleshooting & FAQ (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Troubleshooting)** — *Fixes for the bot not claiming, `$tu` spam, setup issues, and more.*
-- 📖 **[Configuration Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)** — *Learn what every single setting does in detail.*
+**You're not alone.** Join our rapidly growing community of **140+ active members** on Discord for setup help, strategy discussion, feature requests, and early access to updates.
 
-Still stuck?
-- 💬 Join our **[Discord Server](https://discord.gg/4WHXkDzuZx)**
-- 🐛 Found a bug? → [Open an Issue](https://github.com/misutesu-desu/MudaRemote/issues)
+<p align="center">
+  <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/💬_Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord"></a>
+</p>
+
+We recently crossed **50+ GitHub Stars** — if MudaRemote helps you dominate your server, **drop a ⭐ to support the best free Mudae tool available** and help others find it.
+
+**Got an issue?**
+
+- 📖 **[Troubleshooting & FAQ (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Troubleshooting)** — Fixes for common setup issues, claiming problems, and more.
+- 📖 **[Configuration Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)** — Deep dive into every single setting.
+- 🐛 **[Report a Bug](https://github.com/misutesu-desu/MudaRemote/issues)** — Found something broken? Let us know.
 
 ---
 
 ## 📜 License
 
-MIT License — you can use, copy, and change this project for free. See [LICENSE](LICENSE).
+MIT License — free to use, copy, modify, and distribute. See [LICENSE](LICENSE) for details.
 
 ---
 
-## ⚠️ Disclaimer (Read This!)
+## ⚠️ Disclaimer
 
-> **This program is for learning only.**
+> **This software is provided for educational and research purposes only.**
 >
-> MudaRemote is a self-bot. Self-bots are **against Discord's rules**.
+> MudaRemote is a **self-bot**. Self-bots are a direct violation of **[Discord's Terms of Service](https://discord.com/terms)**. By using this software, you acknowledge and accept the following risks:
 >
-> If you use this, you might get:
-> - ❌ **Banned from Discord** (forever)
-> - ❌ **Kicked from servers**
-> - ❌ **All your Mudae characters deleted**
+> - ❌ **Permanent ban** from Discord
+> - ❌ **Removal** from Discord servers
+> - ❌ **Loss** of all Mudae characters and progress
 >
-> **We are NOT responsible** if anything bad happens to your account.
->
-> **Only use this on accounts you don't care about losing.**
+> **The developers of MudaRemote assume zero liability** for any consequences resulting from the use of this software. Use at your own discretion and **only on accounts you are willing to lose**.
 
 ---
 
 <p align="center">
-  <strong>⭐ Like this project? Click the Star button! It helps other people find it. ⭐</strong>
+  <strong>⭐ Love MudaRemote? Star this repo — it takes 1 second and helps thousands of players discover the best Mudae tool. ⭐</strong>
 </p>
 
 <p align="center">
-  <sub>MudaRemote — Mudae bot, Mudae auto claim, Discord Mudae sniper, Mudae auto kakera, Mudae slash commands bot, auto roll Mudae, Mudae macro, Mudae script, Mudae multi-account sync, Mudae automation, Mudae selfbot, Mudae helper, Mudae tool, Mudae farming bot, Mudae key farming, Mudae power management, Mudae wishlist bot, Mudae Discord tool 2026</sub>
+  <a href="https://github.com/misutesu-desu/MudaRemote/stargazers"><img src="https://img.shields.io/github/stars/misutesu-desu/MudaRemote?style=for-the-badge&color=f59e0b&label=%E2%AD%90%20Stars" alt="Star this repo"></a>
 </p>
