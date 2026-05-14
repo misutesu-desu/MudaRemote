@@ -105,7 +105,7 @@ BOOL_SETTINGS = [
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
     ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
-    ("op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters", False),
+    ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
 ]
@@ -438,7 +438,7 @@ class PresetEditor:
         chat_sub = self.create_subframe(snipe_frame, enable_chat_var)
         self.add_list_field(chat_sub, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
         
-        self.add_checkbox(snipe_frame, "op_perk_5_only", "Only Click Kakera on Maxed $op (Perk 5) Characters")
+        self.add_checkbox(snipe_frame, "op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters")
         
         # --- Wishlists & Filters ---
         list_frame = ttk.LabelFrame(frame, text="Wishlists & Ignored Characters", padding=15)
