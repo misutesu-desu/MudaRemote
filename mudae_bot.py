@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.1"
+CURRENT_VERSION = "4.2.2"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -3197,10 +3197,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if is_key_mode_kakera_only():
                     pass  # Will fall through to kakera handling below
                 else:
+                    # [FIX] Race Condition: Pre-emptively halt the rolling loop BEFORE
+                    # calling claim_character. This is critical because claim_character
+                    # may send $rt and sleep 0.6-1.0s waiting for Mudae to process it.
+                    # Without this, the start_roll_commands loop fires the next $wa during
+                    # that sleep, creating overlapping traffic that causes Mudae to reject
+                    # the subsequent claim button click.
+                    # 
+                    # Setting interrupt_rolling = True here guarantees the rolling loop's
+                    # next iteration sees the flag and breaks before sending another command,
+                    # giving $rt + claim exclusive channel priority.
+                    client.interrupt_rolling = True
+                    log_function(f"[{client.muda_name}] Reactive Self-Snipe: Halting rolls for claim attempt on {c_name}", preset_name, "CLAIM")
+
                     # [NEW] Feature 4: Micro-Randomization
                     if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay + random.uniform(0.05, 0.25))
                     if await claim_character(client, message.channel, message, kakera_value=k_val):
-                        client.interrupt_rolling = True
                         process = False
 
         # Snipe other users
