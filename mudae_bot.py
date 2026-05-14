@@ -16,7 +16,8 @@ import os
 import shutil
 import requests
 import subprocess
-import msvcrt
+if os.name == 'nt':
+    import msvcrt
 from discord.utils import time_snowflake
 
 try:
@@ -33,6 +34,11 @@ CURRENT_VERSION = "4.2.0"
 _global_paused = False
 _active_clients = []  # Registry of all running bot client instances
 _active_clients_lock = threading.Lock()
+
+# [FIX] Bug 1: Threading Event to gate the keyboard listener.
+# When set, the listener is SUPPRESSED (menu is using stdin).
+# When cleared, the listener is ACTIVE (bots are running, menu is done).
+_menu_active = threading.Event()
 
 def _toggle_global_pause():
     """Toggle the global pause state and update all registered client instances."""
@@ -55,12 +61,43 @@ def _toggle_global_pause():
 def _keyboard_listener_thread():
     """Background daemon thread: listens for raw 'p' keypress (no Enter needed).
     Uses msvcrt on Windows for non-blocking, single-keypress detection.
-    Does NOT block the main asyncio event loop."""
+    Does NOT block the main asyncio event loop.
+    
+    [FIX] Bug 1: Two critical changes:
+    1. Checks _menu_active event — when the interactive CLI menu (inquirer) is
+       using stdin, this thread yields instead of competing for console input.
+    2. Properly handles multi-byte Windows escape sequences (arrow keys send
+       b'\xe0' or b'\x00' followed by a scan code like b'P' for Down Arrow).
+       Without this, pressing Down Arrow would falsely trigger pause because
+       the scan code b'P' matches the 'P' check."""
     while True:
         try:
+            # [FIX] Gate: If the interactive menu is active, don't read stdin.
+            # Poll periodically so we resume quickly when the menu finishes.
+            if _menu_active.is_set():
+                time.sleep(0.2)
+                continue
+
             if os.name == 'nt':
-                # Windows: msvcrt.getch() blocks this thread only, returns bytes
+                # Windows: msvcrt.getch() blocks this thread only, returns bytes.
+                # Use kbhit() to poll non-blockingly so we can check _menu_active.
+                if not msvcrt.kbhit():
+                    time.sleep(0.05)
+                    continue
                 ch = msvcrt.getch()
+                
+                # [FIX] Multi-byte escape sequence handling:
+                # Arrow keys and function keys send TWO bytes:
+                #   Byte 1: b'\xe0' (0xE0) or b'\x00' (0x00) — extended key prefix
+                #   Byte 2: Scan code (e.g., b'H'=Up, b'P'=Down, b'K'=Left, b'M'=Right)
+                # We MUST consume both bytes to prevent the scan code (especially b'P'
+                # for Down Arrow) from being misinterpreted as the 'P' pause toggle.
+                if ch in (b'\xe0', b'\x00'):
+                    # Consume the scan code byte and discard the entire sequence
+                    if msvcrt.kbhit():
+                        msvcrt.getch()  # Discard scan code
+                    continue
+                
                 if ch in (b'p', b'P'):
                     _toggle_global_pause()
             else:
@@ -71,12 +108,19 @@ def _keyboard_listener_thread():
                 try:
                     tty.setraw(fd)
                     ch = sys.stdin.read(1)
+                    # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
+                    if ch == '\x1b':
+                        # Consume remaining escape sequence bytes
+                        import select
+                        while select.select([fd], [], [], 0.01)[0]:
+                            sys.stdin.read(1)
+                        continue
                     if ch.lower() == 'p':
                         _toggle_global_pause()
                 finally:
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         except Exception:
-            # If stdin is unavailable (e.g., PyInstaller --windowed), silently exit
+            # If stdin is unavailable (e.g., PyInstaller --windowed), silently back off
             time.sleep(5)
 
 def _start_keyboard_listener():
@@ -837,33 +881,149 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception:
             pass
 
-    async def _fetch_mudae_slash_commands(guild_id):
-        if guild_id in client.mudae_slash_cache:
-            return client.mudae_slash_cache[guild_id]
+    async def _fetch_mudae_slash_commands(channel):
+        """[FIX] Bug 2: Fetch Mudae's slash commands visible to the user in a specific channel.
+        
+        Uses the channel-scoped application command search endpoint, which is
+        what the Discord client itself uses. This works with user tokens and
+        respects all channel-level permission overwrites.
+        
+        The old endpoint (GET /applications/{app_id}/commands) is a global
+        endpoint that requires a bot token with the application's ownership —
+        it returns 403 Forbidden for self-bot user tokens, which was the
+        primary cause of slash command failures for many users.
+        """
+        guild = getattr(channel, 'guild', None)
+        if not guild:
+            return None
+        
+        cache_key = (guild.id, channel.id)
+        if cache_key in client.mudae_slash_cache:
+            return client.mudae_slash_cache[cache_key]
+        
         http = getattr(client, "http", None)
         if not http or Route is None:
             return None
 
         commands_map = {}
         data = []
+        
+        # Strategy: Try multiple endpoints in order of reliability
+        # 1. Channel-scoped search (most reliable for user tokens)
+        # 2. Guild-scoped application commands (fallback)
         try:
-            route = Route("GET", "/applications/{application_id}/commands", application_id=TARGET_BOT_ID)
-            data = await http.request(route)
-        except Exception:
-            data = []
+            route = Route(
+                "GET",
+                "/channels/{channel_id}/application-commands/search",
+                channel_id=channel.id
+            )
+            # Query params: filter by Mudae's application ID, type=1 (slash commands)
+            params = {
+                "type": 1,
+                "application_id": str(TARGET_BOT_ID),
+                "limit": 25
+            }
+            resp = await http.request(route, params=params)
+            
+            # Response format: {"application_commands": [...], "cursor": {...}}
+            cmd_list = []
+            if isinstance(resp, dict):
+                cmd_list = resp.get("application_commands", [])
+            elif isinstance(resp, list):
+                cmd_list = resp
+            
+            for cmd in cmd_list:
+                name = str(cmd.get("name", "")).lower()
+                if name:
+                    commands_map[name] = cmd
+            
+            if commands_map:
+                client.mudae_slash_cache[cache_key] = commands_map
+                debug_log(f"Fetched {len(commands_map)} Mudae slash commands via channel search for #{channel.name}")
+                return commands_map
+        except discord.HTTPException as e:
+            status = getattr(e, 'status', 0)
+            debug_log(f"Channel command search failed (HTTP {status}): {getattr(e, 'text', str(e))[:100]}")
+            # 403/401 = permission issue, don't retry with fallback endpoint
+            if status in (401, 403):
+                log_function(f"[{client.muda_name}] Slash: Cannot access commands in #{channel.name} (HTTP {status}). Check 'Use Application Commands' permission.", preset_name, "ERROR")
+                return None
+        except Exception as e:
+            debug_log(f"Channel command search exception: {type(e).__name__}: {str(e)[:100]}")
+        
+        # Fallback: Try guild-scoped search
+        try:
+            route = Route(
+                "GET",
+                "/guilds/{guild_id}/application-command-index",
+                guild_id=guild.id
+            )
+            resp = await http.request(route)
+            cmd_list = []
+            if isinstance(resp, dict):
+                cmd_list = resp.get("application_commands", [])
+            elif isinstance(resp, list):
+                cmd_list = resp
+            
+            for cmd in cmd_list:
+                # Filter to only Mudae commands
+                app_id = str(cmd.get("application_id", ""))
+                if app_id == str(TARGET_BOT_ID):
+                    name = str(cmd.get("name", "")).lower()
+                    if name:
+                        commands_map[name] = cmd
+            
+            if commands_map:
+                client.mudae_slash_cache[cache_key] = commands_map
+                debug_log(f"Fetched {len(commands_map)} Mudae slash commands via guild index for guild {guild.id}")
+                return commands_map
+        except Exception as e:
+            debug_log(f"Guild command index fallback also failed: {type(e).__name__}: {str(e)[:100]}")
 
-        for cmd in data:
-            name = str(cmd.get("name", "")).lower()
-            if name:
-                commands_map[name] = cmd
+        # If both failed, return None
+        log_function(f"[{client.muda_name}] Slash: Could not fetch commands for #{channel.name}. Mudae may not be installed or commands are disabled in this channel.", preset_name, "ERROR")
+        return None
 
-        client.mudae_slash_cache[guild_id] = commands_map
-        return commands_map
+    def _check_slash_permissions(channel) -> tuple:
+        """[FIX] Bug 2: Pre-flight permission check before attempting slash commands.
+        Returns (can_proceed: bool, reason: str).
+        Checks that the bot user has both 'Send Messages' and 'Use Application Commands' 
+        permissions in the target channel."""
+        guild = getattr(channel, 'guild', None)
+        if not guild:
+            return False, "No guild context"
+        
+        me = guild.me
+        if not me:
+            return False, "Cannot resolve guild member (guild not cached)"
+        
+        perms = channel.permissions_for(me)
+        
+        if not perms.send_messages:
+            return False, "Missing 'Send Messages' permission"
+        
+        # use_application_commands was added in newer discord.py versions
+        if hasattr(perms, 'use_application_commands') and not perms.use_application_commands:
+            return False, "Missing 'Use Application Commands' permission"
+        
+        # Also check view_channel as a baseline
+        if not perms.read_messages:
+            return False, "Missing 'View Channel' permission"
+        
+        return True, "OK"
 
     async def _trigger_mudae_slash(channel, command_text):
         """
         Trigger a Mudae slash command. Returns True on success, False on failure.
-        All failure points are logged with detailed reasons for debugging.
+        
+        [FIX] Bug 2: Major improvements:
+        1. Pre-flight permission check before attempting the request.
+        2. Uses channel-scoped command fetch (works with user tokens).
+        3. Enriched interaction payload with application_command wrapper.
+        4. Immediate fallback to text on 403/401 (permission denied) errors 
+           instead of waiting for fail_threshold consecutive failures.
+        5. Periodic slash recovery: fallback mode auto-resets after 30 minutes
+           so the bot re-attempts slash commands if conditions change.
         """
         cmd_display = f"/{command_text.strip().lstrip('/')}" if command_text else "/?"
         
@@ -882,6 +1042,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         stripped = command_text.strip()
         if not stripped:
             log_function(f"[{client.muda_name}] Slash: FAIL - Empty command text", preset_name, "ERROR")
+            return False
+        
+        # [FIX] Bug 2: Pre-flight permission check
+        can_slash, perm_reason = _check_slash_permissions(channel)
+        if not can_slash:
+            if not client.slash_fallback_active:
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - {perm_reason}. Activating text fallback.", preset_name, "ERROR")
+                client.slash_fallback_active = True
+                client.slash_fallback_activated_at = time.time()
             return False
         
         now_ts = time.time()
@@ -906,10 +1075,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             
         base_name = stripped.lstrip("/").lower()
         guild = channel.guild
-        command_map = await _fetch_mudae_slash_commands(guild.id)
+        
+        # [FIX] Bug 2: Use channel-scoped fetch
+        command_map = await _fetch_mudae_slash_commands(channel)
         
         if not command_map:
-            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Could not fetch Mudae slash commands for guild {guild.id}. Check bot permissions or Mudae availability.", preset_name, "ERROR")
+            log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Could not fetch Mudae slash commands for #{channel.name}. Check Mudae installation and channel permissions.", preset_name, "ERROR")
             return False
 
         command_data = command_map.get(base_name)
@@ -933,6 +1104,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - No Discord session ID. WebSocket may be disconnected.", preset_name, "ERROR")
             return False
 
+        # [FIX] Bug 2: Enriched interaction payload with application_command wrapper
+        # and analytics_location field that Discord expects from clients.
+        nonce_val = str(time_snowflake(datetime.datetime.now(datetime.timezone.utc)))
         payload = {
             "type": 2,
             "application_id": str(TARGET_BOT_ID),
@@ -944,8 +1118,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 "id": str(command_data.get("id", "")),
                 "name": command_data.get("name"),
                 "type": command_data.get("type", 1),
+                "application_command": {
+                    "id": str(command_data.get("id", "")),
+                    "application_id": str(TARGET_BOT_ID),
+                    "version": str(command_data.get("version", "")),
+                    "type": command_data.get("type", 1),
+                    "name": command_data.get("name"),
+                    "description": command_data.get("description", ""),
+                    "dm_permission": command_data.get("dm_permission", True),
+                    "integration_types": command_data.get("integration_types", [0]),
+                    "global_popularity_rank": command_data.get("global_popularity_rank", 0),
+                    "options": command_data.get("options", []),
+                    "description_localized": command_data.get("description", ""),
+                    "name_localized": command_data.get("name", ""),
+                },
+                "attachments": [],
             },
-            "nonce": str(time_snowflake(datetime.datetime.now(datetime.timezone.utc))),
+            "nonce": nonce_val,
+            "analytics_location": "slash_ui",
         }
 
         invalidate_cache = False
@@ -964,6 +1154,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.slash_rate_limited_until = time.time() + min(retry_after, client.slash_max_backoff)
                 log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Rate limited by Discord. Retry after {retry_after}s", preset_name, "WARN")
                 await asyncio.sleep(retry_after)
+            elif status in (401, 403):
+                # [FIX] Bug 2: Immediate fallback on authorization/permission errors.
+                # Don't wait for fail_threshold — these are structural, not transient.
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - HTTP {status} (Permission Denied). Switching to text commands immediately.", preset_name, "ERROR")
+                client.slash_fallback_active = True
+                client.slash_fallback_activated_at = time.time()
+                return False
+            elif status == 400:
+                # Bad Request — likely payload issue. Invalidate cache and retry.
+                invalidate_cache = True
+                log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - HTTP 400 (Bad Request, code: {code}): {text[:100]}. Command cache invalidated.", preset_name, "ERROR")
             else:
                 invalidate_cache = True
                 log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - HTTP {status} (code: {code}): {text[:100]}", preset_name, "ERROR")
@@ -974,10 +1175,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             log_function(f"[{client.muda_name}] Slash {cmd_display}: FAIL - Unexpected error: {type(e).__name__}: {str(e)[:100]}", preset_name, "ERROR")
 
         if invalidate_cache:
-            client.mudae_slash_cache.pop(guild.id, None)
+            # [FIX] Bug 2: Invalidate using the correct cache key (channel-scoped)
+            cache_key = (guild.id, channel.id)
+            client.mudae_slash_cache.pop(cache_key, None)
         if client.slash_fail_streak >= client.slash_fail_threshold and not client.slash_fallback_active:
             # [NEW] Activate dynamic text fallback after consecutive slash failures
             client.slash_fallback_active = True
+            client.slash_fallback_activated_at = time.time()
             log_function(f"[{client.muda_name}] Slash: {client.slash_fail_streak} consecutive failures. Automatically falling back to text commands ({client.mudae_prefix}).", preset_name, "WARN")
         return False
 
@@ -3212,6 +3416,10 @@ def main_menu():
 """
     print("\033[1;36m" + banner + "\033[0m\n")
     
+    # [FIX] Bug 1: Suppress the keyboard listener while the interactive menu is active.
+    # This prevents the background thread from stealing keystrokes meant for inquirer.
+    _menu_active.set()
+    
     threads = []
     while True:
         opts = ['Select and Run Preset', 'Select and Run Multiple', 'Exit']
@@ -3228,6 +3436,12 @@ def main_menu():
             p_ans = inquirer.prompt([inquirer.Checkbox('p', message="Presets", choices=list(presets.keys()))])
             if p_ans: 
                 for p in p_ans['p']: threads.append(start_preset_thread(p, presets[p]))
+    
+    # [FIX] Bug 1: Menu is done — re-enable the keyboard listener for pause toggle.
+    # From this point on, inquirer is no longer using stdin, so the listener is safe.
+    _menu_active.clear()
+    if threads:
+        print(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m")
 
 def parse_args():
     import argparse
