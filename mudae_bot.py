@@ -70,15 +70,15 @@ def _keyboard_listener_thread():
        b'\xe0' or b'\x00' followed by a scan code like b'P' for Down Arrow).
        Without this, pressing Down Arrow would falsely trigger pause because
        the scan code b'P' matches the 'P' check."""
-    while True:
-        try:
-            # [FIX] Gate: If the interactive menu is active, don't read stdin.
-            # Poll periodically so we resume quickly when the menu finishes.
-            if _menu_active.is_set():
-                time.sleep(0.2)
-                continue
+    if os.name == 'nt':
+        while True:
+            try:
+                # [FIX] Gate: If the interactive menu is active, don't read stdin.
+                # Poll periodically so we resume quickly when the menu finishes.
+                if _menu_active.is_set():
+                    time.sleep(0.2)
+                    continue
 
-            if os.name == 'nt':
                 # Windows: msvcrt.getch() blocks this thread only, returns bytes.
                 # Use kbhit() to poll non-blockingly so we can check _menu_active.
                 if not msvcrt.kbhit():
@@ -100,28 +100,38 @@ def _keyboard_listener_thread():
                 
                 if ch in (b'p', b'P'):
                     _toggle_global_pause()
-            else:
-                # Fallback for non-Windows (Linux/macOS): raw terminal mode
-                import tty, termios
-                fd = sys.stdin.fileno()
-                old_settings = termios.tcgetattr(fd)
-                try:
-                    tty.setraw(fd)
-                    ch = sys.stdin.read(1)
-                    # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
-                    if ch == '\x1b':
-                        # Consume remaining escape sequence bytes
-                        import select
-                        while select.select([fd], [], [], 0.01)[0]:
-                            sys.stdin.read(1)
+            except Exception:
+                # If stdin is unavailable (e.g., PyInstaller --windowed), silently back off
+                time.sleep(5)
+    else:
+        # Fallback for non-Windows (Linux/macOS): non-blocking terminal mode
+        import tty, termios, select
+        try:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setcbreak(fd)
+                while True:
+                    if _menu_active.is_set():
+                        time.sleep(0.2)
                         continue
-                    if ch.lower() == 'p':
-                        _toggle_global_pause()
-                finally:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        ch = sys.stdin.read(1)
+                        # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
+                        if ch == '\x1b':
+                            # Consume remaining escape sequence bytes
+                            while select.select([sys.stdin], [], [], 0.01)[0]:
+                                sys.stdin.read(1)
+                            continue
+                        if ch.lower() == 'p':
+                            _toggle_global_pause()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         except Exception:
-            # If stdin is unavailable (e.g., PyInstaller --windowed), silently back off
-            time.sleep(5)
+            # If stdin is unavailable
+            while True:
+                time.sleep(5)
 
 def _start_keyboard_listener():
     """Start the keyboard listener as a daemon thread (runs once at module level)."""
@@ -485,7 +495,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             farm_character_enabled_preset=False, # [NEW] Kakera Farm Toggle
             auto_divorce_enabled_preset=False, # [NEW] Auto-Divorce Toggle
             auto_divorce_max_kakera_preset=50, # [NEW] Auto-Divorce Kakera Threshold
-            auto_divorce_series_preset=None): # [NEW] Auto-Divorce Series List
+            auto_divorce_series_preset=None, # [NEW] Auto-Divorce Series List
+            mk_bypass_power_check=False): # [NEW] Bypass MK power check
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -633,6 +644,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_divorce_enabled = auto_divorce_enabled_preset
     client.auto_divorce_max_kakera = auto_divorce_max_kakera_preset if auto_divorce_max_kakera_preset is not None else 50
     client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
+    client.mk_bypass_power_check = mk_bypass_power_check
     client.key_limit_hit = False
     client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
@@ -1840,7 +1852,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 
             if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
                 # If we're not doing normal rolls but have enough power and $mk left, use them before sleeping
-                if client.auto_mk_enabled and client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+                if client.auto_mk_enabled and client.mk_rolls_left > 0 and (get_current_dk_power() >= client.dk_consumption or getattr(client, 'mk_bypass_power_check', False)):
                     await process_mk_rolls(client, channel, current_cycle_id)
                     await asyncio.sleep(2)
                     return  # [FIX] Return to main loop for next iteration (no recursion)
@@ -2078,9 +2090,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if client.mk_rolls_left > 0:
             current_pow = get_current_dk_power()
-            if current_pow >= client.dk_consumption:
+            if current_pow >= client.dk_consumption or getattr(client, 'mk_bypass_power_check', False):
                 mk_used = 0
-                while client.mk_rolls_left > 0 and get_current_dk_power() >= client.dk_consumption:
+                while client.mk_rolls_left > 0 and (get_current_dk_power() >= client.dk_consumption or getattr(client, 'mk_bypass_power_check', False)):
                     log_function(f"[{client.muda_name}] Using $mk ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", client.preset_name, "KAKERA")
                     await channel.send(f"{client.mudae_prefix}mk")
                     client.mk_rolls_left -= 1
@@ -3401,7 +3413,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("farm_character_enabled", False),
                 preset_data.get("auto_divorce_enabled", False),
                 preset_data.get("auto_divorce_max_kakera", 50),
-                preset_data.get("auto_divorce_series", [])
+                preset_data.get("auto_divorce_series", []),
+                preset_data.get("mk_bypass_power_check", False)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
