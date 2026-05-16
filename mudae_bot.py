@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.2"
+CURRENT_VERSION = "4.2.3"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
