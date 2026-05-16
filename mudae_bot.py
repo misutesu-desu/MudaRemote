@@ -2294,9 +2294,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         log_label = "Snipe Verification" if is_snipe_action else "Claim Verification"
         bot_username = client.user.name.lower()
+        bot_display_name = (client.user.display_name or client.user.name).lower()
         char_tag = f"**{char_name.lower()}**"
         
-        debug_log(f"Verify: Searching for char_tag='{char_tag}' by bot_username='{bot_username}'")
+        debug_log(f"Verify: Searching for char_name='{char_name.lower()}' by bot='{bot_username}' / '{bot_display_name}'")
         
         scanned_messages_raw = []  # Collect for debug dump on failure
         
@@ -2308,8 +2309,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             content_lower = msg.content.lower()
             scanned_messages_raw.append(msg.content[:200])  # Store for debug
             
-            # Mudae marriage messages across ALL languages use double asterisks for names:
-            # e.g., "**Username** and **CharacterName** are now married!"
+            # Strict Check: Mudae marriage messages across ALL languages use double asterisks for names
             if char_tag in content_lower:
                 # Extract all bolded segments
                 bold_segments = re.findall(r"\*\*(.+?)\*\*", content_lower)
@@ -2318,15 +2318,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Check if any bolded segment matches our bot's names
                 for segment in bold_segments:
                     s_val = segment.lower()
-                    if s_val == bot_username:
+                    if s_val == bot_username or s_val == bot_display_name:
                         found_our_marriage = True
                         break
                     elif s_val != char_name.lower():
                         winner_name = segment # Keep track of who won if it wasn't us
-                
-                # Stop scanning once we find the relevant marriage message for this character
-                if found_our_marriage or winner_name:
-                    break
+            
+            # Fallback Check: Custom claims as hyperlinks may lack ** formatting
+            if not found_our_marriage and not winner_name:
+                if char_name.lower() in content_lower:
+                    if bot_username in content_lower or bot_display_name in content_lower:
+                        found_our_marriage = True
+                    else:
+                        winner_name = "Someone else (Custom Claim)"
+            
+            # Stop scanning once we find the relevant marriage message for this character
+            if found_our_marriage or winner_name:
+                break
         
         if found_our_marriage:
             log_function(f"[{client.muda_name}] {log_label}: SUCCESS! We got {char_name}.", client.preset_name, "CLAIM")
