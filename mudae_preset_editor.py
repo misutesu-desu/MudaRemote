@@ -73,6 +73,7 @@ DEFAULTS = {
     "auto_divorce_enabled": False,
     "auto_divorce_max_kakera": 50,
     "auto_divorce_series": [],
+    "mk_bypass_power_check": False,
 }
 
 # Boolean settings with their display names and defaults
@@ -108,6 +109,7 @@ BOOL_SETTINGS = [
     ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
+    ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -383,6 +385,7 @@ class PresetEditor:
         self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
         self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
+        self.add_checkbox(us_frame, "mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)")
         
         # --- Claiming ---
         claim_frame = ttk.LabelFrame(frame, text="Claim Rules", padding=15)
@@ -686,7 +689,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -833,7 +836,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -986,6 +989,7 @@ class PresetEditor:
                 "auto_rolls_limit": 0,
                 "auto_rolls_in_key_mode": False,
                 "auto_mk_enabled": True,
+                "mk_bypass_power_check": False,
                 "auto_rt_after_claim": False,
                 "mk_only": False,
                 "auto_dk_enabled": True,
