@@ -177,7 +177,7 @@ For developers or non-Windows users who want to run from source:
    ```bash
    git clone https://github.com/misutesu-desu/MudaRemote.git
    cd MudaRemote
-   pip install discord.py-self inquirer requests
+   pip install discord.py-self inquirer requests pyperclip
    ```
 3. Launch the GUI:
    ```bash
