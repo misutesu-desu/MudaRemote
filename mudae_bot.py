@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.4"
+CURRENT_VERSION = "4.2.5"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -190,19 +190,43 @@ def check_for_updates():
                     bat_path = os.path.join(current_dir, "update.bat")
                     
                     # Download the new .exe
-                    update_res = requests.get(exe_download_url, timeout=120)
-                    if update_res.status_code == 200:
-                        with open(update_exe, "wb") as f:
-                            f.write(update_res.content)
+                    try:
+                        update_res = requests.get(exe_download_url, timeout=120)
+                        if update_res.status_code != 200:
+                            print(f"[{BOT_NAME}] Failed to download exe update (HTTP {update_res.status_code}).")
+                            return
+                        
+                        # Pre-delete stale update file if it exists (may be locked from a previous crash)
+                        if os.path.exists(update_exe):
+                            try:
+                                os.remove(update_exe)
+                            except Exception:
+                                pass  # Best-effort cleanup; we'll handle write failure below
+                        
+                        # Attempt to write the downloaded exe
+                        target_exe_path = update_exe
+                        try:
+                            with open(target_exe_path, "wb") as f:
+                                f.write(update_res.content)
+                        except PermissionError:
+                            # Fallback: the default filename is locked (AV, prior crash, etc.)
+                            # Use a unique timestamped filename to bypass the lock.
+                            fallback_name = f"MudaRemote_update_{int(time.time())}.exe"
+                            target_exe_path = os.path.join(current_dir, fallback_name)
+                            print(f"[{BOT_NAME}] Primary update path locked. Using fallback: {fallback_name}")
+                            with open(target_exe_path, "wb") as f:
+                                f.write(update_res.content)
+                        
                         print(f"[{BOT_NAME}] New exe downloaded ({len(update_res.content)} bytes).")
                         
                         # Generate a self-destructing .bat updater
                         # The bat waits for the old exe to unlock, swaps files, relaunches, and deletes itself.
+                        # Uses target_exe_path which may be the default or the timestamped fallback.
                         original_args = ' '.join(f'"{a}"' for a in sys.argv[1:]) if sys.argv[1:] else ''
                         bat_content = f'''@echo off
 timeout /t 3 /nobreak >nul
 del /f /q "{current_exe}"
-ren "{update_exe}" "{exe_name}"
+ren "{target_exe_path}" "{exe_name}"
 start "" "{current_exe}" {original_args}
 del "%~f0"
 '''
@@ -217,8 +241,10 @@ del "%~f0"
                             shell=True
                         )
                         os._exit(0)
-                    else:
-                        print(f"[{BOT_NAME}] Failed to download exe update (HTTP {update_res.status_code}).")
+                    except Exception as e:
+                        # Total failure: log a friendly message and let the bot continue on the current version
+                        print(f"[{BOT_NAME}] ⚠️  EXE update failed: {e}")
+                        print(f"[{BOT_NAME}] Continuing with current version v{CURRENT_VERSION}. You can update manually from GitHub.")
                 else:
                     # --- SCRIPT (.py) MODE --- (existing logic)
                     download_url = data.get("download_url")
