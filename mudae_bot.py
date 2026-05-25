@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.5"
+CURRENT_VERSION = "4.2.6"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -522,7 +522,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_divorce_enabled_preset=False, # [NEW] Auto-Divorce Toggle
             auto_divorce_max_kakera_preset=50, # [NEW] Auto-Divorce Kakera Threshold
             auto_divorce_series_preset=None, # [NEW] Auto-Divorce Series List
-            mk_bypass_power_check=False): # [NEW] Bypass MK power check
+            mk_bypass_power_check=False, # [NEW] Bypass MK power check
+            auto_p_enabled=True): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
 
@@ -671,6 +672,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_divorce_max_kakera = auto_divorce_max_kakera_preset if auto_divorce_max_kakera_preset is not None else 50
     client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
     client.mk_bypass_power_check = mk_bypass_power_check
+    client.auto_p_enabled = auto_p_enabled
+    client.p_available = False
+    client.next_p_claim_at_utc = None
     client.key_limit_hit = False
     client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
@@ -1662,6 +1666,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await cmd_channel.send(f"{client.mudae_prefix}dk")
                         await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
 
+                # Check if $p is ready/available and auto_p_enabled is True
+                if client.auto_p_enabled:
+                    p_on_cooldown = False
+                    if client.next_p_claim_at_utc and now_utc < client.next_p_claim_at_utc:
+                        p_on_cooldown = True
+                    
+                    if not p_on_cooldown:
+                        p_ready_keywords = ["$p is available", "$p está disponível", "$p está disponible", "$p est disponible"]
+                        p_ready = any(x in c_lower for x in p_ready_keywords)
+                        p_cooldown_match = re.search(r"(?:next \$p|próximo \$p|prochain \$p).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min", c_lower)
+                        
+                        if p_cooldown_match:
+                            h_p, m_p = parse_hours_minutes(p_cooldown_match)
+                            p_reset_minutes = h_p * 60 + m_p
+                            client.p_available = False
+                            client.next_p_claim_at_utc = (now_utc + datetime.timedelta(minutes=p_reset_minutes)).replace(second=0, microsecond=0)
+                            log_function(f"[{client.muda_name}] Points ($p): Cooldown ({h_p}h {m_p}m)", preset_name, "INFO")
+                        elif p_ready:
+                            client.p_available = True
+                            client.next_p_claim_at_utc = None
+                            log_function(f"[{client.muda_name}] Points ($p): Ready", preset_name, "INFO")
+                        
+                        if client.p_available:
+                            log_function(f"[{client.muda_name}] $p is available! Sending command...", preset_name, "INFO")
+                            await cmd_channel.send(f"{client.mudae_prefix}p")
+                            client.p_available = False
+                            client.next_p_claim_at_utc = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=2)).replace(second=0, microsecond=0)
+                            await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
+
             # Always parse Kakera Power from $tu to update local state (Scanning for Power: XX%)
             try:
                 power_match = re.search(r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}", c_lower)
@@ -2033,43 +2066,73 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         return  # [FIX] Return to main loop for next iteration (no recursion)
 
                 # AUTO $US LOGIC (2nd Priority — only if $rolls did NOT execute)
-                if not rolls_did_execute and getattr(client, 'auto_us_enabled', False) and not getattr(client, 'us_failed_this_cycle', False):
+                if not rolls_did_execute and getattr(client, 'auto_us_enabled', False):
                     stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
                     hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
+                    us_failed_previously = getattr(client, 'us_failed_this_cycle', False)
                     
-                    if not stop_due_to_claim and not hit_limit:
+                    if not stop_due_to_claim and not hit_limit and not us_failed_previously:
                         last_attempt = getattr(client, 'last_us_attempt_utc', None)
                         if last_attempt and (now_utc - last_attempt).total_seconds() < 15:
                             # We just attempted $us and still have 0 rolls (possibly limits or unknown error).
                             client.us_failed_this_cycle = True
                             log_function(f"[{client.muda_name}] Auto $us failed repeatedly. Halting $us for this cycle.", preset_name, "WARN")
+                            
+                            # Fallback if rolls_left > 0
+                            if rolls_left > 0:
+                                log_function(f"[{client.muda_name}] Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                                await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                return
                         else:
-                            amount_to_pull = min(20, client.auto_us_limit - client.us_pulled_this_cycle) if client.auto_us_limit > 0 else 20
+                            amount_to_pull = client.auto_us_limit - client.us_pulled_this_cycle if client.auto_us_limit > 0 else 20
+                            amount_to_pull = max(0, amount_to_pull)
                             
-                            await channel.send(f"{client.mudae_prefix}us {amount_to_pull}")
-                            client.last_us_attempt_utc = datetime.datetime.now(datetime.timezone.utc)
-                            
-                            # Fast-check response without an extra $tu
-                            await asyncio.sleep(2.0)
-                            us_failed = False
-                            async for msg in channel.history(limit=5):
-                                if msg.author.id == TARGET_BOT_ID and not msg.embeds:
-                                    c_lower = msg.content.lower()
-                                    if "kakera" in c_lower and ("enough" in c_lower or "pas assez" in c_lower or "insuficiente" in c_lower):
-                                        us_failed = True
+                            if amount_to_pull > 0:
+                                chunks = [20] * (amount_to_pull // 20) + ([amount_to_pull % 20] if amount_to_pull % 20 > 0 else [])
+                                total_pulled_rolls = 0
+                                
+                                for chunk in chunks:
+                                    await channel.send(f"{client.mudae_prefix}us {chunk}")
+                                    client.last_us_attempt_utc = datetime.datetime.now(datetime.timezone.utc)
+                                    
+                                    # Humanized delay
+                                    await asyncio.sleep(random.uniform(1.5, 2.5))
+                                    
+                                    # Check for failure
+                                    chunk_failed = False
+                                    async for msg in channel.history(limit=5):
+                                        if msg.author.id == TARGET_BOT_ID and not msg.embeds:
+                                            c_msg_lower = msg.content.lower()
+                                            if "kakera" in c_msg_lower and ("enough" in c_msg_lower or "pas assez" in c_msg_lower or "insuficiente" in c_msg_lower):
+                                                chunk_failed = True
+                                                break
+                                                
+                                    if chunk_failed:
+                                        client.us_failed_this_cycle = True
+                                        log_function(f"[{client.muda_name}] Auto $us bulk pull failed (Not enough Kakera). Halting bulk pull.", preset_name, "WARN")
                                         break
+                                    else:
+                                        total_pulled_rolls += chunk
+                                        client.us_pulled_this_cycle += chunk
                                         
-                            if us_failed:
-                                client.us_failed_this_cycle = True
-                                log_function(f"[{client.muda_name}] Auto $us failed (Not enough Kakera). Halting $us for this cycle.", preset_name, "WARN")
-                                return  # [FIX] Return to main loop for next iteration (no recursion)
-                            
-                            client.us_pulled_this_cycle += amount_to_pull
-                            limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
-                            log_function(f"[{client.muda_name}] Auto $us triggered. Pulled {amount_to_pull} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
-                            
-                            # Plunge directly into rolls without another $tu (fast mode)
-                            await start_roll_commands(client, channel, amount_to_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                if total_pulled_rolls > 0:
+                                    limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
+                                    log_function(f"[{client.muda_name}] Auto $us bulk pull completed. Pulled {total_pulled_rolls} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
+                                    await start_roll_commands(client, channel, total_pulled_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                    return
+                                elif rolls_left > 0:
+                                    log_function(f"[{client.muda_name}] Auto $us failed. Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                                    await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                    return
+                            elif rolls_left > 0:
+                                log_function(f"[{client.muda_name}] Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                                await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                return
+                    else:
+                        # Fallback if rolls_left > 0
+                        if rolls_left > 0:
+                            log_function(f"[{client.muda_name}] $us unavailable (limit/exhausted/stopped). Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                            await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
                             return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
@@ -3448,7 +3511,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_divorce_enabled", False),
                 preset_data.get("auto_divorce_max_kakera", 50),
                 preset_data.get("auto_divorce_series", []),
-                preset_data.get("mk_bypass_power_check", False)
+                preset_data.get("mk_bypass_power_check", False),
+                preset_data.get("auto_p_enabled", True)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

@@ -37,6 +37,7 @@ DEFAULTS = {
     "min_kakera": 100,
     "delay_seconds": 0,
     "start_delay": 0,
+    "auto_p_enabled": True,
     "roll_speed": 0.4,
     "snipe_delay": 2,
     "series_snipe_delay": 3,
@@ -110,6 +111,7 @@ BOOL_SETTINGS = [
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
+    ("auto_p_enabled", "Auto $p (Automatically claim points when available)", True),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -349,6 +351,8 @@ class PresetEditor:
         self.add_text_field(prefix_row, "mudae_prefix", "Mudae Game Prefix", pack_side=tk.LEFT)
         
         self.add_text_field(core_frame, "roll_command", "Roll Type (wa, ha, ma, etc.)")
+        self.add_number_field(core_frame, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
+        self.add_number_field(core_frame, "start_delay", "Wait Before Starting (seconds)", 0)
         self.add_checkbox(core_frame, "autostart", "Start with Windows")
         
         # --- Rolling ---
@@ -362,8 +366,6 @@ class PresetEditor:
         
         self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
-        self.add_number_field(roll_sub, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
-        self.add_number_field(roll_sub, "start_delay", "Wait Before Starting (seconds)", 0)
         self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
         self.add_checkbox(roll_sub, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
         
@@ -524,6 +526,7 @@ class PresetEditor:
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_checkbox(power_frame, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
+        self.add_checkbox(power_frame, "auto_p_enabled", "Auto $p (Automatically claim points when available)")
         self.add_checkbox(power_frame, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
@@ -689,7 +692,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled", "mk_bypass_power_check"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -836,7 +839,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled", "mk_bypass_power_check"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -993,6 +996,7 @@ class PresetEditor:
                 "auto_rt_after_claim": False,
                 "mk_only": False,
                 "auto_dk_enabled": True,
+                "auto_p_enabled": True,
                 "enable_snipe_chat_reactions": False,
                 "snipe_chat_messages": ["omg", "ezz"],
             }
