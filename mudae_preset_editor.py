@@ -53,6 +53,7 @@ DEFAULTS = {
     "auto_us_enabled": False,
     "auto_us_limit": 0,
     "auto_us_stop_on_claim": True,
+    "bulk_us_enabled": False,
     "auto_mk_enabled": True,
     "auto_rolls_enabled": False,
     "auto_rolls_limit": 0,
@@ -99,6 +100,7 @@ BOOL_SETTINGS = [
     ("rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)", False),
     ("auto_us_enabled", "Automatically Use Saved Rolls ($us)", False),
     ("auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)", True),
+    ("bulk_us_enabled", "Bulk US Mode (Pull all saved rolls at once instead of in batches of 20)", False),
     ("auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)", False),
     ("auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)", False),
     ("autostart", "Start with Windows", False),
@@ -384,6 +386,7 @@ class PresetEditor:
         us_enabled_var = self.add_checkbox(us_frame, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
         us_sub = self.create_subframe(us_frame, us_enabled_var)
         
+        self.add_checkbox(us_sub, "bulk_us_enabled", "Bulk US Mode (Pull all rolls at once instead of in batches of 20)")
         self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
         self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
@@ -688,6 +691,7 @@ class PresetEditor:
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
+                    "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
@@ -835,6 +839,7 @@ class PresetEditor:
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
+                    "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
@@ -988,6 +993,7 @@ class PresetEditor:
                 "auto_us_enabled": False,
                 "auto_us_limit": 0,
                 "auto_us_stop_on_claim": True,
+                "bulk_us_enabled": False,
                 "auto_rolls_enabled": False,
                 "auto_rolls_limit": 0,
                 "auto_rolls_in_key_mode": False,

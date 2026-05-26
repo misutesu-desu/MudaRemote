@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.8"
+CURRENT_VERSION = "4.2.9"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -505,6 +505,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_power_thresholds, debug_mode, auto_mk_enabled_preset,
             auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode,
             panic_roll_minutes_preset, lurker_mode_preset,
+            bulk_us_enabled_preset=False,
             max_dk_power_preset=100,  # [NEW] Task 1: Configurable max DK power cap
             randomized_claim_reactions_preset=None,  # [NEW] Task 5: Randomized claim reaction emojis
             main_account_id_preset="",  # [NEW] Task 6: Main account wishlist syncing
@@ -600,6 +601,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_us_enabled = auto_us_enabled
     client.auto_us_limit = auto_us_limit
     client.auto_us_stop_on_claim = auto_us_stop_on_claim
+    client.bulk_us_enabled = bulk_us_enabled_preset
     client.us_pulled_this_cycle = 0
     client.mk_rolls_left = 0
     client.auto_mk_enabled = auto_mk_enabled_preset
@@ -2087,12 +2089,50 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             amount_to_pull = max(0, amount_to_pull)
                             
                             if amount_to_pull > 0:
-                                chunks = [20] * (amount_to_pull // 20) + ([amount_to_pull % 20] if amount_to_pull % 20 > 0 else [])
-                                total_pulled_rolls = 0
-                                
-                                for chunk in chunks:
-                                    await channel.send(f"{client.mudae_prefix}us {chunk}")
+                                if getattr(client, 'bulk_us_enabled', False):
+                                    # Legacy Bulk Behavior
+                                    chunks = [20] * (amount_to_pull // 20) + ([amount_to_pull % 20] if amount_to_pull % 20 > 0 else [])
+                                    total_pulled_rolls = 0
+                                    
+                                    for chunk in chunks:
+                                        await channel.send(f"{client.mudae_prefix}us {chunk}")
+                                        client.last_us_attempt_utc = datetime.datetime.now(datetime.timezone.utc)
+                                        
+                                        # Humanized delay
+                                        await asyncio.sleep(random.uniform(1.5, 2.5))
+                                        
+                                        # Check for failure
+                                        chunk_failed = False
+                                        async for msg in channel.history(limit=5):
+                                            if msg.author.id == TARGET_BOT_ID and not msg.embeds:
+                                                c_msg_lower = msg.content.lower()
+                                                if "kakera" in c_msg_lower and ("enough" in c_msg_lower or "pas assez" in c_msg_lower or "insuficiente" in c_msg_lower):
+                                                    chunk_failed = True
+                                                    break
+                                                    
+                                        if chunk_failed:
+                                            client.us_failed_this_cycle = True
+                                            log_function(f"[{client.muda_name}] Auto $us bulk pull failed (Not enough Kakera). Halting bulk pull.", preset_name, "WARN")
+                                            break
+                                        else:
+                                            total_pulled_rolls += chunk
+                                            client.us_pulled_this_cycle += chunk
+                                            
+                                    if total_pulled_rolls > 0:
+                                        limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
+                                        log_function(f"[{client.muda_name}] Auto $us bulk pull completed. Pulled {total_pulled_rolls} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
+                                        await start_roll_commands(client, channel, total_pulled_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                        return
+                                    elif rolls_left > 0:
+                                        log_function(f"[{client.muda_name}] Auto $us failed. Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                                        await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                        return
+                                else:
+                                    # Incremental Behavior (New Default)
+                                    step_pull = min(20, amount_to_pull)
+                                    await channel.send(f"{client.mudae_prefix}us {step_pull}")
                                     client.last_us_attempt_utc = datetime.datetime.now(datetime.timezone.utc)
+                                    log_function(f"[{client.muda_name}] [Auto $us] Pulled batch of {step_pull} rolls...", preset_name, "INFO")
                                     
                                     # Humanized delay
                                     await asyncio.sleep(random.uniform(1.5, 2.5))
@@ -2108,31 +2148,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                                 
                                     if chunk_failed:
                                         client.us_failed_this_cycle = True
-                                        log_function(f"[{client.muda_name}] Auto $us bulk pull failed (Not enough Kakera). Halting bulk pull.", preset_name, "WARN")
-                                        break
+                                        log_function(f"[{client.muda_name}] Auto $us pull failed (Not enough Kakera). Halting $us.", preset_name, "WARN")
+                                        if rolls_left > 0:
+                                            log_function(f"[{client.muda_name}] Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
+                                            await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                            return
                                     else:
-                                        total_pulled_rolls += chunk
-                                        client.us_pulled_this_cycle += chunk
+                                        client.us_pulled_this_cycle += step_pull
+                                        await start_roll_commands(client, channel, step_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
                                         
-                                if total_pulled_rolls > 0:
-                                    limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
-                                    log_function(f"[{client.muda_name}] Auto $us bulk pull completed. Pulled {total_pulled_rolls} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
-                                    await start_roll_commands(client, channel, total_pulled_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                    return
-                                elif rolls_left > 0:
-                                    log_function(f"[{client.muda_name}] Auto $us failed. Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
-                                    await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                    return
-                            elif rolls_left > 0:
-                                log_function(f"[{client.muda_name}] Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
-                                await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                return
-                    else:
-                        # Fallback if rolls_left > 0
-                        if rolls_left > 0:
-                            log_function(f"[{client.muda_name}] $us unavailable (limit/exhausted/stopped). Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
-                            await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                            return
+                                        if client._immediate_check_event:
+                                            client._immediate_check_event.set()
+                                        return
 
                 # Reset time for rolls is known, but we should also check if we need to wake up for claim/timing
                 # Parse claim reset again from local context to be safe
@@ -3511,6 +3538,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_rolls_in_key_mode", False),
                 preset_data.get("panic_roll_minutes", 5),
                 preset_data.get("lurker_mode", False),
+                preset_data.get("bulk_us_enabled", False),
                 # [NEW] Task 1-8: New preset parameters with backwards-compatible defaults
                 preset_data.get("max_dk_power", 100),
                 preset_data.get("randomized_claim_reactions", None),
