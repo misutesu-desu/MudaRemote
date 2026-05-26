@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.7"
+CURRENT_VERSION = "4.2.8"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -431,7 +431,7 @@ def count_chaos_keys(embed):
         return 0
     
     desc = embed.description
-    key_pattern = r'<:(?:chaos)?key:\d+>\s*\(\*\*([\d,.]+)\*\*\)'
+    key_pattern = r'(?:🔑|<:(?:chaos)?key:\d+>)\s*\(\*?\*?([\d,.]+)\*?\*?\)'
     matches = re.findall(key_pattern, desc, re.IGNORECASE)
     
     chaos_count = 0
@@ -2855,7 +2855,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 all_raw_buttons.sort(key=lambda b: prio_map.get(b.emoji.name.rstrip('2') if hasattr(b.emoji, 'name') and b.emoji.name else "", 0), reverse=True)
 
                 # Iterate through sorted buttons
-                for btn in all_raw_buttons:
+                for idx, btn in enumerate(all_raw_buttons):
+                    if idx > 0:
+                        try:
+                            fresh_msg = await channel.fetch_message(msg.id)
+                            found_matching = False
+                            for comp in fresh_msg.components:
+                                for b in comp.children:
+                                    if getattr(b, 'custom_id', None) == getattr(btn, 'custom_id', None):
+                                        btn = b
+                                        found_matching = True
+                                        break
+                                if found_matching:
+                                    break
+                            if not found_matching:
+                                debug_log(f"Matching button with custom_id {getattr(btn, 'custom_id', None)} not found in fresh message.")
+                                continue
+                        except Exception as e:
+                            debug_log(f"Error re-fetching message or finding button: {e}")
+                            continue
+                    
                     name = btn.emoji.name
                     
                     # only_chaos gate: When only_chaos allowed this message through because
@@ -2936,7 +2955,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         clicked = True
                         client._last_kakera_click_ts = time.time()  # Track for bonus roll detection
                         debug_log(f"Kakera click SUCCESS: {name} on '{char_name}' (msg_id={msg.id})")
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.6)
                     except discord.HTTPException as e:
                         debug_log(f"Kakera click HTTPException: status={getattr(e, 'status', '?')} code={getattr(e, 'code', '?')} text={getattr(e, 'text', str(e))[:200]}")
                         log_function(f"[{client.muda_name}] Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", client.preset_name, "ERROR")
@@ -3411,7 +3430,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Reactive Kakera on own rolls (with humanized delay)
         if client.rolling_enabled and client.enable_reactive_self_snipe and client.is_actively_rolling and process:
             # Check if kakera button exists and value is high enough
-            all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
+            all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
             has_btn = False
             if message.components:
                 for c in message.components:
