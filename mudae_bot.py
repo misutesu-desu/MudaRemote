@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.6"
+CURRENT_VERSION = "4.2.7"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -1569,6 +1569,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.is_processing_cycle = True
         
         try:
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
             if current_cycle_id is None:
                 current_cycle_id = time.time()
                 client.active_cycle_id = current_cycle_id
@@ -1729,8 +1730,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 log_function(f"[{client.muda_name}] Error parsing Power/DK state: {e}", preset_name, "WARN")
 
-
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
 
             # $rt Status
             # Multilingual support: EN, PT, ES, FR
