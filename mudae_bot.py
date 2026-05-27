@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.2.9"
+CURRENT_VERSION = "4.3.0"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -2793,22 +2793,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera Claim Logic
         if is_kakera:
-            # [NEW] Feature 2: $op Perk 5 (Maxed/Sphere) Kakera Filter
+            # [FIX] op_perk_5_only should never block physically present free buttons (spheres/kakeraP)
             if client.op_perk_5_only:
-                desc = (embed.description or "").lower()
-                has_sphere = any(f"sp" in line for line in desc.split()) or any(s.lower() in desc for s in client.sphere_emojis)
-                
-                # NEW FIX: Do not skip if a Purple Kakera (kakeraP) button is present on the message
-                has_kakera_p = False
+                has_free_button = False
                 if msg.components:
-                    has_kakera_p = any(
-                        hasattr(b.emoji, 'name') and b.emoji.name == 'kakeraP'
+                    has_free_button = any(
+                        hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis)
                         for c in msg.components for b in c.children
                     )
                 
-                # If there is no sphere AND no kakeraP button, then we abort
-                if not has_sphere and not has_kakera_p:
-                    return False
+                if not has_free_button:
+                    desc = (embed.description or "").lower()
+                    has_sphere = any(f"sp" in line for line in desc.split()) or any(s.lower() in desc for s in client.sphere_emojis)
+                    
+                    if not has_sphere:
+                        return False
 
             # [NEW] MK Kakera Only gate: If mk_only is enabled and this is NOT a $mk roll,
             # completely skip all kakera buttons to save reaction power.
