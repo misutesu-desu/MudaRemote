@@ -221,6 +221,27 @@ We recently crossed **50+ GitHub Stars** — if MudaRemote helps you dominate yo
 
 ---
 
+## 💖 Support the Project (Donations)
+
+MudaRemote is and will always remain **100% free and open-source**. If this tool has helped you dominate your servers, farm Kakera, and build your dream harem, please consider supporting its continuous development and maintenance!
+
+To protect developer privacy and keep transaction fees as low as possible for our supporters, we accept donations exclusively through the following cryptocurrency networks:
+
+<p align="left">
+  <img src="https://img.shields.io/badge/Litecoin-LTC-A6A9AA?style=for-the-badge&logo=litecoin&logoColor=white" alt="LTC">
+  <img src="https://img.shields.io/badge/Tether-USDT_TRC20-26A17B?style=for-the-badge&logo=tether&logoColor=white" alt="USDT">
+</p>
+
+*   **Litecoin (LTC) - LTC Network:**  
+    `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt`
+*   **USDT - Tron Network (TRC20):**  
+    `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp`
+
+> [!NOTE]
+> If you decide to support us, feel free to **DM me on Discord with your transaction ID / screenshot**, and I'll gladly assign you the **Donator** role in our community server! Thank you for your support! 🙏
+
+---
+
 ## 📜 License
 
 MIT License — free to use, copy, modify, and distribute. See [LICENSE](LICENSE) for details.
