@@ -76,6 +76,9 @@ DEFAULTS = {
     "auto_divorce_max_kakera": 50,
     "auto_divorce_series": [],
     "mk_bypass_power_check": False,
+    "snipe_channels": [],
+    "max_claim_rank": 0,
+    "max_like_rank": 0,
 }
 
 # Boolean settings with their display names and defaults
@@ -135,6 +138,8 @@ NUMERIC_SETTINGS = [
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
     ("panic_roll_minutes", "Panic Roll Start (Minutes before claim reset)", 5, int),
     ("auto_divorce_max_kakera", "Auto-Divorce Kakera Threshold (Divorce if value <= this)", 50, int),
+    ("max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0, int),
+    ("max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0, int),
 ]
 
 # Text/list settings
@@ -150,6 +155,7 @@ TEXT_SETTINGS = [
     ("kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)", [], True),
     ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
+    ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
 ]
 
 # Default emoji values
@@ -398,6 +404,8 @@ class PresetEditor:
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
         self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        self.add_number_field(claim_frame, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0)
+        self.add_number_field(claim_frame, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
         self.add_checkbox(claim_frame, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
         self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
@@ -413,6 +421,7 @@ class PresetEditor:
         snipe_sub = self.create_subframe(snipe_frame, snipe_mode_var)
         self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
         self.add_checkbox(snipe_sub, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
+        self.add_list_field(snipe_sub, "snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)")
         
         reactive_snipe_var = self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
         reactive_sub = self.create_subframe(snipe_frame, reactive_snipe_var)
@@ -675,7 +684,8 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "main_account_id", "farm_character", "auto_divorce_max_kakera"]:
+                    "main_account_id", "farm_character", "auto_divorce_max_kakera",
+                    "max_claim_rank", "max_like_rank"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -708,7 +718,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -815,7 +825,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "auto_divorce_max_kakera"]:
+                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -825,7 +835,7 @@ class PresetEditor:
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit", 
                                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                                   "auto_divorce_max_kakera"]:
+                                   "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
@@ -852,7 +862,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:

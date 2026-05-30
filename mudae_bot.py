@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.0"
+CURRENT_VERSION = "4.3.1"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -485,6 +485,40 @@ def is_wished_by_self(message, client_user_id: int) -> bool:
     # Check if the bot user is among the mentioned users
     return client_user_id in [m.id for m in message.mentions]
 
+def parse_mudae_ranks(embed_description: str) -> tuple[int, int]:
+    """
+    Parses Mudae character popularity ranks (Claims Rank and Likes Rank)
+    from the character's embed description text using safe regexes.
+    Returns (claims_rank, likes_rank). Ranks are 0 if not found.
+    """
+    try:
+        if not embed_description:
+            return 0, 0
+        claims_rank = 0
+        likes_rank = 0
+        
+        claims_match = re.search(r"Claims:\s*#\s*([\d,.]+)", embed_description, re.IGNORECASE)
+        if claims_match:
+            try:
+                # Strip punctuation commas or periods and convert to int
+                val_str = claims_match.group(1).replace(",", "").replace(".", "")
+                claims_rank = int(val_str)
+            except ValueError:
+                claims_rank = 0
+                
+        likes_match = re.search(r"Likes:\s*#\s*([\d,.]+)", embed_description, re.IGNORECASE)
+        if likes_match:
+            try:
+                # Strip punctuation commas or periods and convert to int
+                val_str = likes_match.group(1).replace(",", "").replace(".", "")
+                likes_rank = int(val_str)
+            except ValueError:
+                likes_rank = 0
+                
+        return claims_rank, likes_rank
+    except Exception:
+        return 0, 0
+
 def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
             log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
             snipe_ignore_min_kakera_reset, wishlist,
@@ -524,6 +558,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_divorce_max_kakera_preset=50, # [NEW] Auto-Divorce Kakera Threshold
             auto_divorce_series_preset=None, # [NEW] Auto-Divorce Series List
             mk_bypass_power_check=False, # [NEW] Bypass MK power check
+            snipe_channels_preset=None,
+            max_claim_rank_preset=0,
+            max_like_rank_preset=0,
             auto_p_enabled=True): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
@@ -550,6 +587,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.series_snipe_delay = series_snipe_delay
     client.series_wishlist = set([sw.lower() for sw in series_wishlist])
     client.avoid_list = set([a.lower() for a in avoid_list])
+    
+    # Parse new parameters
+    client.snipe_channels = set()
+    if snipe_channels_preset:
+        for ch in snipe_channels_preset:
+            try:
+                client.snipe_channels.add(int(ch))
+            except (ValueError, TypeError):
+                pass
+    try:
+        client.max_claim_rank = int(max_claim_rank_preset)
+    except (ValueError, TypeError):
+        client.max_claim_rank = 0
+    try:
+        client.max_like_rank = int(max_like_rank_preset)
+    except (ValueError, TypeError):
+        client.max_like_rank = 0
     client.muda_name = BOT_NAME
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
@@ -1230,6 +1284,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return False
 
     async def send_roll_command(channel, command_name):
+        if channel.id != client.target_channel_id:
+            channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         cmd = (command_name or "").strip()
         if not cmd:
             return
@@ -2201,6 +2257,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return  # [FIX] Return to main loop for next iteration (no recursion)
 
     async def process_mk_rolls(client, channel, current_cycle_id):
+        if channel.id != client.target_channel_id:
+            channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         if not getattr(client, 'auto_mk_enabled', True):
             return
         if client.mk_rolls_left > 0:
@@ -2230,6 +2288,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 log_function(f"[{client.muda_name}] Skipping $mk: Insufficient power ({current_pow}% < {client.dk_consumption}%).", client.preset_name, "INFO")
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
+        if channel.id != client.target_channel_id:
+            channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         # [NEW] Feature 1: End-Game Kakera Farming (Pre-Roll Phase)
         if client.farm_character_enabled and client.farm_character and client.claim_right_available:
             log_function(f"[{client.muda_name}] Kakera Farm: Preparing {client.farm_character} for rolling.", client.preset_name, "INFO")
@@ -2616,9 +2676,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_avoided = char_n in client.avoid_list
                     
                     # Check if character is on wishlist OR Mudae indicates we wished for it
+                    claims_rank, likes_rank = parse_mudae_ranks(desc)
+                    is_highly_ranked_claim = (client.max_claim_rank > 0 and 0 < claims_rank <= client.max_claim_rank)
+                    is_highly_ranked_like = (client.max_like_rank > 0 and 0 < likes_rank <= client.max_like_rank)
+                    is_rank_based_target = is_highly_ranked_claim or is_highly_ranked_like
+
                     is_wl = (char_n in client.wishlist) or \
                             (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
-                            is_wished_by_self(msg, client.user.id)
+                            is_wished_by_self(msg, client.user.id) or \
+                            is_rank_based_target
                     
                     # --- DEBUG: Per-character evaluation trace ---
                     if client.debug_mode:
@@ -2698,9 +2764,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Verify wishlist status locally since list merging loses the context
                 desc = msg.embeds[0].description or ""
                 series = desc.splitlines()[0].lower() if desc else ""
+                claims_rank_rt, likes_rank_rt = parse_mudae_ranks(desc)
+                is_highly_ranked_claim_rt = (client.max_claim_rank > 0 and 0 < claims_rank_rt <= client.max_claim_rank)
+                is_highly_ranked_like_rt = (client.max_like_rank > 0 and 0 < likes_rank_rt <= client.max_like_rank)
+                is_rank_based_target_rt = is_highly_ranked_claim_rt or is_highly_ranked_like_rt
+
                 is_wl_rt = (n in client.wishlist) or \
                            (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
-                           is_wished_by_self(msg, client.user.id)
+                           is_wished_by_self(msg, client.user.id) or \
+                           is_rank_based_target_rt
                            
                 bypass_min = is_wl_rt and client.rt_ignore_min_kakera_for_wishlist
                 
@@ -3142,7 +3214,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
 
         # Filter for relevant messages
-        if message.author.id != TARGET_BOT_ID or message.channel.id != client.target_channel_id:
+        is_roll_channel = (message.channel.id == client.target_channel_id)
+        is_snipe_channel = (client.snipe_mode and message.channel.id in client.snipe_channels)
+
+        if message.author.id != TARGET_BOT_ID or not (is_roll_channel or is_snipe_channel):
             if client.rolling_enabled: await client.process_commands(message)
             return
 
@@ -3339,9 +3414,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
             
             # Check if character is on wishlist OR Mudae indicates we wished for it
+            claims_rank, likes_rank = parse_mudae_ranks(desc)
+            is_highly_ranked_claim = (client.max_claim_rank > 0 and 0 < claims_rank <= client.max_claim_rank)
+            is_highly_ranked_like = (client.max_like_rank > 0 and 0 < likes_rank <= client.max_like_rank)
+            is_rank_based_target = is_highly_ranked_claim or is_highly_ranked_like
+
             is_wl = c_name in client.wishlist or \
                     (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or \
-                    is_wished_by_self(message, client.user.id)
+                    is_wished_by_self(message, client.user.id) or \
+                    is_rank_based_target
             is_val = client.kakera_snipe_mode_active and k_val >= client.kakera_snipe_threshold
             is_avoided = c_name in client.avoid_list
             
@@ -3415,7 +3496,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                              client.series_snipe_happened = True; process = False
 
             # Wishlist Snipe (includes "Wished by" detection from Mudae)
-            is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id)
+            claims_rank_s, likes_rank_s = parse_mudae_ranks(embed.description)
+            is_highly_ranked_claim_s = (client.max_claim_rank > 0 and 0 < claims_rank_s <= client.max_claim_rank)
+            is_highly_ranked_like_s = (client.max_like_rank > 0 and 0 < likes_rank_s <= client.max_like_rank)
+            is_rank_based_target_s = is_highly_ranked_claim_s or is_highly_ranked_like_s
+
+            is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_rank_based_target_s
             is_avoided = c_name in client.avoid_list
             if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
                 if is_key_mode_kakera_only():
@@ -3557,6 +3643,9 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_divorce_max_kakera", 50),
                 preset_data.get("auto_divorce_series", []),
                 preset_data.get("mk_bypass_power_check", False),
+                preset_data.get("snipe_channels", []),
+                preset_data.get("max_claim_rank", 0),
+                preset_data.get("max_like_rank", 0),
                 preset_data.get("auto_p_enabled", True)
             )
         except Exception as e:
