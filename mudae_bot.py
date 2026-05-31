@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.2"
+CURRENT_VERSION = "4.3.3"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -39,6 +39,7 @@ _active_clients_lock = threading.Lock()
 # When set, the listener is SUPPRESSED (menu is using stdin).
 # When cleared, the listener is ACTIVE (bots are running, menu is done).
 _menu_active = threading.Event()
+_original_terminal_settings = None  # Global terminal settings for Unix fallback
 
 def _toggle_global_pause():
     """Toggle the global pause state and update all registered client instances."""
@@ -106,17 +107,31 @@ def _keyboard_listener_thread():
     else:
         # Fallback for non-Windows (Linux/macOS): non-blocking terminal mode
         import tty, termios, select
+        global _original_terminal_settings
         try:
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
+            _original_terminal_settings = old_settings
             try:
                 tty.setcbreak(fd)
                 while True:
                     if _menu_active.is_set():
-                        time.sleep(0.2)
+                        # While the menu is active, we completely yield control to it.
+                        # We wait silently without calling select or reading from sys.stdin.
+                        while _menu_active.is_set():
+                            time.sleep(0.1)
+                        # Once the menu is done, flush any keys pressed during the menu
+                        # and restore cbreak mode for pause listener.
+                        try:
+                            termios.tcflush(fd, termios.TCIFLUSH)
+                            tty.setcbreak(fd)
+                        except Exception:
+                            pass
                         continue
                     
                     if select.select([sys.stdin], [], [], 0.1)[0]:
+                        if _menu_active.is_set():
+                            continue
                         ch = sys.stdin.read(1)
                         # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
                         if ch == '\x1b':
@@ -3659,6 +3674,25 @@ def start_preset_thread(preset_name, preset_data):
     t.start()
     return t
 
+class StdinEnterMapper:
+    """Wrapper for sys.stdin that maps newline (\\n) to carriage return (\\r)
+    to ensure virtual keyboards sending LF are processed as ENTER by inquirer."""
+    def __init__(self, original_stdin):
+        self.original_stdin = original_stdin
+
+    def read(self, n=1):
+        char = self.original_stdin.read(n)
+        if char == '\n':
+            return '\r'
+        return char
+
+    def readline(self, *args, **kwargs):
+        line = self.original_stdin.readline(*args, **kwargs)
+        return line.replace('\n', '\r')
+
+    def __getattr__(self, name):
+        return getattr(self.original_stdin, name)
+
 def main_menu():
     # Lazy import: inquirer uses blessed.Terminal which crashes in windowed mode (no stdin)
     import inquirer
@@ -3677,26 +3711,54 @@ def main_menu():
     # This prevents the background thread from stealing keystrokes meant for inquirer.
     _menu_active.set()
     
-    threads = []
-    while True:
-        opts = ['Select and Run Preset', 'Select and Run Multiple', 'Exit']
-        q = [inquirer.List('opt', message="Select Option", choices=opts)]
+    # Restore original tty settings immediately in the main thread to ensure clean state for inquirer
+    if os.name != 'nt':
+        import termios
+        global _original_terminal_settings
+        if _original_terminal_settings is not None:
+            try:
+                termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, _original_terminal_settings)
+            except Exception:
+                pass
+
+    # Wrap sys.stdin to map \n to \r for virtual keyboards on macOS/Linux
+    original_stdin = sys.stdin
+    if os.name != 'nt':
+        sys.stdin = StdinEnterMapper(sys.stdin)
+
+    def safe_prompt(q):
         ans = inquirer.prompt(q)
-        
-        if not ans or ans['opt'] == 'Exit': break
-        
-        if ans['opt'] == 'Select and Run Preset':
-            p_ans = inquirer.prompt([inquirer.List('p', message="Preset", choices=list(presets.keys()))])
-            if p_ans: threads.append(start_preset_thread(p_ans['p'], presets[p_ans['p']]))
-            
-        elif ans['opt'] == 'Select and Run Multiple':
-            p_ans = inquirer.prompt([inquirer.Checkbox('p', message="Presets", choices=list(presets.keys()))])
-            if p_ans: 
-                for p in p_ans['p']: threads.append(start_preset_thread(p, presets[p]))
+        if os.name != 'nt':
+            try:
+                import termios
+                # Flush the input buffer to discard any extra characters (e.g. trailing LF in CRLF)
+                termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+            except Exception:
+                pass
+        return ans
     
-    # [FIX] Bug 1: Menu is done — re-enable the keyboard listener for pause toggle.
-    # From this point on, inquirer is no longer using stdin, so the listener is safe.
-    _menu_active.clear()
+    threads = []
+    try:
+        while True:
+            opts = ['Select and Run Preset', 'Select and Run Multiple', 'Exit']
+            q = [inquirer.List('opt', message="Select Option", choices=opts)]
+            ans = safe_prompt(q)
+            
+            if not ans or ans['opt'] == 'Exit': break
+            
+            if ans['opt'] == 'Select and Run Preset':
+                p_ans = safe_prompt([inquirer.List('p', message="Preset", choices=list(presets.keys()))])
+                if p_ans: threads.append(start_preset_thread(p_ans['p'], presets[p_ans['p']]))
+                
+            elif ans['opt'] == 'Select and Run Multiple':
+                p_ans = safe_prompt([inquirer.Checkbox('p', message="Presets", choices=list(presets.keys()))])
+                if p_ans: 
+                    for p in p_ans['p']: threads.append(start_preset_thread(p, presets[p]))
+    finally:
+        # Restore original stdin wrapper and re-enable listener
+        sys.stdin = original_stdin
+        _menu_active.clear()
     if threads:
         print(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m")
 
