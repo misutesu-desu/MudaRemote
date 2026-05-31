@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.1"
+CURRENT_VERSION = "4.3.2"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -2177,7 +2177,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     if total_pulled_rolls > 0:
                                         limit_str = str(client.auto_us_limit) if client.auto_us_limit > 0 else '∞'
                                         log_function(f"[{client.muda_name}] Auto $us bulk pull completed. Pulled {total_pulled_rolls} rolls. ({client.us_pulled_this_cycle}/{limit_str})", preset_name, "INFO")
-                                        await start_roll_commands(client, channel, total_pulled_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                        await start_roll_commands(client, channel, total_pulled_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull=True)
                                         return
                                     elif rolls_left > 0:
                                         log_function(f"[{client.muda_name}] Auto $us failed. Falling back to standard rolls ({rolls_left} rolls left).", preset_name, "INFO")
@@ -2211,7 +2211,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                             return
                                     else:
                                         client.us_pulled_this_cycle += step_pull
-                                        await start_roll_commands(client, channel, step_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                                        await start_roll_commands(client, channel, step_pull, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull=True)
                                         
                                         if client._immediate_check_event:
                                             client._immediate_check_event.set()
@@ -2287,7 +2287,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             else:
                 log_function(f"[{client.muda_name}] Skipping $mk: Insufficient power ({current_pow}% < {client.dk_consumption}%).", client.preset_name, "INFO")
 
-    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
+    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         # [NEW] Feature 1: End-Game Kakera Farming (Pre-Roll Phase)
@@ -2314,7 +2314,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 reset_soon = True
 
         is_timing_mode_active = False
-        if client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
+        if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
                 # [NEW] Feature 3: Slash Command Safety Limiter (min 2.0s for slash)

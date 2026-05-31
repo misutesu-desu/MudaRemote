@@ -116,7 +116,7 @@ BOOL_SETTINGS = [
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
-    ("auto_p_enabled", "Auto $p (Automatically claim points when available)", True),
+    ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -538,7 +538,7 @@ class PresetEditor:
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_checkbox(power_frame, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
-        self.add_checkbox(power_frame, "auto_p_enabled", "Auto $p (Automatically claim points when available)")
+        self.add_checkbox(power_frame, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
         self.add_checkbox(power_frame, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
