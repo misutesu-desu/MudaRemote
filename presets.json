@@ -2,6 +2,7 @@
   "Main_Account_Sniper": {
     "token": "TOKEN",
     "channel_id": 123456789012345678,
+    "command_channel_id": "",
     "prefix": "!",
     "mudae_prefix": "$",
     "roll_command": "wa",
@@ -13,8 +14,12 @@
     "min_kakera": 450,
     "key_mode": false,
     "only_chaos": false,
+    "mk_only": false,
     "time_rolls_to_claim_reset": true,
     "dk_power_management": true,
+    "auto_dk_enabled": true,
+    "max_dk_power": 100,
+    "auto_p_enabled": true,
     "skip_initial_commands": false,
     "wishlist": [
       "rem",
@@ -22,9 +27,11 @@
       "power",
       "zero two"
     ],
+    "avoid_list": [],
     "snipe_mode": true,
     "snipe_delay": 0.2,
     "snipe_ignore_min_kakera_reset": true,
+    "snipe_channels": [],
     "series_wishlist": [
       "chainsaw man",
       "re:zero"
@@ -53,6 +60,10 @@
     "humanization_enabled": true,
     "humanization_window_minutes": 20,
     "humanization_inactivity_seconds": 180,
+    "inactive_hours": [
+      [1, 7],
+      [23, 6]
+    ],
     "autostart": true,
     "claim_emojis": [
       "💖",
@@ -82,11 +93,71 @@
       "kakeraP",
       "kakeraD",
       "kakeraC"
-    ]
+    ],
+    "sphere_perk_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ],
+    "randomized_claim_reactions": [
+      "💖",
+      "💗",
+      "💘",
+      "❤️",
+      "👍",
+      "🔥"
+    ],
+    "kakera_priority_order": [
+      "kakeraP",
+      "kakeraC",
+      "kakeraL",
+      "kakeraW",
+      "kakeraR",
+      "kakeraO",
+      "kakeraD",
+      "kakeraY",
+      "kakeraG",
+      "kakeraT",
+      "kakera"
+    ],
+    "auto_us_enabled": false,
+    "auto_us_limit": 0,
+    "auto_us_stop_on_claim": true,
+    "bulk_us_enabled": false,
+    "auto_mk_enabled": true,
+    "mk_bypass_power_check": false,
+    "auto_rolls_enabled": false,
+    "auto_rolls_limit": 0,
+    "auto_rolls_in_key_mode": false,
+    "panic_roll_minutes": 5,
+    "lurker_mode": false,
+    "auto_rt_after_claim": false,
+    "main_account_id": "",
+    "scheduled_roll_times": [],
+    "enable_snipe_chat_reactions": false,
+    "snipe_chat_messages": [
+      "omg",
+      "ezz"
+    ],
+    "farm_character": "",
+    "farm_character_enabled": false,
+    "op_perk_5_only": false,
+    "auto_divorce_enabled": false,
+    "auto_divorce_max_kakera": 50,
+    "auto_divorce_series": [],
+    "max_claim_rank": 0,
+    "max_like_rank": 0,
+    "debug_mode": false
   },
   "Secondary_Account_Farmer": {
     "token": "TOKEN",
     "channel_id": 123456789012345678,
+    "command_channel_id": "123456789012345678",
     "prefix": "!",
     "mudae_prefix": "$",
     "roll_command": "ha",
@@ -98,13 +169,19 @@
     "min_kakera": 150,
     "key_mode": true,
     "only_chaos": true,
+    "mk_only": false,
     "time_rolls_to_claim_reset": false,
     "dk_power_management": true,
+    "auto_dk_enabled": true,
+    "max_dk_power": 100,
+    "auto_p_enabled": true,
     "skip_initial_commands": true,
     "wishlist": [],
+    "avoid_list": [],
     "snipe_mode": false,
     "snipe_delay": 1.5,
     "snipe_ignore_min_kakera_reset": false,
+    "snipe_channels": [],
     "series_wishlist": [],
     "series_snipe_mode": false,
     "series_snipe_delay": 2.0,
@@ -130,6 +207,7 @@
     "humanization_enabled": false,
     "humanization_window_minutes": 10,
     "humanization_inactivity_seconds": 60,
+    "inactive_hours": [],
     "autostart": false,
     "claim_emojis": [
       "💖",
@@ -159,6 +237,65 @@
       "kakeraP",
       "kakeraD",
       "kakeraC"
-    ]
+    ],
+    "sphere_perk_emojis": [
+      "kakeraY",
+      "kakeraO",
+      "kakeraR",
+      "kakeraW",
+      "kakeraL",
+      "kakeraP",
+      "kakeraD",
+      "kakeraC"
+    ],
+    "randomized_claim_reactions": [
+      "💖",
+      "💗",
+      "💘",
+      "❤️",
+      "👍",
+      "🔥"
+    ],
+    "kakera_priority_order": [
+      "kakeraP",
+      "kakeraC",
+      "kakeraL",
+      "kakeraW",
+      "kakeraR",
+      "kakeraO",
+      "kakeraD",
+      "kakeraY",
+      "kakeraG",
+      "kakeraT",
+      "kakera"
+    ],
+    "auto_us_enabled": false,
+    "auto_us_limit": 0,
+    "auto_us_stop_on_claim": true,
+    "bulk_us_enabled": false,
+    "auto_mk_enabled": true,
+    "mk_bypass_power_check": false,
+    "auto_rolls_enabled": false,
+    "auto_rolls_limit": 0,
+    "auto_rolls_in_key_mode": false,
+    "panic_roll_minutes": 5,
+    "lurker_mode": false,
+    "auto_rt_after_claim": false,
+    "main_account_id": "",
+    "scheduled_roll_times": [],
+    "enable_snipe_chat_reactions": false,
+    "snipe_chat_messages": [
+      "omg",
+      "ezz"
+    ],
+    "farm_character": "",
+    "farm_character_enabled": false,
+    "op_perk_5_only": false,
+    "auto_divorce_enabled": false,
+    "auto_divorce_max_kakera": 50,
+    "auto_divorce_series": [],
+    "max_claim_rank": 0,
+    "max_like_rank": 0,
+    "debug_mode": false
   }
 }
