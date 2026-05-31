@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.3"
+CURRENT_VERSION = "4.3.4"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -1381,6 +1381,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
                 # Run one cycle of check_status (no longer recursive)
                 await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
+                # Safety throttle to prevent tight loops in edge cases
+                await asyncio.sleep(1.5)
             except asyncio.CancelledError:
                 log_function(f"[{client.muda_name}] Main status loop cancelled.", preset_name, "INFO")
                 break
@@ -1400,7 +1402,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 channel = getattr(client, '_main_channel', None)
                 if channel:
                     log_function(f"[{client.muda_name}] Main loop was dead after reconnect. Restarting.", preset_name, "ERROR")
-                    client._main_loop_task = client.loop.create_task(main_status_loop(client, channel))
+                    if client.rolling_enabled:
+                        client._main_loop_task = client.loop.create_task(main_status_loop(client, channel))
+                    else:
+                        client._main_loop_task = client.loop.create_task(snipe_only_status_loop(client, channel))
                 else:
                     log_function(f"[{client.muda_name}] Reconnected but no channel reference. Cannot restart loop.", preset_name, "ERROR")
             else:
@@ -1490,7 +1495,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.scheduled_roll_times:
                 client.loop.create_task(scheduled_roll_task(channel))
         else:
-            client.loop.create_task(snipe_only_status_loop(client, channel))
+            client._main_loop_task = client.loop.create_task(snipe_only_status_loop(client, channel))
 
     async def handle_dk_power_management(client, channel, tu_content):
         content_lower = tu_content.lower()
