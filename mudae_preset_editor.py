@@ -58,6 +58,7 @@ DEFAULTS = {
     "auto_rolls_enabled": False,
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": False,
+    "auto_rolls_only_claim_hour": False,
     "panic_roll_minutes": 5,
     "lurker_mode": False,
     "auto_rt_after_claim": False,
@@ -105,6 +106,7 @@ BOOL_SETTINGS = [
     ("auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)", True),
     ("bulk_us_enabled", "Bulk US Mode (Pull all saved rolls at once instead of in batches of 20)", False),
     ("auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)", False),
+    ("auto_rolls_only_claim_hour", "Only Use Daily Rolls in Claim Hour (Only use $rolls during the hour claim resets)", False),
     ("auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)", False),
     ("autostart", "Start with Windows", False),
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
@@ -380,6 +382,7 @@ class PresetEditor:
         auto_rolls_var = self.add_checkbox(roll_sub, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
         auto_rolls_sub = self.create_subframe(roll_sub, auto_rolls_var)
         self.add_number_field(auto_rolls_sub, "auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0)
+        self.add_checkbox(auto_rolls_sub, "auto_rolls_only_claim_hour", "Only Use Daily Rolls in Claim Hour")
         
         self.add_checkbox(roll_sub, "auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)")
         
@@ -702,7 +705,7 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
-                    "auto_rolls_enabled", "auto_rolls_in_key_mode",
+                    "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
@@ -850,7 +853,7 @@ class PresetEditor:
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
-                    "auto_rolls_enabled", "auto_rolls_in_key_mode",
+                    "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
@@ -1007,6 +1010,7 @@ class PresetEditor:
                 "auto_rolls_enabled": False,
                 "auto_rolls_limit": 0,
                 "auto_rolls_in_key_mode": False,
+                "auto_rolls_only_claim_hour": False,
                 "auto_mk_enabled": True,
                 "mk_bypass_power_check": False,
                 "auto_rt_after_claim": False,
