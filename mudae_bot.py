@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.5"
+CURRENT_VERSION = "4.3.6"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -1702,6 +1702,58 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_before_roll_reset = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
                     if is_before_claim_reset and is_before_roll_reset and client.rolls_left <= 0:
                         can_bypass = True
+                        
+                        # [FIX] Do not bypass $tu if we have pending auto rolls, auto $us rolls, or auto $mk rolls
+                        if client.rolling_enabled:
+                            # 1. Check if auto rolls are pending
+                            has_pending_rolls = False
+                            if getattr(client, 'auto_rolls_enabled', False):
+                                rolls_limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
+                                
+                                # Verify if rolls used this interval needs to be reset
+                                rolls_interval_utc = getattr(client, 'roll_reset_at_utc', None)
+                                rolls_used_utc = getattr(client, 'rolls_used_this_interval_utc', None)
+                                if rolls_used_utc is not None and rolls_interval_utc is not None:
+                                    if rolls_used_utc != rolls_interval_utc:
+                                        rolls_used_utc = None
+                                
+                                not_used_this_interval = rolls_used_utc is None
+                                claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
+                                
+                                if rolls_limit_ok and not_used_this_interval and claim_ok:
+                                    only_claim_hour_ok = True
+                                    if getattr(client, 'auto_rolls_only_claim_hour', False):
+                                        is_claim_hour = False
+                                        if client.claim_right_available:
+                                            is_claim_hour = True
+                                        elif client.next_claim_reset_at_utc and rolls_interval_utc:
+                                            is_claim_hour = client.next_claim_reset_at_utc <= rolls_interval_utc
+                                        
+                                        only_claim_hour_ok = is_claim_hour
+                                    
+                                    if only_claim_hour_ok:
+                                        has_pending_rolls = True
+
+                            # 2. Check if auto $us rolls are pending
+                            has_pending_us = False
+                            if getattr(client, 'auto_us_enabled', False):
+                                stop_due_to_claim = client.auto_us_stop_on_claim and not client.claim_right_available
+                                hit_limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
+                                us_failed_previously = getattr(client, 'us_failed_this_cycle', False)
+                                
+                                if not stop_due_to_claim and not hit_limit and not us_failed_previously:
+                                    has_pending_us = True
+                                    
+                            # 3. Check if auto $mk rolls are pending
+                            has_pending_mk = False
+                            if getattr(client, 'auto_mk_enabled', False) and getattr(client, 'mk_rolls_left', 0) > 0:
+                                # Check if we have enough power or bypass power check
+                                power_ok = get_current_dk_power() >= client.dk_consumption or getattr(client, 'mk_bypass_power_check', False)
+                                if power_ok:
+                                    has_pending_mk = True
+
+                            if has_pending_rolls or has_pending_us or has_pending_mk:
+                                can_bypass = False
 
             if can_bypass:
                 log_function(f"[{client.muda_name}] Skipping $tu (using cached status).", preset_name, "CHECK")
