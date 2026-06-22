@@ -2221,7 +2221,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if client.claim_right_available:
                                 is_claim_hour = True
                             elif client.next_claim_reset_at_utc and getattr(client, 'roll_reset_at_utc', None):
-                                is_claim_hour = client.next_claim_reset_at_utc < client.roll_reset_at_utc
+                                is_claim_hour = client.next_claim_reset_at_utc <= client.roll_reset_at_utc
                             
                             only_claim_hour_ok = is_claim_hour
                             if not only_claim_hour_ok:
