@@ -27,7 +27,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.6"
+CURRENT_VERSION = "4.3.7"
 
 # --- GLOBAL PAUSE STATE ---
 # Module-level flag: when True, ALL bot instances pause operations.
@@ -2983,6 +2983,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False):
         if not msg or not msg.embeds: return False
         
+        # Helper to check if a button has Style 3 (Green / Success button) representing free reactions in Mudae
+        def check_is_green(b):
+            b_style = getattr(b, 'style', None)
+            if b_style is not None:
+                if hasattr(b_style, 'value'):
+                    return b_style.value == 3
+                try:
+                    return int(b_style) == 3
+                except (ValueError, TypeError):
+                    return str(b_style).endswith('success') or str(b_style) == '3'
+            return False
+
         # Global deduplication: Never process the same message ID twice for claims/kakera
         if msg.id in client.processed_claim_messages:
             debug_log(f"Skipping msg {msg.id}: already in processed_claim_messages set.")
@@ -3046,12 +3058,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Kakera Claim Logic
         if is_kakera:
-            # [FIX] op_perk_5_only should never block physically present free buttons (spheres/kakeraP)
+            # [FIX] op_perk_5_only should never block physically present free buttons (spheres/kakeraP/green buttons)
             if client.op_perk_5_only:
                 has_free_button = False
                 if msg.components:
                     has_free_button = any(
-                        hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis)
+                        hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b))
                         for c in msg.components for b in c.children
                     )
                 
@@ -3071,9 +3083,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             chaos_count = count_chaos_keys(embed)
             # $mk rolls bypass the only_chaos check unconditionally
             if not is_mk_roll and not is_snipe and client.only_chaos and chaos_count == 0:
-                # Still allow free kakera (kakeraP, spheres) even when only_chaos blocks normal reactions
+                # Still allow free kakera (kakeraP, spheres, green buttons) even when only_chaos blocks normal reactions
                 has_free = msg.components and any(
-                    hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis)
+                    hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b))
                     for c in msg.components for b in c.children
                 )
                 if not has_free:
@@ -3093,10 +3105,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             cooldown_active = not is_kakera_reaction_allowed()
             clicked = False
             
-            # Check for KakeraP or Spheres (always safe)
-            has_p_or_sphere = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis) for c in msg.components for b in c.children)
+            # Check for KakeraP, Spheres, or green buttons (always safe)
+            has_p_or_sphere = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b)) for c in msg.components for b in c.children)
             
-            # Only abort early if cooldown is active AND there are no potential discounts/spheres
+            # Only abort early if cooldown is active AND there are no potential discounts/spheres/green buttons
             if cooldown_active and not has_p_or_sphere and chaos_count == 0 and not has_sphere_perk:
                 return False
 
@@ -3159,16 +3171,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     # only_chaos gate: When only_chaos allowed this message through because
                     # it has free kakera, restrict clicks to ONLY the free buttons.
                     if not is_snipe and client.only_chaos and chaos_count == 0:
-                        if name != 'kakeraP' and name not in client.sphere_emojis:
+                        if name != 'kakeraP' and name not in client.sphere_emojis and not check_is_green(btn):
                             continue
                     
-                    # If this kakera is perfectly normal (no chaos, no perks) and we are on cooldown, skip it.
+                    # If this kakera is perfectly normal (no chaos, no perks, not a green button) and we are on cooldown, skip it.
                     # Otherwise, rely on get_current_dk_power() < cost to block it.
-                    if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis and chaos_count == 0 and not has_sphere_perk:
+                    if cooldown_active and name != 'kakeraP' and name not in client.sphere_emojis and not check_is_green(btn) and chaos_count == 0 and not has_sphere_perk:
                         continue
 
-                    # Exempt KakeraP and Spheres from power consumption logic
-                    if name == 'kakeraP' or name in client.sphere_emojis:
+                    # Exempt KakeraP, Spheres, and green/success buttons from power consumption logic
+                    if name == 'kakeraP' or name in client.sphere_emojis or check_is_green(btn):
                         cost = 0
                     else:
                         base_cost = client.dk_consumption
