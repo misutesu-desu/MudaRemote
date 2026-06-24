@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.8"
+CURRENT_VERSION = "4.3.9"
 
 # Global Pause State
 _global_paused = False
@@ -1132,8 +1132,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.rt_available = True
                 BotLogger.log("RT: Ready", preset_name, "INFO")
             else:
-                       can_claim = False
+                client.rt_available = False
             wait_time = 0
+            can_claim = False
             claim_ready = bool(re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower))
             
             claim_reset_minutes = None
