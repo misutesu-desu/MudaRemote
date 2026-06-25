@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.3.9"
+CURRENT_VERSION = "4.4.0"
 
 # Global Pause State
 _global_paused = False
@@ -380,7 +380,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.is_paused = _global_paused
     with _active_clients_lock: _active_clients.append(client)
 
-    logging.getLogger('discord').propagate = False
+    discord_logger = logging.getLogger('discord')
+    discord_logger.propagate = False
+    handlers = [h for h in discord_logger.handlers if isinstance(h, logging.StreamHandler)]
+    for h in handlers:
+        discord_logger.removeHandler(h)
 
     # Bind preset configs
     client.preset_name = preset_name
@@ -1009,7 +1013,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if lim_ok and used_utc is None and claim_ok:
                                     ch_hour = True
                                     if client.auto_rolls_only_claim_hour:
-                                        ch_hour = client.claim_right_available or (bool(client.next_claim_reset_at_utc and reset_utc and client.next_claim_reset_at_utc <= reset_utc))
+                                        ch_hour = bool(client.next_claim_reset_at_utc and reset_utc and client.next_claim_reset_at_utc <= reset_utc)
                                     if ch_hour: pending_rolls = True
                             if client.auto_us_enabled:
                                 stop_c = client.auto_us_stop_on_claim and not client.claim_right_available
@@ -1029,7 +1033,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.rolling_enabled and proceed_to_rolls:
                     choices = []
                     if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
-                    if client.time_rolls_to_claim_reset and claim_reset_m > 60: choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
+                    if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_m > 60: choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
                     if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
                     if choices:
                         choices.sort(key=lambda x: x[0])
@@ -1223,7 +1227,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             elif client.rolling_enabled and proceed_to_rolls:
                 sleep_choices = []
                 if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown"))
-                if client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes > 60:
+                if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_minutes is not None and claim_reset_minutes > 60:
                     sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
                 if is_lurking and claim_reset_minutes is not None:
                     sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
@@ -1283,7 +1287,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if lim_ok and client.rolls_used_this_interval_utc is None and claim_ok:
                         ch_hour = True
                         if client.auto_rolls_only_claim_hour:
-                            ch_hour = client.claim_right_available or (bool(client.next_claim_reset_at_utc and client.roll_reset_at_utc and client.next_claim_reset_at_utc <= client.roll_reset_at_utc))
+                            ch_hour = bool(client.next_claim_reset_at_utc and client.roll_reset_at_utc and client.next_claim_reset_at_utc <= client.roll_reset_at_utc)
                         
                         if ch_hour:
                             rolls_did_execute = True
