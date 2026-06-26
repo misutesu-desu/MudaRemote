@@ -426,14 +426,31 @@ class PresetEditor:
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
 
         # claim_rounds_thresholds
-        sched_row = ttk.Frame(claim_frame)
-        sched_row.pack(fill=tk.X, pady=5)
-        ttk.Label(sched_row, text="Dynamic Hourly Claim Rounds (JSON Format):").pack(anchor=tk.W)
-        ttk.Label(sched_row, text='e.g., [{"round": 1, "min_kakera": 500, "max_claim_rank": 100, "max_like_rank": 100}, {"round": 2, "min_kakera": 300}]',
-                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        claim_rounds_entry = ttk.Entry(sched_row)
-        claim_rounds_entry.pack(fill=tk.X)
-        self.widgets["claim_rounds_thresholds"] = claim_rounds_entry
+        rounds_frame = ttk.LabelFrame(claim_frame, text="Dynamic Cooldown Rounds (Hourly Thresholds)", padding=10)
+        rounds_frame.pack(fill=tk.X, pady=10)
+
+        # Table Headers
+        headers = ["Round / Hour", "Min Kakera", "Max Claim Rank", "Max Like Rank"]
+        for col_idx, text in enumerate(headers):
+            lbl = ttk.Label(rounds_frame, text=text, font=("Segoe UI", 9, "bold"))
+            lbl.grid(row=0, column=col_idx, padx=5, pady=2, sticky=tk.W)
+
+        # Rows (1 to 3)
+        for i in range(1, 4):
+            lbl_round = ttk.Label(rounds_frame, text=f"Round {i} (Hour {i})", font=("Segoe UI", 9))
+            lbl_round.grid(row=i, column=0, padx=5, pady=2, sticky=tk.W)
+
+            ent_min_k = ttk.Entry(rounds_frame, width=12)
+            ent_min_k.grid(row=i, column=1, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_min_kakera"] = ent_min_k
+
+            ent_max_claim = ttk.Entry(rounds_frame, width=12)
+            ent_max_claim.grid(row=i, column=2, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_max_claim_rank"] = ent_max_claim
+
+            ent_max_like = ttk.Entry(rounds_frame, width=12)
+            ent_max_like.grid(row=i, column=3, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_max_like_rank"] = ent_max_like
         
         # --- Sniping ---
         snipe_outer = ttk.Frame(frame)
@@ -813,13 +830,22 @@ class PresetEditor:
             if isinstance(sched_val, list) and sched_val:
                 self.widgets["scheduled_roll_times"].insert(0, ", ".join(sched_val))
                 
-        # Populate claim_rounds_thresholds
-        if "claim_rounds_thresholds" in self.widgets:
-            widget = self.widgets["claim_rounds_thresholds"]
-            widget.delete(0, tk.END)
-            value = data.get("claim_rounds_thresholds", [])
-            if value:
-                widget.insert(0, json.dumps(value))
+        # Clear and populate round-specific entry fields
+        for i in range(1, 4):
+            for suffix in ["min_kakera", "max_claim_rank", "max_like_rank"]:
+                widget = self.widgets.get(f"round_{i}_{suffix}")
+                if widget:
+                    widget.delete(0, tk.END)
+
+        claim_rounds = data.get("claim_rounds_thresholds", [])
+        if isinstance(claim_rounds, list):
+            for rt in claim_rounds:
+                r_num = rt.get("round")
+                if r_num in (1, 2, 3):
+                    for suffix in ["min_kakera", "max_claim_rank", "max_like_rank"]:
+                        widget = self.widgets.get(f"round_{r_num}_{suffix}")
+                        if widget and suffix in rt:
+                            widget.insert(0, str(rt[suffix]))
         
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
@@ -973,17 +999,45 @@ class PresetEditor:
             else:
                 data["scheduled_roll_times"] = []
                 
-        # Collect claim_rounds_thresholds
-        if "claim_rounds_thresholds" in self.widgets:
-            val = self.widgets["claim_rounds_thresholds"].get().strip()
-            if val:
+        # Collect claim_rounds_thresholds from the round entry fields
+        claim_rounds_thresholds = []
+        for i in range(1, 4):
+            min_k_widget = self.widgets.get(f"round_{i}_min_kakera")
+            max_claim_widget = self.widgets.get(f"round_{i}_max_claim_rank")
+            max_like_widget = self.widgets.get(f"round_{i}_max_like_rank")
+
+            min_k_val = min_k_widget.get().strip() if min_k_widget else ""
+            max_claim_val = max_claim_widget.get().strip() if max_claim_widget else ""
+            max_like_val = max_like_widget.get().strip() if max_like_widget else ""
+
+            if not min_k_val and not max_claim_val and not max_like_val:
+                continue
+
+            round_dict = {"round": i}
+
+            def safe_int(v):
+                if not v:
+                    return None
                 try:
-                    data["claim_rounds_thresholds"] = json.loads(val)
-                except Exception:
-                    messagebox.showwarning("JSON Error", "Invalid JSON format for Dynamic Hourly Claim Rounds. Storing as empty.")
-                    data["claim_rounds_thresholds"] = []
-            else:
-                data["claim_rounds_thresholds"] = []
+                    return int(float(v))
+                except ValueError:
+                    return None
+
+            parsed_min_k = safe_int(min_k_val)
+            parsed_max_claim = safe_int(max_claim_val)
+            parsed_max_like = safe_int(max_like_val)
+
+            if parsed_min_k is not None:
+                round_dict["min_kakera"] = parsed_min_k
+            if parsed_max_claim is not None:
+                round_dict["max_claim_rank"] = parsed_max_claim
+            if parsed_max_like is not None:
+                round_dict["max_like_rank"] = parsed_max_like
+
+            if len(round_dict) > 1:
+                claim_rounds_thresholds.append(round_dict)
+
+        data["claim_rounds_thresholds"] = claim_rounds_thresholds
         
         # Update and save
         self.presets[self.current_preset] = data
