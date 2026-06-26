@@ -78,8 +78,11 @@ DEFAULTS = {
     "auto_divorce_series": [],
     "mk_bypass_power_check": False,
     "snipe_channels": [],
-    "max_claim_rank": 0,
     "max_like_rank": 0,
+    "enable_hybrid_panic_claim": False,
+    "hybrid_panic_instant_claim_min_kakera": 300,
+    "hybrid_panic_instant_claim_max_rank": 200,
+    "claim_rounds_thresholds": [],
 }
 
 # Boolean settings with their display names and defaults
@@ -118,7 +121,7 @@ BOOL_SETTINGS = [
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
-    ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
+    ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -142,6 +145,8 @@ NUMERIC_SETTINGS = [
     ("auto_divorce_max_kakera", "Auto-Divorce Kakera Threshold (Divorce if value <= this)", 50, int),
     ("max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0, int),
     ("max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0, int),
+    ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
+    ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
 ]
 
 # Text/list settings
@@ -413,6 +418,22 @@ class PresetEditor:
         self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
         self.add_checkbox(claim_frame, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
+        
+        # Hybrid Smart Panic Claim
+        hybrid_var = self.add_checkbox(claim_frame, "enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)")
+        hybrid_sub = self.create_subframe(claim_frame, hybrid_var)
+        self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300)
+        self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
+
+        # claim_rounds_thresholds
+        sched_row = ttk.Frame(claim_frame)
+        sched_row.pack(fill=tk.X, pady=5)
+        ttk.Label(sched_row, text="Dynamic Hourly Claim Rounds (JSON Format):").pack(anchor=tk.W)
+        ttk.Label(sched_row, text='e.g., [{"round": 1, "min_kakera": 500, "max_claim_rank": 100, "max_like_rank": 100}, {"round": 2, "min_kakera": 300}]',
+                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        claim_rounds_entry = ttk.Entry(sched_row)
+        claim_rounds_entry.pack(fill=tk.X)
+        self.widgets["claim_rounds_thresholds"] = claim_rounds_entry
         
         # --- Sniping ---
         snipe_outer = ttk.Frame(frame)
@@ -688,7 +709,8 @@ class PresetEditor:
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
                     "main_account_id", "farm_character", "auto_divorce_max_kakera",
-                    "max_claim_rank", "max_like_rank"]:
+                    "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
+                    "hybrid_panic_instant_claim_max_rank"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -709,7 +731,8 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
+                    "enable_hybrid_panic_claim"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -789,6 +812,14 @@ class PresetEditor:
             self.widgets["scheduled_roll_times"].delete(0, tk.END)
             if isinstance(sched_val, list) and sched_val:
                 self.widgets["scheduled_roll_times"].insert(0, ", ".join(sched_val))
+                
+        # Populate claim_rounds_thresholds
+        if "claim_rounds_thresholds" in self.widgets:
+            widget = self.widgets["claim_rounds_thresholds"]
+            widget.delete(0, tk.END)
+            value = data.get("claim_rounds_thresholds", [])
+            if value:
+                widget.insert(0, json.dumps(value))
         
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
@@ -828,7 +859,8 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank"]:
+                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
+                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -857,7 +889,8 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled"]:
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
+                    "enable_hybrid_panic_claim"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -939,6 +972,18 @@ class PresetEditor:
                 data["scheduled_roll_times"] = [t.strip() for t in sched_text.split(",") if t.strip()]
             else:
                 data["scheduled_roll_times"] = []
+                
+        # Collect claim_rounds_thresholds
+        if "claim_rounds_thresholds" in self.widgets:
+            val = self.widgets["claim_rounds_thresholds"].get().strip()
+            if val:
+                try:
+                    data["claim_rounds_thresholds"] = json.loads(val)
+                except Exception:
+                    messagebox.showwarning("JSON Error", "Invalid JSON format for Dynamic Hourly Claim Rounds. Storing as empty.")
+                    data["claim_rounds_thresholds"] = []
+            else:
+                data["claim_rounds_thresholds"] = []
         
         # Update and save
         self.presets[self.current_preset] = data

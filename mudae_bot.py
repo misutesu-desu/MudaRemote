@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.0"
+CURRENT_VERSION = "4.4.1"
 
 # Global Pause State
 _global_paused = False
@@ -374,7 +374,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             snipe_channels_preset=None,
             max_claim_rank_preset=0,
             max_like_rank_preset=0,
-            auto_p_enabled=True): 
+            auto_p_enabled=True,
+            enable_hybrid_panic_claim_preset=False,
+            hybrid_panic_instant_claim_min_kakera_preset=300,
+            hybrid_panic_instant_claim_max_rank_preset=200,
+            claim_rounds_thresholds_preset=None): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -517,6 +521,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
     client.mk_bypass_power_check = mk_bypass_power_check
     client.auto_p_enabled = auto_p_enabled
+    client.enable_hybrid_panic_claim = enable_hybrid_panic_claim_preset
+    client.hybrid_panic_instant_claim_min_kakera = int(hybrid_panic_instant_claim_min_kakera_preset or 300)
+    client.hybrid_panic_instant_claim_max_rank = int(hybrid_panic_instant_claim_max_rank_preset or 200)
+    client.claim_rounds_thresholds = claim_rounds_thresholds_preset or []
+    client.base_min_kakera = min_kakera
+    client.base_max_claim_rank = int(max_claim_rank_preset or 0)
+    client.base_max_like_rank = int(max_like_rank_preset or 0)
     client.p_available = False
     client.next_p_claim_at_utc = None
     client.key_limit_hit = False
@@ -623,6 +634,55 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             BotLogger.log("Maintenance period ended. Waiting for channel inactivity before resuming.", preset_name, "INFO")
             return False
         return True
+
+    def update_dynamic_thresholds():
+        claim_reset_minutes = None
+        if client.next_claim_reset_at_utc:
+            now_utc = datetime.datetime.now(timezone.utc)
+            claim_reset_minutes = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+
+        total_rounds = (client.claim_interval + 59) // 60
+        if claim_reset_minutes is None or claim_reset_minutes <= 0:
+            round_num = total_rounds
+        else:
+            minutes = min(claim_reset_minutes, client.claim_interval)
+            if minutes % 60 == 0:
+                round_num = total_rounds - (minutes // 60) + 1
+            else:
+                round_num = total_rounds - (minutes // 60)
+            round_num = max(1, min(round_num, total_rounds))
+
+        active_threshold = None
+        if hasattr(client, 'claim_rounds_thresholds') and client.claim_rounds_thresholds:
+            for rt in client.claim_rounds_thresholds:
+                if rt.get("round") == round_num:
+                    active_threshold = rt
+                    break
+                    
+        old_min_kakera = client.min_kakera
+        old_max_claim_rank = client.max_claim_rank
+        old_max_like_rank = client.max_like_rank
+        
+        if active_threshold:
+            client.min_kakera = int(active_threshold.get("min_kakera", client.base_min_kakera))
+            client.max_claim_rank = int(active_threshold.get("max_claim_rank", client.base_max_claim_rank))
+            client.max_like_rank = int(active_threshold.get("max_like_rank", client.base_max_like_rank))
+        else:
+            client.min_kakera = client.base_min_kakera
+            client.max_claim_rank = client.base_max_claim_rank
+            client.max_like_rank = client.base_max_like_rank
+
+        if client.current_min_kakera_for_roll_claim != 0:
+            client.current_min_kakera_for_roll_claim = client.min_kakera
+
+        if (client.min_kakera != old_min_kakera or 
+            client.max_claim_rank != old_max_claim_rank or 
+            client.max_like_rank != old_max_like_rank):
+            BotLogger.log(
+                f"Dynamic override switched to Round {round_num} thresholds "
+                f"(Min Kakera: {client.min_kakera}, Max Claim Rank: {client.max_claim_rank}, Max Like Rank: {client.max_like_rank})", 
+                preset_name, "RESET"
+            )
 
     async def scheduled_roll_task(channel):
         BotLogger.log(f"Scheduled roll mode active. Times: {client.scheduled_roll_times}", preset_name, "INFO")
@@ -986,6 +1046,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         client.is_processing_cycle = True
+        
+        update_dynamic_thresholds()
         
         try:
             now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -1478,7 +1540,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.claim_right_available = True
             BotLogger.log("Reset passed. Claim is now available.", preset_name, "CLAIM")
 
-        if not getattr(client, 'enable_reactive_self_snipe', True) and client.collected_rolls:
+        in_panic_hour = False
+        if client.next_claim_reset_at_utc:
+            now_utc = datetime.datetime.now(timezone.utc)
+            claim_reset_mins = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+            if claim_reset_mins <= getattr(client, 'panic_roll_minutes', 5) or claim_reset_mins <= 60:
+                in_panic_hour = True
+
+        should_process_collected = False
+        if not getattr(client, 'enable_reactive_self_snipe', True):
+            should_process_collected = True
+        elif getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour:
+            should_process_collected = True
+
+        if should_process_collected and client.collected_rolls:
             BotLogger.log(f"Processing {len(client.collected_rolls)} collected rolls immediately.", preset_name, "INFO")
             try:
                 await handle_mudae_messages(client, channel, client.collected_rolls, ignore_limit_for_post_roll, False if is_timing_mode_active else key_mode_only_kakera_for_post_roll)
@@ -1784,35 +1859,45 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 clicked = False
                 if msg.components:
-                    all_btns = [btn for comp in msg.components for btn in comp.children if hasattr(btn.emoji, 'name') and btn.emoji.name and (btn.emoji.name in target_list or btn.emoji.name.rstrip('2') in target_list)]
+                    all_btns_tracked = []
+                    for row_idx, comp in enumerate(msg.components):
+                        for child_idx, btn in enumerate(comp.children):
+                            if hasattr(btn.emoji, 'name') and btn.emoji.name:
+                                name_clean = btn.emoji.name.rstrip('2')
+                                if btn.emoji.name in target_list or name_clean in target_list:
+                                    all_btns_tracked.append({
+                                        'btn': btn,
+                                        'custom_id': btn.custom_id,
+                                        'pos': (row_idx, child_idx),
+                                        'emoji_name': btn.emoji.name
+                                    })
                     
                     prio_map = {k.strip(): (idx + 1) * 10 for idx, k in enumerate(reversed(client.kakera_priority_order))}
                     for s in client.sphere_emojis: prio_map[s] = 999
                     prio_map['kakeraP'] = 999
                     
-                    all_btns.sort(key=lambda b: prio_map.get(b.emoji.name.rstrip('2') if hasattr(b.emoji, 'name') and b.emoji.name else '', 0), reverse=True)
+                    all_btns_tracked.sort(key=lambda item: prio_map.get(item['emoji_name'].rstrip('2'), 0), reverse=True)
                     
-                    seen_emojis = set()
-                    buttons_to_click = []
-                    for b in all_btns:
-                        name_clean = b.emoji.name.rstrip('2') if hasattr(b.emoji, 'name') and b.emoji.name else ''
-                        if name_clean not in seen_emojis:
-                            seen_emojis.add(name_clean)
-                            buttons_to_click.append(b)
+                    buttons_to_click = all_btns_tracked
 
                     max_clicks = 3
                     clicked_count = 0
-                    for btn in buttons_to_click:
+                    for item in buttons_to_click:
                         if clicked_count >= max_clicks: break
-                        name = btn.emoji.name if hasattr(btn.emoji, 'name') else ''
+                        btn = item['btn']
+                        custom_id = item['custom_id']
+                        pos = item['pos']
+                        name = item['emoji_name']
                         
                         if clicked_count > 0:
                             try:
                                 msg = await channel.fetch_message(msg.id)
                                 found = False
-                                for c_f in msg.components:
-                                    for b_f in c_f.children:
-                                        if hasattr(b_f.emoji, 'name') and b_f.emoji.name == name:
+                                for row_idx, c_f in enumerate(msg.components):
+                                    for child_idx, b_f in enumerate(c_f.children):
+                                        match_custom = (custom_id is not None and b_f.custom_id == custom_id)
+                                        match_pos = (pos == (row_idx, child_idx))
+                                        if match_custom or (custom_id is None and match_pos):
                                             btn, found = b_f, True
                                             break
                                     if found: break
@@ -1963,6 +2048,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     @client.event
     async def on_message(message):
         if client.is_paused: return
+        
+        update_dynamic_thresholds()
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
 
@@ -2048,41 +2135,75 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.loop.create_task(_key_limit_recovery())
                 return
 
-            if not getattr(client, 'enable_reactive_self_snipe', True):
-                client.collected_rolls.append(message)
-            else:
-                c_name = embed.author.name.lower()
-                series = desc.splitlines()[0].lower() if desc else ""
-                k_val = 0
-                m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
-                if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+            c_name = embed.author.name.lower()
+            series = desc.splitlines()[0].lower() if desc else ""
+            k_val = 0
+            m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
+            if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+            
+            claims_r, likes_r = parse_mudae_ranks(desc)
+            is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
+            is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(message, client.user.id) or is_ranked
+            is_avoided = c_name in client.avoid_list
+            
+            in_panic_hour = False
+            if client.next_claim_reset_at_utc:
+                now_utc = datetime.datetime.now(timezone.utc)
+                claim_reset_mins = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+                if claim_reset_mins <= getattr(client, 'panic_roll_minutes', 5) or claim_reset_mins <= 60:
+                    in_panic_hour = True
+            
+            process = True
+            use_hybrid = getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour
+            
+            if use_hybrid:
+                is_instant_kakera = (k_val >= getattr(client, 'hybrid_panic_instant_claim_min_kakera', 300))
+                is_instant_rank = False
+                max_rank = getattr(client, 'hybrid_panic_instant_claim_max_rank', 200)
+                if max_rank > 0:
+                    is_instant_rank = ((0 < claims_r <= max_rank) or (0 < likes_r <= max_rank))
                 
-                claims_r, likes_r = parse_mudae_ranks(desc)
-                is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(message, client.user.id) or is_ranked
-                is_val = k_val >= client.current_min_kakera_for_roll_claim
-                is_avoided = c_name in client.avoid_list
+                is_high_value = (is_wl or is_instant_kakera or is_instant_rank)
                 
-                process = True
-                if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
-                    if is_key_mode_kakera_only(): pass
+                if is_high_value and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                    if is_key_mode_kakera_only():
+                        pass
                     else:
-                        if not client.claim_right_available and not client.rt_available and client.next_claim_reset_at_utc:
-                            t_to_r = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds()
-                            if 0 < t_to_r <= 15:
-                                BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
-                                client.interrupt_rolling = True
-                                await asyncio.sleep(t_to_r + 0.2)
-                                client.claim_right_available = True
-                                client.last_successfully_claimed_character = None
-                                delta = datetime.timedelta(minutes=client.claim_interval)
-                                while client.next_claim_reset_at_utc <= datetime.datetime.now(timezone.utc):
-                                    client.next_claim_reset_at_utc += delta
-                        
                         client.interrupt_rolling = True
-                        BotLogger.log(f"Real-time Claim: Halting rolls for claim attempt on {c_name}", preset_name, "CLAIM")
-                        if client.reactive_snipe_delay > 0: await asyncio.sleep(client.reactive_snipe_delay + random.uniform(0.05, 0.25))
-                        if await claim_character(client, message.channel, message, kakera_value=k_val): process = False
+                        BotLogger.log(f"Hybrid Smart Instant Claim triggered for {c_name} ({k_val} ka)!", preset_name, "CLAIM")
+                        if client.reactive_snipe_delay > 0:
+                            await asyncio.sleep(client.reactive_snipe_delay + random.uniform(0.05, 0.25))
+                        if await claim_character(client, message.channel, message, kakera_value=k_val):
+                            process = False
+                elif k_val >= client.current_min_kakera_for_roll_claim and not is_avoided:
+                    client.collected_rolls.append(message)
+            else:
+                if not getattr(client, 'enable_reactive_self_snipe', True):
+                    client.collected_rolls.append(message)
+                else:
+                    is_val = k_val >= client.current_min_kakera_for_roll_claim
+                    if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                        if is_key_mode_kakera_only():
+                            pass
+                        else:
+                            if not client.claim_right_available and not client.rt_available and client.next_claim_reset_at_utc:
+                                t_to_r = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds()
+                                if 0 < t_to_r <= 15:
+                                    BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
+                                    client.interrupt_rolling = True
+                                    await asyncio.sleep(t_to_r + 0.2)
+                                    client.claim_right_available = True
+                                    client.last_successfully_claimed_character = None
+                                    delta = datetime.timedelta(minutes=client.claim_interval)
+                                    while client.next_claim_reset_at_utc <= datetime.datetime.now(timezone.utc):
+                                        client.next_claim_reset_at_utc += delta
+                            
+                            client.interrupt_rolling = True
+                            BotLogger.log(f"Real-time Claim: Halting rolls for claim attempt on {c_name}", preset_name, "CLAIM")
+                            if client.reactive_snipe_delay > 0:
+                                await asyncio.sleep(client.reactive_snipe_delay + random.uniform(0.05, 0.25))
+                            if await claim_character(client, message.channel, message, kakera_value=k_val):
+                                process = False
                 
                 if process:
                     all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
@@ -2199,7 +2320,11 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_divorce_max_kakera", 50), preset_data.get("auto_divorce_series", []),
                 preset_data.get("mk_bypass_power_check", False), preset_data.get("snipe_channels", []),
                 preset_data.get("max_claim_rank", 0), preset_data.get("max_like_rank", 0),
-                preset_data.get("auto_p_enabled", True)
+                preset_data.get("auto_p_enabled", True),
+                preset_data.get("enable_hybrid_panic_claim", False),
+                preset_data.get("hybrid_panic_instant_claim_min_kakera", 300),
+                preset_data.get("hybrid_panic_instant_claim_max_rank", 200),
+                preset_data.get("claim_rounds_thresholds", None)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
