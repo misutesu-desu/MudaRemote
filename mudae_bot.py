@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.3"
+CURRENT_VERSION = "4.4.4"
 
 # Global Pause State
 _global_paused = False
@@ -1679,7 +1679,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 mins_to_reset = ((client.next_claim_reset_at_utc - now).total_seconds() / 60.0) if client.next_claim_reset_at_utc else None
                 if mins_to_reset is not None and mins_to_reset < 60:
                     BotLogger.log(f"Auto $rt: SKIPPED — resets soon ({mins_to_reset:.0f}m).", preset_name, "INFO")
-                elif not client.is_actively_rolling:
+                elif client.rolling_enabled and not client.is_actively_rolling:
                     BotLogger.log("Auto $rt: SKIPPED — rolling sequence finished.", preset_name, "INFO")
                 else:
                     BotLogger.log(f"Auto $rt: Sending $rt after claiming {char_name}.", preset_name, "CLAIM")
