@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.2"
+CURRENT_VERSION = "4.4.3"
 
 # Global Pause State
 _global_paused = False
@@ -378,7 +378,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_hybrid_panic_claim_preset=False,
             hybrid_panic_instant_claim_min_kakera_preset=300,
             hybrid_panic_instant_claim_max_rank_preset=200,
-            claim_rounds_thresholds_preset=None): 
+            claim_rounds_thresholds_preset=None,
+            persistent_stagger_seconds_preset=0): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -557,6 +558,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.sphere_emojis = SPHERE_EMOJIS
     client.kakera_power_thresholds = kakera_power_thresholds or {}
     client.debug_mode = debug_mode
+    # Automatically calculate stable, deterministic stagger offset based on the alphabetical index of the preset name
+    try:
+        # Access the globally loaded 'presets' dictionary and sort its keys alphabetically
+        all_preset_names = sorted(list(presets.keys()))
+        account_index = all_preset_names.index(preset_name) if preset_name in all_preset_names else 0
+    except Exception:
+        account_index = 0
+    
+    stagger_interval = 20  # Safe, automated delay gap in seconds between active accounts
+    client.persistent_stagger_seconds = account_index * stagger_interval
+    
+    BotLogger.log(
+        f"Automated Staggering: Assigned index {account_index} (Preset: '{preset_name}') -> "
+        f"+{client.persistent_stagger_seconds}s persistent sleep offset applied.", 
+        preset_name, "INFO"
+    )
 
     def is_inactive_hour() -> bool:
         if not client.inactive_hours: return False
@@ -1783,6 +1800,41 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_targets.sort(key=lambda x: (x[2], x[0].id), reverse=True)
             for msg_rt, n_rt, v_rt in rt_targets:
                 if n_rt in attempted: continue
+                
+                try:
+                    with _active_clients_lock:
+                        account_index = _active_clients.index(client)
+                except ValueError:
+                    account_index = 0
+                
+                rt_delay = random.uniform(0.1, 0.5) * account_index
+                if rt_delay > 0:
+                    BotLogger.log(f"Staggering $rt send by {rt_delay:.2f}s for account index {account_index}", preset_name, "INFO")
+                    await asyncio.sleep(rt_delay)
+                
+                # Fast validation check before sending $rt
+                try:
+                    msg_rt = await channel.fetch_message(msg_rt.id)
+                except Exception:
+                    pass
+                
+                already_claimed = False
+                if msg_rt.embeds:
+                    if get_character_owner(msg_rt.embeds[0]) is not None:
+                        already_claimed = True
+                if msg_rt.components:
+                    claim_buttons = []
+                    for comp in msg_rt.components:
+                        for btn in comp.children:
+                            if hasattr(btn.emoji, 'name') and btn.emoji.name and btn.emoji.name in client.claim_emojis:
+                                claim_buttons.append(btn)
+                    if not claim_buttons or all(getattr(btn, 'disabled', False) for btn in claim_buttons):
+                        already_claimed = True
+                        
+                if already_claimed:
+                    BotLogger.log(f"Aborting RT attempt: {n_rt} has already been claimed/interacted with.", preset_name, "WARN")
+                    continue
+                    
                 BotLogger.log(f"Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
                 try:
                     await channel.send(f"{client.mudae_prefix}rt")
@@ -1827,6 +1879,40 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         try:
             if not is_kakera and not is_free_claim and not is_rt_claim:
                 if not client.claim_right_available and client.rt_available and not (is_snipe and client.rt_only_self_rolls):
+                    try:
+                        with _active_clients_lock:
+                            account_index = _active_clients.index(client)
+                    except ValueError:
+                        account_index = 0
+                    
+                    rt_delay = random.uniform(0.1, 0.5) * account_index
+                    if rt_delay > 0:
+                        BotLogger.log(f"Staggering $rt send by {rt_delay:.2f}s for account index {account_index}", preset_name, "INFO")
+                        await asyncio.sleep(rt_delay)
+                    
+                    # Fast validation check before sending $rt
+                    try:
+                        msg = await channel.fetch_message(msg.id)
+                    except Exception:
+                        pass
+                    
+                    already_claimed = False
+                    if msg.embeds:
+                        if get_character_owner(msg.embeds[0]) is not None:
+                            already_claimed = True
+                    if msg.components:
+                        claim_buttons = []
+                        for comp in msg.components:
+                            for btn in comp.children:
+                                if hasattr(btn.emoji, 'name') and btn.emoji.name and btn.emoji.name in client.claim_emojis:
+                                    claim_buttons.append(btn)
+                        if not claim_buttons or all(getattr(btn, 'disabled', False) for btn in claim_buttons):
+                            already_claimed = True
+                            
+                    if already_claimed:
+                        BotLogger.log(f"Aborting $rt command: {char_name} has already been claimed/interacted with.", preset_name, "WARN")
+                        return False
+                        
                     BotLogger.log(f"Using RT for {char_name}", preset_name, "CLAIM")
                     try:
                         await channel.send(f"{client.mudae_prefix}rt")
@@ -2018,7 +2104,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         min_wait = max(0.0, base_reset_minutes * 60)
         if min_wait <= 0: min_wait = max(client.delay_seconds + 60, 240)
         human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled else 0
-        wait_seconds = min_wait + human_jitter
+        wait_seconds = min_wait + human_jitter + getattr(client, 'persistent_stagger_seconds', 0)
         
         BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         await asyncio.sleep(wait_seconds)
@@ -2331,7 +2417,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("enable_hybrid_panic_claim", False),
                 preset_data.get("hybrid_panic_instant_claim_min_kakera", 300),
                 preset_data.get("hybrid_panic_instant_claim_max_rank", 200),
-                preset_data.get("claim_rounds_thresholds", None)
+                preset_data.get("claim_rounds_thresholds", None),
+                preset_data.get("persistent_stagger_seconds", 0)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

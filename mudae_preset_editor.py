@@ -1130,6 +1130,7 @@ class PresetEditor:
                 "roll_command": "wa",
                 "min_kakera": 100,
                 "delay_seconds": 0,
+                "start_delay": 0,
                 "rolling": True,
                 "wishlist": [],
                 "series_wishlist": [],
