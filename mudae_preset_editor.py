@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import threading
+import math
 
 def get_base_path():
     """Get the base path for file operations.
@@ -332,6 +333,37 @@ class PresetEditor:
     
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+    def rebuild_rounds_frame(self, claim_interval_mins):
+        """Dynamically generate round row inputs based on claim interval."""
+        num_rounds = max(1, math.ceil(claim_interval_mins / 60))
+        
+        # Clear existing widgets inside the rounds_frame
+        for widget in self.rounds_frame.winfo_children():
+            widget.destroy()
+            
+        # Re-draw the table headers
+        headers = ["Round / Hour", "Min Kakera", "Max Claim Rank", "Max Like Rank"]
+        for col_idx, text in enumerate(headers):
+            lbl = ttk.Label(self.rounds_frame, text=text, font=("Segoe UI", 9, "bold"))
+            lbl.grid(row=0, column=col_idx, padx=5, pady=2, sticky=tk.W)
+
+        # Generate exactly num_rounds input rows
+        for i in range(1, num_rounds + 1):
+            lbl_round = ttk.Label(self.rounds_frame, text=f"Round {i} (Hour {i})", font=("Segoe UI", 9))
+            lbl_round.grid(row=i, column=0, padx=5, pady=2, sticky=tk.W)
+
+            ent_min_k = ttk.Entry(self.rounds_frame, width=12)
+            ent_min_k.grid(row=i, column=1, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_min_kakera"] = ent_min_k
+
+            ent_max_claim = ttk.Entry(self.rounds_frame, width=12)
+            ent_max_claim.grid(row=i, column=2, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_max_claim_rank"] = ent_max_claim
+
+            ent_max_like = ttk.Entry(self.rounds_frame, width=12)
+            ent_max_like.grid(row=i, column=3, padx=5, pady=2, sticky=tk.W)
+            self.widgets[f"round_{i}_max_like_rank"] = ent_max_like
     
     def refresh_preset_list(self):
         """Refresh the preset listbox."""
@@ -411,7 +443,7 @@ class PresetEditor:
         claim_frame.pack(fill=tk.X, pady=(0, 15))
         
         self.add_number_field(claim_frame, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
-        self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        claim_interval_entry = self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
         self.add_number_field(claim_frame, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0)
         self.add_number_field(claim_frame, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
         self.add_checkbox(claim_frame, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
@@ -426,31 +458,18 @@ class PresetEditor:
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
 
         # claim_rounds_thresholds
-        rounds_frame = ttk.LabelFrame(claim_frame, text="Dynamic Cooldown Rounds (Hourly Thresholds)", padding=10)
-        rounds_frame.pack(fill=tk.X, pady=10)
+        self.rounds_frame = ttk.LabelFrame(claim_frame, text="Dynamic Cooldown Rounds (Hourly Thresholds)", padding=10)
+        self.rounds_frame.pack(fill=tk.X, pady=10)
+        self.rebuild_rounds_frame(180)
 
-        # Table Headers
-        headers = ["Round / Hour", "Min Kakera", "Max Claim Rank", "Max Like Rank"]
-        for col_idx, text in enumerate(headers):
-            lbl = ttk.Label(rounds_frame, text=text, font=("Segoe UI", 9, "bold"))
-            lbl.grid(row=0, column=col_idx, padx=5, pady=2, sticky=tk.W)
-
-        # Rows (1 to 3)
-        for i in range(1, 4):
-            lbl_round = ttk.Label(rounds_frame, text=f"Round {i} (Hour {i})", font=("Segoe UI", 9))
-            lbl_round.grid(row=i, column=0, padx=5, pady=2, sticky=tk.W)
-
-            ent_min_k = ttk.Entry(rounds_frame, width=12)
-            ent_min_k.grid(row=i, column=1, padx=5, pady=2, sticky=tk.W)
-            self.widgets[f"round_{i}_min_kakera"] = ent_min_k
-
-            ent_max_claim = ttk.Entry(rounds_frame, width=12)
-            ent_max_claim.grid(row=i, column=2, padx=5, pady=2, sticky=tk.W)
-            self.widgets[f"round_{i}_max_claim_rank"] = ent_max_claim
-
-            ent_max_like = ttk.Entry(rounds_frame, width=12)
-            ent_max_like.grid(row=i, column=3, padx=5, pady=2, sticky=tk.W)
-            self.widgets[f"round_{i}_max_like_rank"] = ent_max_like
+        def on_interval_change(*args):
+            try:
+                val = float(claim_interval_entry.get().strip() or "180")
+                self.rebuild_rounds_frame(int(val))
+            except ValueError:
+                pass
+        claim_interval_entry.bind("<FocusOut>", on_interval_change)
+        claim_interval_entry.bind("<KeyRelease>", on_interval_change)
         
         # --- Sniping ---
         snipe_outer = ttk.Frame(frame)
@@ -633,6 +652,7 @@ class PresetEditor:
         entry = ttk.Entry(container, width=15)
         entry.pack(anchor=tk.W)
         self.widgets[key] = entry
+        return entry
     
     def add_checkbox(self, parent, key, label):
         """Add a checkbox."""
@@ -830,22 +850,25 @@ class PresetEditor:
             if isinstance(sched_val, list) and sched_val:
                 self.widgets["scheduled_roll_times"].insert(0, ", ".join(sched_val))
                 
-        # Clear and populate round-specific entry fields
-        for i in range(1, 4):
-            for suffix in ["min_kakera", "max_claim_rank", "max_like_rank"]:
-                widget = self.widgets.get(f"round_{i}_{suffix}")
-                if widget:
-                    widget.delete(0, tk.END)
+        # Read claim_interval
+        claim_interval_val = data.get("claim_interval", 180)
+        try:
+            claim_interval_mins = int(float(claim_interval_val))
+        except (ValueError, TypeError):
+            claim_interval_mins = 180
+            
+        # Rebuild rounds frame to draw correct rows
+        self.rebuild_rounds_frame(claim_interval_mins)
 
+        # Populate round-specific fields
         claim_rounds = data.get("claim_rounds_thresholds", [])
         if isinstance(claim_rounds, list):
             for rt in claim_rounds:
                 r_num = rt.get("round")
-                if r_num in (1, 2, 3):
-                    for suffix in ["min_kakera", "max_claim_rank", "max_like_rank"]:
-                        widget = self.widgets.get(f"round_{r_num}_{suffix}")
-                        if widget and suffix in rt:
-                            widget.insert(0, str(rt[suffix]))
+                for suffix in ["min_kakera", "max_claim_rank", "max_like_rank"]:
+                    widget = self.widgets.get(f"round_{r_num}_{suffix}")
+                    if widget and suffix in rt:
+                        widget.insert(0, str(rt[suffix]))
         
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
@@ -999,9 +1022,17 @@ class PresetEditor:
             else:
                 data["scheduled_roll_times"] = []
                 
-        # Collect claim_rounds_thresholds from the round entry fields
+        # Determine num_rounds dynamically
+        claim_interval_val = self.widgets.get("claim_interval").get().strip() if self.widgets.get("claim_interval") else "180"
+        try:
+            claim_interval_mins = int(float(claim_interval_val or "180"))
+        except ValueError:
+            claim_interval_mins = 180
+        num_rounds = max(1, math.ceil(claim_interval_mins / 60))
+
+        # Collect claim_rounds_thresholds from the round entry fields dynamically
         claim_rounds_thresholds = []
-        for i in range(1, 4):
+        for i in range(1, num_rounds + 1):
             min_k_widget = self.widgets.get(f"round_{i}_min_kakera")
             max_claim_widget = self.widgets.get(f"round_{i}_max_claim_rank")
             max_like_widget = self.widgets.get(f"round_{i}_max_like_rank")

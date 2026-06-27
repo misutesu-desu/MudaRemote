@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.1"
+CURRENT_VERSION = "4.4.2"
 
 # Global Pause State
 _global_paused = False
@@ -636,21 +636,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return True
 
     def update_dynamic_thresholds():
+        import math
         claim_reset_minutes = None
         if client.next_claim_reset_at_utc:
             now_utc = datetime.datetime.now(timezone.utc)
             claim_reset_minutes = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
 
-        total_rounds = (client.claim_interval + 59) // 60
+        # Determine total rounds based on the preset's claim interval
+        total_rounds = max(1, math.ceil(client.claim_interval / 60))
+
         if claim_reset_minutes is None or claim_reset_minutes <= 0:
             round_num = total_rounds
         else:
-            minutes = min(claim_reset_minutes, client.claim_interval)
-            if minutes % 60 == 0:
-                round_num = total_rounds - (minutes // 60) + 1
-            else:
-                round_num = total_rounds - (minutes // 60)
-            round_num = max(1, min(round_num, total_rounds))
+            # Calculate remaining hours
+            remaining_hours = math.ceil(claim_reset_minutes / 60)
+            # Determine active current round (1-indexed)
+            round_num = max(1, total_rounds - remaining_hours + 1)
 
         active_threshold = None
         if hasattr(client, 'claim_rounds_thresholds') and client.claim_rounds_thresholds:
@@ -678,8 +679,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if (client.min_kakera != old_min_kakera or 
             client.max_claim_rank != old_max_claim_rank or 
             client.max_like_rank != old_max_like_rank):
+            override_status = "Overrides applied" if active_threshold else "Default settings restored"
             BotLogger.log(
-                f"Dynamic override switched to Round {round_num} thresholds "
+                f"[CLAIM] Interval: {client.claim_interval}m | Round: {round_num}/{total_rounds} active | {override_status} "
                 f"(Min Kakera: {client.min_kakera}, Max Claim Rank: {client.max_claim_rank}, Max Like Rank: {client.max_like_rank})", 
                 preset_name, "RESET"
             )
@@ -844,8 +846,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not cmd: return
         if client.use_slash_rolls and not client.slash_fallback_active:
             override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
-            if await _trigger_mudae_slash(channel, f"/{override}"): return
-            if not client.slash_fallback_active: return
+            if await _trigger_mudae_slash(channel, f"/{override}"): 
+                return
+            # Do not return here if fallback is not yet active. Let it fall through to text commands.
         await channel.send(f"{client.mudae_prefix}{cmd}")
 
     async def send_tu_command(channel):
@@ -1046,6 +1049,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         client.is_processing_cycle = True
+        
+        can_claim = False
+        claim_ready = False
+        wait_time = 0
         
         update_dynamic_thresholds()
         
