@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.4"
+CURRENT_VERSION = "4.4.5"
 
 # Global Pause State
 _global_paused = False
@@ -34,6 +34,12 @@ _active_clients = []
 _active_clients_lock = threading.Lock()
 _menu_active = threading.Event()
 _original_terminal_settings = None
+
+_global_claims_in_progress = set()  # Stores message IDs currently being claimed
+_global_claims_lock = threading.Lock()
+
+_global_rt_in_progress = set()      # Stores message IDs currently being RT'd
+_global_rt_lock = threading.Lock()
 
 class BotLogger:
     COLORS = {
@@ -1749,6 +1755,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if is_wl and not is_avoided: wl_claims.append((msg, c_name, k_v, series))
                     elif k_v >= min_kak_post and not is_avoided: char_claims.append((msg, c_name, k_v, series))
 
+        # Filter claims to exclude messages already claimed/in progress globally
+        with _global_claims_lock:
+            with _global_rt_lock:
+                wl_claims = [x for x in wl_claims if x[0].id not in _global_claims_in_progress and x[0].id not in _global_rt_in_progress]
+                char_claims = [x for x in char_claims if x[0].id not in _global_claims_in_progress and x[0].id not in _global_rt_in_progress]
+
         for msg_k in k_claims:
             await claim_character(client, channel, msg_k, is_kakera=True)
             await asyncio.sleep(0.3)
@@ -1797,9 +1809,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if (is_wl_rt and client.rt_ignore_min_kakera_for_wishlist) or v >= client.min_kakera:
                     rt_targets.append((msg, n, v))
             
+            with _global_claims_lock:
+                with _global_rt_lock:
+                    rt_targets = [x for x in rt_targets if x[0].id not in _global_claims_in_progress and x[0].id not in _global_rt_in_progress]
+
             rt_targets.sort(key=lambda x: (x[2], x[0].id), reverse=True)
             for msg_rt, n_rt, v_rt in rt_targets:
                 if n_rt in attempted: continue
+
+                # Check and register in global RT tracker
+                rt_locked_successfully = False
+                with _global_rt_lock:
+                    if msg_rt.id not in _global_rt_in_progress:
+                        with _global_claims_lock:
+                            if msg_rt.id not in _global_claims_in_progress:
+                                _global_rt_in_progress.add(msg_rt.id)
+                                rt_locked_successfully = True
+                
+                if not rt_locked_successfully:
+                    continue
                 
                 try:
                     with _active_clients_lock:
@@ -1833,21 +1861,34 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         
                 if already_claimed:
                     BotLogger.log(f"Aborting RT attempt: {n_rt} has already been claimed/interacted with.", preset_name, "WARN")
+                    with _global_rt_lock:
+                        _global_rt_in_progress.discard(msg_rt.id)
                     continue
                     
                 BotLogger.log(f"Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
+                rt_sent_successfully = False
                 try:
                     await channel.send(f"{client.mudae_prefix}rt")
                     client.rt_available = False
                     attempted.add(n_rt)
                     await asyncio.sleep(0.7)
+                    rt_sent_successfully = True
                     await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
                     break
-                except Exception: pass
+                except Exception:
+                    pass
+                finally:
+                    if not rt_sent_successfully:
+                        with _global_rt_lock:
+                            _global_rt_in_progress.discard(msg_rt.id)
 
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False):
         if not msg or not msg.embeds: return False
         
+        rt_registered = False
+        claim_registered = False
+        claim_success_status = False
+
         def check_is_green(b):
             s = getattr(b, 'style', None)
             return s is not None and (getattr(s, 'value', None) == 3 or str(s).endswith('success') or str(s) == '3')
@@ -1875,7 +1916,38 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.processed_claim_messages.add(msg.id)
         if len(client.processed_claim_messages) > 1000: client.processed_claim_messages.clear()
 
-        if not is_kakera: client.is_claiming = True
+        if not is_kakera:
+            # Check lock and register
+            needs_rt = (not is_free_claim and not is_rt_claim and not client.claim_right_available and client.rt_available and not (is_snipe and client.rt_only_self_rolls))
+            if needs_rt:
+                rt_locked_successfully = False
+                with _global_rt_lock:
+                    if msg.id not in _global_rt_in_progress:
+                        with _global_claims_lock:
+                            if msg.id not in _global_claims_in_progress:
+                                _global_rt_in_progress.add(msg.id)
+                                rt_registered = True
+                                rt_locked_successfully = True
+                if not rt_locked_successfully:
+                    return False
+            else:
+                claim_locked_successfully = False
+                with _global_claims_lock:
+                    if msg.id not in _global_claims_in_progress:
+                        with _global_rt_lock:
+                            if is_rt_claim or msg.id not in _global_rt_in_progress:
+                                _global_claims_in_progress.add(msg.id)
+                                claim_registered = True
+                                claim_locked_successfully = True
+                
+                if is_rt_claim:
+                    with _global_rt_lock:
+                        _global_rt_in_progress.discard(msg.id)
+                
+                if not claim_locked_successfully:
+                    return False
+
+            client.is_claiming = True
         try:
             if not is_kakera and not is_free_claim and not is_rt_claim:
                 if not client.claim_right_available and client.rt_available and not (is_snipe and client.rt_only_self_rolls):
@@ -1920,6 +1992,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         await asyncio.sleep(random.uniform(0.6, 1.0))
                     except Exception as e:
                         BotLogger.log(f"RT Failed: {e}", preset_name, "ERROR")
+                        return False
+
+                    # Transition to claim lock
+                    claim_locked_successfully = False
+                    with _global_claims_lock:
+                        if msg.id not in _global_claims_in_progress:
+                            _global_claims_in_progress.add(msg.id)
+                            claim_registered = True
+                            claim_locked_successfully = True
+                    
+                    with _global_rt_lock:
+                        _global_rt_in_progress.discard(msg.id)
+                        rt_registered = False
+                    
+                    if not claim_locked_successfully:
                         return False
 
             if is_free_claim: await asyncio.sleep(random.uniform(1.0, 2.5))
@@ -2082,6 +2169,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 _claim_kv = kakera_value or 0
                                 _claim_series = embed.description.splitlines()[0] if embed and embed.description else ""
                                 await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe, character_kakera=_claim_kv, character_series=_claim_series)
+                                claim_success_status = True
                                 return True
             
             if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
@@ -2092,13 +2180,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     _react_kv = kakera_value or 0
                     _react_series = embed.description.splitlines()[0] if embed and embed.description else ""
                     await verify_snipe_outcome(client, channel, char_name, is_snipe_action=is_snipe, character_kakera=_react_kv, character_series=_react_series)
+                    claim_success_status = True
                     return True
                 except Exception as e:
                     BotLogger.log(f"Reaction fallback FAILED: {e}", preset_name, "ERROR")
                     return False
             return False
         finally:
-            if not is_kakera: client.is_claiming = False
+            if not is_kakera:
+                client.is_claiming = False
+                if not claim_success_status:
+                    if claim_registered:
+                        with _global_claims_lock:
+                            _global_claims_in_progress.discard(msg.id)
+                    if rt_registered:
+                        with _global_rt_lock:
+                            _global_rt_in_progress.discard(msg.id)
 
     async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset"):
         min_wait = max(0.0, base_reset_minutes * 60)
@@ -2187,7 +2284,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if is_character_embed(embed_ma) and is_wished_by_self(message, main_id):
                     c_name = embed_ma.author.name.lower()
                     if c_name not in client.avoid_list and has_claim_option(message, embed_ma, client.claim_emojis):
-                        if is_character_snipe_allowed(is_external_snipe=True):
+                        with _global_claims_lock:
+                            with _global_rt_lock:
+                                already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                        if not already_in_progress and is_character_snipe_allowed(is_external_snipe=True):
                             BotLogger.log(f"Main Account Sync (wished by Main): {c_name}! Priority claiming.", preset_name, "CLAIM")
                             await asyncio.sleep(0.1 + random.uniform(0.01, 0.05))
                             if await claim_character(client, message.channel, message, is_snipe=True): return
@@ -2258,7 +2358,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 
                 is_high_value = (is_wl or is_instant_kakera or is_instant_rank)
                 
-                if is_high_value and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                with _global_claims_lock:
+                    with _global_rt_lock:
+                        already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+
+                if is_high_value and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     if is_key_mode_kakera_only():
                         pass
                     else:
@@ -2275,7 +2379,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client.collected_rolls.append(message)
                 else:
                     is_val = k_val >= client.current_min_kakera_for_roll_claim
-                    if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                    with _global_claims_lock:
+                        with _global_rt_lock:
+                            already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                    if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                         if is_key_mode_kakera_only():
                             pass
                         else:
@@ -2326,7 +2433,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 desc = embed.description or ""
                 series = desc.splitlines()[0].lower() if desc else ""
                 is_avoided = c_name in client.avoid_list
-                if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                with _global_claims_lock:
+                    with _global_rt_lock:
+                        already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                     else:
                         await asyncio.sleep(client.series_snipe_delay + random.uniform(0.05, 0.25))
@@ -2337,7 +2447,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
             is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_ranked
             is_avoided = c_name in client.avoid_list
-            if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+            with _global_claims_lock:
+                with _global_rt_lock:
+                    already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+            if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                 if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                 else:
                     await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
@@ -2350,7 +2463,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
                 if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 is_avoided = c_name in client.avoid_list
-                if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                with _global_claims_lock:
+                    with _global_rt_lock:
+                        already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                     else:
                         await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
