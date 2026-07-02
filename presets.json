@@ -1,15 +1,15 @@
 {
   "Main_Account_Sniper": {
     "token": "TOKEN",
-    "channel_id": 123456789012345678,
-    "command_channel_id": "",
     "prefix": "!",
     "mudae_prefix": "$",
+    "channel_id": 123456789012345678,
+    "command_channel_id": "",
     "roll_command": "wa",
     "rolling": true,
     "use_slash_rolls": true,
     "roll_speed": 1.2,
-    "delay_seconds": 15,
+    "delay_seconds": 15.0,
     "start_delay": 5,
     "min_kakera": 450,
     "key_mode": false,
@@ -41,7 +41,7 @@
     "kakera_snipe_mode": true,
     "kakera_snipe_threshold": 400,
     "reactive_snipe_on_own_rolls": true,
-    "reactive_snipe_delay": 0,
+    "reactive_snipe_delay": 0.0,
     "rt_ignore_min_kakera_for_wishlist": true,
     "rt_only_self_rolls": false,
     "kakera_reaction_snipe_mode": true,
@@ -125,6 +125,17 @@
       "kakeraT",
       "kakera"
     ],
+    "sphere_click_targets": [
+      "spG",
+      "spY",
+      "spO",
+      "spR",
+      "spW",
+      "spL",
+      "spD",
+      "spM",
+      "spU"
+    ],
     "auto_us_enabled": false,
     "auto_us_limit": 0,
     "auto_us_stop_on_claim": true,
@@ -134,6 +145,7 @@
     "auto_rolls_enabled": false,
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": false,
+    "auto_rolls_only_claim_hour": false,
     "panic_roll_minutes": 5,
     "lurker_mode": false,
     "auto_rt_after_claim": false,
@@ -152,7 +164,12 @@
     "auto_divorce_series": [],
     "max_claim_rank": 0,
     "max_like_rank": 0,
-    "debug_mode": false
+    "debug_mode": false,
+    "enable_hybrid_panic_claim": false,
+    "hybrid_panic_instant_claim_min_kakera": 300,
+    "hybrid_panic_instant_claim_max_rank": 200,
+    "claim_rounds_thresholds": [],
+    "persistent_stagger_seconds": 0
   },
   "Secondary_Account_Farmer": {
     "token": "TOKEN",
@@ -164,7 +181,7 @@
     "rolling": true,
     "use_slash_rolls": false,
     "roll_speed": 0.5,
-    "delay_seconds": 8,
+    "delay_seconds": 8.0,
     "start_delay": 10,
     "min_kakera": 150,
     "key_mode": true,
@@ -269,6 +286,17 @@
       "kakeraT",
       "kakera"
     ],
+    "sphere_click_targets": [
+      "spG",
+      "spY",
+      "spO",
+      "spR",
+      "spW",
+      "spL",
+      "spD",
+      "spM",
+      "spU"
+    ],
     "auto_us_enabled": false,
     "auto_us_limit": 0,
     "auto_us_stop_on_claim": true,
@@ -278,6 +306,7 @@
     "auto_rolls_enabled": false,
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": false,
+    "auto_rolls_only_claim_hour": false,
     "panic_roll_minutes": 5,
     "lurker_mode": false,
     "auto_rt_after_claim": false,
@@ -296,6 +325,11 @@
     "auto_divorce_series": [],
     "max_claim_rank": 0,
     "max_like_rank": 0,
-    "debug_mode": false
+    "debug_mode": false,
+    "enable_hybrid_panic_claim": false,
+    "hybrid_panic_instant_claim_min_kakera": 300,
+    "hybrid_panic_instant_claim_max_rank": 200,
+    "claim_rounds_thresholds": [],
+    "persistent_stagger_seconds": 0
   }
 }
