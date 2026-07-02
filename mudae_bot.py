@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.5"
+CURRENT_VERSION = "4.4.6"
 
 # Global Pause State
 _global_paused = False
@@ -385,7 +385,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             hybrid_panic_instant_claim_min_kakera_preset=300,
             hybrid_panic_instant_claim_max_rank_preset=200,
             claim_rounds_thresholds_preset=None,
-            persistent_stagger_seconds_preset=0): 
+            persistent_stagger_seconds_preset=0,
+            sphere_click_targets_preset=None): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -486,6 +487,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_priority_order = kakera_priority_order_preset or [
         'kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera'
     ]
+    sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
+    client.sphere_click_targets = set([t.lower() for t in sphere_click_targets])
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset or ["omg", "ezz"]
@@ -2028,7 +2031,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 
                 has_sp_perk = "💎/2" in (embed.description or "")
                 target_list = client.kakera_emojis if is_snipe else (client.sphere_perk_emojis if has_sp_perk else (client.chaos_emojis if chaos_count > 0 else client.kakera_emojis))
-                target_list = target_list + client.sphere_emojis
 
                 cooldown_active = not is_kakera_reaction_allowed()
                 has_free_button = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b)) for c in msg.components for b in c.children)
@@ -2043,14 +2045,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     for row_idx, comp in enumerate(msg.components):
                         for child_idx, btn in enumerate(comp.children):
                             if hasattr(btn.emoji, 'name') and btn.emoji.name:
-                                name_clean = btn.emoji.name.rstrip('2')
-                                if btn.emoji.name in target_list or name_clean in target_list:
-                                    all_btns_tracked.append({
-                                        'btn': btn,
-                                        'custom_id': btn.custom_id,
-                                        'pos': (row_idx, child_idx),
-                                        'emoji_name': btn.emoji.name
-                                    })
+                                name = btn.emoji.name
+                                name_clean = name.rstrip('2')
+                                is_sphere = (name in client.sphere_emojis) or (name_clean in client.sphere_emojis)
+                                if is_sphere:
+                                    if (name.lower() in client.sphere_click_targets) or (name_clean.lower() in client.sphere_click_targets):
+                                        all_btns_tracked.append({
+                                            'btn': btn,
+                                            'custom_id': btn.custom_id,
+                                            'pos': (row_idx, child_idx),
+                                            'emoji_name': name
+                                        })
+                                else:
+                                    if name in target_list or name_clean in target_list:
+                                        all_btns_tracked.append({
+                                            'btn': btn,
+                                            'custom_id': btn.custom_id,
+                                            'pos': (row_idx, child_idx),
+                                            'emoji_name': name
+                                        })
                     
                     prio_map = {k.strip(): (idx + 1) * 10 for idx, k in enumerate(reversed(client.kakera_priority_order))}
                     for s in client.sphere_emojis: prio_map[s] = 999
@@ -2251,6 +2264,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content)
             m_mins = int(m_match.group(1)) if m_match else 10
             client.maintenance_until = datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=m_mins)
+            client.interrupt_rolling = True
             BotLogger.log(f"Mudae is under maintenance! Pausing for {m_mins} minutes.", preset_name, "ERROR")
             return
 
@@ -2534,7 +2548,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("hybrid_panic_instant_claim_min_kakera", 300),
                 preset_data.get("hybrid_panic_instant_claim_max_rank", 200),
                 preset_data.get("claim_rounds_thresholds", None),
-                preset_data.get("persistent_stagger_seconds", 0)
+                preset_data.get("persistent_stagger_seconds", 0),
+                preset_data.get("sphere_click_targets", None)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")

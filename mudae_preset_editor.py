@@ -84,6 +84,7 @@ DEFAULTS = {
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
+    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
 }
 
 # Boolean settings with their display names and defaults
@@ -164,6 +165,7 @@ TEXT_SETTINGS = [
     ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
+    ("sphere_click_targets", "Target Sphere Emojis (Virgülle ayırarak tıklanacak küreleri yazın, örn: spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
 ]
 
 # Default emoji values
@@ -558,6 +560,9 @@ class PresetEditor:
         ttk.Label(emoji_frame, text="Default: kakeraP, kakeraC, kakeraL, kakeraW, kakeraR, kakeraO, kakeraD, kakeraY, kakeraG, kakeraT, kakera",
                  foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
         
+        # [NEW] Sphere click targets setting
+        self.add_list_field(emoji_frame, "sphere_click_targets", "Target Sphere Emojis (Virgülle ayırarak tıklanacak küreleri yazın, örn: spU, spG, spY)")
+        
         # --- Anti-Detection ---
         human_outer = ttk.Frame(frame)
         human_outer.pack(fill=tk.X, pady=(0, 15))
@@ -781,12 +786,12 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
                     widget.delete(0, tk.END)
-                    value = data.get(key, [])
+                    value = data.get(key, DEFAULTS.get(key, []))
                     if isinstance(value, list):
                         widget.insert(0, ", ".join(value))
         
@@ -947,7 +952,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -1150,6 +1155,7 @@ class PresetEditor:
                 "auto_p_enabled": True,
                 "enable_snipe_chat_reactions": False,
                 "snipe_chat_messages": ["omg", "ezz"],
+                "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
             }
             
             self.refresh_preset_list()
