@@ -165,7 +165,7 @@ TEXT_SETTINGS = [
     ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
-    ("sphere_click_targets", "Target Sphere Emojis (Virgülle ayırarak tıklanacak küreleri yazın, örn: spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
+    ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
 ]
 
 # Default emoji values
@@ -561,7 +561,7 @@ class PresetEditor:
                  foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
         
         # [NEW] Sphere click targets setting
-        self.add_list_field(emoji_frame, "sphere_click_targets", "Target Sphere Emojis (Virgülle ayırarak tıklanacak küreleri yazın, örn: spU, spG, spY)")
+        self.add_list_field(emoji_frame, "sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)")
         
         # --- Anti-Detection ---
         human_outer = ttk.Frame(frame)
