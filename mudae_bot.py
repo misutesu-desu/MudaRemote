@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.6"
+CURRENT_VERSION = "4.4.7"
 
 # Global Pause State
 _global_paused = False
@@ -91,6 +91,7 @@ REGEX_PATTERNS = {
     "CLAIM_READY": r"__(?:can|pode|puedes|pouvez)__\s+(?:claim|se casar|reclamar|vous (?:re)?marier)",
     "CLAIM_RESET": r"(?:next claim|próximo|siguiente|prochain|tempo|temps|falta)\s+(?:reset|reclamo|tempo|temps|um tempo).*?(?:in|em|en|dans|left|restante|restant|falta|dentro de)\s*:?\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "CLAIM_COOLDOWN": r"(?:can't|não pode|no puedes|avant de|falta\s+um\s+tempo).*?(?:claim|casar|reclamar|remarier).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
+    "CLAIM_INTERVAL_COOLDOWN": r"(?:next interval begins in|intervalo comienza en|intervalo começa em|intervalle commence dans)\s*\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "GENERIC_COOLDOWN": r"\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "ROLL_RESET": r"(?:reset in|reinicialização é em|siguiente reinicio.*?en|prochain rolls reset dans)\s+\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min",
     "KAKERA_COOLDOWN": r"(?:react|pegar|reaccionar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
@@ -2312,6 +2313,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 BotLogger.log(f"Gained +{m_bonus.group(1)} extra rolls from Kakera! Signaling main loop...", preset_name, "KAKERA")
                 if client._immediate_check_event and not client.is_actively_rolling:
                     client._immediate_check_event.set()
+
+        # Check for claim cooldown or claim interval messages sent to us
+        if message.content and not message.embeds:
+            c_low = message.content.lower()
+            bot_u = client.user.name.lower()
+            bot_d = (client.user.display_name or client.user.name).lower()
+            if bot_u in c_low or bot_d in c_low:
+                m_cooldown = re.search(REGEX_PATTERNS["CLAIM_COOLDOWN"], c_low, re.IGNORECASE)
+                if not m_cooldown:
+                    m_cooldown = re.search(REGEX_PATTERNS["CLAIM_INTERVAL_COOLDOWN"], c_low, re.IGNORECASE)
+                
+                if m_cooldown:
+                    h, m_val = parse_hm(m_cooldown)
+                    cooldown_mins = h * 60 + m_val
+                    BotLogger.log(f"Detected claim cooldown message from Mudae: {cooldown_mins}m left. Locking claim.", preset_name, "WARN")
+                    client.claim_right_available = False
+                    now = datetime.datetime.now(timezone.utc)
+                    client.next_claim_reset_at_utc = (now + datetime.timedelta(minutes=cooldown_mins)).replace(second=0, microsecond=0)
+                    client.claim_cooldown_until_utc = client.next_claim_reset_at_utc
 
         if not message.embeds: return
         embed = message.embeds[0]
