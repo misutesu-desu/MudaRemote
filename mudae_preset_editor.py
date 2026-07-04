@@ -85,6 +85,7 @@ DEFAULTS = {
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
     "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
+    "immediate_kakera_click": True,
 }
 
 # Boolean settings with their display names and defaults
@@ -124,6 +125,7 @@ BOOL_SETTINGS = [
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
+    ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -507,6 +509,7 @@ class PresetEditor:
         
         self.add_checkbox(snipe_frame, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
         self.add_checkbox(snipe_frame, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
+        self.add_checkbox(snipe_frame, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)")
         
         # $rt settings
         self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
@@ -774,7 +777,7 @@ class PresetEditor:
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
                     "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
-                    "enable_hybrid_panic_claim"]:
+                    "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -944,7 +947,7 @@ class PresetEditor:
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled",
                     "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
-                    "enable_hybrid_panic_claim"]:
+                    "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
         
@@ -1156,6 +1159,7 @@ class PresetEditor:
                 "enable_snipe_chat_reactions": False,
                 "snipe_chat_messages": ["omg", "ezz"],
                 "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
+                "immediate_kakera_click": True,
             }
             
             self.refresh_preset_list()

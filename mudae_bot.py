@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.7"
+CURRENT_VERSION = "4.4.8"
 
 # Global Pause State
 _global_paused = False
@@ -387,7 +387,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             hybrid_panic_instant_claim_max_rank_preset=200,
             claim_rounds_thresholds_preset=None,
             persistent_stagger_seconds_preset=0,
-            sphere_click_targets_preset=None): 
+            sphere_click_targets_preset=None,
+            immediate_kakera_click_preset=True): 
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -490,6 +491,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     ]
     sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
     client.sphere_click_targets = set([t.lower() for t in sphere_click_targets])
+    client.immediate_kakera_click = immediate_kakera_click_preset
+    client.collected_kakera_rolls = []
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset or ["omg", "ezz"]
@@ -1171,6 +1174,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 c_lower = tu_content.lower()
 
+            # Validate $tu response categories and log warnings if essential sections are missing
+            if not (re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower) or
+                    re.search(REGEX_PATTERNS["CLAIM_RESET"], c_lower) or
+                    re.search(REGEX_PATTERNS["CLAIM_COOLDOWN"], c_lower)):
+                BotLogger.log("Your $tu response is missing the 'claim' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+
+            if not re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_lower, re.DOTALL):
+                BotLogger.log("Your $tu response is missing the 'rolls' or 'rollsreset' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+
+            v_rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"])
+            v_rt_reset = parse_timer_minutes("RT_RESET", c_lower)
+            if not (v_rt_ready or v_rt_reset is not None or "$rt" in c_lower or re.search(r'\brt\b', c_lower)):
+                BotLogger.log("Your $tu response is missing the 'rt' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+
+            if not (re.search(REGEX_PATTERNS["DK_POWER"], c_lower) or
+                    re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)):
+                BotLogger.log("Your $tu response is missing the 'kakerapower' or 'kakerainfo' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+
+            if not (re.search(REGEX_PATTERNS["DK_STOCK"], c_lower) or
+                    re.search(REGEX_PATTERNS["DK_READY"], c_lower)):
+                BotLogger.log("Your $tu response is missing the 'dk' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+
             if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
                 await handle_dk_power_management(client, cmd_channel, tu_content)
 
@@ -1550,6 +1575,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.interrupt_rolling = False
         client._rolls_sent = client._rolls_received = 0
         client.collected_rolls = []
+        client.collected_kakera_rolls = []
         
         for i in range(rolls_left):
             if client.interrupt_rolling:
@@ -1569,6 +1595,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(0.05)
 
         client.is_actively_rolling = False
+
+        if not getattr(client, 'immediate_kakera_click', True) and getattr(client, 'collected_kakera_rolls', []):
+            BotLogger.log("Processing collected rolls for Kakera priority collection...", preset_name, "INFO")
+            for msg in client.collected_kakera_rolls:
+                try:
+                    await claim_character(client, channel, msg, is_kakera=True)
+                except Exception as e:
+                    BotLogger.log(f"Error processing deferred kakera roll: {e}", preset_name, "ERROR")
+            client.collected_kakera_rolls.clear()
         
         if is_timing_mode_active:
             client.claim_right_available = True
@@ -2443,9 +2478,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
                     has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
                     if has_btn:
-                         d_min, d_max = client.reactive_kakera_delay_range
-                         if d_max > 0: await asyncio.sleep(random.uniform(d_min, d_max))
-                         await claim_character(client, message.channel, message, is_kakera=True)
+                        if getattr(client, 'immediate_kakera_click', True):
+                            d_min, d_max = client.reactive_kakera_delay_range
+                            if d_max > 0: await asyncio.sleep(random.uniform(d_min, d_max))
+                            await claim_character(client, message.channel, message, is_kakera=True)
+                        else:
+                            client.collected_kakera_rolls.append(message)
         else:
             c_name = embed.author.name.lower()
             process = True
@@ -2569,7 +2607,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("hybrid_panic_instant_claim_max_rank", 200),
                 preset_data.get("claim_rounds_thresholds", None),
                 preset_data.get("persistent_stagger_seconds", 0),
-                preset_data.get("sphere_click_targets", None)
+                preset_data.get("sphere_click_targets", None),
+                preset_data.get("immediate_kakera_click", True)
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}", preset_name, "ERROR")
