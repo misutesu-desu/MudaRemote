@@ -169,7 +169,8 @@
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
-    "persistent_stagger_seconds": 0
+    "persistent_stagger_seconds": 0,
+    "immediate_kakera_click": true
   },
   "Secondary_Account_Farmer": {
     "token": "TOKEN",
@@ -330,6 +331,7 @@
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
-    "persistent_stagger_seconds": 0
+    "persistent_stagger_seconds": 0,
+    "immediate_kakera_click": true
   }
 }
