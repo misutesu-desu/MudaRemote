@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.9"
+CURRENT_VERSION = "4.5.0"
 
 # Global Pause State
 _global_paused = False
