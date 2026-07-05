@@ -86,6 +86,7 @@ DEFAULTS = {
     "claim_rounds_thresholds": [],
     "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
     "immediate_kakera_click": True,
+    "character_snipe_targets": [],
 }
 
 # Boolean settings with their display names and defaults
@@ -168,6 +169,7 @@ TEXT_SETTINGS = [
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
+    ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
 ]
 
 # Default emoji values
@@ -510,6 +512,7 @@ class PresetEditor:
         self.add_checkbox(snipe_frame, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
         self.add_checkbox(snipe_frame, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
         self.add_checkbox(snipe_frame, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)")
+        self.add_list_field(snipe_frame, "character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).")
         
         # $rt settings
         self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
@@ -789,7 +792,8 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets",
+                    "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, ttk.Entry):
@@ -955,7 +959,8 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets"]:
+                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets",
+                    "character_snipe_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
@@ -1160,6 +1165,7 @@ class PresetEditor:
                 "snipe_chat_messages": ["omg", "ezz"],
                 "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
                 "immediate_kakera_click": True,
+                "character_snipe_targets": [],
             }
             
             self.refresh_preset_list()

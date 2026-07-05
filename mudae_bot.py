@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.4.8"
+CURRENT_VERSION = "4.4.9"
 
 # Global Pause State
 _global_paused = False
@@ -306,6 +306,40 @@ KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP
 CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
+async def detect_roll_owner(client, message) -> tuple[int | None, str | None]:
+    """
+    Detects the owner of a roll message.
+    Returns a tuple of (user_id, username_lowercase).
+    """
+    # 1. If it was rolled via a Slash Command (Interaction)
+    if hasattr(message, 'interaction') and message.interaction:
+        user = message.interaction.user
+        return user.id, user.name.lower()
+    
+    # 2. Fallback for text commands: scan channel history right before this message
+    # We look for: $w, $h, $m, $wx, $mx, $hx, $wa, $ha, $ma, $mg, $hg, $wg
+    valid_commands = ["w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma", "mg", "hg", "wg"]
+    roll_prefixes = [f"{client.mudae_prefix}{cmd}" for cmd in valid_commands]
+    
+    try:
+        async for msg in message.channel.history(limit=5, before=message):
+            content = (msg.content or "").strip().lower()
+            if content and any(content.startswith(p) for p in roll_prefixes):
+                return msg.author.id, msg.author.name.lower()
+    except Exception:
+        pass
+        
+    # 3. Last fallback: Check embed footer for Mudae ownership text if present
+    owner_username = None
+    if message.embeds:
+        embed = message.embeds[0]
+        if embed.footer and embed.footer.text:
+            m = re.search(REGEX_PATTERNS["OWNER"], embed.footer.text)
+            if m:
+                owner_username = m.group(1).strip().lower()
+    
+    return None, owner_username
+
 def is_character_embed(embed):
     return bool(embed and embed.author and embed.author.name and embed.image and embed.image.url and not (embed.thumbnail and embed.thumbnail.url))
 
@@ -346,19 +380,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             enable_reactive_self_snipe_preset, rolling_enabled,
             kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
             kakera_reaction_snipe_targets,
-            humanization_enabled, humanization_window_minutes, humanization_inactivity_seconds,
-            dk_power_management, skip_initial_commands, use_slash_rolls, only_chaos,
-            reactive_snipe_delay, time_rolls_to_claim_reset_preset,
-            rt_ignore_min_kakera_for_wishlist_preset,
-            claim_emojis_preset, kakera_emojis_preset, chaos_emojis_preset, sphere_perk_emojis_preset,
-            rt_only_self_rolls_preset, reactive_kakera_delay_range_preset,
-            claim_interval_preset, roll_interval_preset, avoid_list,
-            inactive_hours_preset,
-            auto_us_enabled, auto_us_limit, auto_us_stop_on_claim,
-            kakera_power_thresholds, debug_mode, auto_mk_enabled_preset,
-            auto_rolls_enabled, auto_rolls_limit, auto_rolls_in_key_mode,
-            auto_rolls_only_claim_hour_preset,
-            panic_roll_minutes_preset, lurker_mode_preset,
+            character_snipe_targets=None,
+            humanization_enabled=False, humanization_window_minutes=0, humanization_inactivity_seconds=0,
+            dk_power_management=True, skip_initial_commands=False, use_slash_rolls=False, only_chaos=False,
+            reactive_snipe_delay=0.5, time_rolls_to_claim_reset_preset=False,
+            rt_ignore_min_kakera_for_wishlist_preset=False,
+            claim_emojis_preset=None, kakera_emojis_preset=None, chaos_emojis_preset=None, sphere_perk_emojis_preset=None,
+            rt_only_self_rolls_preset=False, reactive_kakera_delay_range_preset=None,
+            claim_interval_preset=180, roll_interval_preset=60, avoid_list=None,
+            inactive_hours_preset=None,
+            auto_us_enabled=False, auto_us_limit=10, auto_us_stop_on_claim=True,
+            kakera_power_thresholds=None, debug_mode=False, auto_mk_enabled_preset=False,
+            auto_rolls_enabled=False, auto_rolls_limit=10, auto_rolls_in_key_mode=False,
+            auto_rolls_only_claim_hour_preset=False,
+            panic_roll_minutes_preset=5, lurker_mode_preset=False,
             bulk_us_enabled_preset=False,
             max_dk_power_preset=100,
             randomized_claim_reactions_preset=None,
@@ -410,7 +445,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.series_snipe_mode = series_snipe_mode
     client.series_snipe_delay = series_snipe_delay
     client.series_wishlist = set([sw.lower() for sw in series_wishlist])
-    client.avoid_list = set([a.lower() for a in avoid_list])
+    client.avoid_list = set([a.lower() for a in (avoid_list or [])])
     
     client.snipe_channels = set()
     if snipe_channels_preset:
@@ -447,6 +482,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_reaction_snipe_mode_active = kakera_reaction_snipe_mode_preset
     client.kakera_reaction_snipe_delay_value = kakera_reaction_snipe_delay_preset
     client.kakera_reaction_snipe_targets = set([t.lower() for t in kakera_reaction_snipe_targets])
+    client.character_snipe_targets = set([t.lower().strip() for t in (character_snipe_targets or []) if t.strip()])
     client.kakera_reaction_sniped_messages = set()
     client.kakera_react_available = True
     client.kakera_react_cooldown_until_utc = None
@@ -2377,8 +2413,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
                 if has_btn:
                     if client.kakera_reaction_snipe_targets:
-                        owner = get_character_owner(embed)
-                        if not owner or owner not in client.kakera_reaction_snipe_targets: return
+                        owner_id, owner_name = await detect_roll_owner(client, message)
+                        is_target = False
+                        if owner_id and str(owner_id) in client.kakera_reaction_snipe_targets:
+                            is_target = True
+                        if owner_name and owner_name in client.kakera_reaction_snipe_targets:
+                            is_target = True
+                        if not is_target:
+                            return
                     client.kakera_reaction_sniped_messages.add(message.id)
                     await asyncio.sleep(client.kakera_reaction_snipe_delay_value + random.uniform(0.05, 0.25))
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
@@ -2487,64 +2529,85 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             c_name = embed.author.name.lower()
             process = True
+            
+            # Determine roll owner
+            owner_id, owner_name = await detect_roll_owner(client, message)
+            
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
                  has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
                  if has_btn:
                     target_ok = True
                     if client.kakera_reaction_snipe_targets:
-                        owner = get_character_owner(embed)
-                        if not owner or owner not in client.kakera_reaction_snipe_targets: target_ok = False
+                        is_target = False
+                        if owner_id and str(owner_id) in client.kakera_reaction_snipe_targets:
+                            is_target = True
+                        if owner_name and owner_name in client.kakera_reaction_snipe_targets:
+                            is_target = True
+                        if not is_target:
+                            target_ok = False
                     if target_ok:
                         client.kakera_reaction_sniped_messages.add(message.id)
                         await asyncio.sleep(client.kakera_reaction_snipe_delay_value)
                         await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
                         process = False
             
-            if process and client.series_snipe_mode and client.series_wishlist:
-                desc = embed.description or ""
-                series = desc.splitlines()[0].lower() if desc else ""
+            # Target validation for character sniping
+            is_snipe_target_ok = True
+            if client.character_snipe_targets and owner_id != client.user.id:
+                is_target = False
+                if owner_id is not None and str(owner_id) in client.character_snipe_targets:
+                    is_target = True
+                if owner_name is not None and owner_name in client.character_snipe_targets:
+                    is_target = True
+                if not is_target:
+                    is_snipe_target_ok = False
+
+            if is_snipe_target_ok:
+                if process and client.series_snipe_mode and client.series_wishlist:
+                    desc = embed.description or ""
+                    series = desc.splitlines()[0].lower() if desc else ""
+                    is_avoided = c_name in client.avoid_list
+                    with _global_claims_lock:
+                        with _global_rt_lock:
+                            already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                    if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
+                        else:
+                            await asyncio.sleep(client.series_snipe_delay + random.uniform(0.05, 0.25))
+                            if await claim_character(client, message.channel, message, is_snipe=True):
+                                 client.series_snipe_happened = True; process = False
+      
+                claims_r, likes_r = parse_mudae_ranks(embed.description or "")
+                is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
+                is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_ranked
                 is_avoided = c_name in client.avoid_list
                 with _global_claims_lock:
                     with _global_rt_lock:
                         already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
-                if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                    if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
-                    else:
-                        await asyncio.sleep(client.series_snipe_delay + random.uniform(0.05, 0.25))
-                        if await claim_character(client, message.channel, message, is_snipe=True):
-                             client.series_snipe_happened = True; process = False
-  
-            claims_r, likes_r = parse_mudae_ranks(embed.description or "")
-            is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-            is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_ranked
-            is_avoided = c_name in client.avoid_list
-            with _global_claims_lock:
-                with _global_rt_lock:
-                    already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
-            if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
-                else:
-                    await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
-                    if await claim_character(client, message.channel, message, is_snipe=True):
-                        client.snipe_happened = True; process = False
-            
-            if process and client.kakera_snipe_mode_active:
-                desc = embed.description or ""
-                k_val = 0
-                m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
-                if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
-                is_avoided = c_name in client.avoid_list
-                with _global_claims_lock:
-                    with _global_rt_lock:
-                        already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
-                if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                     else:
                         await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
-                        if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
+                        if await claim_character(client, message.channel, message, is_snipe=True):
                             client.snipe_happened = True; process = False
-  
+                
+                if process and client.kakera_snipe_mode_active:
+                    desc = embed.description or ""
+                    k_val = 0
+                    m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
+                    if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+                    is_avoided = c_name in client.avoid_list
+                    with _global_claims_lock:
+                        with _global_rt_lock:
+                            already_in_progress = message.id in _global_claims_in_progress or message.id in _global_rt_in_progress
+                    if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
+                        else:
+                            await asyncio.sleep(client.snipe_delay + random.uniform(0.05, 0.25))
+                            if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
+                                client.snipe_happened = True; process = False
+      
             if process and is_free_event(embed):
                 print_log(f"Sniping free event card: {c_name}", preset_name, "CLAIM")
                 if await claim_character(client, message.channel, message, is_free_claim=True): process = False
@@ -2573,6 +2636,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("reactive_snipe_on_own_rolls", True), preset_data.get("rolling", True),
                 preset_data.get("kakera_reaction_snipe_mode", False), preset_data.get("kakera_reaction_snipe_delay", 0.75),
                 preset_data.get("kakera_reaction_snipe_targets", []),
+                preset_data.get("character_snipe_targets", []),
                 preset_data.get("humanization_enabled", False), preset_data.get("humanization_window_minutes", 40),
                 preset_data.get("humanization_inactivity_seconds", 5),
                 preset_data.get("dk_power_management", False), preset_data.get("skip_initial_commands", False),
