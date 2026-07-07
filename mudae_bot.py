@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.0"
+CURRENT_VERSION = "4.5.1"
 
 # Global Pause State
 _global_paused = False
@@ -84,6 +84,7 @@ REGEX_PATTERNS = {
     "LIKES_RANK": r"Likes:\s*#\s*([\d,.]+)",
     "DK_STOCK": r"\**(\d+)\**\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)",
     "DK_READY": r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)",
+    "DK_COOLDOWN": r"(?:next \$dk|próximo \$dk|siguiente \$dk|prochain \$dk).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "DK_POWER": r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}",
     "DK_CONSUMPTION": r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%",
     "P_COOLDOWN": r"(?:next \$p|próximo \$p|prochain \$p).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
@@ -302,8 +303,8 @@ if os.name == 'nt': os.system('')
 
 TARGET_BOT_ID = 432610292342587392
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
-KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
-CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
+CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 async def detect_roll_owner(client, message) -> tuple:
@@ -339,6 +340,10 @@ async def detect_roll_owner(client, message) -> tuple:
                 owner_username = m.group(1).strip().lower()
     
     return None, owner_username
+
+def check_is_green(b):
+    s = getattr(b, 'style', None)
+    return s is not None and (getattr(s, 'value', None) == 3 or str(s).endswith('success') or str(s) == '3')
 
 def is_character_embed(embed):
     return bool(embed and embed.author and embed.author.name and embed.image and embed.image.url and not (embed.thumbnail and embed.thumbnail.url))
@@ -1229,7 +1234,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 BotLogger.log("Your $tu response is missing the 'kakerapower' or 'kakerainfo' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
             if not (re.search(REGEX_PATTERNS["DK_STOCK"], c_lower) or
-                    re.search(REGEX_PATTERNS["DK_READY"], c_lower)):
+                    re.search(REGEX_PATTERNS["DK_READY"], c_lower) or
+                    re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower)):
                 BotLogger.log("Your $tu response is missing the 'dk' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
             if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
@@ -1806,7 +1812,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_character_embed(embed): continue
             
             all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
-            is_k = msg.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in msg.components for b in comp.children)
+            is_k = msg.components and any(
+                hasattr(b.emoji, 'name') and b.emoji.name and (
+                    b.emoji.name in all_k or 
+                    b.emoji.name.rstrip('2') in all_k or 
+                    ("kakera" in b.emoji.name.lower() and check_is_green(b))
+                ) for comp in msg.components for b in comp.children
+            )
             if is_k:
                 k_claims.append(msg)
             else:
@@ -1964,9 +1976,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         claim_registered = False
         claim_success_status = False
 
-        def check_is_green(b):
-            s = getattr(b, 'style', None)
-            return s is not None and (getattr(s, 'value', None) == 3 or str(s).endswith('success') or str(s) == '3')
+
 
         if msg.id in client.processed_claim_messages: return False
 
@@ -2129,7 +2139,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                             'emoji_name': name
                                         })
                                 else:
-                                    if name in target_list or name_clean in target_list:
+                                    if (name in target_list or name_clean in target_list) or ("kakera" in name.lower() and check_is_green(btn)):
                                         all_btns_tracked.append({
                                             'btn': btn,
                                             'custom_id': btn.custom_id,

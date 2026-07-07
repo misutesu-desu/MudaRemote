@@ -23,6 +23,124 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+# Premium Catppuccin Mocha Color Palette
+BG_DARK = "#0f0f14"          # Main application background
+BG_PANEL = "#151521"         # Sidebar, card backgrounds, labels
+BG_INPUT = "#1e1e2e"         # Text input fields background
+ACCENT = "#89b4fa"           # Primary interactions, buttons
+ACCENT_ALT = "#cba6f7"       # Secondary borders, toggle cards
+TEXT_MAIN = "#cdd6f4"        # High contrast primary text
+TEXT_MUTED = "#8084a3"       # Secondary help text and descriptions
+BORDER_COLOR = "#2b2b3a"     # Subtle division lines
+COLOR_SUCCESS = "#a6e3a1"    # Active/Save buttons
+COLOR_DANGER = "#f38ba8"     # Delete buttons
+
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.id = None
+        
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave)
+        
+    def enter(self, event=None):
+        self.schedule()
+        
+    def leave(self, event=None):
+        self.unschedule()
+        self.hide()
+        
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(400, self.show)
+        
+    def unschedule(self):
+        if self.id:
+            self.widget.after_cancel(self.id)
+            self.id = None
+            
+    def show(self):
+        if self.tip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 25
+        y = self.widget.winfo_rooty() + 20
+        
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        
+        frame = tk.Frame(tw, bg=BG_PANEL, bd=1, relief="solid", highlightbackground=ACCENT, highlightthickness=1)
+        frame.pack()
+        
+        label = tk.Label(
+            frame,
+            text=self.text,
+            justify=tk.LEFT,
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            font=("Segoe UI", 9),
+            padx=10,
+            pady=6,
+            wraplength=250
+        )
+        label.pack()
+        
+    def hide(self):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
+class CollapsibleLabelFrame(ttk.Frame):
+    def __init__(self, parent, text, start_open=False, *args, **kwargs):
+        super().__init__(parent, style="Card.TFrame", *args, **kwargs)
+        self.text = text
+        self.is_open = start_open
+        
+        self.header = tk.Frame(self, bg=BG_PANEL, bd=0, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        self.header.pack(fill=tk.X, ipady=4)
+        
+        self.toggle_lbl = tk.Label(
+            self.header,
+            text=("▼   " if start_open else "▶   ") + text,
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            font=("Segoe UI", 11, "bold"),
+            cursor="hand2",
+            anchor="w",
+            padx=12,
+            pady=8
+        )
+        self.toggle_lbl.pack(fill=tk.X, side=tk.LEFT, expand=True)
+        
+        def on_enter(e):
+            self.header.configure(bg=BG_INPUT)
+            self.toggle_lbl.configure(bg=BG_INPUT)
+        def on_leave(e):
+            self.header.configure(bg=BG_PANEL)
+            self.toggle_lbl.configure(bg=BG_PANEL)
+            
+        self.toggle_lbl.bind("<Enter>", on_enter)
+        self.toggle_lbl.bind("<Leave>", on_leave)
+        self.toggle_lbl.bind("<Button-1>", lambda e: self.toggle())
+        
+        self.content = tk.Frame(self, bg=BG_DARK, bd=0, highlightthickness=1, highlightbackground=BORDER_COLOR)
+        if start_open:
+            self.content.pack(fill=tk.X, expand=False, padx=2, pady=(2, 5))
+            
+    def toggle(self):
+        if self.is_open:
+            self.content.pack_forget()
+            self.toggle_lbl.config(text="▶   " + self.text)
+            self.is_open = False
+        else:
+            self.content.pack(fill=tk.X, expand=False, padx=2, pady=(2, 5))
+            self.toggle_lbl.config(text="▼   " + self.text)
+            self.is_open = True
+
 # --- Constants ---
 PRESETS_FILE = os.path.join(get_base_path(), "presets.json")
 BOT_SCRIPT = os.path.join(get_base_path(), "mudae_bot.py")
@@ -174,9 +292,9 @@ TEXT_SETTINGS = [
 
 # Default emoji values
 DEFAULT_CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
-DEFAULT_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
-DEFAULT_CHAOS_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
-DEFAULT_SPHERE_PERK_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC']
+DEFAULT_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
+DEFAULT_CHAOS_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
+DEFAULT_SPHERE_PERK_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
 
 # [NEW] Task 5: Default randomized claim reaction emojis
 DEFAULT_RANDOMIZED_CLAIM_REACTIONS = ['💖', '💗', '💘', '❤️', '👍', '🔥']
@@ -202,6 +320,8 @@ class PresetEditor:
         self.presets = {}
         self.current_preset = None
         self.widgets = {}  # Store widget references for data binding
+        self.settings_fields = []  # References for real-time search/filter
+        self.subframe_controls = {}  # Map of subframe -> control_key
         
         # Load presets
         self.load_presets()
@@ -215,51 +335,249 @@ class PresetEditor:
             self.select_preset(first_preset)
     
     def apply_theme(self):
-        """Apply a dark theme to the application."""
-        self.root.configure(bg="#1e1e2e")
+        """Apply the premium Catppuccin Mocha style palette."""
+        self.root.configure(bg=BG_DARK)
         
         style = ttk.Style()
         style.theme_use("clam")
         
-        # Colors
-        bg_dark = "#1e1e2e"
-        bg_mid = "#2d2d3f"
-        bg_light = "#3d3d5c"
-        fg = "#cdd6f4"
-        fg_dim = "#a6adc8"
-        accent = "#89b4fa"
-        accent_hover = "#b4befe"
-        danger = "#f38ba8"
-        success = "#a6e3a1"
+        style.configure(".", background=BG_DARK, foreground=TEXT_MAIN, fieldbackground=BG_PANEL)
+        style.configure("TFrame", background=BG_DARK)
+        style.configure("Card.TFrame", background=BG_PANEL)
+        style.configure("TLabel", background=BG_DARK, foreground=TEXT_MAIN, font=("Segoe UI", 10))
+        style.configure("TLabelframe", background=BG_DARK, foreground=TEXT_MAIN, borderwidth=1, bordercolor=BORDER_COLOR)
+        style.configure("TLabelframe.Label", background=BG_DARK, foreground=ACCENT, font=("Segoe UI", 11, "bold"))
+        style.configure("TEntry", fieldbackground=BG_INPUT, foreground=TEXT_MAIN, insertcolor=TEXT_MAIN, borderwidth=0)
+        style.configure("TCheckbutton", background=BG_DARK, foreground=TEXT_MAIN, font=("Segoe UI", 10))
+        style.map("TCheckbutton", background=[("active", BG_DARK)])
+        style.configure("TScrollbar", gripcount=0, background=BG_PANEL, troughcolor=BG_DARK, borderwidth=0, arrowsize=8)
         
-        # Configure styles
-        style.configure(".", background=bg_dark, foreground=fg, fieldbackground=bg_mid)
-        style.configure("TFrame", background=bg_dark)
-        style.configure("TLabel", background=bg_dark, foreground=fg, font=("Segoe UI", 10))
-        style.configure("TLabelframe", background=bg_dark, foreground=fg)
-        style.configure("TLabelframe.Label", background=bg_dark, foreground=accent, font=("Segoe UI", 11, "bold"))
-        style.configure("TEntry", fieldbackground=bg_mid, foreground=fg, insertcolor=fg)
-        style.configure("TCheckbutton", background=bg_dark, foreground=fg, font=("Segoe UI", 10))
-        style.map("TCheckbutton", background=[("active", bg_mid)])
-        style.configure("TButton", background=bg_light, foreground=fg, font=("Segoe UI", 10, "bold"), padding=8)
-        style.map("TButton", background=[("active", accent), ("pressed", accent_hover)])
-        style.configure("Accent.TButton", background=accent, foreground=bg_dark)
-        style.map("Accent.TButton", background=[("active", accent_hover)])
-        style.configure("Danger.TButton", background=danger, foreground=bg_dark)
-        style.map("Danger.TButton", background=[("active", "#eba0ac")])
-        style.configure("Success.TButton", background=success, foreground=bg_dark)
-        style.map("Success.TButton", background=[("active", "#b5e8b0")])
+        # Ttk Button styling (used primarily for secondary scrollbars/internal fallback buttons)
+        style.configure("TButton", background=BG_PANEL, foreground=TEXT_MAIN, font=("Segoe UI", 10, "bold"), borderwidth=1, bordercolor=BORDER_COLOR, padding=8)
+        style.map("TButton", background=[("active", BG_INPUT)])
         
-        # Listbox styling (not ttk, so manual)
         self.listbox_config = {
-            "bg": bg_mid,
-            "fg": fg,
-            "selectbackground": accent,
-            "selectforeground": bg_dark,
-            "font": ("Segoe UI", 11),
+            "bg": BG_PANEL,
+            "fg": TEXT_MAIN,
+            "selectbackground": ACCENT,
+            "selectforeground": BG_DARK,
+            "font": ("Segoe UI", 10),
             "borderwidth": 0,
             "highlightthickness": 0,
+            "relief": "flat",
+            "activestyle": "none"
         }
+        
+    def _bind_focus_highlight(self, entry):
+        """Binds focus highlighting to text inputs to transition borders dynamically."""
+        def on_focus_in(e):
+            entry.configure(bg="#313244", highlightbackground=ACCENT, highlightcolor=ACCENT)
+        def on_focus_out(e):
+            entry.configure(bg=BG_INPUT, highlightbackground=BORDER_COLOR, highlightcolor=ACCENT)
+            
+        entry.bind("<FocusIn>", on_focus_in, add="+")
+        entry.bind("<FocusOut>", on_focus_out, add="+")
+        
+    def _bind_hover_animation(self, button, normal_bg, hover_bg):
+        """Transition background color smoothly on hover."""
+        def on_enter(e):
+            button.configure(bg=hover_bg)
+        def on_leave(e):
+            button.configure(bg=normal_bg)
+            
+        button.bind("<Enter>", on_enter)
+        button.bind("<Leave>", on_leave)
+        
+    def create_flat_button(self, parent, text, command, bg_color, fg_color, hover_bg, font=("Segoe UI", 10, "bold"), **kwargs):
+        """Create a premium borderless flat button with hover animations."""
+        btn = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=bg_color,
+            fg=fg_color,
+            font=font,
+            bd=0,
+            relief="flat",
+            activebackground=hover_bg,
+            activeforeground=fg_color,
+            padx=15,
+            pady=8,
+            cursor="hand2"
+        )
+        self._bind_hover_animation(btn, bg_color, hover_bg)
+        return btn
+        
+    def _get_parent_bg(self, parent):
+        """Safely retrieve background color of a parent widget, defaulting to BG_DARK."""
+        if not parent:
+            return BG_DARK
+        try:
+            return parent.cget("bg")
+        except Exception:
+            try:
+                return parent.cget("background")
+            except Exception:
+                return BG_DARK
+
+    def _register_settings_widget(self, parent, container, label_text, key):
+        """Register setting widget reference for real-time search & filter indexing."""
+        card = None
+        curr = parent
+        while curr:
+            if isinstance(curr, CollapsibleLabelFrame):
+                card = curr
+                break
+            try:
+                curr = curr.master
+            except AttributeError:
+                break
+        self.settings_fields.append({
+            "card": card,
+            "container": container,
+            "label_text": label_text.lower(),
+            "key": key.lower()
+        })
+        
+    def _get_all_collapsible_cards(self):
+        """Locates all collapsible layout panels inside settings form."""
+        cards = []
+        for widget in self.scrollable_frame.winfo_children():
+            if isinstance(widget, CollapsibleLabelFrame):
+                cards.append(widget)
+            elif isinstance(widget, ttk.Frame) or isinstance(widget, tk.Frame):
+                for sub in widget.winfo_children():
+                    if isinstance(sub, CollapsibleLabelFrame):
+                        cards.append(sub)
+        return cards
+        
+    def _filter_container_children(self, parent_widget, query):
+        """Recursively hides/shows children of a parent container maintaining original pack order."""
+        if hasattr(self, "rounds_frame") and parent_widget == self.rounds_frame:
+            # Do not filter or unpack grid-managed children of the rounds table
+            # Check if search query matches round-related keywords to show/hide the table block
+            rounds_title = "dynamic cooldown rounds (hourly thresholds)"
+            return not query or query in rounds_title or "round" in query or "cooldown" in query or "hour" in query
+
+        any_match = False
+        
+        # Hide all children first to reset packing order
+        for child in parent_widget.winfo_children():
+            child.pack_forget()
+            
+        for child in parent_widget.winfo_children():
+            # Check if this child is a registered settings container
+            settings_item = None
+            for item in self.settings_fields:
+                if item["container"] == child:
+                    settings_item = item
+                    break
+                    
+            if settings_item:
+                lbl = settings_item["label_text"]
+                key = settings_item["key"]
+                if not query or query in lbl or query in key:
+                    child.pack(fill=tk.X, pady=5)
+                    any_match = True
+            elif isinstance(child, (tk.Frame, ttk.Frame, tk.LabelFrame)):
+                # Filter its children recursively
+                sub_match = self._filter_container_children(child, query)
+                
+                # Check if it is a subframe controlled by a checkbox
+                if child in self.subframe_controls:
+                    ctrl_key = self.subframe_controls[child]
+                    ctrl_var = self.widgets.get(ctrl_key)
+                    is_enabled = ctrl_var.get() if (ctrl_var and isinstance(ctrl_var, tk.BooleanVar)) else False
+                    
+                    if is_enabled and (not query or sub_match):
+                        child.pack(fill=tk.X, padx=(20, 0), pady=2)
+                        any_match = any_match or sub_match
+                else:
+                    # It's a general layout frame (like prefix_row or rounds_frame)
+                    if not query or sub_match:
+                        if child == self.rounds_frame:
+                            child.pack(fill=tk.X, pady=10)
+                        else:
+                            child.pack(fill=tk.X, pady=5)
+                        any_match = any_match or sub_match
+            elif isinstance(child, (tk.Label, ttk.Label)):
+                # Static description label
+                text = child.cget("text").lower()
+                if not query or query in text:
+                    # Keep its original padding if it is the uncheck defaults label
+                    if "uncheck to use defaults" in text:
+                        child.pack(anchor=tk.W, pady=(0, 10))
+                    else:
+                        child.pack(anchor=tk.W)
+                    
+        return any_match
+
+    def filter_settings(self, *args):
+        """Real-time filter for all settings sections and inputs."""
+        if not hasattr(self, "scrollable_frame") or not hasattr(self, "settings_search_var"):
+            return
+        query = self.settings_search_var.get().strip().lower()
+        if query == "🔍 search settings (e.g., snipe, rolls, cooldown)..." or not query:
+            query = ""
+            
+        cards_with_matches = set()
+        cards_to_open = set()
+        
+        # Recursively filter content children for each collapsible card
+        for card in self._get_all_collapsible_cards():
+            has_match = self._filter_container_children(card.content, query)
+            if has_match:
+                cards_with_matches.add(card)
+                if query:
+                    cards_to_open.add(card)
+                    
+        # Repack all top-level child widgets of self.scrollable_frame in their original order
+        # Hide all first
+        for child in self.scrollable_frame.winfo_children():
+            child.pack_forget()
+            
+        # Repack sequentially in original creation order
+        for child in self.scrollable_frame.winfo_children():
+            if child == self.title_label:
+                child.pack(anchor=tk.W, pady=(0, 20))
+            elif hasattr(self, "btn_frame") and child == self.btn_frame:
+                child.pack(fill=tk.X, pady=20)
+            elif isinstance(child, CollapsibleLabelFrame):
+                if not query or child in cards_with_matches:
+                    child.pack(fill=tk.X, pady=(0, 15))
+                    if query and child in cards_to_open and not child.is_open:
+                        child.toggle()
+            elif isinstance(child, (tk.Frame, ttk.Frame)):
+                # It could be a wrapper frame (like roll_outer, us_outer, human_outer, char_snipe_outer, kakera_react_outer)
+                inner_card = None
+                for sub in child.winfo_children():
+                    if isinstance(sub, CollapsibleLabelFrame):
+                        inner_card = sub
+                        break
+                        
+                if inner_card:
+                    if not query or inner_card in cards_with_matches:
+                        child.pack(fill=tk.X, pady=(0, 15))
+                        inner_card.pack(fill=tk.X)
+                        if query and inner_card in cards_to_open and not inner_card.is_open:
+                            inner_card.toggle()
+                else:
+                    # General frame packed at top level
+                    if not query:
+                        child.pack(fill=tk.X, pady=5)
+                    
+    def filter_presets(self, *args):
+        """Real-time search filters for configurations sidebar."""
+        if not hasattr(self, "preset_listbox") or not hasattr(self, "preset_search_var"):
+            return
+        query = self.preset_search_var.get().strip().lower()
+        if query == "🔍 search configs..." or not query:
+            query = ""
+            
+        self.preset_listbox.delete(0, tk.END)
+        for name in sorted(self.presets.keys()):
+            if not query or query in name.lower():
+                self.preset_listbox.insert(tk.END, name)
     
     def load_presets(self):
         """Load presets from JSON file."""
@@ -287,41 +605,127 @@ class PresetEditor:
             return False
     
     def build_ui(self):
-        """Build the main UI."""
+        """Build the main UI with a modern design system."""
         # Main container
         main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
         # Left sidebar - Preset list
-        sidebar = ttk.Frame(main_frame, width=200)
-        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        sidebar = tk.Frame(main_frame, width=220, bg=BG_DARK)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
         sidebar.pack_propagate(False)
         
-        ttk.Label(sidebar, text="Bot Configurations", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 10))
+        tk.Label(sidebar, text="Bot Configurations", font=("Segoe UI", 13, "bold"), bg=BG_DARK, fg=TEXT_MAIN).pack(anchor=tk.W, pady=(0, 10))
+        
+        # Configs Search Entry
+        self.preset_search_var = tk.StringVar()
+        self.preset_search_var.trace_add("write", self.filter_presets)
+        
+        preset_search = tk.Entry(
+            sidebar,
+            textvariable=self.preset_search_var,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        preset_search.pack(fill=tk.X, pady=(0, 10), ipady=6)
+        
+        # Placeholder
+        preset_search.insert(0, "🔍 Search configs...")
+        preset_search.configure(fg=TEXT_MUTED)
+        
+        def on_ps_focus_in(e):
+            if preset_search.get() == "🔍 Search configs...":
+                preset_search.delete(0, tk.END)
+                preset_search.configure(fg=TEXT_MAIN)
+        def on_ps_focus_out(e):
+            if not preset_search.get():
+                preset_search.insert(0, "🔍 Search configs...")
+                preset_search.configure(fg=TEXT_MUTED)
+                
+        preset_search.bind("<FocusIn>", on_ps_focus_in)
+        preset_search.bind("<FocusOut>", on_ps_focus_out)
+        self._bind_focus_highlight(preset_search)
         
         # Preset listbox
-        self.preset_listbox = tk.Listbox(sidebar, **self.listbox_config, height=20)
-        self.preset_listbox.pack(fill=tk.BOTH, expand=True)
+        # Wrap it in a frame to give it a clean border
+        listbox_border = tk.Frame(sidebar, bg=BORDER_COLOR, bd=0, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        listbox_border.pack(fill=tk.BOTH, expand=True)
+        
+        self.preset_listbox = tk.Listbox(listbox_border, **self.listbox_config)
+        self.preset_listbox.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         self.preset_listbox.bind("<<ListboxSelect>>", self.on_preset_select)
         
         # Refresh preset list
         self.refresh_preset_list()
         
-        # Sidebar buttons
-        sidebar_btns = ttk.Frame(sidebar)
-        sidebar_btns.pack(fill=tk.X, pady=(10, 0))
+        # Sidebar buttons (using flat custom buttons)
+        sidebar_btns = tk.Frame(sidebar, bg=BG_DARK)
+        sidebar_btns.pack(fill=tk.X, pady=(15, 0))
         
-        ttk.Button(sidebar_btns, text="+ Create New", command=self.create_preset).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        ttk.Button(sidebar_btns, text="Copy Selected", command=self.duplicate_preset).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.create_flat_button(
+            sidebar_btns, "+ Create New", self.create_preset, 
+            bg_color=ACCENT, fg_color=BG_DARK, hover_bg=ACCENT_ALT, font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        self.create_flat_button(
+            sidebar_btns, "Copy Selected", self.duplicate_preset, 
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # Right side - Settings panel
-        self.settings_container = ttk.Frame(main_frame)
+        self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
         self.settings_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
+        # Settings Search Frame at the top of settings
+        search_frame = tk.Frame(self.settings_container, bg=BG_DARK, bd=0)
+        search_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.settings_search_var = tk.StringVar()
+        self.settings_search_var.trace_add("write", self.filter_settings)
+        
+        self.settings_search_entry = tk.Entry(
+            search_frame,
+            textvariable=self.settings_search_var,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        self.settings_search_entry.pack(fill=tk.X, ipady=6)
+        
+        # Placeholder
+        self.settings_search_entry.insert(0, "🔍 Search settings (e.g., snipe, rolls, cooldown)...")
+        self.settings_search_entry.configure(fg=TEXT_MUTED)
+        
+        def on_ss_focus_in(e):
+            if self.settings_search_entry.get() == "🔍 Search settings (e.g., snipe, rolls, cooldown)...":
+                self.settings_search_entry.delete(0, tk.END)
+                self.settings_search_entry.configure(fg=TEXT_MAIN)
+        def on_ss_focus_out(e):
+            if not self.settings_search_entry.get():
+                self.settings_search_entry.insert(0, "🔍 Search settings (e.g., snipe, rolls, cooldown)...")
+                self.settings_search_entry.configure(fg=TEXT_MUTED)
+                
+        self.settings_search_entry.bind("<FocusIn>", on_ss_focus_in)
+        self.settings_search_entry.bind("<FocusOut>", on_ss_focus_out)
+        self._bind_focus_highlight(self.settings_search_entry)
+        
         # Canvas for scrolling
-        self.canvas = tk.Canvas(self.settings_container, bg="#1e1e2e", highlightthickness=0)
+        self.canvas = tk.Canvas(self.settings_container, bg=BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.settings_container, orient=tk.VERTICAL, command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
+        self.scrollable_frame = tk.Frame(self.canvas, bg=BG_DARK)
         
         self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         
@@ -351,25 +755,64 @@ class PresetEditor:
         # Re-draw the table headers
         headers = ["Round / Hour", "Min Kakera", "Max Claim Rank", "Max Like Rank"]
         for col_idx, text in enumerate(headers):
-            lbl = ttk.Label(self.rounds_frame, text=text, font=("Segoe UI", 9, "bold"))
+            lbl = tk.Label(self.rounds_frame, text=text, font=("Segoe UI", 9, "bold"), bg=BG_DARK, fg=ACCENT)
             lbl.grid(row=0, column=col_idx, padx=5, pady=2, sticky=tk.W)
 
         # Generate exactly num_rounds input rows
         for i in range(1, num_rounds + 1):
-            lbl_round = ttk.Label(self.rounds_frame, text=f"Round {i} (Hour {i})", font=("Segoe UI", 9))
+            lbl_round = tk.Label(self.rounds_frame, text=f"Round {i} (Hour {i})", font=("Segoe UI", 9), bg=BG_DARK, fg=TEXT_MAIN)
             lbl_round.grid(row=i, column=0, padx=5, pady=2, sticky=tk.W)
 
-            ent_min_k = ttk.Entry(self.rounds_frame, width=12)
+            ent_min_k = tk.Entry(
+                self.rounds_frame, 
+                width=12,
+                bg=BG_INPUT,
+                fg=TEXT_MAIN,
+                insertbackground=TEXT_MAIN,
+                font=("Segoe UI", 9),
+                bd=0,
+                highlightthickness=1,
+                highlightbackground=BORDER_COLOR,
+                highlightcolor=ACCENT,
+                relief="flat"
+            )
             ent_min_k.grid(row=i, column=1, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_min_kakera"] = ent_min_k
+            self._bind_focus_highlight(ent_min_k)
 
-            ent_max_claim = ttk.Entry(self.rounds_frame, width=12)
+            ent_max_claim = tk.Entry(
+                self.rounds_frame, 
+                width=12,
+                bg=BG_INPUT,
+                fg=TEXT_MAIN,
+                insertbackground=TEXT_MAIN,
+                font=("Segoe UI", 9),
+                bd=0,
+                highlightthickness=1,
+                highlightbackground=BORDER_COLOR,
+                highlightcolor=ACCENT,
+                relief="flat"
+            )
             ent_max_claim.grid(row=i, column=2, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_max_claim_rank"] = ent_max_claim
+            self._bind_focus_highlight(ent_max_claim)
 
-            ent_max_like = ttk.Entry(self.rounds_frame, width=12)
+            ent_max_like = tk.Entry(
+                self.rounds_frame, 
+                width=12,
+                bg=BG_INPUT,
+                fg=TEXT_MAIN,
+                insertbackground=TEXT_MAIN,
+                font=("Segoe UI", 9),
+                bd=0,
+                highlightthickness=1,
+                highlightbackground=BORDER_COLOR,
+                highlightcolor=ACCENT,
+                relief="flat"
+            )
             ent_max_like.grid(row=i, column=3, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_max_like_rank"] = ent_max_like
+            self._bind_focus_highlight(ent_max_like)
     
     def refresh_preset_list(self):
         """Refresh the preset listbox."""
@@ -386,36 +829,35 @@ class PresetEditor:
             widget.destroy()
         self.widgets = {}
         
-        # Title
-        self.title_label = ttk.Label(frame, text="Select a config to start", font=("Segoe UI", 18, "bold"))
+        self.title_label = tk.Label(frame, text="Select a config to start", font=("Segoe UI", 16, "bold"), bg=BG_DARK, fg=TEXT_MAIN)
         self.title_label.pack(anchor=tk.W, pady=(0, 20))
         
         # --- Connection ---
-        core_frame = ttk.LabelFrame(frame, text="Connection (Essential Setup)", padding=15)
+        core_frame = CollapsibleLabelFrame(frame, text="Connection (Essential Setup)", start_open=True)
         core_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_text_field(core_frame, "token", "Discord Account Token (REQUIRED: Your secret account key)", show="*")
-        self.add_text_field(core_frame, "channel_id", "Discord Channel ID (Where the bot should roll)")
-        self.add_text_field(core_frame, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
+        self.add_text_field(core_frame.content, "token", "Discord Account Token (REQUIRED: Your secret account key)", show="*")
+        self.add_text_field(core_frame.content, "channel_id", "Discord Channel ID (Where the bot should roll)")
+        self.add_text_field(core_frame.content, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
         
-        prefix_row = ttk.Frame(core_frame)
+        prefix_row = ttk.Frame(core_frame.content)
         prefix_row.pack(fill=tk.X, pady=5)
         self.add_text_field(prefix_row, "prefix", "Self-Bot Prefix", pack_side=tk.LEFT)
         self.add_text_field(prefix_row, "mudae_prefix", "Mudae Game Prefix", pack_side=tk.LEFT)
         
-        self.add_text_field(core_frame, "roll_command", "Roll Type (wa, ha, ma, etc.)")
-        self.add_number_field(core_frame, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
-        self.add_number_field(core_frame, "start_delay", "Wait Before Starting (seconds)", 0)
-        self.add_checkbox(core_frame, "autostart", "Start with Windows")
+        self.add_text_field(core_frame.content, "roll_command", "Roll Type (wa, ha, ma, etc.)")
+        self.add_number_field(core_frame.content, "delay_seconds", "Wait Time Before Checking Commands (seconds)", 0)
+        self.add_number_field(core_frame.content, "start_delay", "Wait Before Starting (seconds)", 0)
+        self.add_checkbox(core_frame.content, "autostart", "Start with Windows")
         
         # --- Rolling ---
         roll_outer = ttk.Frame(frame)
         roll_outer.pack(fill=tk.X, pady=(0, 15))
-        roll_frame = ttk.LabelFrame(roll_outer, text="Rolling Options", padding=15)
+        roll_frame = CollapsibleLabelFrame(roll_outer, text="Rolling Options", start_open=False)
         roll_frame.pack(fill=tk.X)
         
-        rolling_var = self.add_checkbox(roll_frame, "rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)")
-        roll_sub = self.create_subframe(roll_frame, rolling_var)
+        rolling_var = self.add_checkbox(roll_frame.content, "rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)")
+        roll_sub = self.create_subframe(roll_frame.content, rolling_var, "rolling")
         
         self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
@@ -423,7 +865,7 @@ class PresetEditor:
         self.add_checkbox(roll_sub, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
         
         auto_rolls_var = self.add_checkbox(roll_sub, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
-        auto_rolls_sub = self.create_subframe(roll_sub, auto_rolls_var)
+        auto_rolls_sub = self.create_subframe(roll_sub, auto_rolls_var, "auto_rolls_enabled")
         self.add_number_field(auto_rolls_sub, "auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0)
         self.add_checkbox(auto_rolls_sub, "auto_rolls_only_claim_hour", "Only Use Daily Rolls in Claim Hour")
         
@@ -432,42 +874,56 @@ class PresetEditor:
         # --- Stacked Rolls ($us) ---
         us_outer = ttk.Frame(frame)
         us_outer.pack(fill=tk.X, pady=(0, 15))
-        us_frame = ttk.LabelFrame(us_outer, text="Saved Rolls ($us)", padding=15)
+        us_frame = CollapsibleLabelFrame(us_outer, text="Saved Rolls ($us)", start_open=False)
         us_frame.pack(fill=tk.X)
         
-        us_enabled_var = self.add_checkbox(us_frame, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
-        us_sub = self.create_subframe(us_frame, us_enabled_var)
+        us_enabled_var = self.add_checkbox(us_frame.content, "auto_us_enabled", "Automatically Use Saved Rolls ($us)")
+        us_sub = self.create_subframe(us_frame.content, us_enabled_var, "auto_us_enabled")
         
         self.add_checkbox(us_sub, "bulk_us_enabled", "Bulk US Mode (Pull all rolls at once instead of in batches of 20)")
         self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
         self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
-        self.add_checkbox(us_frame, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
-        self.add_checkbox(us_frame, "mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)")
+        self.add_checkbox(us_frame.content, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
+        self.add_checkbox(us_frame.content, "mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)")
         
         # --- Claiming ---
-        claim_frame = ttk.LabelFrame(frame, text="Claim Rules", padding=15)
+        claim_frame = CollapsibleLabelFrame(frame, text="Claim Rules", start_open=False)
         claim_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_number_field(claim_frame, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
-        claim_interval_entry = self.add_number_field(claim_frame, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
-        self.add_number_field(claim_frame, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0)
-        self.add_number_field(claim_frame, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
-        self.add_checkbox(claim_frame, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
-        self.add_number_field(claim_frame, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
-        self.add_checkbox(claim_frame, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
-        self.add_checkbox(claim_frame, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
+        self.add_number_field(claim_frame.content, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
+        claim_interval_entry = self.add_number_field(claim_frame.content, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        self.add_number_field(claim_frame.content, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0,
+                              description="Claim/Like rank limits let you claim highly-ranked characters even if they are worth less than your Minimum Kakera value.")
+        self.add_number_field(claim_frame.content, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
+        
+        self.add_checkbox(claim_frame.content, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
+        self.add_number_field(claim_frame.content, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
+        self.add_checkbox(claim_frame.content, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
+        self.add_checkbox(claim_frame.content, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
         
         # Hybrid Smart Panic Claim
-        hybrid_var = self.add_checkbox(claim_frame, "enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)")
-        hybrid_sub = self.create_subframe(claim_frame, hybrid_var)
+        hybrid_var = self.add_checkbox(claim_frame.content, "enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)")
+        hybrid_sub = self.create_subframe(claim_frame.content, hybrid_var, "enable_hybrid_panic_claim")
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300)
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
-
+ 
         # claim_rounds_thresholds
-        self.rounds_frame = ttk.LabelFrame(claim_frame, text="Dynamic Cooldown Rounds (Hourly Thresholds)", padding=10)
+        self.rounds_frame = tk.LabelFrame(
+            claim_frame.content,
+            text="Dynamic Cooldown Rounds (Hourly Thresholds)",
+            bg=BG_DARK,
+            fg=ACCENT,
+            bd=1,
+            relief="solid",
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=0,
+            font=("Segoe UI", 10, "bold"),
+            padx=10,
+            pady=10
+        )
         self.rounds_frame.pack(fill=tk.X, pady=10)
         self.rebuild_rounds_frame(180)
-
+        
         def on_interval_change(*args):
             try:
                 val = float(claim_interval_entry.get().strip() or "180")
@@ -477,205 +933,353 @@ class PresetEditor:
         claim_interval_entry.bind("<FocusOut>", on_interval_change)
         claim_interval_entry.bind("<KeyRelease>", on_interval_change)
         
-        # --- Sniping ---
-        snipe_outer = ttk.Frame(frame)
-        snipe_outer.pack(fill=tk.X, pady=(0, 15))
-        snipe_frame = ttk.LabelFrame(snipe_outer, text="Sniping & Stealing", padding=15)
-        snipe_frame.pack(fill=tk.X)
+        # --- Character Sniping & Stealing ---
+        char_snipe_outer = ttk.Frame(frame)
+        char_snipe_outer.pack(fill=tk.X, pady=(0, 15))
+        char_snipe_frame = CollapsibleLabelFrame(char_snipe_outer, text="Character Sniping & Stealing", start_open=False)
+        char_snipe_frame.pack(fill=tk.X)
         
-        snipe_mode_var = self.add_checkbox(snipe_frame, "snipe_mode", "Snipe Characters (Claim characters rolled by other people)")
-        snipe_sub = self.create_subframe(snipe_frame, snipe_mode_var)
+        snipe_mode_var = self.add_checkbox(char_snipe_frame.content, "snipe_mode", "Snipe Characters (Claim characters rolled by other people)")
+        snipe_sub = self.create_subframe(char_snipe_frame.content, snipe_mode_var, "snipe_mode")
         self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
         self.add_checkbox(snipe_sub, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
         self.add_list_field(snipe_sub, "snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)")
         
-        reactive_snipe_var = self.add_checkbox(snipe_frame, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
-        reactive_sub = self.create_subframe(snipe_frame, reactive_snipe_var)
+        reactive_snipe_var = self.add_checkbox(char_snipe_frame.content, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
+        reactive_sub = self.create_subframe(char_snipe_frame.content, reactive_snipe_var, "reactive_snipe_on_own_rolls")
         self.add_number_field(reactive_sub, "reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0)
         
         # Series snipe
-        series_snipe_var = self.add_checkbox(snipe_frame, "series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)")
-        series_sub = self.create_subframe(snipe_frame, series_snipe_var)
+        series_snipe_var = self.add_checkbox(char_snipe_frame.content, "series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)")
+        series_sub = self.create_subframe(char_snipe_frame.content, series_snipe_var, "series_snipe_mode")
         self.add_number_field(series_sub, "series_snipe_delay", "Series Snipe Wait Time (Wait X seconds before stealing from series)", 3)
         self.add_list_field(series_sub, "series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)")
         
         # Kakera snipe
-        kakera_snipe_var = self.add_checkbox(snipe_frame, "kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)")
-        kakera_sub = self.create_subframe(snipe_frame, kakera_snipe_var)
-        self.add_number_field(kakera_sub, "kakera_snipe_threshold", "Minimum Value to Steal (Only steal if worth this much)", 0)
+        kakera_snipe_var = self.add_checkbox(char_snipe_frame.content, "kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)")
+        kakera_sub = self.create_subframe(char_snipe_frame.content, kakera_snipe_var, "kakera_snipe_mode")
+        self.add_number_field(kakera_sub, "kakera_snipe_threshold", "Minimum Value to Steal (Only steal if worth this much)", 0,
+                              description="Note: Applies to the calculated Kakera value of characters rolled by other players.")
         
-        kakera_react_snipe_var = self.add_checkbox(snipe_frame, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
-        kakera_react_sub = self.create_subframe(snipe_frame, kakera_react_snipe_var)
+        self.add_list_field(char_snipe_frame.content, "character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).")
+        
+        # $rt settings
+        self.add_checkbox(char_snipe_frame.content, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
+        self.add_checkbox(char_snipe_frame.content, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
+        
+        # Snipe Chat Reactions
+        enable_chat_var = self.add_checkbox(char_snipe_frame.content, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
+        chat_sub = self.create_subframe(char_snipe_frame.content, enable_chat_var, "enable_snipe_chat_reactions")
+        self.add_list_field(chat_sub, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        
+        # --- Kakera Reaction Collection ---
+        kakera_react_outer = ttk.Frame(frame)
+        kakera_react_outer.pack(fill=tk.X, pady=(0, 15))
+        kakera_react_frame = CollapsibleLabelFrame(kakera_react_outer, text="Kakera Reaction Collection", start_open=False)
+        kakera_react_frame.pack(fill=tk.X)
+        
+        kakera_react_snipe_var = self.add_checkbox(kakera_react_frame.content, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
+        kakera_react_sub = self.create_subframe(kakera_react_frame.content, kakera_react_snipe_var, "kakera_reaction_snipe_mode")
         self.add_number_field(kakera_react_sub, "kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75)
         self.add_list_field(kakera_react_sub, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
         
-        self.add_checkbox(snipe_frame, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
-        self.add_checkbox(snipe_frame, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
-        self.add_checkbox(snipe_frame, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)")
-        self.add_list_field(snipe_frame, "character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).")
+        self.add_checkbox(kakera_react_frame.content, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
+        self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
         
-        # $rt settings
-        self.add_checkbox(snipe_frame, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
-        self.add_checkbox(snipe_frame, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
+        self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
         
-        # Snipe Chat Reactions
-        enable_chat_var = self.add_checkbox(snipe_frame, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
-        chat_sub = self.create_subframe(snipe_frame, enable_chat_var)
-        self.add_list_field(chat_sub, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
-        
-        self.add_checkbox(snipe_frame, "op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters")
+        self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters")
         
         # --- Wishlists & Filters ---
-        list_frame = ttk.LabelFrame(frame, text="Wishlists & Ignored Characters", padding=15)
+        list_frame = CollapsibleLabelFrame(frame, text="Wishlists & Ignored Characters", start_open=False)
         list_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_list_field(list_frame, "wishlist", "Character Wishlist (Names of characters you want to auto-claim)")
-        self.add_list_field(list_frame, "avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)")
+        self.add_list_field(list_frame.content, "wishlist", "Character Wishlist (Names of characters you want to auto-claim)")
+        self.add_list_field(list_frame.content, "avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)")
         
-        farm_var = self.add_checkbox(list_frame, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
-        farm_sub = self.create_subframe(list_frame, farm_var)
+        farm_var = self.add_checkbox(list_frame.content, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
+        farm_sub = self.create_subframe(list_frame.content, farm_var, "farm_character_enabled")
         self.add_text_field(farm_sub, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
         
         # --- Auto-Divorce ---
-        divorce_var = self.add_checkbox(list_frame, "auto_divorce_enabled", "Auto-Divorce (Automatically separate low-value characters after claiming)")
-        divorce_sub = self.create_subframe(list_frame, divorce_var)
+        divorce_var = self.add_checkbox(list_frame.content, "auto_divorce_enabled", "Auto-Divorce (Automatically separate low-value characters after claiming)")
+        divorce_sub = self.create_subframe(list_frame.content, divorce_var, "auto_divorce_enabled")
         self.add_number_field(divorce_sub, "auto_divorce_max_kakera", "Kakera Threshold (Divorce if character value ≤ this)", 50)
         self.add_list_field(divorce_sub, "auto_divorce_series", "Divorce Series List (Always divorce characters from these series)")
         
         # --- Emoji Settings ---
-        emoji_frame = ttk.LabelFrame(frame, text="Custom Emojis (Advanced)", padding=15)
+        emoji_frame = CollapsibleLabelFrame(frame, text="Custom Emojis (Advanced)", start_open=False)
         emoji_frame.pack(fill=tk.X, pady=(0, 15))
         
-        ttk.Label(emoji_frame, text="Uncheck to use defaults. Check with empty field to disable.", 
+        ttk.Label(emoji_frame.content, text="Uncheck to use defaults. Check with empty field to disable.", 
                  foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(0, 10))
         
-        self.add_optional_list_field(emoji_frame, "claim_emojis", "Claim Emojis", 
+        self.add_optional_list_field(emoji_frame.content, "claim_emojis", "Claim Emojis", 
                                      ", ".join(DEFAULT_CLAIM_EMOJIS))
-        self.add_optional_list_field(emoji_frame, "kakera_emojis", "Kakera Emojis", 
+        self.add_optional_list_field(emoji_frame.content, "kakera_emojis", "Kakera Emojis", 
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
-        self.add_optional_list_field(emoji_frame, "chaos_emojis", "Chaos Emojis", 
+        self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Chaos Emojis", 
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
-        self.add_optional_list_field(emoji_frame, "sphere_perk_emojis", "Sphere Perk Emojis", 
+        self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Sphere Perk Emojis", 
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
         
         # [NEW] Task 5: Randomized claim reaction emojis
-        self.add_list_field(emoji_frame, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
+        self.add_list_field(emoji_frame.content, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
         
         # [NEW] Task 8: Customizable kakera/sphere priority map
-        self.add_list_field(emoji_frame, "kakera_priority_order", "Kakera Priority Order (Highest priority first, comma-separated)")
-        ttk.Label(emoji_frame, text="Default: kakeraP, kakeraC, kakeraL, kakeraW, kakeraR, kakeraO, kakeraD, kakeraY, kakeraG, kakeraT, kakera",
-                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        self.add_list_field(emoji_frame.content, "kakera_priority_order", "Kakera Priority Order (Highest priority first, comma-separated)",
+                            description="Default: kakeraP, kakeraC, kakeraL, kakeraW, kakeraR, kakeraO, kakeraD, kakeraY, kakeraG, kakeraT, kakera")
         
         # [NEW] Sphere click targets setting
-        self.add_list_field(emoji_frame, "sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)")
+        self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)")
         
         # --- Anti-Detection ---
         human_outer = ttk.Frame(frame)
         human_outer.pack(fill=tk.X, pady=(0, 15))
-        human_frame = ttk.LabelFrame(human_outer, text="Anti-Ban (Stealth Mode)", padding=15)
+        human_frame = CollapsibleLabelFrame(human_outer, text="Anti-Ban (Stealth Mode)", start_open=False)
         human_frame.pack(fill=tk.X)
         
-        human_var = self.add_checkbox(human_frame, "humanization_enabled", "Anti-Ban Stealth (Randomizes timing to look like a real human)")
-        human_sub = self.create_subframe(human_frame, human_var)
+        human_var = self.add_checkbox(human_frame.content, "humanization_enabled", "Anti-Ban Stealth (Randomizes timing to look like a real human)")
+        human_sub = self.create_subframe(human_frame.content, human_var, "humanization_enabled")
         
         self.add_number_field(human_sub, "humanization_window_minutes", "Random Wait Time (minutes) to Look Like a Real Human", 40)
         self.add_number_field(human_sub, "humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5)
         
         # Inactive hours
-        inactive_row = ttk.Frame(human_sub)
+        inactive_row = tk.Frame(human_sub, bg=BG_DARK)
         inactive_row.pack(fill=tk.X, pady=5)
-        ttk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 1-7, 23-6):").pack(anchor=tk.W)
-        ttk.Label(inactive_row, text="The bot will not roll during these hours (uses your local time)",
-                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        inactive_entry = ttk.Entry(inactive_row)
-        inactive_entry.pack(fill=tk.X)
+        lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 1-7, 23-6):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_sleep.pack(anchor=tk.W)
+        lbl_sleep_desc = tk.Label(inactive_row, text="The bot will not roll during these hours (uses your local time)",
+                 bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
+        lbl_sleep_desc.pack(anchor=tk.W)
+        inactive_entry = tk.Entry(
+            inactive_row,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        inactive_entry.pack(fill=tk.X, ipady=4)
         self.widgets["inactive_hours"] = inactive_entry
+        self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (e.g. 1-7, 23-6):", "inactive_hours")
+        self._bind_focus_highlight(inactive_entry)
         
         # Reactive kakera delay range
-        range_row = ttk.Frame(human_sub)
+        range_row = tk.Frame(human_sub, bg=BG_DARK)
         range_row.pack(fill=tk.X, pady=5)
-        ttk.Label(range_row, text="Self-Roll Kakera Delay (Random wait range in seconds):").pack(anchor=tk.W)
-        range_inputs = ttk.Frame(range_row)
+        lbl_delay = tk.Label(range_row, text="Self-Roll Kakera Delay (Random wait range in seconds):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_delay.pack(anchor=tk.W)
+        range_inputs = tk.Frame(range_row, bg=BG_DARK)
         range_inputs.pack(fill=tk.X)
         
-        self.widgets["reactive_kakera_delay_min"] = ttk.Entry(range_inputs, width=10)
-        self.widgets["reactive_kakera_delay_min"].pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(range_inputs, text="to").pack(side=tk.LEFT, padx=5)
-        self.widgets["reactive_kakera_delay_max"] = ttk.Entry(range_inputs, width=10)
-        self.widgets["reactive_kakera_delay_max"].pack(side=tk.LEFT, padx=(5, 0))
+        self.widgets["reactive_kakera_delay_min"] = tk.Entry(
+            range_inputs, 
+            width=10,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        self.widgets["reactive_kakera_delay_min"].pack(side=tk.LEFT, padx=(0, 5), ipady=4)
+        lbl_to = tk.Label(range_inputs, text="to", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_to.pack(side=tk.LEFT, padx=5)
+        self.widgets["reactive_kakera_delay_max"] = tk.Entry(
+            range_inputs, 
+            width=10,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        self.widgets["reactive_kakera_delay_max"].pack(side=tk.LEFT, padx=(5, 0), ipady=4)
+        
+        self._register_settings_widget(human_frame.content, range_row, "Self-Roll Kakera Delay (Random wait range in seconds):", "reactive_kakera_delay")
+        self._bind_focus_highlight(self.widgets["reactive_kakera_delay_min"])
+        self._bind_focus_highlight(self.widgets["reactive_kakera_delay_max"])
         
         # --- Advanced ---
-        power_frame = ttk.LabelFrame(frame, text="Power & Expert Settings", padding=15)
+        power_frame = CollapsibleLabelFrame(frame, text="Power & Expert Settings", start_open=False)
         power_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.add_checkbox(power_frame, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
-        self.add_checkbox(power_frame, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
-        self.add_checkbox(power_frame, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
+        self.add_checkbox(power_frame.content, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
+        self.add_checkbox(power_frame.content, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
+        self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
-        self.add_number_field(power_frame, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
-        self.add_checkbox(power_frame, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
-        self.add_text_field(power_frame, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
-        self.add_checkbox(power_frame, "debug_mode", "Expert Logs (Show technical data for every single roll)")
+        self.add_number_field(power_frame.content, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
+        self.add_checkbox(power_frame.content, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
+        self.add_text_field(power_frame.content, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
+        self.add_checkbox(power_frame.content, "debug_mode", "Expert Logs (Show technical data for every single roll)")
         
         # [NEW] Task 6: Main account ID for wishlist syncing
-        self.add_text_field(power_frame, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
+        self.add_text_field(power_frame.content, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
         
         # [NEW] Task 7: Scheduled roll times
-        sched_row = ttk.Frame(power_frame)
+        sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
         sched_row.pack(fill=tk.X, pady=5)
-        ttk.Label(sched_row, text="Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):").pack(anchor=tk.W)
-        ttk.Label(sched_row, text="If set, the bot will roll at these specific times instead of interval loops. Respects humanization.",
-                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        sched_entry = ttk.Entry(sched_row)
-        sched_entry.pack(fill=tk.X)
+        lbl_sched = tk.Label(sched_row, text="Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_sched.pack(anchor=tk.W)
+        lbl_sched_desc = tk.Label(sched_row, text="If set, the bot will roll at these specific times instead of interval loops. Respects humanization.",
+                 bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
+        lbl_sched_desc.pack(anchor=tk.W)
+        sched_entry = tk.Entry(
+            sched_row,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        sched_entry.pack(fill=tk.X, ipady=4)
         self.widgets["scheduled_roll_times"] = sched_entry
+        self._register_settings_widget(power_frame.content, sched_row, "Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):", "scheduled_roll_times")
+        self._bind_focus_highlight(sched_entry)
         
         # --- Action Buttons ---
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=20)
+        self.btn_frame = tk.Frame(frame, bg=BG_DARK)
+        self.btn_frame.pack(fill=tk.X, pady=20)
         
-        ttk.Button(btn_frame, text="💾 Save Changes", style="Accent.TButton", 
-                  command=self.save_current_preset).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(btn_frame, text="▶ Launch Bot", style="Success.TButton",
-                  command=self.run_bot).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(btn_frame, text="🗑 Delete Config", style="Danger.TButton",
-                  command=self.delete_preset).pack(side=tk.RIGHT)
+        self.create_flat_button(
+            self.btn_frame, "💾 Save Changes", self.save_current_preset,
+            bg_color=COLOR_SUCCESS, fg_color=BG_DARK, hover_bg="#b5e8b0"
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.create_flat_button(
+            self.btn_frame, "▶ Launch Bot", self.run_bot,
+            bg_color=ACCENT, fg_color=BG_DARK, hover_bg=ACCENT_ALT
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.create_flat_button(
+            self.btn_frame, "🗑 Delete Config", self.delete_preset,
+            bg_color=COLOR_DANGER, fg_color=BG_DARK, hover_bg="#eba0ac"
+        ).pack(side=tk.RIGHT)
     
-    def add_text_field(self, parent, key, label, show=None, pack_side=None):
+    def add_text_field(self, parent, key, label, show=None, pack_side=None, description=None):
         """Add a text entry field."""
-        container = ttk.Frame(parent)
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
         if pack_side:
             container.pack(side=pack_side, fill=tk.X, expand=True, padx=5, pady=5)
         else:
             container.pack(fill=tk.X, pady=5)
         
-        ttk.Label(container, text=label).pack(anchor=tk.W)
-        entry = ttk.Entry(container, show=show)
-        entry.pack(fill=tk.X)
-        self.widgets[key] = entry
-    
-    def add_number_field(self, parent, key, label, default):
-        """Add a numeric entry field."""
-        container = ttk.Frame(parent)
-        container.pack(fill=tk.X, pady=5)
+        lbl = tk.Label(container, text=label, bg=container.cget("bg"), fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl.pack(anchor=tk.W)
         
-        ttk.Label(container, text=f"{label} (default: {default})").pack(anchor=tk.W)
-        entry = ttk.Entry(container, width=15)
-        entry.pack(anchor=tk.W)
+        if description:
+            lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
+            lbl_desc.pack(anchor=tk.W)
+            
+        entry = tk.Entry(
+            container, 
+            show=show,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        entry.pack(fill=tk.X, ipady=4)
         self.widgets[key] = entry
+        
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        self._bind_focus_highlight(entry)
+        
+        if key == "token":
+            tooltip_msg = "Safety: Your token is stored locally on your PC in presets.json. Never share this with anyone. To get it, open Discord in browser, open DevTools (F12), go to Network, filter by '/api', click any request, and copy the 'Authorization' header value."
+            Tooltip(lbl, tooltip_msg)
+            Tooltip(entry, tooltip_msg)
+            
         return entry
     
-    def add_checkbox(self, parent, key, label):
+    def add_number_field(self, parent, key, label, default, description=None):
+        """Add a numeric entry field."""
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
+        container.pack(fill=tk.X, pady=5)
+        
+        lbl = tk.Label(container, text=f"{label} (default: {default})", bg=container.cget("bg"), fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl.pack(anchor=tk.W)
+        
+        if description:
+            lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
+            lbl_desc.pack(anchor=tk.W)
+            
+        entry = tk.Entry(
+            container, 
+            width=15,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        entry.pack(anchor=tk.W, ipady=4)
+        self.widgets[key] = entry
+        
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        self._bind_focus_highlight(entry)
+        
+        if key == "kakera_snipe_threshold":
+            tooltip_msg = "Character Sniping: The bot will only snipe characters rolled by other players if their value is greater than or equal to this threshold. Set to 0 to steal all characters."
+            Tooltip(lbl, tooltip_msg)
+            Tooltip(entry, tooltip_msg)
+            
+        return entry
+    
+    def add_checkbox(self, parent, key, label, description=None):
         """Add a checkbox."""
         var = tk.BooleanVar()
-        cb = ttk.Checkbutton(parent, text=label, variable=var)
-        cb.pack(anchor=tk.W, pady=2)
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
+        container.pack(fill=tk.X, pady=2)
+        
+        cb = ttk.Checkbutton(container, text=label, variable=var)
+        cb.pack(anchor=tk.W)
         self.widgets[key] = var
+        
+        if description:
+            lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
+            lbl_desc.pack(anchor=tk.W, padx=20)
+            
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        
+        if key == "immediate_kakera_click":
+            Tooltip(cb, "If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones based on your kakera priority list.")
+        elif key == "lurker_mode":
+            Tooltip(cb, "Lurker Strategy: The bot will only watch the channel and steal characters rolled by others without performing rolls itself. Near the end of the claim window, it will perform panic claims.")
+            
         return var
 
-    def create_subframe(self, parent, var):
+    def create_subframe(self, parent, var, key=None):
         """Create a subframe that shows/hides based on a BooleanVar."""
-        subframe = ttk.Frame(parent)
+        subframe = tk.Frame(parent, bg=self._get_parent_bg(parent))
+        if key:
+            self.subframe_controls[subframe] = key
         
         def toggle(*args):
             if var.get():
@@ -690,19 +1294,39 @@ class PresetEditor:
         var.trace_add("write", toggle)
         return subframe
     
-    def add_list_field(self, parent, key, label):
+    def add_list_field(self, parent, key, label, description=None):
         """Add a comma-separated list field."""
-        container = ttk.Frame(parent)
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
         container.pack(fill=tk.X, pady=5)
         
-        ttk.Label(container, text=label).pack(anchor=tk.W)
-        entry = ttk.Entry(container)
-        entry.pack(fill=tk.X)
+        lbl = tk.Label(container, text=label, bg=container.cget("bg"), fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl.pack(anchor=tk.W)
+        
+        if description:
+            lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
+            lbl_desc.pack(anchor=tk.W)
+            
+        entry = tk.Entry(
+            container,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        entry.pack(fill=tk.X, ipady=4)
         self.widgets[key] = entry
+        
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        self._bind_focus_highlight(entry)
     
     def add_optional_list_field(self, parent, key, label, placeholder):
         """Add an optional list field with checkbox to enable/disable."""
-        container = ttk.Frame(parent)
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
         container.pack(fill=tk.X, pady=5)
         
         # Checkbox to enable
@@ -711,8 +1335,19 @@ class PresetEditor:
         cb.pack(anchor=tk.W)
         
         # Entry for values
-        entry = ttk.Entry(container)
-        entry.pack(fill=tk.X, padx=(20, 0))
+        entry = tk.Entry(
+            container,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat"
+        )
+        entry.pack(fill=tk.X, padx=(20, 0), ipady=4)
         entry.insert(0, placeholder)
         entry.configure(state="disabled")
         
@@ -727,6 +1362,9 @@ class PresetEditor:
         
         self.widgets[f"{key}_enabled"] = var
         self.widgets[key] = entry
+        
+        self._register_settings_widget(parent, container, label, key)
+        self._bind_focus_highlight(entry)
     
     def on_preset_select(self, event):
         """Handle preset selection from listbox."""
@@ -761,7 +1399,7 @@ class PresetEditor:
                     "hybrid_panic_instant_claim_max_rank"]:
             if key in self.widgets:
                 widget = self.widgets[key]
-                if isinstance(widget, ttk.Entry):
+                if isinstance(widget, (ttk.Entry, tk.Entry)):
                     widget.delete(0, tk.END)
                     value = data.get(key, "")
                     if value is not None:
@@ -796,7 +1434,7 @@ class PresetEditor:
                     "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
-                if isinstance(widget, ttk.Entry):
+                if isinstance(widget, (ttk.Entry, tk.Entry)):
                     widget.delete(0, tk.END)
                     value = data.get(key, DEFAULTS.get(key, []))
                     if isinstance(value, list):
