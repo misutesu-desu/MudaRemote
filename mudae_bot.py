@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.1"
+CURRENT_VERSION = "4.5.2"
 
 # Global Pause State
 _global_paused = False
@@ -417,6 +417,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_divorce_enabled_preset=False,
             auto_divorce_max_kakera_preset=50,
             auto_divorce_series_preset=None,
+            auto_divorce_blacklist_preset=None,
+            auto_divorce_blacklist_series_preset=None,
             mk_bypass_power_check=False,
             snipe_channels_preset=None,
             max_claim_rank_preset=0,
@@ -574,6 +576,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_divorce_enabled = auto_divorce_enabled_preset
     client.auto_divorce_max_kakera = auto_divorce_max_kakera_preset if auto_divorce_max_kakera_preset is not None else 50
     client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
+    client.auto_divorce_blacklist = set([c.lower().strip() for c in (auto_divorce_blacklist_preset or []) if c.strip()])
+    client.auto_divorce_blacklist_series = [s.lower().strip() for s in (auto_divorce_blacklist_series_preset or []) if s.strip()]
     client.mk_bypass_power_check = mk_bypass_power_check
     client.auto_p_enabled = auto_p_enabled
     client.enable_hybrid_panic_claim = enable_hybrid_panic_claim_preset
@@ -1740,16 +1744,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if success:
             BotLogger.log(f"{lbl}: SUCCESS! We got {char_name}.", preset_name, "CLAIM")
             if client.auto_divorce_enabled:
-                should = False
-                reason = ""
-                if character_kakera > 0 and character_kakera <= client.auto_divorce_max_kakera:
-                    should, reason = True, f"kakera {character_kakera} <= {client.auto_divorce_max_kakera}"
-                if not should and character_series and client.auto_divorce_series:
-                    if any(s.lower() in character_series.lower() for s in client.auto_divorce_series):
-                        should, reason = True, f"series match in '{character_series[:60]}'"
-                if should:
-                    BotLogger.log(f"Auto-Divorce: {char_name} qualifies ({reason}).", preset_name, "INFO")
-                    await execute_auto_divorce(client, channel, char_name)
+                is_blacklisted = False
+                if char_name.lower() in getattr(client, 'auto_divorce_blacklist', set()):
+                    is_blacklisted = True
+                    BotLogger.log(f"Auto-Divorce: {char_name} is in the blacklist. Keeping character.", preset_name, "INFO")
+                elif character_series and getattr(client, 'auto_divorce_blacklist_series', []):
+                    for s in client.auto_divorce_blacklist_series:
+                        if s in character_series.lower():
+                            is_blacklisted = True
+                            BotLogger.log(f"Auto-Divorce: {char_name} series ({character_series[:60]}) matches blacklist series keyword '{s}'. Keeping character.", preset_name, "INFO")
+                            break
+                
+                if not is_blacklisted:
+                    should = False
+                    reason = ""
+                    if character_kakera > 0 and character_kakera <= client.auto_divorce_max_kakera:
+                        should, reason = True, f"kakera {character_kakera} <= {client.auto_divorce_max_kakera}"
+                    if not should and character_series and client.auto_divorce_series:
+                        if any(s.lower() in character_series.lower() for s in client.auto_divorce_series):
+                            should, reason = True, f"series match in '{character_series[:60]}'"
+                    if should:
+                        BotLogger.log(f"Auto-Divorce: {char_name} qualifies ({reason}).", preset_name, "INFO")
+                        await execute_auto_divorce(client, channel, char_name)
             
             client.claim_right_available = False
             client.last_successfully_claimed_character = char_name.lower()
@@ -2673,6 +2689,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("farm_character", ""), preset_data.get("op_perk_5_only", False),
                 preset_data.get("farm_character_enabled", False), preset_data.get("auto_divorce_enabled", False),
                 preset_data.get("auto_divorce_max_kakera", 50), preset_data.get("auto_divorce_series", []),
+                preset_data.get("auto_divorce_blacklist", []), preset_data.get("auto_divorce_blacklist_series", []),
                 preset_data.get("mk_bypass_power_check", False), preset_data.get("snipe_channels", []),
                 preset_data.get("max_claim_rank", 0), preset_data.get("max_like_rank", 0),
                 preset_data.get("auto_p_enabled", True),

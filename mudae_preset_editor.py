@@ -195,6 +195,8 @@ DEFAULTS = {
     "auto_divorce_enabled": False,
     "auto_divorce_max_kakera": 50,
     "auto_divorce_series": [],
+    "auto_divorce_blacklist": [],
+    "auto_divorce_blacklist_series": [],
     "mk_bypass_power_check": False,
     "snipe_channels": [],
     "max_like_rank": 0,
@@ -285,6 +287,8 @@ TEXT_SETTINGS = [
     ("kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)", [], True),
     ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
+    ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
+    ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
@@ -678,6 +682,11 @@ class PresetEditor:
             sidebar_btns, "Copy Selected", self.duplicate_preset, 
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.create_flat_button(
+            sidebar, "📤 Share Preset", self.share_preset,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
+        ).pack(fill=tk.X, pady=(5, 0))
         
         # Right side - Settings panel
         self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
@@ -1005,7 +1014,9 @@ class PresetEditor:
         divorce_var = self.add_checkbox(list_frame.content, "auto_divorce_enabled", "Auto-Divorce (Automatically separate low-value characters after claiming)")
         divorce_sub = self.create_subframe(list_frame.content, divorce_var, "auto_divorce_enabled")
         self.add_number_field(divorce_sub, "auto_divorce_max_kakera", "Kakera Threshold (Divorce if character value ≤ this)", 50)
-        self.add_list_field(divorce_sub, "auto_divorce_series", "Divorce Series List (Always divorce characters from these series)")
+        self.add_list_field(divorce_sub, "auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)")
+        self.add_list_field(divorce_sub, "auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)")
+        self.add_list_field(divorce_sub, "auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)")
         
         # --- Emoji Settings ---
         emoji_frame = CollapsibleLabelFrame(frame, text="Custom Emojis (Advanced)", start_open=False)
@@ -1430,7 +1441,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets",
+                    "snipe_chat_messages", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "snipe_channels", "sphere_click_targets",
                     "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
@@ -1597,7 +1608,7 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "snipe_channels", "sphere_click_targets",
+                    "snipe_chat_messages", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "snipe_channels", "sphere_click_targets",
                     "character_snipe_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
@@ -1830,6 +1841,30 @@ class PresetEditor:
             
             self.refresh_preset_list()
             self.select_preset(name)
+
+    def share_preset(self):
+        """Export the currently selected preset to the clipboard without exposing the token."""
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No preset selected.")
+            return
+        
+        preset_data = self.presets.get(self.current_preset)
+        if not preset_data:
+            return
+            
+        import copy
+        clean_data = copy.deepcopy(preset_data)
+        clean_data["token"] = ""
+        
+        json_str = json.dumps(clean_data, indent=4, ensure_ascii=False)
+        
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(json_str)
+            self.root.update()
+            messagebox.showinfo("Success", "Preset copied to clipboard without token!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to copy preset to clipboard:\n{e}")
     
     def delete_preset(self):
         """Delete the current preset."""
