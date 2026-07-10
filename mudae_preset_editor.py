@@ -199,6 +199,7 @@ DEFAULTS = {
     "auto_divorce_blacklist_series": [],
     "mk_bypass_power_check": False,
     "snipe_channels": [],
+    "max_claim_rank": 0,
     "max_like_rank": 0,
     "enable_hybrid_panic_claim": False,
     "hybrid_panic_instant_claim_min_kakera": 300,
@@ -247,6 +248,7 @@ BOOL_SETTINGS = [
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
     ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
+    ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
 ]
 
 # Numeric settings with their display names, defaults, and types

@@ -26,7 +26,9 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.2"
+CURRENT_VERSION = "4.5.3"
+
+IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
 # Global Pause State
 _global_paused = False
@@ -160,6 +162,8 @@ def _keyboard_listener_thread():
             except Exception:
                 time.sleep(5)
     else:
+        if IS_TERMUX:
+            return
         import tty, termios, select
         global _original_terminal_settings
         try:
@@ -1623,7 +1627,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.collected_rolls = []
         client.collected_kakera_rolls = []
         
-        for i in range(rolls_left):
+        client.rolls_left = rolls_left
+        while client.rolls_left > 0:
             if client.interrupt_rolling:
                 client.desync_detected = True
                 break
@@ -1644,11 +1649,150 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if not getattr(client, 'immediate_kakera_click', True) and getattr(client, 'collected_kakera_rolls', []):
             BotLogger.log("Processing collected rolls for Kakera priority collection...", preset_name, "INFO")
+            
+            prio_map = {k.strip(): (idx + 1) * 10 for idx, k in enumerate(reversed(client.kakera_priority_order))}
+            for s in client.sphere_emojis: prio_map[s] = 999
+            prio_map['kakeraP'] = 999
+            
+            clickable_buttons = []
             for msg in client.collected_kakera_rolls:
+                if not msg.embeds or not msg.components:
+                    continue
+                embed = msg.embeds[0]
+                chaos_count = count_chaos_keys(embed)
+                has_sp_perk = "💎/2" in (embed.description or "")
+                
+                only_free = False
+                if client.only_chaos and chaos_count == 0:
+                    only_free = True
+                
+                target_list = client.sphere_perk_emojis if has_sp_perk else (client.chaos_emojis if chaos_count > 0 else client.kakera_emojis)
+                
+                for row_idx, comp in enumerate(msg.components):
+                    for child_idx, btn in enumerate(comp.children):
+                        if hasattr(btn.emoji, 'name') and btn.emoji.name:
+                            name = btn.emoji.name
+                            name_clean = name.rstrip('2')
+                            
+                            is_sphere = (name in client.sphere_emojis) or (name_clean in client.sphere_emojis)
+                            is_free = name == 'kakeraP' or is_sphere or check_is_green(btn)
+                            
+                            if only_free and not is_free:
+                                continue
+                                
+                            is_clickable = False
+                            if is_sphere:
+                                if (name.lower() in client.sphere_click_targets) or (name_clean.lower() in client.sphere_click_targets):
+                                    is_clickable = True
+                            else:
+                                if (name in target_list or name_clean in target_list) or ("kakera" in name.lower() and check_is_green(btn)):
+                                    is_clickable = True
+                                    
+                            if is_clickable:
+                                prio = prio_map.get(name_clean, 0)
+                                if is_sphere or name == 'kakeraP' or check_is_green(btn):
+                                    prio = 999
+                                    
+                                clickable_buttons.append({
+                                    'btn': btn,
+                                    'custom_id': btn.custom_id,
+                                    'pos': (row_idx, child_idx),
+                                    'emoji_name': name,
+                                    'priority': prio,
+                                    'message': msg,
+                                    'is_sphere': is_sphere,
+                                    'is_free': is_free,
+                                    'chaos_count': chaos_count,
+                                    'cost': 0 if is_free else (client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption),
+                                    'char_name': (embed.author.name if embed.author else "Unknown").strip()
+                                })
+                                
+            # Sort globally by priority descending
+            clickable_buttons.sort(key=lambda item: item['priority'], reverse=True)
+            
+            clicks_per_message = {}
+            for item in clickable_buttons:
+                msg = item['message']
+                custom_id = item['custom_id']
+                pos = item['pos']
+                name = item['emoji_name']
+                is_free = item['is_free']
+                cost = item['cost']
+                chaos_count = item['chaos_count']
+                char_name = item['char_name']
+                
+                msg_id = msg.id
+                if clicks_per_message.get(msg_id, 0) >= 3:
+                    continue
+                    
+                # Update target message reference to avoid stale element exceptions
                 try:
-                    await claim_character(client, channel, msg, is_kakera=True)
+                    msg = await channel.fetch_message(msg_id)
+                    found = False
+                    for row_idx, c_f in enumerate(msg.components):
+                        for child_idx, b_f in enumerate(c_f.children):
+                            match_custom = (custom_id is not None and b_f.custom_id == custom_id)
+                            match_pos = (pos == (row_idx, child_idx))
+                            if match_custom or (custom_id is None and match_pos):
+                                btn, found = b_f, True
+                                break
+                        if found: break
+                    if not found: continue
+                except Exception:
+                    continue
+                    
+                if getattr(btn, 'disabled', False):
+                    continue
+                    
+                current_pow = get_current_dk_power()
+                if current_pow < cost:
+                    if client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0:
+                        log_name = name
+                        BotLogger.log(f"Dynamic DK Refill: Power too low ({current_pow}% < {cost}%). Sending $dk for {log_name}...", preset_name, "KAKERA")
+                        try:
+                            cmd_ch = _get_command_channel() or channel
+                            await cmd_ch.send(f"{client.mudae_prefix}dk")
+                            client.dk_stock_count = max(0, client.dk_stock_count - 1)
+                            client.current_dk_power = client.max_dk_power
+                            client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                            await asyncio.sleep(1.2 + random.uniform(0.1, 0.4))
+                            current_pow = get_current_dk_power()
+                        except Exception as e:
+                            BotLogger.log(f"Dynamic DK Refill failed: {e}", preset_name, "ERROR")
+
+                if current_pow < cost:
+                    log_name = name
+                    if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
+                        BotLogger.log(f"Insufficient Power ({current_pow}% < {cost}%). Skipping {log_name}.", preset_name, "WARN")
+                        client.last_power_warn = time.time()
+                    continue
+                    
+                if cost > 0 and client.kakera_power_thresholds:
+                    base_name = name.rstrip('2')
+                    spec_name = f"chaos_{base_name}" if chaos_count > 0 else base_name
+                    threshold = client.kakera_power_thresholds.get(spec_name) or client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
+                    if threshold is not None and current_pow < threshold:
+                        BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
+                        continue
+                        
+                if client.debug_mode:
+                    ws_ref = getattr(client, 'ws', None)
+                    sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
+                    BotLogger.log(f"Kakera Click: custom_id={getattr(btn, 'custom_id', 'N/A')} | name={name} | session_id={sid}", preset_name, "DEBUG", client)
+
+                try:
+                    await btn.click()
+                    client.current_dk_power = max(0, get_current_dk_power() - cost)
+                    client.kakera_reacted_messages.add(msg_id)
+                    clicks_per_message[msg_id] = clicks_per_message.get(msg_id, 0) + 1
+                    BotLogger.log(f"Kakera clicked: {char_name} [{name}] (Pw: {client.current_dk_power}%)", preset_name, "KAKERA")
+                    client._last_kakera_click_ts = time.time()
+                    await asyncio.sleep(0.6)
+                except discord.HTTPException as e:
+                    BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                 except Exception as e:
-                    BotLogger.log(f"Error processing deferred kakera roll: {e}", preset_name, "ERROR")
+                    BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
+                    
             client.collected_kakera_rolls.clear()
         
         if is_timing_mode_active:
@@ -2407,8 +2551,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if message.content and not message.embeds and client.rolling_enabled:
             m_bonus = re.search(REGEX_PATTERNS["EXTRA_ROLLS"], message.content)
             if m_bonus and (time.time() - getattr(client, '_last_kakera_click_ts', 0)) <= 10:
-                BotLogger.log(f"Gained +{m_bonus.group(1)} extra rolls from Kakera! Signaling main loop...", preset_name, "KAKERA")
-                if client._immediate_check_event and not client.is_actively_rolling:
+                bonus_amt = int(m_bonus.group(1))
+                client.rolls_left += bonus_amt
+                client.desync_detected = True
+                BotLogger.log(f"Gained +{bonus_amt} extra rolls from Kakera! rolls_left is now {client.rolls_left}.", preset_name, "KAKERA")
+                if client._immediate_check_event:
                     client._immediate_check_event.set()
 
         # Check for claim cooldown or claim interval messages sent to us
@@ -2734,7 +2881,7 @@ def main_menu():
 """
     print("\033[1;36m" + banner + "\033[0m\n")
     _menu_active.set()
-    if os.name != 'nt':
+    if os.name != 'nt' and not IS_TERMUX:
         import termios
         global _original_terminal_settings
         if _original_terminal_settings is not None:
@@ -2744,11 +2891,11 @@ def main_menu():
             except Exception: pass
 
     original_stdin = sys.stdin
-    if os.name != 'nt': sys.stdin = StdinEnterMapper(sys.stdin)
+    if os.name != 'nt' and not IS_TERMUX: sys.stdin = StdinEnterMapper(sys.stdin)
 
     def safe_prompt(q):
         ans = inquirer.prompt(q)
-        if os.name != 'nt':
+        if os.name != 'nt' and not IS_TERMUX:
             try:
                 import termios
                 termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
