@@ -141,6 +141,159 @@ class CollapsibleLabelFrame(ttk.Frame):
             self.toggle_lbl.config(text="▼   " + self.text)
             self.is_open = True
 
+class ChipListWidget(tk.Frame):
+    """An interactive chip/tag list editor widget that transforms comma-separated text into tag chips."""
+    def __init__(self, parent, bg_input, text_main, border_color, accent, bg_panel, text_muted, state_callback=None, *args, **kwargs):
+        super().__init__(parent, bg=parent.cget("bg") if hasattr(parent, "cget") else BG_DARK, *args, **kwargs)
+        self.bg_input = bg_input
+        self.text_main = text_main
+        self.border_color = border_color
+        self.accent = accent
+        self.bg_panel = bg_panel
+        self.text_muted = text_muted
+        self.state_callback = state_callback
+        
+        self.chips = []
+        
+        self.entry_frame = tk.Frame(self, bg=self.cget("bg"))
+        self.entry_frame.pack(fill=tk.X)
+        
+        self.entry = tk.Entry(
+            self.entry_frame,
+            bg=bg_input,
+            fg=text_main,
+            insertbackground=text_main,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=border_color,
+            highlightcolor=accent,
+            relief="flat"
+        )
+        self.entry.pack(fill=tk.X, ipady=4)
+        
+        self.chips_frame = tk.Frame(self, bg=self.cget("bg"))
+        self.chips_frame.pack(fill=tk.X, pady=(4, 0))
+        
+        self.entry.bind("<Return>", self._on_enter)
+        self.entry.bind("<KeyRelease-comma>", self._on_comma)
+        self.entry.bind("<FocusOut>", self._on_focus_out)
+
+    def _on_enter(self, event):
+        self._add_from_entry()
+        return "break"
+
+    def _on_comma(self, event):
+        self._add_from_entry()
+        return "break"
+
+    def _on_focus_out(self, event):
+        self._add_from_entry()
+
+    def _add_from_entry(self):
+        val = self.entry.get().strip()
+        if val.endswith(","):
+            val = val[:-1].strip()
+        if val:
+            parts = [p.strip() for p in val.split(",") if p.strip()]
+            added = False
+            for part in parts:
+                if part not in self.chips:
+                    self.chips.append(part)
+                    added = True
+            if added:
+                if self.state_callback:
+                    self.state_callback()
+                self._redraw_chips()
+            self.entry.delete(0, tk.END)
+
+    def _redraw_chips(self):
+        for w in self.chips_frame.winfo_children():
+            w.destroy()
+        
+        self.chips_frame.update_idletasks()
+        max_width = self.winfo_width()
+        if max_width <= 1:
+            max_width = 600
+            
+        current_row_frame = tk.Frame(self.chips_frame, bg=self.cget("bg"))
+        current_row_frame.pack(fill=tk.X, anchor=tk.W)
+        current_width = 0
+        
+        for idx, text in enumerate(self.chips):
+            chip = tk.Frame(current_row_frame, bg=self.bg_panel, highlightthickness=1, highlightbackground=self.border_color, padx=6, pady=2)
+            lbl = tk.Label(chip, text=text, bg=self.bg_panel, fg=self.text_main, font=("Segoe UI", 9))
+            lbl.pack(side=tk.LEFT)
+            
+            btn = tk.Label(chip, text="×", bg=self.bg_panel, fg=self.text_muted, font=("Segoe UI", 10, "bold"), cursor="hand2")
+            btn.pack(side=tk.LEFT, padx=(4, 0))
+            btn.bind("<Button-1>", lambda e, t=text: self._remove_chip(t))
+            
+            btn.bind("<Enter>", lambda e, b=btn: b.config(fg=COLOR_DANGER))
+            btn.bind("<Leave>", lambda e, b=btn: b.config(fg=self.text_muted))
+            
+            chip_width = len(text) * 7 + 45
+            if current_width + chip_width > max_width and idx > 0:
+                current_row_frame = tk.Frame(self.chips_frame, bg=self.cget("bg"))
+                current_row_frame.pack(fill=tk.X, anchor=tk.W, pady=(4, 0))
+                current_width = 0
+            
+            chip.pack(side=tk.LEFT, padx=(0, 4))
+            current_width += chip_width + 4
+
+    def _remove_chip(self, text):
+        if text in self.chips:
+            self.chips.remove(text)
+            if self.state_callback:
+                self.state_callback()
+            self._redraw_chips()
+
+    def get(self):
+        current_entry = self.entry.get().strip()
+        all_chips = list(self.chips)
+        if current_entry:
+            if current_entry.endswith(","):
+                current_entry = current_entry[:-1].strip()
+            if current_entry and current_entry not in all_chips:
+                all_chips.append(current_entry)
+        return ", ".join(all_chips)
+
+    def delete(self, first, last=None):
+        self.chips = []
+        self.entry.delete(0, tk.END)
+        self._redraw_chips()
+
+    def insert(self, index, value):
+        if value:
+            self.chips = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            self.chips = []
+        self._redraw_chips()
+
+    def configure(self, **kwargs):
+        entry_kwargs = {}
+        for key in ["bg", "highlightbackground", "highlightcolor"]:
+            if key in kwargs:
+                entry_kwargs[key] = kwargs[key]
+                
+        if entry_kwargs:
+            self.entry.configure(**entry_kwargs)
+            
+        super_kwargs = {k: v for k, v in kwargs.items() if k not in ["bg", "highlightbackground", "highlightcolor", "state"]}
+        if super_kwargs:
+            super().configure(**super_kwargs)
+            
+        if "state" in kwargs:
+            state = kwargs["state"]
+            self.entry.configure(state=state)
+            if state == "disabled":
+                self.entry.configure(bg=self.bg_panel)
+            else:
+                self.entry.configure(bg=self.bg_input)
+                
+    def bind(self, sequence=None, func=None, add=None):
+        return self.entry.bind(sequence, func, add)
+
 # --- Constants ---
 PRESETS_FILE = os.path.join(get_base_path(), "presets.json")
 BOT_SCRIPT = os.path.join(get_base_path(), "mudae_bot.py")
@@ -319,6 +472,10 @@ class PresetEditor:
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
         
+        # Track unsaved edits
+        self.is_dirty = False
+        self.loading_preset = False
+        
         # Apply dark theme
         self.apply_theme()
         
@@ -335,11 +492,56 @@ class PresetEditor:
         # Build UI
         self.build_ui()
         
+        # Bind close window protocol
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        
         # Select first preset if exists
         if self.presets:
             first_preset = list(self.presets.keys())[0]
             self.select_preset(first_preset)
     
+    def on_close(self):
+        """Prompt to save changes when closing the window."""
+        if self.prompt_unsaved_changes():
+            self.root.destroy()
+
+    def mark_dirty(self, event=None):
+        """Mark the configuration as modified and update the window title."""
+        if self.loading_preset:
+            return
+        if not self.is_dirty:
+            self.is_dirty = True
+            if self.current_preset:
+                self.title_label.config(text=f"Editing: {self.current_preset} *")
+
+    def prompt_unsaved_changes(self):
+        """Prompt the user if they have unsaved changes. Returns True if safe to proceed, False otherwise."""
+        if not self.is_dirty:
+            return True
+        
+        ans = messagebox.askyesnocancel(
+            "Unsaved Changes",
+            f"You have unsaved changes in '{self.current_preset}'. Do you want to save them before proceeding?",
+            parent=self.root
+        )
+        if ans is True:  # Yes, save and proceed
+            self.save_current_preset()
+            # If save was aborted due to validation error, is_dirty remains True
+            return not self.is_dirty
+        elif ans is False:  # No, discard changes and proceed
+            self.is_dirty = False
+            return True
+        else:  # Cancel
+            return False
+
+    def update_listbox_selection(self, preset_name):
+        """Helper to restore listbox selection to avoid UI desync."""
+        for i in range(self.preset_listbox.size()):
+            if self.preset_listbox.get(i) == preset_name:
+                self.preset_listbox.selection_clear(0, tk.END)
+                self.preset_listbox.selection_set(i)
+                break
+
     def apply_theme(self):
         """Apply the premium Catppuccin Mocha style palette."""
         self.root.configure(bg=BG_DARK)
@@ -790,6 +992,7 @@ class PresetEditor:
             ent_min_k.grid(row=i, column=1, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_min_kakera"] = ent_min_k
             self._bind_focus_highlight(ent_min_k)
+            ent_min_k.bind("<Key>", lambda e: self.mark_dirty())
 
             ent_max_claim = tk.Entry(
                 self.rounds_frame, 
@@ -807,6 +1010,7 @@ class PresetEditor:
             ent_max_claim.grid(row=i, column=2, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_max_claim_rank"] = ent_max_claim
             self._bind_focus_highlight(ent_max_claim)
+            ent_max_claim.bind("<Key>", lambda e: self.mark_dirty())
 
             ent_max_like = tk.Entry(
                 self.rounds_frame, 
@@ -824,6 +1028,7 @@ class PresetEditor:
             ent_max_like.grid(row=i, column=3, padx=5, pady=2, sticky=tk.W)
             self.widgets[f"round_{i}_max_like_rank"] = ent_max_like
             self._bind_focus_highlight(ent_max_like)
+            ent_max_like.bind("<Key>", lambda e: self.mark_dirty())
     
     def refresh_preset_list(self):
         """Refresh the preset listbox."""
@@ -1082,6 +1287,7 @@ class PresetEditor:
         self.widgets["inactive_hours"] = inactive_entry
         self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (e.g. 1-7, 23-6):", "inactive_hours")
         self._bind_focus_highlight(inactive_entry)
+        inactive_entry.bind("<Key>", lambda e: self.mark_dirty())
         
         # Reactive kakera delay range
         range_row = tk.Frame(human_sub, bg=BG_DARK)
@@ -1125,6 +1331,8 @@ class PresetEditor:
         self._register_settings_widget(human_frame.content, range_row, "Self-Roll Kakera Delay (Random wait range in seconds):", "reactive_kakera_delay")
         self._bind_focus_highlight(self.widgets["reactive_kakera_delay_min"])
         self._bind_focus_highlight(self.widgets["reactive_kakera_delay_max"])
+        self.widgets["reactive_kakera_delay_min"].bind("<Key>", lambda e: self.mark_dirty())
+        self.widgets["reactive_kakera_delay_max"].bind("<Key>", lambda e: self.mark_dirty())
         
         # --- Advanced ---
         power_frame = CollapsibleLabelFrame(frame, text="Power & Expert Settings", start_open=False)
@@ -1166,6 +1374,7 @@ class PresetEditor:
         self.widgets["scheduled_roll_times"] = sched_entry
         self._register_settings_widget(power_frame.content, sched_row, "Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):", "scheduled_roll_times")
         self._bind_focus_highlight(sched_entry)
+        sched_entry.bind("<Key>", lambda e: self.mark_dirty())
         
         # --- Action Buttons ---
         self.btn_frame = tk.Frame(frame, bg=BG_DARK)
@@ -1201,8 +1410,11 @@ class PresetEditor:
             lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
             lbl_desc.pack(anchor=tk.W)
             
+        entry_row = tk.Frame(container, bg=container.cget("bg"))
+        entry_row.pack(fill=tk.X)
+            
         entry = tk.Entry(
-            container, 
+            entry_row, 
             show=show,
             bg=BG_INPUT,
             fg=TEXT_MAIN,
@@ -1214,8 +1426,33 @@ class PresetEditor:
             highlightcolor=ACCENT,
             relief="flat"
         )
-        entry.pack(fill=tk.X, ipady=4)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
         self.widgets[key] = entry
+        
+        # Track unsaved edits
+        entry.bind("<Key>", lambda e: self.mark_dirty())
+        
+        if key == "token":
+            # Add dynamic token visibility toggle button
+            def toggle_token_visibility():
+                if entry.cget("show") == "*":
+                    entry.configure(show="")
+                    toggle_btn.configure(text="Hide Token")
+                else:
+                    entry.configure(show="*")
+                    toggle_btn.configure(text="Show Token")
+
+            toggle_btn = self.create_flat_button(
+                entry_row,
+                "Show Token",
+                toggle_token_visibility,
+                bg_color=BG_PANEL,
+                fg_color=TEXT_MAIN,
+                hover_bg=BG_INPUT,
+                font=("Segoe UI", 8, "bold")
+            )
+            toggle_btn.pack(side=tk.RIGHT, padx=(5, 0))
+            toggle_btn.configure(pady=4, padx=10)
         
         self._register_settings_widget(parent, container, label + " " + (description or ""), key)
         self._bind_focus_highlight(entry)
@@ -1255,6 +1492,9 @@ class PresetEditor:
         entry.pack(anchor=tk.W, ipady=4)
         self.widgets[key] = entry
         
+        # Track unsaved edits
+        entry.bind("<Key>", lambda e: self.mark_dirty())
+        
         self._register_settings_widget(parent, container, label + " " + (description or ""), key)
         self._bind_focus_highlight(entry)
         
@@ -1274,6 +1514,9 @@ class PresetEditor:
         cb = ttk.Checkbutton(container, text=label, variable=var)
         cb.pack(anchor=tk.W)
         self.widgets[key] = var
+        
+        # Track unsaved edits
+        var.trace_add("write", lambda *_: self.mark_dirty())
         
         if description:
             lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
@@ -1308,7 +1551,7 @@ class PresetEditor:
         return subframe
     
     def add_list_field(self, parent, key, label, description=None):
-        """Add a comma-separated list field."""
+        """Add a comma-separated list field with tag chip functionality."""
         container = tk.Frame(parent, bg=self._get_parent_bg(parent))
         container.pack(fill=tk.X, pady=5)
         
@@ -1319,26 +1562,24 @@ class PresetEditor:
             lbl_desc = tk.Label(container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600)
             lbl_desc.pack(anchor=tk.W)
             
-        entry = tk.Entry(
+        entry = ChipListWidget(
             container,
-            bg=BG_INPUT,
-            fg=TEXT_MAIN,
-            insertbackground=TEXT_MAIN,
-            font=("Segoe UI", 10),
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=BORDER_COLOR,
-            highlightcolor=ACCENT,
-            relief="flat"
+            bg_input=BG_INPUT,
+            text_main=TEXT_MAIN,
+            border_color=BORDER_COLOR,
+            accent=ACCENT,
+            bg_panel=BG_PANEL,
+            text_muted=TEXT_MUTED,
+            state_callback=self.mark_dirty
         )
-        entry.pack(fill=tk.X, ipady=4)
+        entry.pack(fill=tk.X)
         self.widgets[key] = entry
         
         self._register_settings_widget(parent, container, label + " " + (description or ""), key)
         self._bind_focus_highlight(entry)
     
     def add_optional_list_field(self, parent, key, label, placeholder):
-        """Add an optional list field with checkbox to enable/disable."""
+        """Add an optional list field with checkbox to enable/disable and tag chip functionality."""
         container = tk.Frame(parent, bg=self._get_parent_bg(parent))
         container.pack(fill=tk.X, pady=5)
         
@@ -1347,20 +1588,18 @@ class PresetEditor:
         cb = ttk.Checkbutton(container, text=label, variable=var)
         cb.pack(anchor=tk.W)
         
-        # Entry for values
-        entry = tk.Entry(
+        # Entry for chips
+        entry = ChipListWidget(
             container,
-            bg=BG_INPUT,
-            fg=TEXT_MAIN,
-            insertbackground=TEXT_MAIN,
-            font=("Segoe UI", 10),
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=BORDER_COLOR,
-            highlightcolor=ACCENT,
-            relief="flat"
+            bg_input=BG_INPUT,
+            text_main=TEXT_MAIN,
+            border_color=BORDER_COLOR,
+            accent=ACCENT,
+            bg_panel=BG_PANEL,
+            text_muted=TEXT_MUTED,
+            state_callback=self.mark_dirty
         )
-        entry.pack(fill=tk.X, padx=(20, 0), ipady=4)
+        entry.pack(fill=tk.X, padx=(20, 0))
         entry.insert(0, placeholder)
         entry.configure(state="disabled")
         
@@ -1372,6 +1611,7 @@ class PresetEditor:
                 entry.configure(state="disabled")
         
         var.trace_add("write", lambda *_: toggle_entry())
+        var.trace_add("write", lambda *_: self.mark_dirty())
         
         self.widgets[f"{key}_enabled"] = var
         self.widgets[key] = entry
@@ -1384,10 +1624,23 @@ class PresetEditor:
         selection = self.preset_listbox.curselection()
         if selection:
             preset_name = self.preset_listbox.get(selection[0])
-            self.select_preset(preset_name)
+            if preset_name != self.current_preset:
+                if self.prompt_unsaved_changes():
+                    self.select_preset(preset_name)
+                else:
+                    self.update_listbox_selection(self.current_preset)
     
     def select_preset(self, preset_name):
-        """Load preset data into the form."""
+        """Load preset data into the form with loading/dirty flag safety wrapper."""
+        self.loading_preset = True
+        try:
+            self._select_preset_impl(preset_name)
+        finally:
+            self.loading_preset = False
+            self.is_dirty = False
+
+    def _select_preset_impl(self, preset_name):
+        """Internal implementation of loading preset data into the form."""
         if preset_name not in self.presets:
             return
         
@@ -1582,12 +1835,21 @@ class PresetEditor:
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit", 
                                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                                   "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank"]:
+                                   "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
+                                   "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
                     except ValueError:
-                        pass
+                        messagebox.showerror(
+                            "Validation Error",
+                            f"Invalid numeric value '{value}' for key '{key}'. Please enter a valid number.",
+                            parent=self.root
+                        )
+                        widget = self.widgets[key]
+                        if hasattr(widget, "focus_set"):
+                            widget.focus_set()
+                        return
         
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
@@ -1710,23 +1972,37 @@ class PresetEditor:
 
             round_dict = {"round": i}
 
-            def safe_int(v):
+            def safe_int(v, field_name, widget):
                 if not v:
                     return None
                 try:
                     return int(float(v))
                 except ValueError:
-                    return None
+                    messagebox.showerror(
+                        "Validation Error",
+                        f"Invalid numeric value '{v}' for Round {i} {field_name}. Please enter a valid number.",
+                        parent=self.root
+                    )
+                    if widget and hasattr(widget, "focus_set"):
+                        widget.focus_set()
+                    return -999999
 
-            parsed_min_k = safe_int(min_k_val)
-            parsed_max_claim = safe_int(max_claim_val)
-            parsed_max_like = safe_int(max_like_val)
-
-            if parsed_min_k is not None:
+            if min_k_val:
+                parsed_min_k = safe_int(min_k_val, "Minimum Kakera", min_k_widget)
+                if parsed_min_k == -999999:
+                    return
                 round_dict["min_kakera"] = parsed_min_k
-            if parsed_max_claim is not None:
+
+            if max_claim_val:
+                parsed_max_claim = safe_int(max_claim_val, "Maximum Claim Rank", max_claim_widget)
+                if parsed_max_claim == -999999:
+                    return
                 round_dict["max_claim_rank"] = parsed_max_claim
-            if parsed_max_like is not None:
+
+            if max_like_val:
+                parsed_max_like = safe_int(max_like_val, "Maximum Like Rank", max_like_widget)
+                if parsed_max_like == -999999:
+                    return
                 round_dict["max_like_rank"] = parsed_max_like
 
             if len(round_dict) > 1:
@@ -1738,6 +2014,8 @@ class PresetEditor:
         self.presets[self.current_preset] = data
         if self.save_presets():
             messagebox.showinfo("Success", f"Settings for '{self.current_preset}' are now saved!")
+            self.is_dirty = False
+            self.title_label.config(text=f"Editing: {self.current_preset}")
             
         # Manage autostart
         self._manage_autostart(self.current_preset, data.get("autostart", False))
@@ -1778,6 +2056,8 @@ class PresetEditor:
     
     def create_preset(self):
         """Create a new preset."""
+        if not self.prompt_unsaved_changes():
+            return
         name = simpledialog.askstring("New Configuration", "What would you like to name this new config?", parent=self.root)
         if name:
             name = name.strip()
@@ -1826,6 +2106,9 @@ class PresetEditor:
         """Duplicate the current preset."""
         if not self.current_preset:
             messagebox.showwarning("Warning", "No preset selected.")
+            return
+        
+        if not self.prompt_unsaved_changes():
             return
         
         name = simpledialog.askstring("Duplicate Preset", 
@@ -1880,6 +2163,7 @@ class PresetEditor:
             del self.presets[self.current_preset]
             self.save_presets()
             self.current_preset = None
+            self.is_dirty = False
             self.refresh_preset_list()
             self.title_label.config(text="Select a preset")
             
