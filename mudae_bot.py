@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.5"
+CURRENT_VERSION = "4.5.6"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -145,6 +145,9 @@ def _toggle_global_pause():
 
 def _keyboard_listener_thread():
     if os.name == 'nt':
+        # Check if stdin is a TTY to avoid background stream redirection errors
+        if not sys.stdin.isatty():
+            return
         while True:
             try:
                 if _menu_active.is_set():
@@ -159,6 +162,9 @@ def _keyboard_listener_thread():
                     continue
                 if ch in (b'p', b'P'):
                     _toggle_global_pause()
+            except (OSError, ValueError, AttributeError):
+                # Stream closed or redirected, break or sleep gracefully
+                time.sleep(10)
             except Exception:
                 time.sleep(5)
     else:
@@ -1246,6 +1252,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower)):
                 BotLogger.log("Your $tu response is missing the 'dk' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
+            try:
+                power_match = re.search(REGEX_PATTERNS["DK_POWER"], c_lower)
+                if power_match:
+                    client.current_dk_power = int(power_match.group(1))
+                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                consumption_match = re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)
+                if consumption_match:
+                    client.dk_consumption = int(consumption_match.group(1))
+                    client.dk_consumption_chaos = int(client.dk_consumption / 2)
+                dk_stock_match = re.search(REGEX_PATTERNS["DK_STOCK"], c_lower)
+                if dk_stock_match: client.dk_stock_count = int(dk_stock_match.group(1))
+                elif re.search(REGEX_PATTERNS["DK_READY"], c_lower): client.dk_stock_count = 1
+                else: client.dk_stock_count = 0
+            except Exception as e:
+                BotLogger.log(f"Error parsing Power/DK state: {e}", preset_name, "WARN")
+
             if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
                 await handle_dk_power_management(client, cmd_channel, tu_content)
 
@@ -1281,22 +1303,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             client.p_available = False
                             client.next_p_claim_at_utc = (datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=2)).replace(second=0, microsecond=0)
                             await asyncio.sleep(2.0 + random.uniform(0.1, 0.5))
-
-            try:
-                power_match = re.search(REGEX_PATTERNS["DK_POWER"], c_lower)
-                if power_match:
-                    client.current_dk_power = int(power_match.group(1))
-                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
-                consumption_match = re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)
-                if consumption_match:
-                    client.dk_consumption = int(consumption_match.group(1))
-                    client.dk_consumption_chaos = int(client.dk_consumption / 2)
-                dk_stock_match = re.search(REGEX_PATTERNS["DK_STOCK"], c_lower)
-                if dk_stock_match: client.dk_stock_count = int(dk_stock_match.group(1))
-                elif re.search(REGEX_PATTERNS["DK_READY"], c_lower): client.dk_stock_count = 1
-                else: client.dk_stock_count = 0
-            except Exception as e:
-                BotLogger.log(f"Error parsing Power/DK state: {e}", preset_name, "WARN")
 
             rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"])
             rt_reset_minutes = parse_timer_minutes("RT_RESET", c_lower)
@@ -1693,6 +1699,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if is_sphere or name == 'kakeraP' or check_is_green(btn):
                                     prio = 999
                                     
+                                is_discounted = (chaos_count > 0 or has_sp_perk)
                                 clickable_buttons.append({
                                     'btn': btn,
                                     'custom_id': btn.custom_id,
@@ -1703,7 +1710,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'is_sphere': is_sphere,
                                     'is_free': is_free,
                                     'chaos_count': chaos_count,
-                                    'cost': 0 if is_free else (client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption),
+                                    'cost': 0 if is_free else (client.dk_consumption_chaos if is_discounted else client.dk_consumption),
                                     'char_name': (embed.author.name if embed.author else "Unknown").strip()
                                 })
                                 
@@ -2341,8 +2348,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             except Exception: break
                         
                         is_free = name == 'kakeraP' or name in client.sphere_emojis or check_is_green(btn)
-                        # The 10+ key discount only applies to self-rolls (when is_snipe is False)
-                        cost = 0 if is_free else (client.dk_consumption_chaos if (chaos_count > 0 and not is_snipe) else client.dk_consumption)
+                        if client.only_chaos and chaos_count == 0 and not is_free:
+                            continue
+                        # The 10+ key discount and Perk 8 discount only apply to self-rolls (when is_snipe is False)
+                        is_discounted = (chaos_count > 0 or has_sp_perk) and not is_snipe
+                        cost = 0 if is_free else (client.dk_consumption_chaos if is_discounted else client.dk_consumption)
                         current_pow = get_current_dk_power()
                         
                         if current_pow < cost:
