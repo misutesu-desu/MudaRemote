@@ -145,9 +145,6 @@ def _toggle_global_pause():
 
 def _keyboard_listener_thread():
     if os.name == 'nt':
-        # Check if stdin is a TTY to avoid background stream redirection errors
-        if not sys.stdin.isatty():
-            return
         while True:
             try:
                 if _menu_active.is_set():
@@ -162,9 +159,6 @@ def _keyboard_listener_thread():
                     continue
                 if ch in (b'p', b'P'):
                     _toggle_global_pause()
-            except (OSError, ValueError, AttributeError):
-                # Stream closed or redirected, break or sleep gracefully
-                time.sleep(10)
             except Exception:
                 time.sleep(5)
     else:
@@ -1699,7 +1693,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if is_sphere or name == 'kakeraP' or check_is_green(btn):
                                     prio = 999
                                     
-                                is_discounted = (chaos_count > 0 or has_sp_perk)
                                 clickable_buttons.append({
                                     'btn': btn,
                                     'custom_id': btn.custom_id,
@@ -1710,7 +1703,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'is_sphere': is_sphere,
                                     'is_free': is_free,
                                     'chaos_count': chaos_count,
-                                    'cost': 0 if is_free else (client.dk_consumption_chaos if is_discounted else client.dk_consumption),
+                                    'cost': 0 if is_free else (client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption),
                                     'char_name': (embed.author.name if embed.author else "Unknown").strip()
                                 })
                                 
@@ -2350,9 +2343,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         is_free = name == 'kakeraP' or name in client.sphere_emojis or check_is_green(btn)
                         if client.only_chaos and chaos_count == 0 and not is_free:
                             continue
-                        # The 10+ key discount and Perk 8 discount only apply to self-rolls (when is_snipe is False)
-                        is_discounted = (chaos_count > 0 or has_sp_perk) and not is_snipe
-                        cost = 0 if is_free else (client.dk_consumption_chaos if is_discounted else client.dk_consumption)
+                        # The 10+ key discount only applies to self-rolls (when is_snipe is False)
+                        cost = 0 if is_free else (client.dk_consumption_chaos if ((chaos_count > 0 or has_sp_perk) and not is_snipe) else client.dk_consumption)
                         current_pow = get_current_dk_power()
                         
                         if current_pow < cost:
