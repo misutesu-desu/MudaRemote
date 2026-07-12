@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.4"
+CURRENT_VERSION = "4.5.5"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -2276,7 +2276,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 cooldown_active = not is_kakera_reaction_allowed()
                 has_free_button = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b)) for c in msg.components for b in c.children)
-                if cooldown_active and not has_free_button and chaos_count == 0 and not has_sp_perk: return False
+                # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
+                if cooldown_active and not has_free_button and (chaos_count == 0 or is_snipe) and not has_sp_perk: return False
 
                 if msg.id in client.kakera_reacted_messages: return False
                 if len(client.kakera_reacted_messages) > 2000: client.kakera_reacted_messages.clear()
@@ -2340,7 +2341,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             except Exception: break
                         
                         is_free = name == 'kakeraP' or name in client.sphere_emojis or check_is_green(btn)
-                        cost = 0 if is_free else (client.dk_consumption_chaos if chaos_count > 0 else client.dk_consumption)
+                        # The 10+ key discount only applies to self-rolls (when is_snipe is False)
+                        cost = 0 if is_free else (client.dk_consumption_chaos if (chaos_count > 0 and not is_snipe) else client.dk_consumption)
                         current_pow = get_current_dk_power()
                         
                         if current_pow < cost:
@@ -2367,7 +2369,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             
                         if cost > 0 and client.kakera_power_thresholds:
                             base_name = name.rstrip('2')
-                            spec_name = f"chaos_{base_name}" if chaos_count > 0 else base_name
+                            # The 10+ key discount only applies to self-rolls (when is_snipe is False)
+                            spec_name = f"chaos_{base_name}" if (chaos_count > 0 and not is_snipe) else base_name
                             threshold = client.kakera_power_thresholds.get(spec_name) or client.kakera_power_thresholds.get(base_name) or client.kakera_power_thresholds.get(name)
                             if threshold is not None and current_pow < threshold:
                                 BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
