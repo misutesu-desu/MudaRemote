@@ -1700,7 +1700,7 @@ class PresetEditor:
                     "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
-                if isinstance(widget, (ttk.Entry, tk.Entry)):
+                if isinstance(widget, (ttk.Entry, tk.Entry, ChipListWidget)):
                     widget.delete(0, tk.END)
                     value = data.get(key, DEFAULTS.get(key, []))
                     if isinstance(value, list):

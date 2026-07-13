@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.6"
+CURRENT_VERSION = "4.5.7"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -105,7 +105,7 @@ REGEX_PATTERNS = {
     "KAKERA_EARNED": r"\+(\d+)\s*<:kakera:",
     "BOLD_TEXT": r"\*\*(.+?)\*\*",
     "KAKERA_VALUE": r"\**([\d,.]+)\**<:kakera:",
-    "MAINTENANCE": r"For (\d+) minutes",
+    "MAINTENANCE": r"For\s+(?:some|(\d+))\s+minutes",
     "EXTRA_ROLLS": r"\+\**(\d+)\**\s*rolls?",
     "USER_BOLD": r"^\s*\*\*([^*]+)\*\*"
 }
@@ -958,6 +958,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.is_paused:
                     await asyncio.sleep(1)
                     continue
+                if is_maintenance_active():
+                    await asyncio.sleep(15)  # Quietly sleep during maintenance
+                    continue
                 await check_status(client, channel, client.mudae_prefix, current_cycle_id=None)
                 await asyncio.sleep(1.5)
             except asyncio.CancelledError: break
@@ -1083,6 +1086,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.is_paused:
                 await asyncio.sleep(1)
                 continue
+            if is_maintenance_active():
+                await asyncio.sleep(15)
+                continue
             try:
                 await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
                 if client.next_claim_reset_at_utc:
@@ -1125,6 +1131,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await asyncio.sleep(seconds)
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, current_cycle_id=None):
+        if is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         client.is_processing_cycle = True
@@ -1571,6 +1578,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check:
             used = 0
             while client.mk_rolls_left > 0 and (get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check):
+                if is_maintenance_active() or client.interrupt_rolling:
+                    break
                 BotLogger.log(f"Using $mk ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", preset_name, "KAKERA")
                 await channel.send(f"{client.mudae_prefix}mk")
                 client.mk_rolls_left -= 1
@@ -1586,15 +1595,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             BotLogger.log(f"Skipping $mk: Insufficient power ({get_current_dk_power()}% < {client.dk_consumption}%).", preset_name, "INFO")
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
+        if is_maintenance_active(): return
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
+            
         if client.farm_character_enabled and client.farm_character and client.claim_right_available:
+            if is_maintenance_active() or client.interrupt_rolling: return
             BotLogger.log(f"Kakera Farm: Preparing {client.farm_character} for rolling.", preset_name, "INFO")
             await channel.send(f"{client.mudae_prefix}forcedivorce {client.farm_character}")
             await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
+            if is_maintenance_active() or client.interrupt_rolling: return
             await channel.send("y")
             await asyncio.sleep(1.5 + random.uniform(0.1, 0.4))
 
+        if is_maintenance_active() or client.interrupt_rolling: return
         await process_mk_rolls(client, channel, current_cycle_id)
         
         reset_soon = False
@@ -1629,7 +1643,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         
         client.rolls_left = rolls_left
         while client.rolls_left > 0:
-            if client.interrupt_rolling:
+            if client.interrupt_rolling or is_maintenance_active():
                 client.desync_detected = True
                 break
             try:
@@ -2507,9 +2521,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.rolling_enabled: await client.process_commands(message)
             return
 
-        if message.content and "Command under maintenance!" in message.content:
-            m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content)
-            m_mins = int(m_match.group(1)) if m_match else 10
+        if message.content and "under maintenance" in message.content.lower():
+            m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content, re.IGNORECASE)
+            m_mins = 10
+            if m_match and m_match.group(1):
+                try:
+                    m_mins = int(m_match.group(1))
+                except ValueError:
+                    pass
             client.maintenance_until = datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=m_mins)
             client.interrupt_rolling = True
             BotLogger.log(f"Mudae is under maintenance! Pausing for {m_mins} minutes.", preset_name, "ERROR")
