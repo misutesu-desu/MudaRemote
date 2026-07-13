@@ -26,7 +26,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.5.7"
+CURRENT_VERSION = "4.5.8"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -1596,6 +1596,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
         if is_maintenance_active(): return
+        client.interrupt_rolling = False
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
             
