@@ -1,0 +1,8 @@
+# Keep updater-verified source bytes stable across operating systems.
+*.py text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.spec text eol=lf

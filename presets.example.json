@@ -1,0 +1,17 @@
+{
+  "Example": {
+    "token": "",
+    "prefix": "/////////////",
+    "mudae_prefix": "$",
+    "channel_id": 123456789012345678,
+    "roll_command": "wa",
+    "min_kakera": 100,
+    "delay_seconds": 0,
+    "claim_interval": 180,
+    "roll_interval": 60,
+    "rolling": true,
+    "farm_character_enabled": false,
+    "farm_character": "",
+    "farm_forcedivorce_after_claim": false
+  }
+}

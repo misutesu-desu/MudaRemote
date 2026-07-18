@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.0.3-f97316?style=for-the-badge" alt="Version 4.0.3"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -120,9 +120,9 @@ Le bot fait les tirages pour vous au meilleur moment possible.
 
 ---
 
-### 🛡️ Discrétion — Anti-Ban / Mode Fantôme
+### 🕒 Contrôles de temps et d'activité
 
-C'est ce qui rend MudaRemote sûr. Les autres bots agissent comme des machines. MudaRemote agit comme un humain.
+Ces réglages varient les délais, mais ne rendent pas un self-bot invisible et ne garantissent pas la sécurité du compte.
 
 | Fonction | Ce qu'elle fait |
 | :--- | :--- |
@@ -176,7 +176,7 @@ Ou cliquez sur **"Code" → "Download ZIP"** sur GitHub.
 ### Étape 2 : Installer les outils
 Ouvrez un terminal dans le dossier et tapez :
 ```bash
-pip install discord.py-self inquirer requests
+pip install -r requirements.txt
 ```
 
 ### Étape 3 : Ouvrir les réglages

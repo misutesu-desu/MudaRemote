@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="icon.png" alt="MudaRemote Logo" width="120">
   <h1 align="center">⚡ MudaRemote — The #1 Mudae Bot for Discord</h1>
   <p align="center">
     <strong>Dominate your server. Farm Kakera while you sleep. Snipe the best waifus before anyone reacts.</strong>
@@ -13,10 +14,20 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.2.0-f97316?style=for-the-badge" alt="Version 4.2.0"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🚀 Reliability, Security & Automation Overhaul — v4.6.0
+
+- **Reliable claiming and pause:** Claims are verified from live Discord evidence, reset timing is preserved to the second, and pause now stops active rolls, delayed actions, reactions, and button clicks across every account.
+- **Far fewer `$tu` commands:** Authoritative cooldowns, completed roll cycles, and exact bonus-roll messages update only the affected local state; fresh-response matching, bounded retries, and backoff prevent query spam without sacrificing recovery.
+- **Safer configuration and updates:** Tokens use Windows DPAPI or the operating system keyring, JSON writes are atomic, and the manifest-based modular updater verifies every downloaded file before applying the release.
+- **More resilient automation:** Multi-account claim coordination, scheduled rolls, Kakera cost handling, empty embeds, zero-valued thresholds, and retry exhaustion have been corrected.
+- **Flexible Kakera farming:** A new shared-server mode keeps the selected farm character owned until a verified claim, then forcedivorces it immediately; the legacy pre-roll mode remains available for solo key farming.
+- **Correct stacked power discounts:** The 10+ key discount and visible `💎/2` Perk 8 discount now stack independently, including fractional power costs such as 7.5%.
+- **Improved preset editor and diagnostics:** Presets are validated and persisted consistently, dynamic values survive edits, child-process status is visible, logs rotate with tracebacks, and automated regression tests protect the critical flows.
 
 <p align="center">
   <a href="https://github.com/misutesu-desu/MudaRemote/stargazers"><img src="https://img.shields.io/github/stars/misutesu-desu/MudaRemote?style=social" alt="GitHub Stars"></a>
@@ -32,15 +43,13 @@
   <a href="README.pt-BR.md">Português Brasileiro</a>
 </p>
 
-
-
 ---
 
 ## 🚀 What Is MudaRemote?
 
 **MudaRemote** is the ultimate **Mudae automation tool** — a program that plays the Mudae minigame on Discord **entirely for you**, 24/7.
 
-While you sleep, study, or touch grass — MudaRemote is rolling characters, sniping wishlists, farming Kakera, and stacking your harem. It's the most feature-complete, safest, and easiest-to-use **Mudae selfbot** ever built, and it's **completely free**.
+While you sleep, study, or touch grass — MudaRemote can roll characters, watch wishlists, farm Kakera, and manage multiple presets. It is free and configurable, but no self-bot can guarantee account safety.
 
 Here's what you get out of the box:
 
@@ -49,9 +58,9 @@ Here's what you get out of the box:
 - 💍 **Instant Auto Claim** — Sees a character you want? Claims it in milliseconds — faster than any human.
 - 💎 **Smart Kakera Farming** — Clicks crystals automatically while respecting your power limits. Never waste power again.
 - 🎯 **Wishlist Sniper** — Someone else rolls YOUR waifu? The bot steals it before they can blink.
-- 🤖 **Slash Command Support** — Uses `/wa` for a free 10% Kakera bonus and harder-to-detect rolls.
+- 🤖 **Slash Command Support** — Uses `/wa` where supported for the associated Kakera bonus.
 - 👥 **Multi-Account Sync** — Run alt accounts simultaneously. Main + alts working in perfect coordination.
-- 🛡️ **Ghost Mode (Anti-Ban)** — Random delays, sleep schedules, channel awareness. Behaves like a real human.
+- 🕒 **Timing Controls** — Optional random delays, sleep schedules, and channel-idle waits. These reduce repetitive timing only; they do not prevent detection or bans.
 - 🖥️ **Beautiful GUI** — No config files. No code. Just a clean settings window with buttons and dropdowns.
 - 🔄 **Auto Updates** — The `.exe` updates itself when a new version drops. You never re-download manually.
 
@@ -69,7 +78,7 @@ Still using a janky Python script from 2022 that makes you edit JSON files in No
 | **Setup** | Install Python, pip, edit config files, pray | ✅ Download `.exe` → Double-click → Play |
 | **Rolling** | Text commands only (`$wa`) | ✅ Slash commands (`/wa`) — **+10% Kakera bonus** |
 | **Claiming** | Claims random garbage | ✅ Surgically claims only YOUR wishlist & high-value targets |
-| **Timing** | Rolls at the same second every hour (sus 🚩) | ✅ Randomized human-like timing. Invisible. |
+| **Timing** | Rolls at the same second every hour | ✅ Configurable random delays and inactive hours; no safety guarantee |
 | **Safety** | Gets you banned in a week | ✅ Ghost Mode — random delays, sleep schedule, channel awareness |
 | **Accounts** | One account, one terminal | ✅ Unlimited accounts running simultaneously in sync |
 | **Interface** | Scary black terminal window | ✅ Beautiful graphical settings editor with live preview |
@@ -131,24 +140,24 @@ The bot doesn't just spam rolls. It calculates the **optimal moment** to roll so
 
 ---
 
-### 🛡️ Ghost Mode — Anti-Ban Stealth System
+### 🕒 Timing & Activity Controls
 
-This is what separates MudaRemote from every other **Mudae macro** and **Mudae script**. Other bots get you banned in days. MudaRemote is **designed to be invisible**.
+These controls vary timing and avoid configured inactive periods. They cannot make a self-bot invisible or compliant with Discord's Terms of Service.
 
 | Feature | What You Get |
 | :--- | :--- |
-| **Random Delays** | Every cycle has a randomized wait (0–40 min). No two cycles look the same. Unpredictable = undetectable. |
+| **Random Delays** | Every cycle can use a configurable randomized wait (0–40 min). This does not guarantee account safety. |
 | **Channel Awareness** | People chatting in the channel? The bot waits for silence. Just like a real player would. |
 | **Random Reactions** | Claims with emoji reactions? It picks a different heart emoji each time. No patterns. |
 | **Sleep Schedule** | Set a sleep window — *"Go dark from 1 AM to 7 AM."* The bot shuts off completely, like you're actually sleeping. |
 | **Maintenance Detection** | Mudae goes offline for maintenance? The bot detects it and pauses automatically. No wasted commands. |
-| **Slash-Only Silence** | In slash command mode, the bot **never** falls back to text commands. If `/wa` fails, it stays silent. Zero text footprint. |
+| **Reliable Slash Fallback** | Slash commands are preferred; if Discord's slash endpoint is unavailable, the bot falls back to text commands so rolls and `$tu` state tracking do not stall. |
 
 ---
 
 ### 🔄 Auto Updates & Multi-Account Sync
 
-Every time you launch MudaRemote, it checks for updates. If a new version exists, **the `.exe` patches itself and restarts** — you're always running the latest features and fixes without lifting a finger.
+Every time you launch MudaRemote, it checks for updates. Frozen builds require a published SHA-256 checksum; source installs use a complete per-file manifest and apply all modules transactionally. Git checkouts are never overwritten and instead ask you to run `git pull`.
 
 Running multiple accounts? Your **main account and alts sync in real-time**. If an alt rolls your wishlist character, your main claims it instantly. Full coordination, zero effort.
 
@@ -177,7 +186,7 @@ For developers or non-Windows users who want to run from source:
    ```bash
    git clone https://github.com/misutesu-desu/MudaRemote.git
    cd MudaRemote
-   pip install discord.py-self inquirer requests
+   pip install -r requirements.txt
    ```
 3. Launch the GUI:
    ```bash
@@ -191,6 +200,8 @@ For developers or non-Windows users who want to run from source:
 
 > [!CAUTION]
 > **Your token is your password.** Anyone who has it can fully access your Discord account. **NEVER share it with anyone.**
+
+MudaRemote stores tokens outside `presets.json`: Windows uses DPAPI encryption, while macOS/Linux use the system keyring. Headless environments can set `MUDAREMOTE_TOKEN_<PRESET_NAME>` instead.
 
 1. Open **Discord in your web browser** (not the desktop app).
 2. Press **`F12`** to open Developer Tools.
@@ -218,27 +229,6 @@ We recently crossed **50+ GitHub Stars** — if MudaRemote helps you dominate yo
 - 📖 **[Troubleshooting & FAQ (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Troubleshooting)** — Fixes for common setup issues, claiming problems, and more.
 - 📖 **[Configuration Guide (Wiki)](https://github.com/misutesu-desu/MudaRemote/wiki/Configuration-Guide)** — Deep dive into every single setting.
 - 🐛 **[Report a Bug](https://github.com/misutesu-desu/MudaRemote/issues)** — Found something broken? Let us know.
-
----
-
-## 💖 Support the Project (Donations)
-
-MudaRemote is and will always remain **100% free and open-source**. If this tool has helped you dominate your servers, farm Kakera, and build your dream harem, please consider supporting its continuous development and maintenance!
-
-To protect developer privacy and keep transaction fees as low as possible for our supporters, we accept donations exclusively through the following cryptocurrency networks:
-
-<p align="left">
-  <img src="https://img.shields.io/badge/Litecoin-LTC-A6A9AA?style=for-the-badge&logo=litecoin&logoColor=white" alt="LTC">
-  <img src="https://img.shields.io/badge/Tether-USDT_TRC20-26A17B?style=for-the-badge&logo=tether&logoColor=white" alt="USDT">
-</p>
-
-*   **Litecoin (LTC) - LTC Network:**  
-    `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt`
-*   **USDT - Tron Network (TRC20):**  
-    `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp`
-
-> [!NOTE]
-> If you decide to support us, feel free to **DM me on Discord with your transaction ID / screenshot**, and I'll gladly assign you the **Donator** role in our community server! Thank you for your support! 🙏
 
 ---
 

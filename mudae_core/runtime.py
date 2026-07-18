@@ -1,0 +1,90 @@
+"""Cross-thread pause state and asyncio waiting helpers."""
+
+import asyncio
+import time
+
+from .status import STATUS_FIELDS, mark_status_dirty
+
+
+def _wake_runtime_events(client) -> None:
+    for name in ("_runtime_state_event", "_immediate_check_event"):
+        event = getattr(client, name, None)
+        if event is not None:
+            event.set()
+
+
+def set_client_paused(client, paused: bool) -> None:
+    """Apply pause state and wake the owning asyncio loop safely."""
+    paused = bool(paused)
+    previous = bool(getattr(client, "is_paused", False))
+    client.is_paused = paused
+    if paused and not previous:
+        client._pause_generation = int(getattr(client, "_pause_generation", 0)) + 1
+    if paused and not previous:
+        interrupted_fields = set()
+        if getattr(client, "pending_claim", None) is not None:
+            interrupted_fields.add("claim")
+        if bool(getattr(client, "is_actively_rolling", False)):
+            interrupted_fields.add("rolls")
+        tu_future = getattr(client, "_tu_response_future", None)
+        if tu_future is not None and not tu_future.done():
+            interrupted_fields.update(STATUS_FIELDS)
+        if interrupted_fields:
+            mark_status_dirty(client, interrupted_fields, reason="pause-interrupted-active-work")
+
+    loop = getattr(client, "loop", None)
+    try:
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(_wake_runtime_events, client)
+            return
+    except (AttributeError, RuntimeError):
+        pass
+    _wake_runtime_events(client)
+
+
+async def wait_until_resumed(client) -> None:
+    """Wait without polling when a runtime event is available."""
+    while bool(getattr(client, "is_paused", False)):
+        event = getattr(client, "_runtime_state_event", None)
+        if event is None:
+            await asyncio.sleep(0.1)
+            continue
+        event.clear()
+        if not bool(getattr(client, "is_paused", False)):
+            break
+        await event.wait()
+
+
+async def pause_interruptible_sleep(client, seconds: float, abort_on_pause: bool = False) -> bool:
+    """Sleep against wall time, optionally aborting as soon as pause is requested."""
+    duration = max(0.0, float(seconds))
+    deadline = time.monotonic() + duration
+    start_generation = int(getattr(client, "_pause_generation", 0))
+
+    while True:
+        if abort_on_pause and (
+            bool(getattr(client, "is_paused", False))
+            or int(getattr(client, "_pause_generation", 0)) != start_generation
+        ):
+            return False
+        if bool(getattr(client, "is_paused", False)):
+            await wait_until_resumed(client)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+
+        event = getattr(client, "_runtime_state_event", None)
+        if event is None:
+            await asyncio.sleep(min(remaining, 0.1))
+            continue
+
+        event.clear()
+        if abort_on_pause and int(getattr(client, "_pause_generation", 0)) != start_generation:
+            return False
+        if bool(getattr(client, "is_paused", False)):
+            continue
+        try:
+            await asyncio.wait_for(event.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            return True

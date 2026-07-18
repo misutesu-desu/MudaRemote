@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.0.3-f97316?style=for-the-badge" alt="Version 4.0.3"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -114,9 +114,9 @@
 
 ---
 
-### 🛡️ 보안 — Anti-Ban / 고스트 모드
+### 🕒 타이밍 및 활동 제어
 
-MudaRemote가 안전한 이유입니다. 다른 봇들은 기계처럼 행동하지만, 이 봇은 사람처럼 행동합니다.
+이 설정은 반복적인 타이밍을 줄일 뿐이며, 감지나 계정 정지를 방지하거나 self-bot을 약관에 맞게 만들지 않습니다.
 
 | 기능 | 설명 |
 | :--- | :--- |
@@ -157,7 +157,7 @@ cd MudaRemote
 ### 2단계: 필수 프로그램 설치
 폴더 안에서 터미널(CMD)을 열고 입력하세요:
 ```bash
-pip install discord.py-self inquirer requests
+pip install -r requirements.txt
 ```
 
 ### 3단계: 설정 화면 열기

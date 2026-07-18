@@ -1,0 +1,25 @@
+# Local credentials and user configuration
+.mudae-secrets.json
+presets.json
+/.agents/
+/memory-bank/
+/wiki.txt
+
+# Runtime output
+logs.txt*
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+MudaRemote.exe
+MudaRemote_update*.exe
+update.bat
+
+# Local environments and editors
+.venv/
+venv/
+.idea/
+.vscode/

@@ -1,0 +1,4 @@
+discord.py-self>=2.0.0,<3
+inquirer>=3.1,<4
+keyring>=24,<25
+requests>=2.31,<3

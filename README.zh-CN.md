@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.0.3-f97316?style=for-the-badge" alt="Version 4.0.3"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -111,9 +111,9 @@
 
 ---
 
-### 🛡️ 隐流技术 — 防封号/隐身模式
+### 🕒 时间与活动控制
 
-这是 MudaRemote 安全的核心。其他宏像个机器人，而它像个人。
+这些选项只会改变操作时间，不能保证避免检测或封号，也不会让 self-bot 符合 Discord 规则。
 
 | 功能 | 描述 |
 | :--- | :--- |
@@ -153,7 +153,7 @@ cd MudaRemote
 ### 第 2 步：安装环境
 在文件夹内打开终端（CMD），输入：
 ```bash
-pip install discord.py-self inquirer requests
+pip install -r requirements.txt
 ```
 
 ### 第 3 步：打开设置窗口

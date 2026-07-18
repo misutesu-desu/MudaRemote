@@ -5,17 +5,27 @@
   </p>
   <p align="center">
     Sizin yerinize Mudae oynayan akıllı bir <strong>Mudae botu</strong>.<br>
-    Karakter çıkartır, karakterleri yakalar, kakeraya tıklar ve banlanmamanız için gerçek bir insan gibi davranır.
+    Karakter çıkartır, karakterleri yakalar ve kakeraya tıklar. Zamanlama seçenekleri ban veya tespit edilmeme garantisi vermez.
   </p>
 </p>
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.0.3-f97316?style=for-the-badge" alt="Version 4.0.3"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🚀 Güvenilirlik, Güvenlik ve Otomasyon Yenilemesi — v4.6.0
+
+- **Güvenilir claim ve pause:** Claim sonucu canlı Discord kanıtlarıyla doğrulanır, reset zamanları saniye hassasiyetinde korunur ve pause tüm hesaplardaki aktif roll, gecikme, reaction ve buton işlemlerini durdurur.
+- **Çok daha az `$tu`:** Kesin cooldown, tamamlanmış roll döngüsü ve miktarı belli bonus roll mesajları yalnızca ilgili yerel durumu günceller; taze yanıt eşleştirme, sınırlı tekrar ve backoff sorgu spam'ini önler.
+- **Daha güvenli ayarlar ve güncellemeler:** Token'lar Windows DPAPI veya sistem keyring'i ile saklanır, JSON yazımları atomiktir ve modüler updater indirdiği her dosyayı uygulamadan önce doğrular.
+- **Daha dayanıklı otomasyon:** Çoklu hesap claim koordinasyonu, zamanlanmış roll'lar, Kakera maliyetleri, boş embed'ler, sıfır değerli eşikler ve sonsuz tekrar yolları düzeltildi.
+- **Esnek Kakera farming:** Yeni ortak sunucu modu seçili karakteri doğrulanmış claim'e kadar elde tutar ve claim'den hemen sonra forcedivorce uygular; solo key farming için eski roll öncesi mod korunur.
+- **Doğru birleşik güç indirimleri:** 10+ key indirimi ile görünen `💎/2` Perk 8 indirimi artık bağımsız şekilde üst üste uygulanır; 7.5% gibi kesirli maliyetler doğru izlenir.
+- **Geliştirilmiş preset editörü ve tanılama:** Preset doğrulama ve kayıt akışları tutarlı hale getirildi; dinamik değerler korunur, alt süreç durumu görünür, log'lar döndürülür ve kritik akışlar otomatik testlerle korunur.
 
 <p align="center">
   <a href="README.md">English</a> •
@@ -111,9 +121,9 @@ Bot sizin yerinize ve en akıllı zamanda karakter çıkartır.
 
 ---
 
-### 🛡️ Gizlilik — Anti-Ban / Ghost Mode
+### 🕒 Zamanlama ve Etkinlik Kontrolleri
 
-MudaRemote'u güvenli yapan budur. Diğer **Mudae macroları** bot gibi davranır. MudaRemote insan gibi davranır.
+Bu ayarlar yalnızca tekrar eden zamanlamayı azaltır. Bir self-botu görünmez veya Discord kurallarına uygun hâle getirmez.
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
@@ -158,7 +168,7 @@ GitHub'dan ZIP olarak indirin ve klasöre çıkarın.
 ### Adım 2: Gerekli Kütüphaneleri Kurun
 Klasörün içinde terminal (CMD) açın ve şunu yazın:
 ```bash
-pip install discord.py-self inquirer requests
+pip install -r requirements.txt
 ```
 
 ### Adım 3: Ayarlar Penceresini Açın
