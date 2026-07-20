@@ -126,10 +126,15 @@ def validate_preset(data, resolved_token=None):
 
     farm_enabled = bool(data.get("farm_character_enabled", False))
     farm_after_claim = bool(data.get("farm_forcedivorce_after_claim", False))
+    farm_before_roll = bool(data.get("farm_forcedivorce_before_roll", farm_enabled and not farm_after_claim))
     if farm_enabled and not str(data.get("farm_character", "") or "").strip():
         errors.append("Kakera Farm Character is required when the farming loop is enabled.")
     if farm_after_claim and not farm_enabled:
         errors.append("Forcedivorce After Verified Claim requires the Kakera Farming Loop.")
+    if farm_before_roll and not farm_enabled:
+        errors.append("Forcedivorce Before Rolling requires the Kakera Farming Loop.")
+    if farm_enabled and not (farm_before_roll or farm_after_claim):
+        errors.append("Kakera Farming Loop requires at least one forcedivorce timing option.")
 
     non_negative = [
         "min_kakera", "delay_seconds", "start_delay", "roll_speed", "snipe_delay",

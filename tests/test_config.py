@@ -53,10 +53,30 @@ class ConfigTests(unittest.TestCase):
         orphaned_timing = dict(base, farm_forcedivorce_after_claim=True)
         self.assertTrue(any("requires" in error for error in validate_preset(orphaned_timing)))
 
+        orphaned_before_roll = dict(base, farm_forcedivorce_before_roll=True)
+        self.assertTrue(any("Before Rolling requires" in error for error in validate_preset(orphaned_before_roll)))
+
+        no_timing = dict(
+            base,
+            farm_character_enabled=True,
+            farm_character="Rem",
+            farm_forcedivorce_before_roll=False,
+            farm_forcedivorce_after_claim=False,
+        )
+        self.assertTrue(any("at least one" in error for error in validate_preset(no_timing)))
+
+        legacy_pre_roll = dict(
+            base,
+            farm_character_enabled=True,
+            farm_character="Rem",
+        )
+        self.assertEqual(validate_preset(legacy_pre_roll), [])
+
         valid = dict(
             base,
             farm_character_enabled=True,
             farm_character="Rem",
+            farm_forcedivorce_before_roll=True,
             farm_forcedivorce_after_claim=True,
         )
         self.assertEqual(validate_preset(valid), [])

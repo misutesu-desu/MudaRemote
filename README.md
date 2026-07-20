@@ -14,18 +14,18 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.0-f97316?style=for-the-badge" alt="Version 4.6.0"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.1-f97316?style=for-the-badge" alt="Version 4.6.1"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
 
-## 🚀 Reliability, Security & Automation Overhaul — v4.6.0
+## 🚀 Command Pacing & Farming Controls — v4.6.1
 
 - **Reliable claiming and pause:** Claims are verified from live Discord evidence, reset timing is preserved to the second, and pause now stops active rolls, delayed actions, reactions, and button clicks across every account.
 - **Far fewer `$tu` commands:** Authoritative cooldowns, completed roll cycles, and exact bonus-roll messages update only the affected local state; fresh-response matching, bounded retries, and backoff prevent query spam without sacrificing recovery.
 - **Safer configuration and updates:** Tokens use Windows DPAPI or the operating system keyring, JSON writes are atomic, and the manifest-based modular updater verifies every downloaded file before applying the release.
 - **More resilient automation:** Multi-account claim coordination, scheduled rolls, Kakera cost handling, empty embeds, zero-valued thresholds, and retry exhaustion have been corrected.
-- **Flexible Kakera farming:** A new shared-server mode keeps the selected farm character owned until a verified claim, then forcedivorces it immediately; the legacy pre-roll mode remains available for solo key farming.
+- **Flexible Kakera farming:** Independent pre-roll and post-claim forcedivorce controls can be enabled separately or together, covering shared-server farming, solo key farming, and characters already owned at startup.
 - **Correct stacked power discounts:** The 10+ key discount and visible `💎/2` Perk 8 discount now stack independently, including fractional power costs such as 7.5%.
 - **Improved preset editor and diagnostics:** Presets are validated and persisted consistently, dynamic values survive edits, child-process status is visible, logs rotate with tracebacks, and automated regression tests protect the critical flows.
 

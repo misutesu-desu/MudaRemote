@@ -66,7 +66,7 @@ def _bootstrap_modular_core():
 
 try:
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, SecretStore, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, initialize_status_tracking,
@@ -88,7 +88,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         if loaded_module == "mudae_core" or loaded_module.startswith("mudae_core."):
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, SecretStore, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, initialize_status_tracking,
@@ -109,7 +109,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.0"
+CURRENT_VERSION = "4.6.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -494,11 +494,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             persistent_stagger_seconds_preset=0,
             sphere_click_targets_preset=None,
             immediate_kakera_click_preset=True,
-            farm_forcedivorce_after_claim_preset=False):
+            farm_forcedivorce_after_claim_preset=False,
+            farm_forcedivorce_before_roll_preset=True):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
     client._pause_generation = 1 if _global_paused else 0
+    client.command_pacer = CommandPacer(0.6, 0.8)
     with _active_clients_lock: _active_clients.append(client)
 
     discord_logger = logging.getLogger('discord')
@@ -607,6 +609,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.farm_character = str(farm_character_preset or "").strip().lower()
     client.farm_character_enabled = farm_character_enabled_preset
     client.farm_forcedivorce_after_claim = bool(farm_forcedivorce_after_claim_preset)
+    client.farm_forcedivorce_before_roll = bool(farm_forcedivorce_before_roll_preset)
     client.op_perk_5_only = op_perk_5_only_preset
 
     client.next_claim_reset_at_utc = None
@@ -832,11 +835,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 event.set()
         return True
 
+    async def paced_mudae_action(action):
+        return await client.command_pacer.run(
+            action,
+            lambda seconds: pause_interruptible_sleep(client, seconds, abort_on_pause=True),
+            lambda: not client.is_paused and not is_maintenance_active(),
+        )
+
     async def guarded_send(channel, content):
-        if client.is_paused or is_maintenance_active():
-            return False
-        await channel.send(content)
-        return True
+        return await paced_mudae_action(lambda: channel.send(content))
 
     async def guarded_click(target):
         if client.is_paused or is_maintenance_active():
@@ -1096,7 +1103,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         }
         try:
             if client.is_paused or is_maintenance_active(): return False
-            await client.http.request(Route("POST", "/interactions"), json=payload)
+            if not await paced_mudae_action(
+                lambda: client.http.request(Route("POST", "/interactions"), json=payload)
+            ):
+                return False
             client.slash_fail_streak = 0
             client.slash_rate_limited_until = 0.0
             return True
@@ -1901,9 +1911,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
 
         if (client.farm_character_enabled and client.farm_character and client.claim_right_available
-                and not client.farm_forcedivorce_after_claim):
+                and client.farm_forcedivorce_before_roll):
             if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
-            if not await execute_farm_forcedivorce(client, channel, client.farm_character, "before rolling (solo/key mode)"):
+            if not await execute_farm_forcedivorce(client, channel, client.farm_character, "before rolling (configured timing)"):
                 return
 
         if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
@@ -2277,7 +2287,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client,
                 channel,
                 char_name,
-                "after verified claim (shared-server mode)",
+                "after verified claim (configured timing)",
             )
 
         if client.auto_divorce_enabled and not farm_character_claimed:
@@ -2631,7 +2641,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         rt_registered = False
         claim_registered = False
-        if msg.id in client.processed_claim_messages: return False
+        if not is_kakera and msg.id in client.processed_claim_messages: return False
 
         embed = msg.embeds[0]
         char_name = (embed.author.name if embed.author else "Unknown").strip()
@@ -2667,9 +2677,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return False
 
             client.is_claiming = True
-        client.processed_claim_messages.add(msg.id)
-        if len(client.processed_claim_messages) > 1000:
-            client.processed_claim_messages.clear()
+            client.processed_claim_messages.add(msg.id)
+            if len(client.processed_claim_messages) > 1000:
+                client.processed_claim_messages.clear()
         try:
             if not is_kakera and not is_free_claim and not is_rt_claim:
                 if not client.claim_right_available and client.rt_available and not (is_snipe and client.rt_only_self_rolls):
@@ -3181,22 +3191,45 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if await claim_character(client, message.channel, message, kakera_value=k_val):
                                 process = False
 
-                if process:
-                    all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-                    has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
-                    if has_btn:
-                        if getattr(client, 'immediate_kakera_click', True):
-                            d_min, d_max = client.reactive_kakera_delay_range
-                            if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
-                            await claim_character(client, message.channel, message, is_kakera=True)
-                        else:
-                            client.collected_kakera_rolls.append(message)
+                all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
+                has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
+                if has_btn:
+                    if getattr(client, 'immediate_kakera_click', True):
+                        d_min, d_max = client.reactive_kakera_delay_range
+                        if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
+                        await claim_character(client, message.channel, message, is_kakera=True)
+                    else:
+                        client.collected_kakera_rolls.append(message)
         else:
             c_name = embed.author.name.lower()
             process = True
 
             # Determine roll owner
             owner_id, owner_name = await detect_roll_owner(client, message)
+
+            client_names = {
+                str(getattr(client.user, 'name', '') or '').lower(),
+                str(getattr(client.user, 'display_name', '') or '').lower(),
+            }
+            is_manual_self_roll = owner_id == client.user.id or bool(owner_name and owner_name in client_names)
+            if process and is_manual_self_roll and client.enable_reactive_self_snipe:
+                desc = embed.description or ""
+                series = desc.splitlines()[0].lower() if desc else ""
+                k_val = 0
+                m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
+                if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+                claims_r, likes_r = parse_mudae_ranks(desc)
+                is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
+                is_wanted = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(message, client.user.id) or is_ranked or k_val >= client.current_min_kakera_for_roll_claim
+                is_avoided = c_name in client.avoid_list
+                already_in_progress = _claim_coordinator.is_reserved(message.id)
+                if is_wanted and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                    if not is_key_mode_kakera_only() and is_character_snipe_allowed(is_external_snipe=False):
+                        BotLogger.log(f"Manual Self-Roll Claim: {c_name} ({k_val} ka)", preset_name, "CLAIM")
+                        if client.reactive_snipe_delay > 0:
+                            if not await active_delay(client.reactive_snipe_delay + random.uniform(0.05, 0.25)): return
+                        if await claim_character(client, message.channel, message, kakera_value=k_val):
+                            process = False
 
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis
@@ -3215,7 +3248,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         client.kakera_reaction_sniped_messages.add(message.id)
                         if not await active_delay(client.kakera_reaction_snipe_delay_value): return
                         await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
-                        process = False
 
             # Target validation for character sniping
             is_snipe_target_ok = True
@@ -3347,7 +3379,12 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("persistent_stagger_seconds", 0),
                 preset_data.get("sphere_click_targets", None),
                 preset_data.get("immediate_kakera_click", True),
-                preset_data.get("farm_forcedivorce_after_claim", False)
+                preset_data.get("farm_forcedivorce_after_claim", False),
+                preset_data.get(
+                    "farm_forcedivorce_before_roll",
+                    bool(preset_data.get("farm_character_enabled", False))
+                    and not preset_data.get("farm_forcedivorce_after_claim", False),
+                )
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}\n{traceback.format_exc()}", preset_name, "ERROR")

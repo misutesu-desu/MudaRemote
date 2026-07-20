@@ -1,9 +1,53 @@
 """Cross-thread pause state and asyncio waiting helpers."""
 
 import asyncio
+import random
 import time
 
 from .status import STATUS_FIELDS, mark_status_dirty
+
+
+class CommandPacer:
+    """Serialize outbound commands and keep a randomized gap between them."""
+
+    def __init__(self, minimum_delay=0.6, maximum_delay=0.8, clock=None, jitter=None):
+        minimum_delay = float(minimum_delay)
+        maximum_delay = float(maximum_delay)
+        if minimum_delay < 0 or maximum_delay < minimum_delay:
+            raise ValueError("Command delay must satisfy 0 <= minimum <= maximum.")
+        self.minimum_delay = minimum_delay
+        self.maximum_delay = maximum_delay
+        self._clock = clock or time.monotonic
+        self._jitter = jitter or random.uniform
+        self._lock = None
+        self._next_command_at = 0.0
+
+    def _get_lock(self):
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def run(self, action, wait, is_allowed=None):
+        """Run one async command action after all earlier actions and their gap."""
+        allowed = is_allowed or (lambda: True)
+        if not allowed():
+            return False
+
+        async with self._get_lock():
+            if not allowed():
+                return False
+            remaining = self._next_command_at - self._clock()
+            if remaining > 0 and not await wait(remaining):
+                return False
+            if not allowed():
+                return False
+
+            await action()
+            self._next_command_at = self._clock() + self._jitter(
+                self.minimum_delay,
+                self.maximum_delay,
+            )
+            return True
 
 
 def _wake_runtime_events(client) -> None:

@@ -12,6 +12,7 @@
     "rolling": true,
     "farm_character_enabled": false,
     "farm_character": "",
+    "farm_forcedivorce_before_roll": false,
     "farm_forcedivorce_after_claim": false
   }
 }

@@ -1,24 +1,24 @@
 {
-  "version": "4.6.0",
+  "version": "4.6.1",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "c7a498bdfc6c19d3dedda393beb5426502392553ae7a80d0b0c933db60a3b8d1",
+  "exe_sha256": "1c75403516b75df25f1a1c476ec0bfc845a97dd79f8a67c6d838692339b17aae",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "ae3bbbc818796a5a665c2f566ace9f219004e8efe62cd96197799a374b1c467b"
+      "sha256": "4bde5780745d897ee2dc92e2ef1f91cfa82c9cfb89515894ee2bd8785460f64f"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "0e3b2f5e111863082abaa36d4225c6e6aba83e353cc277ad97790f566c10f882"
+      "sha256": "1413f1e90591fed13137393dfa5a79cc1af7cf8d880c5a8e2ade1632db282297"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "24b512134ff0044f5f8692987bc6b322545174df48de46241579badad2977ec7"
+      "sha256": "5e579d5edd8d0b0b2ae13037732b82cdade6bcb4c0764c4f0a040401080c6530"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -28,7 +28,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/config.py",
-      "sha256": "84155f4fa944b9e587fbb72b2679e86045b9275ae8a72741dd288a8529a88e93"
+      "sha256": "3e4e3760b2c6c2b44c52a181dd9d0e9a9eb8592cc79e39ea745ab2aad931eadb"
     },
     {
       "path": "mudae_core/kakera.py",
@@ -43,7 +43,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/runtime.py",
-      "sha256": "533e1e0c1b4e4bae25fb8af89038054975697572dfc9a5042550eb049687d5a1"
+      "sha256": "9e918d529998592110902d664a0cada904ad8da171477bb875fcf1c2b2d41f42"
     },
     {
       "path": "mudae_core/secrets.py",

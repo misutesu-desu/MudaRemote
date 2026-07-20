@@ -143,7 +143,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(len(capture_calls), 1)
         self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
 
-    def test_shared_server_farm_mode_divorces_only_after_verified_claim(self):
+    def test_farm_divorce_timings_can_be_enabled_independently(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -151,9 +151,52 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         start_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
         finalize_source = ast.get_source_segment(self.source, functions["finalize_successful_claim"])
-        self.assertIn("not client.farm_forcedivorce_after_claim", start_source)
-        self.assertIn("after verified claim (shared-server mode)", finalize_source)
+        self.assertIn("client.farm_forcedivorce_before_roll", start_source)
+        self.assertNotIn("not client.farm_forcedivorce_after_claim", start_source)
+        self.assertIn("after verified claim (configured timing)", finalize_source)
         self.assertIn("await execute_farm_forcedivorce", finalize_source)
+
+    def test_text_and_slash_commands_share_the_same_pacer(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        for function_name in ("guarded_send", "_trigger_mudae_slash"):
+            called_names = {
+                child.func.id
+                for child in ast.walk(functions[function_name])
+                if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+            }
+            self.assertIn("paced_mudae_action", called_names, function_name)
+
+    def test_kakera_and_character_actions_do_not_share_processed_message_lock(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        self.assertIn(
+            "if not is_kakera and msg.id in client.processed_claim_messages",
+            claim_source,
+        )
+        self.assertIn(
+            "if not is_kakera:\n            # Check lock and register",
+            claim_source,
+        )
+
+    def test_idle_manual_self_rolls_use_reactive_claiming(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn("is_manual_self_roll", handler_source)
+        self.assertIn("client.enable_reactive_self_snipe", handler_source)
+        self.assertIn("is_external_snipe=False", handler_source)
+        self.assertIn("Manual Self-Roll Claim", handler_source)
 
     def test_farm_forcedivorce_never_sends_a_bare_confirmation(self):
         functions = {

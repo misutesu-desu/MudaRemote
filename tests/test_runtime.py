@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 import unittest
 
-from mudae_core.runtime import pause_interruptible_sleep, set_client_paused
+from mudae_core.runtime import CommandPacer, pause_interruptible_sleep, set_client_paused
 from mudae_core.status import initialize_status_tracking, status_dirty_fields
 
 
@@ -101,6 +101,45 @@ class RuntimeAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(task.done())
         set_client_paused(self.client, False)
         self.assertTrue(await asyncio.wait_for(task, timeout=1))
+
+    async def test_command_pacer_serializes_commands_with_configured_gap(self):
+        now = [0.0]
+        waits = []
+        actions = []
+
+        async def wait(delay):
+            waits.append(delay)
+            now[0] += delay
+            await asyncio.sleep(0)
+            return True
+
+        async def action(name):
+            actions.append(name)
+            await asyncio.sleep(0)
+
+        pacer = CommandPacer(0.6, 0.8, clock=lambda: now[0], jitter=lambda _a, _b: 0.7)
+        await asyncio.gather(
+            pacer.run(lambda: action("first"), wait),
+            pacer.run(lambda: action("second"), wait),
+        )
+
+        self.assertEqual(actions, ["first", "second"])
+        self.assertEqual(waits, [0.7])
+
+    async def test_command_pacer_does_not_send_when_wait_is_interrupted(self):
+        now = [0.0]
+        actions = []
+
+        async def wait(_delay):
+            return False
+
+        async def action(name):
+            actions.append(name)
+
+        pacer = CommandPacer(0.6, 0.8, clock=lambda: now[0], jitter=lambda _a, _b: 0.7)
+        self.assertTrue(await pacer.run(lambda: action("first"), wait))
+        self.assertFalse(await pacer.run(lambda: action("second"), wait))
+        self.assertEqual(actions, ["first"])
 
 
 if __name__ == "__main__":
