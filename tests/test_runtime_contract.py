@@ -155,6 +155,10 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertNotIn("not client.farm_forcedivorce_after_claim", start_source)
         self.assertIn("after verified claim (configured timing)", finalize_source)
         self.assertIn("await execute_farm_forcedivorce", finalize_source)
+        self.assertIn(
+            "farm_character_claimed and consumes_claim and client.auto_rt_after_claim and client.rt_available",
+            finalize_source,
+        )
 
     def test_text_and_slash_commands_share_the_same_pacer(self):
         functions = {
@@ -198,7 +202,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("is_external_snipe=False", handler_source)
         self.assertIn("Manual Self-Roll Claim", handler_source)
 
-    def test_farm_forcedivorce_never_sends_a_bare_confirmation(self):
+    def test_farm_forcedivorce_sends_confirmation_through_guarded_queue(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -213,9 +217,22 @@ class RuntimeSourceContractTests(unittest.TestCase):
             and child.func.id == "guarded_send"
             and len(child.args) > 1
         ]
-        self.assertFalse(
+        self.assertTrue(
             any(isinstance(argument, ast.Constant) and argument.value == "y" for argument in guarded_arguments)
         )
+        helper_source = ast.get_source_segment(self.source, helper)
+        self.assertLess(
+            helper_source.index('f"{client.mudae_prefix}forcedivorce {char_name}"'),
+            helper_source.index('guarded_send(channel, "y")'),
+        )
+        direct_sends = [
+            child
+            for child in ast.walk(helper)
+            if isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "send"
+        ]
+        self.assertEqual(direct_sends, [])
 
 
 if __name__ == "__main__":

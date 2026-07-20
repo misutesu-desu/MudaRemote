@@ -1,19 +1,19 @@
 {
-  "version": "4.6.1",
+  "version": "4.6.2",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "1c75403516b75df25f1a1c476ec0bfc845a97dd79f8a67c6d838692339b17aae",
+  "exe_sha256": "c6b437a8c5f4d73f36c4fe82b4ff73c35745e7250e5047c2ca8f8c17a5c5e2e7",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "4bde5780745d897ee2dc92e2ef1f91cfa82c9cfb89515894ee2bd8785460f64f"
+      "sha256": "719d551db6f1db87248da3c9e54c4750e3a376683173fd8fdd3a5c579267135a"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "1413f1e90591fed13137393dfa5a79cc1af7cf8d880c5a8e2ade1632db282297"
+      "sha256": "424f623399ce2bcc570b779c022e5c8a495161917ba0ecef40fc6dcdccda12c0"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -48,7 +48,7 @@
     {
       "path": "mudae_core/secrets.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/secrets.py",
-      "sha256": "95e11ac23c4a2810a98d6118bf8350b539406d08bf30b2e4ee1d9a3da20f9ce1"
+      "sha256": "a742974557a39cdb8f2e099fde79a5d1d72e814f5eb3d499b3c22a051e0889ac"
     },
     {
       "path": "mudae_core/status.py",

@@ -109,7 +109,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.1"
+CURRENT_VERSION = "4.6.2"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -1895,14 +1895,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             BotLogger.log(f"Skipping $mk: Insufficient power ({get_current_dk_power()}% < {client.dk_consumption}%).", preset_name, "INFO")
 
     async def execute_farm_forcedivorce(client, channel, char_name, reason):
-        """Release the configured farm character without sending an unsafe bare confirmation."""
+        """Release the configured farm character and confirm through the shared command queue."""
         if client.is_paused or is_maintenance_active():
             return False
         BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
         if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
             BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
             return False
-        return await active_delay(1.5 + random.uniform(0.1, 0.4))
+        if not await guarded_send(channel, "y"):
+            BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
+            return False
+        BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
+        return await active_delay(1.0 + random.uniform(0.1, 0.4))
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
         if client.is_paused or is_maintenance_active(): return
@@ -2327,7 +2331,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 except Exception as e:
                     BotLogger.log(f"Auto $rt failed: {e}", preset_name, "ERROR")
 
-        if farm_character_claimed and consumes_claim and client.rt_available:
+        if farm_character_claimed and consumes_claim and client.auto_rt_after_claim and client.rt_available:
             if post_claim_farm_mode:
                 if farm_release_sent and await guarded_send(channel, f"{client.mudae_prefix}rt"):
                     client.rt_available = False

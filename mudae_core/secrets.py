@@ -15,9 +15,17 @@ class SecretStoreError(RuntimeError):
 
 class SecretStore:
     SERVICE = "MudaRemote"
+    TERMUX_STORE_PARTS = (".local", "share", "mudaremote", "secrets.json")
 
     def __init__(self, base_path):
         self.path = os.path.join(base_path, ".mudae-secrets.json")
+        termux_home = os.environ.get("HOME") or os.path.expanduser("~")
+        self.termux_path = os.path.join(termux_home, *self.TERMUX_STORE_PARTS)
+
+    @staticmethod
+    def _is_termux():
+        prefix = str(os.environ.get("PREFIX", "") or "")
+        return bool(os.environ.get("TERMUX_VERSION") or "com.termux" in prefix)
 
     @staticmethod
     def _env_name(preset_name):
@@ -39,6 +47,9 @@ class SecretStore:
     def set_token(self, preset_name, token):
         token = str(token or "")
         if token and os.environ.get(self._env_name(preset_name)) == token:
+            return
+        if self._is_termux():
+            self._set_termux_secret(preset_name, token)
             return
         if os.name == "nt":
             self._set_dpapi_secret(preset_name, token)
@@ -62,6 +73,9 @@ class SecretStore:
         self.set_token(preset_name, "")
 
     def _get_platform_secret(self, preset_name):
+        if self._is_termux():
+            values = self._load_termux_values()
+            return str(values.get(preset_name, "") or "")
         if os.name == "nt":
             values = self._load_dpapi_values()
             encoded = values.get(preset_name)
@@ -71,6 +85,43 @@ class SecretStore:
             return keyring.get_password(self.SERVICE, preset_name) or ""
         except Exception as exc:
             raise SecretStoreError(str(exc)) from exc
+
+    def _set_termux_secret(self, preset_name, token):
+        try:
+            values = self._load_termux_values()
+            if token:
+                values[preset_name] = token
+            else:
+                values.pop(preset_name, None)
+
+            if not values:
+                try:
+                    os.remove(self.termux_path)
+                except FileNotFoundError:
+                    pass
+                return
+
+            store_directory = os.path.dirname(self.termux_path)
+            os.makedirs(store_directory, mode=0o700, exist_ok=True)
+            os.chmod(store_directory, 0o700)
+            atomic_write_json(self.termux_path, values)
+            os.chmod(self.termux_path, 0o600)
+        except Exception as exc:
+            raise SecretStoreError(
+                "Termux could not save the token in its private app storage."
+            ) from exc
+
+    def _load_termux_values(self):
+        try:
+            values = load_json(self.termux_path, {})
+            if not isinstance(values, dict):
+                raise ValueError("secret store root is not an object")
+            return values
+        except Exception as exc:
+            raise SecretStoreError(
+                "The Termux private token store is unreadable; restore or remove {}."
+                .format(self.termux_path)
+            ) from exc
 
     def _set_dpapi_secret(self, preset_name, token):
         values = self._load_dpapi_values()

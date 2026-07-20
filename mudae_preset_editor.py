@@ -418,7 +418,7 @@ BOOL_SETTINGS = [
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
-    ("auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)", False),
+    ("auto_rt_after_claim", "Auto $rt After Claim (Also controls $rt for Kakera farm claims)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
@@ -1198,7 +1198,12 @@ class PresetEditor:
         self.add_checkbox(claim_frame.content, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
         self.add_number_field(claim_frame.content, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame.content, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
-        self.add_checkbox(claim_frame.content, "auto_rt_after_claim", "Auto $rt After Claim (Instantly reset your claim timer after a successful claim)")
+        self.add_checkbox(
+            claim_frame.content,
+            "auto_rt_after_claim",
+            "Auto $rt After Claim (Also controls $rt for Kakera farm claims)",
+            description="When disabled, forcedivorce farming will never use $rt by itself.",
+        )
 
         # Hybrid Smart Panic Claim
         hybrid_var = self.add_checkbox(claim_frame.content, "enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)")
@@ -1561,7 +1566,7 @@ class PresetEditor:
         self._bind_focus_highlight(entry)
 
         if key == "token":
-            tooltip_msg = "Safety: Your token is stored locally on your PC in presets.json. Never share this with anyone. To get it, open Discord in browser, open DevTools (F12), go to Network, filter by '/api', click any request, and copy the 'Authorization' header value."
+            tooltip_msg = "Safety: Your token is kept outside presets.json using Windows DPAPI, the system keyring, or Termux private app storage. Never share it with anyone."
             Tooltip(lbl, tooltip_msg)
             Tooltip(entry, tooltip_msg)
 

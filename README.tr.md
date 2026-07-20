@@ -12,16 +12,25 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.1-f97316?style=for-the-badge" alt="Version 4.6.1"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.2-f97316?style=for-the-badge" alt="Version 4.6.2"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🔐 Termux Token Saklama — v4.6.2
+
+- **Shell komutu gerektirmez:** Termux kullanıcıları tokenı editöre bir kez girip normal şekilde kaydeder.
+- **Kalıcı özel depolama:** Token, `presets.json` veya paylaşılan depolama yerine Android'in Termux'a özel uygulama dizininde yeniden başlatmalar arasında korunur.
+- **Kısıtlı erişim:** Depolama dizini ve token dosyası yalnızca sahibinin erişebileceği izinlerle (`0700`/`0600`) kilitlenir.
+- **Otomatik taşıma:** `presets.json` içinde kalmış eski tokenlar bir sonraki editör açılışında özel depoya taşınır.
+- **Güvenilir forcedivorce onayı:** Kakera farming artık gerekli `y` onayını aynı aralıklı komut kuyruğundan gönderir.
+- **Gizli `$rt` kullanımı yok:** Forcedivorce tek başına `$rt` açmaz; farm claim'lerinde yalnızca **Auto $rt After Claim** açıksa kullanılır.
 
 ## 🚀 Komut Aralığı ve Farming Kontrolleri — v4.6.1
 
 - **Güvenilir claim ve pause:** Claim sonucu canlı Discord kanıtlarıyla doğrulanır, reset zamanları saniye hassasiyetinde korunur ve pause tüm hesaplardaki aktif roll, gecikme, reaction ve buton işlemlerini durdurur.
 - **Çok daha az `$tu`:** Kesin cooldown, tamamlanmış roll döngüsü ve miktarı belli bonus roll mesajları yalnızca ilgili yerel durumu günceller; taze yanıt eşleştirme, sınırlı tekrar ve backoff sorgu spam'ini önler.
-- **Daha güvenli ayarlar ve güncellemeler:** Token'lar Windows DPAPI veya sistem keyring'i ile saklanır, JSON yazımları atomiktir ve modüler updater indirdiği her dosyayı uygulamadan önce doğrular.
+- **Daha güvenli ayarlar ve güncellemeler:** Token'lar Windows DPAPI, sistem keyring'i veya Termux'un uygulamaya özel depolaması ile saklanır; JSON yazımları atomiktir ve modüler updater indirdiği her dosyayı uygulamadan önce doğrular.
 - **Daha dayanıklı otomasyon:** Çoklu hesap claim koordinasyonu, zamanlanmış roll'lar, Kakera maliyetleri, boş embed'ler, sıfır değerli eşikler ve sonsuz tekrar yolları düzeltildi.
 - **Esnek Kakera farming:** Bağımsız roll öncesi ve claim sonrası forcedivorce seçenekleri ayrı ayrı veya birlikte açılabilir; ortak sunucu, solo key farming ve başlangıçta zaten sahip olunan karakter senaryolarını kapsar.
 - **Doğru birleşik güç indirimleri:** 10+ key indirimi ile görünen `💎/2` Perk 8 indirimi artık bağımsız şekilde üst üste uygulanır; 7.5% gibi kesirli maliyetler doğru izlenir.
