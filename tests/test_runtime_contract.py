@@ -174,6 +174,27 @@ class RuntimeSourceContractTests(unittest.TestCase):
             }
             self.assertIn("paced_mudae_action", called_names, function_name)
 
+    def test_initial_status_check_includes_automated_account_stagger(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        ready_source = ast.get_source_segment(self.source, functions["on_ready"])
+        self.assertIn('getattr(client, "persistent_stagger_seconds", 0)', ready_source)
+        self.assertIn(
+            "total_start_delay = manual_start_delay + automated_startup_stagger",
+            ready_source,
+        )
+        self.assertIn(
+            "pause_interruptible_sleep(client, total_start_delay + random.uniform(0.1, 0.5))",
+            ready_source,
+        )
+        self.assertLess(
+            ready_source.index("pause_interruptible_sleep(client, total_start_delay"),
+            ready_source.index("main_status_loop(client, channel)"),
+        )
+
     def test_kakera_and_character_actions_do_not_share_processed_message_lock(self):
         functions = {
             node.name: node

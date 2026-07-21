@@ -109,7 +109,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.2"
+CURRENT_VERSION = "4.6.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -1225,8 +1225,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not channel.permissions_for(channel.guild.me).send_messages:
                 BotLogger.log("No Send Permissions in roll channel", preset_name, "ERROR"); await client.close(); return
 
-        BotLogger.log(f"Starting in {start_delay}s...", preset_name, "INFO")
-        await pause_interruptible_sleep(client, start_delay + random.uniform(0.1, 0.5))
+        manual_start_delay = max(0.0, float(start_delay))
+        automated_startup_stagger = max(
+            0.0,
+            float(getattr(client, "persistent_stagger_seconds", 0)),
+        )
+        total_start_delay = manual_start_delay + automated_startup_stagger
+        BotLogger.log(
+            f"Starting in {total_start_delay:.1f}s "
+            f"(manual: {manual_start_delay:.1f}s, automated stagger: {automated_startup_stagger:.1f}s)...",
+            preset_name,
+            "INFO",
+        )
+        await pause_interruptible_sleep(client, total_start_delay + random.uniform(0.1, 0.5))
 
         if is_inactive_hour():
             wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)

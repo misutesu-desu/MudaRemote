@@ -1,22 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.utils.hooks import collect_all
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 project_root = Path(SPECPATH)
-datas = []
-binaries = []
-hiddenimports = ['mudae_bot', 'mudae_core', 'requests', 'discord', 'discord.ext.commands', 'inquirer', 'keyring']
+hiddenimports = [
+    'mudae_bot',
+    'mudae_core',
+    'requests',
+    'discord',
+    'discord.ext.commands',
+    'discord.http',
+    'inquirer',
+    'keyring',
+]
 hiddenimports += collect_submodules('mudae_core')
-tmp_ret = collect_all('discord')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-
 
 a = Analysis(
     [str(project_root / 'mudae_preset_editor.py')],
     pathex=[str(project_root)],
-    binaries=binaries,
-    datas=datas,
+    binaries=[],
+    datas=[],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -37,7 +40,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # Packed binaries are more likely to trigger heuristic antivirus engines.
+    # Keep UPX disabled even when it happens to be installed on the build host.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
@@ -47,4 +52,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=[str(project_root / 'icon.png')],
+    version=str(project_root / 'packaging' / 'windows_version_info.txt'),
 )

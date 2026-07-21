@@ -9,9 +9,10 @@ Usage:
     python build.py --onefile --console
 """
 
-import sys
-import os
 import argparse
+import hashlib
+import os
+import sys
 
 
 def build(onefile=False, console=False):
@@ -19,14 +20,16 @@ def build(onefile=False, console=False):
     try:
         import PyInstaller.__main__
     except ImportError:
-        print("[BUILD] PyInstaller not found. Installing...")
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-        import PyInstaller.__main__
+        print("[BUILD] ERROR: PyInstaller is not installed.")
+        print("[BUILD] Install the pinned build dependencies with:")
+        print(f"[BUILD]   {sys.executable} -m pip install -r requirements-dev.txt")
+        sys.exit(1)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     entry_point = os.path.join(script_dir, "mudae_preset_editor.py")
     icon_path = os.path.join(script_dir, "icon.png")
+    release_spec = os.path.join(script_dir, "MudaRemote.spec")
+    version_file = os.path.join(script_dir, "packaging", "windows_version_info.txt")
     spec_dir = os.path.join(script_dir, "build", "spec")
     os.makedirs(spec_dir, exist_ok=True)
 
@@ -34,53 +37,51 @@ def build(onefile=False, console=False):
         print(f"[BUILD] ERROR: {entry_point} not found.")
         sys.exit(1)
 
-    args = [
-        entry_point,
-        "--noconfirm",
-        "--name=MudaRemote",
-        f"--specpath={spec_dir}",
-        # Include mudae_bot.py as hidden import so the exe contains all bot logic
-        "--hidden-import=mudae_bot",
-        # Core dependencies that PyInstaller might miss
-        "--hidden-import=requests",
-        "--hidden-import=discord",
-        "--hidden-import=discord.ext.commands",
-        "--hidden-import=inquirer",
-        # Collect all discord.py data files (certs, etc.)
-        "--collect-all=discord",
-    ]
-
-    # Build mode
     if onefile:
-        args.append("--onefile")
+        # The checked-in spec is the canonical release definition. Keeping CI,
+        # local builds, metadata and antivirus-hardening flags in one place
+        # prevents different machines from silently producing different layouts.
+        args = [release_spec, "--noconfirm", "--clean"]
         print("[BUILD] Mode: Single file (.exe)")
     else:
-        args.append("--onedir")
+        args = [
+            entry_point,
+            "--noconfirm",
+            "--clean",
+            "--noupx",
+            "--name=MudaRemote",
+            f"--specpath={spec_dir}",
+            "--onedir",
+            # Include mudae_bot.py as hidden import so the bundle contains all bot logic.
+            "--hidden-import=mudae_bot",
+            "--hidden-import=requests",
+            "--hidden-import=discord",
+            "--hidden-import=discord.ext.commands",
+            "--hidden-import=discord.http",
+            "--hidden-import=inquirer",
+            "--collect-submodules=mudae_core",
+            "--hidden-import=keyring",
+            f"--version-file={version_file}",
+        ]
         print("[BUILD] Mode: Directory (faster startup)")
 
-    args.extend([
-        "--collect-submodules=mudae_core",
-        "--hidden-import=keyring",
-    ])
-
-    # Window mode
-    # IMPORTANT: We MUST use --console (not --windowed) because the exe needs to be
-    # able to spawn visible console windows for headless bot mode (--preset).
-    # A --windowed (GUI subsystem) exe cannot create consoles via CREATE_NEW_CONSOLE.
-    # The console is hidden programmatically via ctypes when launching the GUI.
-    if console:
-        args.append("--console")
-        print("[BUILD] Window: Console (always visible)")
+    if onefile:
+        print("[BUILD] Window and icon settings: MudaRemote.spec")
     else:
+        # IMPORTANT: We MUST use --console (not --windowed) because the exe needs to
+        # spawn visible console windows for headless bot mode (--preset).
+        # The console is hidden programmatically via ctypes when launching the GUI.
         args.append("--console")
-        print("[BUILD] Window: Console (hidden automatically in GUI mode)")
+        if console:
+            print("[BUILD] Window: Console (always visible)")
+        else:
+            print("[BUILD] Window: Console (hidden automatically in GUI mode)")
 
-    # Icon
-    if os.path.exists(icon_path):
-        args.append(f"--icon={icon_path}")
-        print(f"[BUILD] Icon: {icon_path}")
-    else:
-        print(f"[BUILD] WARNING: icon.png not found at {icon_path}, building without icon.")
+        if os.path.exists(icon_path):
+            args.append(f"--icon={icon_path}")
+            print(f"[BUILD] Icon: {icon_path}")
+        else:
+            print(f"[BUILD] WARNING: icon.png not found at {icon_path}, building without icon.")
 
     print(f"\n[BUILD] Starting PyInstaller...\n{'='*60}")
     print(f"[BUILD] Command: pyinstaller {' '.join(args)}\n")
@@ -90,9 +91,14 @@ def build(onefile=False, console=False):
     print(f"\n{'='*60}")
     print("[BUILD] Build complete!")
     if onefile:
-        print(f"[BUILD] Output: dist/MudaRemote.exe")
+        output_path = os.path.join(script_dir, "dist", "MudaRemote.exe")
     else:
-        print(f"[BUILD] Output: dist/MudaRemote/MudaRemote.exe")
+        output_path = os.path.join(script_dir, "dist", "MudaRemote", "MudaRemote.exe")
+    print(f"[BUILD] Output: {output_path}")
+    if os.path.isfile(output_path):
+        with open(output_path, "rb") as executable:
+            digest = hashlib.sha256(executable.read()).hexdigest()
+        print(f"[BUILD] SHA256: {digest}")
     print("[BUILD] Make sure presets.json is in the same directory as the .exe when running.")
 
 

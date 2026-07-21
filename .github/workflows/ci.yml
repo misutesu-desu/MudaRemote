@@ -38,6 +38,17 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements-dev.txt
       - run: python build.py --onefile
+      - name: Verify packaged Windows metadata
+        shell: pwsh
+        run: |
+          $expectedVersion = (Get-Content -LiteralPath .\version.json | ConvertFrom-Json).version
+          $versionInfo = (Get-Item -LiteralPath .\dist\MudaRemote.exe).VersionInfo
+          if ($versionInfo.ProductVersion -ne $expectedVersion) {
+            throw "ProductVersion mismatch: expected $expectedVersion, got $($versionInfo.ProductVersion)"
+          }
+          if ($versionInfo.OriginalFilename -ne "MudaRemote.exe") {
+            throw "Unexpected OriginalFilename: $($versionInfo.OriginalFilename)"
+          }
       - name: Smoke-test packaged CLI
         shell: pwsh
         run: .\dist\MudaRemote.exe --help
