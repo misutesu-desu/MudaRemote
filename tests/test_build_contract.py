@@ -31,6 +31,7 @@ class BuildContractTests(unittest.TestCase):
         requirements = read_project_file("requirements-dev.txt")
         self.assertRegex(requirements, r"(?m)^pyinstaller==\d+\.\d+\.\d+$")
         self.assertRegex(requirements, r"(?m)^pyinstaller-hooks-contrib==\d+\.\d+$")
+        self.assertRegex(requirements, r"(?m)^pillow==\d+\.\d+\.\d+$")
 
     def test_windows_metadata_matches_release_version(self):
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
