@@ -6,6 +6,7 @@ from mudae_core.claiming import (
     classify_claim_owner,
     classify_claim_text,
     cooldown_deadline,
+    is_claim_announcement_for_character,
 )
 
 
@@ -44,6 +45,16 @@ class ClaimingTests(unittest.TestCase):
         )
         self.assertEqual(evidence.outcome, ClaimOutcome.FAILURE)
         self.assertEqual(evidence.winner, "Someone Else")
+
+    def test_claim_announcement_detection_excludes_forcedivorce_prompts(self):
+        self.assertTrue(is_claim_announcement_for_character(
+            "**Someone Else** and **Yoruichi Shihoin** are now married!",
+            "Yoruichi Shihoin",
+        ))
+        self.assertFalse(is_claim_announcement_for_character(
+            "Makima belongs to someone else, do you want to force the divorce?",
+            "Makima",
+        ))
 
     def test_unrelated_text_stays_inconclusive(self):
         evidence = classify_claim_text("You have 13 rolls left", "Satella", ["maliss"])

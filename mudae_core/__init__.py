@@ -1,7 +1,14 @@
 """Shared, testable infrastructure for MudaRemote."""
 
 from .config import atomic_write_json, load_json, validate_preset
-from .claiming import ClaimEvidence, ClaimOutcome, classify_claim_owner, classify_claim_text, cooldown_deadline
+from .claiming import (
+    ClaimEvidence,
+    ClaimOutcome,
+    classify_claim_owner,
+    classify_claim_text,
+    cooldown_deadline,
+    is_claim_announcement_for_character,
+)
 from .coordinator import ClaimCoordinator
 from .kakera import calculate_kakera_power_cost, has_perk_eight_discount
 from .runtime import CommandPacer, pause_interruptible_sleep, set_client_paused, wait_until_resumed
@@ -41,6 +48,7 @@ __all__ = [
     "cooldown_deadline",
     "defer_tu_queries",
     "initialize_status_tracking",
+    "is_claim_announcement_for_character",
     "is_newer_version",
     "has_perk_eight_discount",
     "load_json",

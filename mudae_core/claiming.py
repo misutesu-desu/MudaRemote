@@ -81,6 +81,41 @@ def classify_claim_text(
     return ClaimEvidence(ClaimOutcome.INCONCLUSIVE)
 
 
+def is_claim_announcement_for_character(content: object, character_name: object) -> bool:
+    """Return whether a Mudae message announces that the character was claimed."""
+    normalized = normalize_external_text(content)
+    character = normalize_external_text(character_name)
+    if not character or not _contains_normalized(normalized, character):
+        return False
+
+    # Forcedivorce prompts also contain relationship wording, but they are not
+    # new claims and must never start another release cycle.
+    excluded_markers = (
+        "force the divorce",
+        "forcedivorce",
+        "belongs to",
+        "divorced",
+    )
+    if any(marker in normalized for marker in excluded_markers):
+        return False
+
+    claim_markers = (
+        "are now married",
+        "is now married",
+        "has claimed",
+        " claimed ",
+        "casou",
+        "casado",
+        "reclamado",
+        "marie",
+        "mariee",
+        "epous",
+        "se caso",
+    )
+    padded = " {} ".format(normalized)
+    return any(marker in padded for marker in claim_markers)
+
+
 def classify_claim_owner(
     owner: object,
     identities: Iterable[object],

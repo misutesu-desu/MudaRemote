@@ -69,7 +69,7 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, initialize_status_tracking, is_claim_announcement_for_character,
         mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
@@ -91,7 +91,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, initialize_status_tracking, is_claim_announcement_for_character,
         mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
@@ -109,7 +109,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.3"
+CURRENT_VERSION = "4.6.4"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -495,7 +495,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             sphere_click_targets_preset=None,
             immediate_kakera_click_preset=True,
             farm_forcedivorce_after_claim_preset=False,
-            farm_forcedivorce_before_roll_preset=True):
+            farm_forcedivorce_before_roll_preset=True,
+            farm_forcedivorce_after_other_claim_preset=False):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -610,6 +611,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.farm_character_enabled = farm_character_enabled_preset
     client.farm_forcedivorce_after_claim = bool(farm_forcedivorce_after_claim_preset)
     client.farm_forcedivorce_before_roll = bool(farm_forcedivorce_before_roll_preset)
+    client.farm_forcedivorce_after_other_claim = bool(farm_forcedivorce_after_other_claim_preset)
+    client._farm_release_recent = {}
     client.op_perk_5_only = op_perk_5_only_preset
 
     client.next_claim_reset_at_utc = None
@@ -1885,8 +1888,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.is_paused or is_maintenance_active() or client.interrupt_rolling:
                     mark_status_dirty(client, {"rolls", "power"}, reason="mk-interrupted")
                     break
-                BotLogger.log(f"Using $mk ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", preset_name, "KAKERA")
-                if not await guarded_send(channel, f"{client.mudae_prefix}mk"):
+                command_label = "/mk" if client.use_slash_rolls and not client.slash_fallback_active else f"{client.mudae_prefix}mk"
+                BotLogger.log(f"Using {command_label} ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", preset_name, "KAKERA")
+                if not await send_roll_command(channel, "mk"):
                     mark_status_dirty(client, {"rolls", "power"}, reason="mk-send-blocked")
                     break
                 client.mk_rolls_left -= 1
@@ -1901,7 +1905,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if not await active_delay(1):
                     mark_status_dirty(client, {"rolls", "power"}, reason="mk-post-send-interrupted")
                     break
-            if used > 0: BotLogger.log(f"Used {used} $mk rolls.", preset_name, "KAKERA")
+            if used > 0: BotLogger.log(f"Used {used} MK rolls.", preset_name, "KAKERA")
         else:
             BotLogger.log(f"Skipping $mk: Insufficient power ({get_current_dk_power()}% < {client.dk_consumption}%).", preset_name, "INFO")
 
@@ -1909,11 +1913,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         """Release the configured farm character and confirm through the shared command queue."""
         if client.is_paused or is_maintenance_active():
             return False
+        release_key = str(char_name or "").strip().casefold()
+        now_monotonic = time.monotonic()
+        last_release = client._farm_release_recent.get(release_key, 0.0)
+        if release_key and now_monotonic - last_release < 15.0:
+            BotLogger.log(f"Kakera Farm: Skipping duplicate forcedivorce for {char_name}.", preset_name, "DEBUG", client)
+            return True
+        if release_key:
+            client._farm_release_recent[release_key] = now_monotonic
         BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
         if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
+            client._farm_release_recent.pop(release_key, None)
             BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
             return False
         if not await guarded_send(channel, "y"):
+            client._farm_release_recent.pop(release_key, None)
             BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
             return False
         BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
@@ -3075,6 +3089,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if is_inactive_hour(): return
 
+        if (
+            is_roll
+            and client.farm_character_enabled
+            and client.farm_character
+            and client.farm_forcedivorce_after_other_claim
+            and is_claim_announcement_for_character(message.content, client.farm_character)
+        ):
+            farm_claim_evidence = classify_claim_text(
+                message.content,
+                client.farm_character,
+                claim_identities(),
+                user_id=getattr(getattr(client, "user", None), "id", None),
+            )
+            if farm_claim_evidence.outcome != ClaimOutcome.SUCCESS:
+                client.loop.create_task(execute_farm_forcedivorce(
+                    client,
+                    message.channel,
+                    client.farm_character,
+                    "after another account claimed it (configured timing)",
+                ))
+
         if client.main_account_id:
             try: main_id = int(client.main_account_id)
             except ValueError: main_id = None
@@ -3398,8 +3433,10 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get(
                     "farm_forcedivorce_before_roll",
                     bool(preset_data.get("farm_character_enabled", False))
-                    and not preset_data.get("farm_forcedivorce_after_claim", False),
-                )
+                    and not preset_data.get("farm_forcedivorce_after_claim", False)
+                    and not preset_data.get("farm_forcedivorce_after_other_claim", False),
+                ),
+                preset_data.get("farm_forcedivorce_after_other_claim", False),
             )
         except Exception as e:
             print_log(f"Instance crashed: {e}\n{traceback.format_exc()}", preset_name, "ERROR")

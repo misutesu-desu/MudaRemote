@@ -369,6 +369,7 @@ DEFAULTS = {
     "farm_character_enabled": False,
     "farm_forcedivorce_before_roll": False,
     "farm_forcedivorce_after_claim": False,
+    "farm_forcedivorce_after_other_claim": False,
     "op_perk_5_only": False,
     "auto_divorce_enabled": False,
     "auto_divorce_max_kakera": 50,
@@ -423,7 +424,8 @@ BOOL_SETTINGS = [
     ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("farm_forcedivorce_before_roll", "Forcedivorce Before Rolling (Solo/Startup Cleanup)", False),
-    ("farm_forcedivorce_after_claim", "Forcedivorce After Verified Claim (Shared Server Mode)", False),
+    ("farm_forcedivorce_after_claim", "Forcedivorce After Own Verified Claim", False),
+    ("farm_forcedivorce_after_other_claim", "Forcedivorce After Another Account Claims (Shared Server Mode)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
@@ -825,9 +827,11 @@ class PresetEditor:
                 migrated = False
                 for preset_name, data in self.presets.items():
                     if "farm_forcedivorce_before_roll" not in data:
-                        data["farm_forcedivorce_before_roll"] = bool(
-                            data.get("farm_character_enabled", False)
-                        ) and not bool(data.get("farm_forcedivorce_after_claim", False))
+                        data["farm_forcedivorce_before_roll"] = (
+                            bool(data.get("farm_character_enabled", False))
+                            and not bool(data.get("farm_forcedivorce_after_claim", False))
+                            and not bool(data.get("farm_forcedivorce_after_other_claim", False))
+                        )
                         migrated = True
                     legacy_token = str(data.get("token", "") or "")
                     if legacy_token:
@@ -1313,8 +1317,14 @@ class PresetEditor:
         self.add_checkbox(
             farm_sub,
             "farm_forcedivorce_after_claim",
-            "Forcedivorce After Verified Claim (Shared Server Mode)",
-            description="Releases the farm character immediately after the bot verifies its claim. Enable both timing options to also clear a character already owned when rolling starts.",
+            "Forcedivorce After Own Verified Claim",
+            description="Releases the farm character immediately after this account verifies its own claim.",
+        )
+        self.add_checkbox(
+            farm_sub,
+            "farm_forcedivorce_after_other_claim",
+            "Forcedivorce After Another Account Claims (Shared Server Mode)",
+            description="Optionally releases the configured farm character when another account claims it in the target channel.",
         )
 
         # --- Auto-Divorce ---
@@ -1795,7 +1805,7 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim",
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
@@ -1978,7 +1988,7 @@ class PresetEditor:
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim",
+                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
@@ -2224,6 +2234,7 @@ class PresetEditor:
                 "snipe_chat_messages": ["omg", "ezz"],
                 "farm_forcedivorce_before_roll": False,
                 "farm_forcedivorce_after_claim": False,
+                "farm_forcedivorce_after_other_claim": False,
                 "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
                 "immediate_kakera_click": True,
                 "character_snipe_targets": [],

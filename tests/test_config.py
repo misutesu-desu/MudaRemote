@@ -56,12 +56,16 @@ class ConfigTests(unittest.TestCase):
         orphaned_before_roll = dict(base, farm_forcedivorce_before_roll=True)
         self.assertTrue(any("Before Rolling requires" in error for error in validate_preset(orphaned_before_roll)))
 
+        orphaned_other_claim = dict(base, farm_forcedivorce_after_other_claim=True)
+        self.assertTrue(any("Another Account Claim requires" in error for error in validate_preset(orphaned_other_claim)))
+
         no_timing = dict(
             base,
             farm_character_enabled=True,
             farm_character="Rem",
             farm_forcedivorce_before_roll=False,
             farm_forcedivorce_after_claim=False,
+            farm_forcedivorce_after_other_claim=False,
         )
         self.assertTrue(any("at least one" in error for error in validate_preset(no_timing)))
 
@@ -72,12 +76,23 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(validate_preset(legacy_pre_roll), [])
 
+        shared_only = dict(
+            base,
+            farm_character_enabled=True,
+            farm_character="Rem",
+            farm_forcedivorce_before_roll=False,
+            farm_forcedivorce_after_claim=False,
+            farm_forcedivorce_after_other_claim=True,
+        )
+        self.assertEqual(validate_preset(shared_only), [])
+
         valid = dict(
             base,
             farm_character_enabled=True,
             farm_character="Rem",
             farm_forcedivorce_before_roll=True,
             farm_forcedivorce_after_claim=True,
+            farm_forcedivorce_after_other_claim=True,
         )
         self.assertEqual(validate_preset(valid), [])
 

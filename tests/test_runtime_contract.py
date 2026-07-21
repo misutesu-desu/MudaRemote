@@ -174,6 +174,27 @@ class RuntimeSourceContractTests(unittest.TestCase):
             }
             self.assertIn("paced_mudae_action", called_names, function_name)
 
+    def test_mk_rolls_use_the_slash_aware_command_path(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        mk_source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
+        self.assertIn('await send_roll_command(channel, "mk")', mk_source)
+        self.assertNotIn('guarded_send(channel, f"{client.mudae_prefix}mk")', mk_source)
+
+    def test_cross_account_farm_release_is_independently_optional(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn("client.farm_forcedivorce_after_other_claim", handler_source)
+        self.assertIn("is_claim_announcement_for_character", handler_source)
+        self.assertIn("farm_claim_evidence.outcome != ClaimOutcome.SUCCESS", handler_source)
+
     def test_initial_status_check_includes_automated_account_stagger(self):
         functions = {
             node.name: node
