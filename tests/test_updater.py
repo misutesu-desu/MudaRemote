@@ -2,6 +2,7 @@ import hashlib
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from mudae_core.updater import UpdateError, apply_update
 
@@ -17,8 +18,10 @@ class _Response:
 class _Session:
     def __init__(self, files):
         self.files = files
+        self.timeouts = []
 
     def get(self, url, timeout=None):
+        self.timeouts.append(timeout)
         return _Response(self.files[url])
 
 
@@ -31,6 +34,24 @@ def _entry(path, url, content, checksum=None):
 
 
 class UpdaterTests(unittest.TestCase):
+    def test_frozen_download_uses_bounded_startup_timeouts(self):
+        content = b"fake executable"
+        session = _Session({"exe": content})
+        manifest = {
+            "version": "5.0.0",
+            "exe_download_url": "exe",
+            "exe_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            executable = os.path.join(directory, "MudaRemote.exe")
+            with mock.patch("mudae_core.updater.subprocess.Popen"):
+                result = apply_update(
+                    session, manifest, "4.0.0", directory,
+                    frozen=True, executable=executable,
+                )
+        self.assertEqual(result, "frozen")
+        self.assertEqual(session.timeouts, [(5.0, 20.0)])
+
     def test_manifest_updates_all_modules_as_one_verified_set(self):
         files = {
             "bot": b"VALUE = 'new'\n",

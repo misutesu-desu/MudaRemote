@@ -69,7 +69,8 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, initialize_status_tracking, is_claim_announcement_for_character,
+        cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
+        is_claim_announcement_for_character,
         mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
@@ -91,7 +92,8 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, initialize_status_tracking, is_claim_announcement_for_character,
+        cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
+        is_claim_announcement_for_character,
         mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
@@ -109,7 +111,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.4"
+CURRENT_VERSION = "4.6.5"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -310,7 +312,7 @@ def check_for_updates():
     is_frozen = getattr(sys, 'frozen', False)
     print_system_log(f"Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'EXE' if is_frozen else 'Script'})", "RESET")
     try:
-        response = requests.get(f"{UPDATE_URL}version.json", timeout=10)
+        response = requests.get(f"{UPDATE_URL}version.json", timeout=(3.05, 8.0))
         response.raise_for_status()
         data = response.json()
         latest_version = data.get("version")
@@ -828,11 +830,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         cooldown_minutes = hours * 60 + minutes
         BotLogger.log(f"Detected claim cooldown message from Mudae: {cooldown_minutes}m left. Locking claim.", preset_name, "WARN")
         set_claim_cooldown(cooldown_minutes, source="Mudae message", wake=False)
-        clear_status_dirty(client, fields={"claim"})
+        request_status_refresh({"claim", "rt"}, reason="claim-rejected-cooldown", urgent=True)
         wake_status_loop()
         pending = getattr(client, 'pending_claim', None)
         if pending and pending.get("consumes_claim"):
-            client.loop.create_task(resolve_pending_claim_from_status(False, message.channel))
+            # This is explicit rejection evidence, not proof that the click
+            # consumed a claim. Keep the roll pending until $tu confirms
+            # whether it can be retried with a claim right or $rt.
+            pending["rejected_by_cooldown"] = True
             event = getattr(client, '_claim_evidence_event', None)
             if event is not None:
                 event.set()
@@ -2380,6 +2385,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 BotLogger.log(f"Snipe chat reaction failed: {e}", preset_name, "ERROR")
 
+    async def retry_pending_claim_after_release(pending, pending_channel, retry_log):
+        message_id = pending.get("message_id")
+        try:
+            for _ in range(30):
+                if not client.is_claiming and not _claim_coordinator.is_reserved(message_id):
+                    break
+                if not await active_delay(0.1):
+                    return
+            if client.is_claiming or _claim_coordinator.is_reserved(message_id):
+                BotLogger.log(f"Claim retry timed out while releasing {pending['character_name']}.", preset_name, "WARN")
+                return
+            retry_message = await pending_channel.fetch_message(message_id)
+            retry_embed = retry_message.embeds[0] if retry_message.embeds else None
+            if retry_embed and has_claim_option(retry_message, retry_embed, client.claim_emojis):
+                BotLogger.log(retry_log, preset_name, "CLAIM")
+                await claim_character(
+                    client,
+                    pending_channel,
+                    retry_message,
+                    is_snipe=pending.get("is_snipe_action", False),
+                    kakera_value=pending.get("character_kakera", 0),
+                )
+        except Exception as exc:
+            BotLogger.log(f"Claim retry check failed: {exc}", preset_name, "WARN")
+
     async def resolve_pending_claim_from_status(claim_available, channel):
         pending = getattr(client, 'pending_claim', None)
         if not pending or not pending.get("consumes_claim"):
@@ -2392,6 +2422,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         pending_channel = pending.get("channel") or channel
         if claim_available is None:
             return
+        if pending.get("rejected_by_cooldown"):
+            message_id = pending.get("message_id")
+            retry_count = client.claim_retry_counts.get(message_id, 0)
+            can_retry = bool(claim_available or client.rt_available)
+            clear_pending_claim(pending)
+            client.processed_claim_messages.discard(message_id)
+            if message_id is not None and retry_count < 1 and can_retry and not client.is_paused:
+                client.claim_retry_counts[message_id] = retry_count + 1
+                retry_method = "claim right" if claim_available else "$rt"
+                client.loop.create_task(retry_pending_claim_after_release(
+                    pending,
+                    pending_channel,
+                    f"Retrying {pending['character_name']} once with {retry_method} after Mudae rejected the stale claim state.",
+                ))
+            elif not can_retry:
+                BotLogger.log(
+                    f"Claim Verification: FAILED. {pending['character_name']} was not claimed and neither a claim right nor $rt is ready.",
+                    preset_name,
+                    "WARN",
+                )
+            return
         if claim_available:
             BotLogger.log(f"Claim Verification: FAILED. {pending['character_name']} was not claimed; claim right is still ready.", preset_name, "WARN")
             clear_pending_claim(pending)
@@ -2399,22 +2450,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             retry_count = client.claim_retry_counts.get(message_id, 0)
             client.processed_claim_messages.discard(message_id)
             if message_id is not None and retry_count < 1 and not client.is_paused:
-                try:
-                    retry_message = await pending_channel.fetch_message(message_id)
-                    retry_embed = retry_message.embeds[0] if retry_message.embeds else None
-                    if retry_embed and has_claim_option(retry_message, retry_embed, client.claim_emojis):
-                        client.claim_retry_counts[message_id] = retry_count + 1
-                        BotLogger.log(f"Retrying {pending['character_name']} once after $tu confirmed the claim was not consumed.", preset_name, "CLAIM")
-                        await claim_character(
-                            client,
-                            pending_channel,
-                            retry_message,
-                            is_rt_claim=pending.get("is_rt_claim", False),
-                            is_snipe=pending.get("is_snipe_action", False),
-                            kakera_value=pending.get("character_kakera", 0),
-                        )
-                except Exception as exc:
-                    BotLogger.log(f"Claim retry check failed: {exc}", preset_name, "WARN")
+                client.claim_retry_counts[message_id] = retry_count + 1
+                client.loop.create_task(retry_pending_claim_after_release(
+                    pending,
+                    pending_channel,
+                    f"Retrying {pending['character_name']} once after $tu confirmed the claim was not consumed.",
+                ))
             return
         if pending.get("claim_was_available"):
             await finalize_successful_claim(pending, pending_channel, "$tu cooldown confirmation")
@@ -2926,7 +2967,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if clicked_claim: break
                     for btn in comp.children:
                         has_emoji = hasattr(btn.emoji, 'name') and btn.emoji.name is not None
-                        if is_free_claim or (has_emoji and btn.emoji.name in client.claim_emojis):
+                        is_claim_button = has_emoji and btn.emoji.name in client.claim_emojis
+                        is_verified_free_button = is_claim_button and (is_free_event(embed) or check_is_green(btn))
+                        if (is_free_claim and is_verified_free_button) or (not is_free_claim and is_claim_button):
                             if client.debug_mode:
                                 ws_ref = getattr(client, 'ws', None)
                                 sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
@@ -3154,6 +3197,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if not await active_delay(client.kakera_reaction_snipe_delay_value + random.uniform(0.05, 0.25)): return
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
+
+        if has_free_claim_button(message.components, client.claim_emojis):
+            c_name = embed.author.name.lower()
+            if c_name not in client.avoid_list and not _claim_coordinator.is_reserved(message.id):
+                BotLogger.log(f"Free Claim: green claim button detected for {c_name}.", preset_name, "CLAIM")
+                if await claim_character(client, message.channel, message, is_free_claim=True):
+                    return
 
         if client.rolling_enabled and client.is_actively_rolling:
             client._rolls_received += 1

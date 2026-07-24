@@ -15,6 +15,11 @@ class UpdateError(RuntimeError):
     pass
 
 
+# Keep startup failures short. ``requests`` applies these as separate connect
+# and read-idle limits, including redirected GitHub release downloads.
+UPDATE_DOWNLOAD_TIMEOUT = (5.0, 20.0)
+
+
 def sha256_bytes(content):
     return hashlib.sha256(content).hexdigest()
 
@@ -32,7 +37,7 @@ def _validate_relative_path(relative_path):
     return normalized
 
 
-def _verified_download(session, url, expected_hash, timeout=60):
+def _verified_download(session, url, expected_hash, timeout=UPDATE_DOWNLOAD_TIMEOUT):
     if not expected_hash:
         raise UpdateError("The update manifest is missing a SHA-256 checksum.")
     content = _download(session, url, timeout)
@@ -110,7 +115,7 @@ def _stage_frozen_update(session, manifest, base_path, executable):
     expected_hash = manifest.get("exe_sha256")
     if not url or not expected_hash:
         raise UpdateError("A verified executable is not available for this release.")
-    content = _verified_download(session, url, expected_hash, timeout=180)
+    content = _verified_download(session, url, expected_hash)
     staged_exe = os.path.join(base_path, "MudaRemote_update.exe")
     with open(staged_exe, "wb") as handle:
         handle.write(content)

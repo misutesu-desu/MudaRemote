@@ -7,6 +7,7 @@ from .claiming import (
     classify_claim_owner,
     classify_claim_text,
     cooldown_deadline,
+    has_free_claim_button,
     is_claim_announcement_for_character,
 )
 from .coordinator import ClaimCoordinator
@@ -47,6 +48,7 @@ __all__ = [
     "compare_versions",
     "cooldown_deadline",
     "defer_tu_queries",
+    "has_free_claim_button",
     "initialize_status_tracking",
     "is_claim_announcement_for_character",
     "is_newer_version",

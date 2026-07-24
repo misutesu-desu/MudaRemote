@@ -20,6 +20,29 @@ class ClaimEvidence:
     source: str = "none"
 
 
+def _is_success_button_style(button: object) -> bool:
+    style = getattr(button, "style", None)
+    return bool(
+        style is not None
+        and (
+            getattr(style, "value", None) == 3
+            or str(style).casefold().endswith("success")
+            or str(style) == "3"
+        )
+    )
+
+
+def has_free_claim_button(components: object, claim_emojis: Iterable[object]) -> bool:
+    """Detect Mudae's green claim button, which does not consume a claim right."""
+    allowed = {str(emoji) for emoji in claim_emojis}
+    for component in components or ():
+        for button in getattr(component, "children", ()) or ():
+            emoji = getattr(getattr(button, "emoji", None), "name", None)
+            if emoji is not None and str(emoji) in allowed and _is_success_button_style(button):
+                return True
+    return False
+
+
 def normalize_external_text(value: object) -> str:
     """Normalize Discord/Mudae text without depending on a specific markdown style."""
     text = str(value or "")

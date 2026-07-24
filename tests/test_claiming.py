@@ -6,11 +6,40 @@ from mudae_core.claiming import (
     classify_claim_owner,
     classify_claim_text,
     cooldown_deadline,
+    has_free_claim_button,
     is_claim_announcement_for_character,
 )
 
 
+class _Style:
+    def __init__(self, value):
+        self.value = value
+
+
+class _Emoji:
+    def __init__(self, name):
+        self.name = name
+
+
+class _Button:
+    def __init__(self, emoji, style):
+        self.emoji = _Emoji(emoji)
+        self.style = _Style(style)
+
+
+class _Row:
+    def __init__(self, *children):
+        self.children = children
+
+
 class ClaimingTests(unittest.TestCase):
+    def test_green_heart_button_is_a_free_claim(self):
+        self.assertTrue(has_free_claim_button([_Row(_Button("heart", 3))], ["heart"]))
+
+    def test_non_green_or_non_claim_button_is_not_a_free_claim(self):
+        self.assertFalse(has_free_claim_button([_Row(_Button("heart", 1))], ["heart"]))
+        self.assertFalse(has_free_claim_button([_Row(_Button("kakeraP", 3))], ["heart"]))
+
     def test_standard_confirmation_recognizes_username(self):
         evidence = classify_claim_text(
             "**Maliss** and **Satella** are now married!",

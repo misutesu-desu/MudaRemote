@@ -83,7 +83,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(iterator.func.id, "range")
         self.assertEqual(iterator.args[0].value, 2)
 
-    def test_authoritative_cooldown_wakes_without_requesting_tu(self):
+    def test_authoritative_cooldown_refreshes_claim_and_rt_before_retry(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -95,9 +95,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
             for child in ast.walk(cooldown_handler)
             if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
         }
-        self.assertIn("clear_status_dirty", called_names)
         self.assertIn("wake_status_loop", called_names)
-        self.assertNotIn("request_status_refresh", called_names)
+        self.assertIn("request_status_refresh", called_names)
 
     def test_exact_extra_roll_message_uses_local_state_without_tu(self):
         functions = {
@@ -243,6 +242,35 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.enable_reactive_self_snipe", handler_source)
         self.assertIn("is_external_snipe=False", handler_source)
         self.assertIn("Manual Self-Roll Claim", handler_source)
+
+    def test_claim_cooldown_rejection_is_retried_after_rt_status_refresh(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        cooldown_source = ast.get_source_segment(self.source, functions["process_claim_cooldown_message"])
+        resolve_source = ast.get_source_segment(self.source, functions["resolve_pending_claim_from_status"])
+        self.assertIn('pending["rejected_by_cooldown"] = True', cooldown_source)
+        self.assertIn('request_status_refresh({"claim", "rt"}', cooldown_source)
+        self.assertNotIn("resolve_pending_claim_from_status(False", cooldown_source)
+        self.assertIn("rejected_by_cooldown", resolve_source)
+        self.assertIn("client.rt_available", resolve_source)
+
+    def test_green_claim_button_is_handled_before_normal_claim_filters(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        free_index = handler_source.index("has_free_claim_button(message.components")
+        active_roll_index = handler_source.index(
+            "if client.rolling_enabled and client.is_actively_rolling",
+            free_index,
+        )
+        self.assertLess(free_index, active_roll_index)
+        self.assertIn("is_free_claim=True", handler_source[free_index:active_roll_index])
 
     def test_farm_forcedivorce_sends_confirmation_through_guarded_queue(self):
         functions = {

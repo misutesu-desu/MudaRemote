@@ -1,14 +1,14 @@
 {
-  "version": "4.6.4",
+  "version": "4.6.5",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+  "exe_sha256": "08d82a8da090decfe300db802921b7becfbdb3a342a677e58d8b2880f54cef50",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "55a5013197a0ca764e98d7af8c1aba6c032e975cdd78adb21d67bedc6e30618d"
+      "sha256": "2ac52ec2c9ae75df2b60f1ebbe94a6a7158f3319c9f428010e4df97dd2e0e30d"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -18,12 +18,12 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "fa9cfd5be8daecf9542031103309a2b81e8f213e53e0fe3914a388a179f251c7"
+      "sha256": "3357d17fe5f33fb76bfcb1b76588f13cf7e460f50a9eec74621c40a8775e3105"
     },
     {
       "path": "mudae_core/claiming.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/claiming.py",
-      "sha256": "c854c1347a87e83feb1f4f67dc1896641083c238f3a6f337343b4c5e0f2afc6c"
+      "sha256": "eb42d750c4a78dd4070d448999d9326a2b97c11d540775fac208b81085615060"
     },
     {
       "path": "mudae_core/config.py",
@@ -58,7 +58,7 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/updater.py",
-      "sha256": "a4897910fa704c6b7176d049a1de826824e05e07f74f514df8028a398cca70bd"
+      "sha256": "02d5ce4206174639a093b6974dba1e963f1b0ef8857d6976896d4721159897cb"
     },
     {
       "path": "mudae_core/versioning.py",
