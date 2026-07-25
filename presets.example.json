@@ -10,6 +10,8 @@
     "claim_interval": 180,
     "roll_interval": 60,
     "rolling": true,
+    "auto_oh_enabled": false,
+    "auto_oc_enabled": false,
     "farm_character_enabled": false,
     "farm_character": "",
     "farm_forcedivorce_before_roll": false,

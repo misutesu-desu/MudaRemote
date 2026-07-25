@@ -7,6 +7,31 @@ import time
 from .status import STATUS_FIELDS, mark_status_dirty
 
 
+AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
+
+
+def active_stagger_seconds(active_index, interval=AUTOMATED_STAGGER_INTERVAL_SECONDS):
+    """Return the deterministic delay for a preset's position in the active launch set."""
+    return max(0, int(active_index or 0)) * max(0.0, float(interval or 0.0))
+
+
+def prepare_active_presets(preset_names, preset_mapping, start_index=0):
+    """Clone runnable selected presets and assign compact stagger offsets in launch order."""
+    prepared = []
+    seen = set()
+    for name in preset_names:
+        if name in seen or name not in preset_mapping:
+            continue
+        seen.add(name)
+        data = dict(preset_mapping[name])
+        if not data.get("token"):
+            continue
+        active_index = max(0, int(start_index or 0)) + len(prepared)
+        data["persistent_stagger_seconds"] = active_stagger_seconds(active_index)
+        prepared.append((name, data))
+    return prepared
+
+
 class CommandPacer:
     """Serialize outbound commands and keep a randomized gap between them."""
 

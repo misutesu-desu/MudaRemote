@@ -12,8 +12,24 @@ from .claiming import (
 )
 from .coordinator import ClaimCoordinator
 from .kakera import calculate_kakera_power_cost, has_perk_eight_discount
-from .runtime import CommandPacer, pause_interruptible_sleep, set_client_paused, wait_until_resumed
+from .runtime import (
+    AUTOMATED_STAGGER_INTERVAL_SECONDS,
+    CommandPacer,
+    active_stagger_seconds,
+    pause_interruptible_sleep,
+    prepare_active_presets,
+    set_client_paused,
+    wait_until_resumed,
+)
 from .secrets import SecretStore
+from .spheres import (
+    SphereGameStatus,
+    chest_red_candidates,
+    choose_chest_position,
+    choose_chest_reward_position,
+    choose_harvest_position,
+    parse_sphere_game_status,
+)
 from .status import (
     STATUS_FIELDS,
     clear_status_dirty,
@@ -35,14 +51,21 @@ __all__ = [
     "ClaimEvidence",
     "ClaimOutcome",
     "CommandPacer",
+    "AUTOMATED_STAGGER_INTERVAL_SECONDS",
     "SecretStore",
+    "SphereGameStatus",
     "STATUS_FIELDS",
     "UpdateError",
     "apply_update",
+    "active_stagger_seconds",
     "atomic_write_json",
     "calculate_kakera_power_cost",
     "classify_claim_owner",
     "classify_claim_text",
+    "chest_red_candidates",
+    "choose_chest_position",
+    "choose_chest_reward_position",
+    "choose_harvest_position",
     "clear_status_dirty",
     "consume_tu_urgent_bypass",
     "compare_versions",
@@ -56,6 +79,8 @@ __all__ = [
     "load_json",
     "mark_status_dirty",
     "pause_interruptible_sleep",
+    "prepare_active_presets",
+    "parse_sphere_game_status",
     "record_tu_failure",
     "record_tu_success",
     "set_client_paused",

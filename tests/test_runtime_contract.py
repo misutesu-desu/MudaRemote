@@ -142,6 +142,66 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(len(capture_calls), 1)
         self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
 
+    def test_sphere_game_response_is_captured_before_channel_filter_returns(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        on_message = functions["on_message"]
+        capture_calls = [
+            child for child in ast.walk(on_message)
+            if isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "capture_sphere_game_response"
+        ]
+        returns = [child for child in ast.walk(on_message) if isinstance(child, ast.Return)]
+        self.assertEqual(len(capture_calls), 1)
+        self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
+
+    def test_sphere_game_automation_uses_tu_counts_and_guarded_actions(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        game_source = ast.get_source_segment(self.source, functions["run_sphere_game"])
+        available_source = ast.get_source_segment(self.source, functions["run_available_sphere_games"])
+        board_source = ast.get_source_segment(self.source, functions["play_sphere_game"])
+        self.assertIn("parse_sphere_game_status(tu_content)", status_source)
+        self.assertIn("await run_available_sphere_games", status_source)
+        self.assertIn("await guarded_send", game_source)
+        self.assertIn("await guarded_click", board_source)
+        self.assertIn('revealed != "spP"', board_source)
+        self.assertIn("for click_attempt in range(2)", board_source)
+        self.assertIn("_sphere_board_update_events", board_source)
+        self.assertIn("collecting bonus spheres", board_source)
+        self.assertIn('status.available_for("oc")', available_source)
+
+    def test_unknown_control_commands_are_ignored_without_tracebacks(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_command_error"])
+        self.assertIn("commands.CommandNotFound", handler_source)
+        self.assertIn("return", handler_source)
+
+    def test_login_failure_stops_with_concise_actionable_message(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+        wrapper_source = ast.get_source_segment(self.source, functions["bot_lifecycle_wrapper"])
+        login_branch = wrapper_source.index('isinstance(e, getattr(discord, "LoginFailure", ()))')
+        crash_log = wrapper_source.index('print_log(f"Instance crashed:')
+        self.assertLess(login_branch, crash_log)
+        self.assertIn("401 Unauthorized", wrapper_source)
+        self.assertIn("Re-enter the current token", wrapper_source)
+
     def test_farm_divorce_timings_can_be_enabled_independently(self):
         functions = {
             node.name: node
@@ -214,6 +274,19 @@ class RuntimeSourceContractTests(unittest.TestCase):
             ready_source.index("pause_interruptible_sleep(client, total_start_delay"),
             ready_source.index("main_status_loop(client, channel)"),
         )
+
+    def test_stagger_offset_is_supplied_by_the_active_launcher_set(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        launcher_source = ast.get_source_segment(self.source, functions["start_active_preset_threads"])
+
+        self.assertIn("persistent_stagger_seconds_preset", run_source)
+        self.assertNotIn("sorted(list(presets.keys()))", run_source)
+        self.assertIn("prepare_active_presets", launcher_source)
 
     def test_kakera_and_character_actions_do_not_share_processed_message_lock(self):
         functions = {

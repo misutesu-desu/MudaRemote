@@ -15,7 +15,7 @@ import threading
 import math
 
 try:
-    from mudae_core import SecretStore
+    from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import (
         atomic_write_json,
         load_json,
@@ -33,7 +33,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     # Legacy source updaters only fetched the bot/editor pair. Importing the
     # updated bot runs its one-time verified bridge, then these imports succeed.
     import mudae_bot  # noqa: F401
-    from mudae_core import SecretStore
+    from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import atomic_write_json, load_json, parse_inactive_hours, parse_scheduled_times, validate_preset
     from mudae_core.secrets import SecretStoreError
 
@@ -333,6 +333,8 @@ DEFAULTS = {
     "delay_seconds": 0,
     "start_delay": 0,
     "auto_p_enabled": True,
+    "auto_oh_enabled": False,
+    "auto_oc_enabled": False,
     "roll_speed": 0.4,
     "snipe_delay": 2,
     "series_snipe_delay": 3,
@@ -431,6 +433,8 @@ BOOL_SETTINGS = [
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
     ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
     ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
+    ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
+    ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -1450,6 +1454,8 @@ class PresetEditor:
 
         self.add_checkbox(power_frame.content, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
         self.add_checkbox(power_frame.content, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
+        self.add_checkbox(power_frame.content, "auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)")
+        self.add_checkbox(power_frame.content, "auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)")
         self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame.content, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
@@ -1806,7 +1812,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
                 var = self.widgets[key]
@@ -1989,7 +1995,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled",
+                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
@@ -2159,38 +2165,46 @@ class PresetEditor:
         return True
 
     def _manage_autostart(self, preset_name, enable):
-        """Manage Windows Startup shortcut for the given preset."""
+        """Refresh Windows Startup scripts using only enabled presets for stagger order."""
         if sys.platform != "win32":
             return
 
         startup_dir = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
         bat_path = os.path.join(startup_dir, f"MudaRemote_{preset_name}.bat")
 
-        if enable:
-            is_frozen = getattr(sys, 'frozen', False)
-            cwd = get_base_path()
-
+        if not enable and os.path.exists(bat_path):
             try:
-                with open(bat_path, "w", encoding="utf-8") as f:
-                    f.write(f'@echo off\n')
+                os.remove(bat_path)
+            except Exception as e:
+                print(f"Failed to remove autostart script: {e}")
+
+        active_names = [
+            name for name, data in self.presets.items()
+            if data.get("autostart", False)
+        ]
+        is_frozen = getattr(sys, 'frozen', False)
+        cwd = get_base_path()
+        for active_index, active_name in enumerate(active_names):
+            active_bat_path = os.path.join(startup_dir, f"MudaRemote_{active_name}.bat")
+            try:
+                with open(active_bat_path, "w", encoding="utf-8") as f:
+                    f.write('@echo off\n')
                     f.write(f'cd /d "{cwd}"\n')
                     if is_frozen:
-                        # In frozen (.exe) mode, sys.executable IS the .exe
                         exe_path = os.path.abspath(sys.executable)
-                        f.write(f'start "{preset_name} - MudaRemote" "{exe_path}" --preset "{preset_name}"\n')
+                        f.write(
+                            f'start "{active_name} - MudaRemote" "{exe_path}" --preset "{active_name}" '
+                            f'--stagger-index {active_index}\n'
+                        )
                     else:
-                        # In script (.py) mode, launch python with the bot script
                         python_exe = sys.executable
                         bot_script = os.path.join(cwd, BOT_SCRIPT)
-                        f.write(f'start "{preset_name} - MudaRemote" "{python_exe}" "{bot_script}" --preset "{preset_name}"\n')
+                        f.write(
+                            f'start "{active_name} - MudaRemote" "{python_exe}" "{bot_script}" '
+                            f'--preset "{active_name}" --stagger-index {active_index}\n'
+                        )
             except Exception as e:
-                print(f"Failed to create autostart script: {e}")
-        else:
-            if os.path.exists(bat_path):
-                try:
-                    os.remove(bat_path)
-                except Exception as e:
-                    print(f"Failed to remove autostart script: {e}")
+                print(f"Failed to create autostart script for '{active_name}': {e}")
 
     def create_preset(self):
         """Create a new preset."""
@@ -2230,6 +2244,8 @@ class PresetEditor:
                 "mk_only": False,
                 "auto_dk_enabled": True,
                 "auto_p_enabled": True,
+                "auto_oh_enabled": False,
+                "auto_oc_enabled": False,
                 "enable_snipe_chat_reactions": False,
                 "snipe_chat_messages": ["omg", "ezz"],
                 "farm_forcedivorce_before_roll": False,
@@ -2364,25 +2380,34 @@ class PresetEditor:
                 return
 
         try:
+            active_processes = [
+                process for process in self.bot_processes.values()
+                if process and process.poll() is None
+            ]
+            stagger_index = len(active_processes)
             if is_frozen:
                 # In frozen (.exe) mode, sys.executable IS the .exe itself.
                 # We relaunch the same .exe with --preset to run in headless bot mode.
                 if sys.platform == "win32":
                     process = subprocess.Popen(
-                        [sys.executable, "--preset", self.current_preset],
+                        [sys.executable, "--preset", self.current_preset, "--stagger-index", str(stagger_index)],
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
                 else:
-                    process = subprocess.Popen([sys.executable, "--preset", self.current_preset])
+                    process = subprocess.Popen(
+                        [sys.executable, "--preset", self.current_preset, "--stagger-index", str(stagger_index)]
+                    )
             else:
                 # In script (.py) mode, launch python with the bot script
                 if sys.platform == "win32":
                     process = subprocess.Popen(
-                        [sys.executable, BOT_SCRIPT, "--preset", self.current_preset],
+                        [sys.executable, BOT_SCRIPT, "--preset", self.current_preset, "--stagger-index", str(stagger_index)],
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
                 else:
-                    process = subprocess.Popen([sys.executable, BOT_SCRIPT, "--preset", self.current_preset])
+                    process = subprocess.Popen(
+                        [sys.executable, BOT_SCRIPT, "--preset", self.current_preset, "--stagger-index", str(stagger_index)]
+                    )
 
             self.bot_processes[self.current_preset] = process
             self.run_status_label.configure(text=f"Running: {self.current_preset}", fg=COLOR_SUCCESS)
@@ -2433,7 +2458,7 @@ def launch_gui():
     root.mainloop()
 
 
-def run_headless(preset_names):
+def run_headless(preset_names, start_index=0):
     """
     Headless mode: import mudae_bot and run specified presets in threads.
     Used when the .exe (or script) is launched with --preset or --all.
@@ -2447,14 +2472,28 @@ def run_headless(preset_names):
         print(f"[MudaRemote] Failed to load {PRESETS_FILE}: {e}")
         sys.exit(1)
 
-    threads = []
+    requested_names = []
+    resolved_presets = {}
     for name in preset_names:
         if name not in all_presets:
             print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
             continue
-        print(f"[MudaRemote] Starting preset: {name}")
         preset_data = dict(all_presets[name])
         preset_data["token"] = SecretStore(get_base_path()).get_token(name, preset_data.get("token", ""))
+        if not preset_data.get("token"):
+            print(f"[MudaRemote] Preset '{name}' has no token. Skipping.")
+            continue
+        requested_names.append(name)
+        resolved_presets[name] = preset_data
+
+    threads = []
+    for name, preset_data in prepare_active_presets(
+        requested_names,
+        resolved_presets,
+        start_index=start_index,
+    ):
+        active_index = int(preset_data["persistent_stagger_seconds"] // active_stagger_seconds(1))
+        print(f"[MudaRemote] Starting active preset #{active_index + 1}: {name}")
         t = mudae_bot.start_preset_thread(name, preset_data)
         if t:
             threads.append(t)
@@ -2498,6 +2537,12 @@ def main():
         action="store_true",
         help="Run ALL presets from presets.json in headless mode"
     )
+    parser.add_argument(
+        "--stagger-index",
+        type=int,
+        default=0,
+        help="Starting active preset position for automated staggering"
+    )
 
     args = parser.parse_args()
 
@@ -2516,12 +2561,12 @@ def main():
             sys.exit(1)
 
         print(f"[MudaRemote] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
-        run_headless(preset_names)
+        run_headless(preset_names, start_index=args.stagger_index)
 
     elif args.preset:
         # Run specific preset(s) in headless mode
         print(f"[MudaRemote] Running preset(s): {', '.join(args.preset)}")
-        run_headless(args.preset)
+        run_headless(args.preset, start_index=args.stagger_index)
 
     else:
         # No arguments → launch the GUI

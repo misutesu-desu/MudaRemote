@@ -14,10 +14,24 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.5-f97316?style=for-the-badge" alt="Version 4.6.5"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.6-f97316?style=for-the-badge" alt="Version 4.6.6"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🔴 Sphere Mini-Games — v4.6.6
+
+- **Auto `$oh`:** Reads daily and stored Sphere Harvest uses from `$tu`, spends them together for the active multiplier, explores unknown cells early, claims free purple clicks immediately, saves dark spheres for the endgame, and preserves enough clicks for guaranteed high-value rewards.
+- **Auto `$oc`:** Uses every revealed orange, yellow, green, teal, and blue clue to locate the red sphere, then spends every remaining click on the best visible or expected-value reward instead of stopping early.
+- **Stored uses:** Bonus `(+N stored)` `$oh` and `$oc` uses earned from tutorials, hidden spheres, or other rewards are included automatically.
+- **Safe recovery:** Delayed board edits are verified through both Discord events and fresh message fetches; one failed click is retried before the mini-game stops safely.
+- **Preset controls:** Both automations are separate opt-in settings and remain disabled until you enable them.
+
+## ⚙️ Runtime Reliability — v4.6.6
+
+- **Active-only automated stagger:** Selected runnable presets receive compact `0s`, `20s`, `40s` offsets in launch order. Closed, unselected, missing, and tokenless presets no longer add empty delay slots.
+- **Consistent launch modes:** GUI launches, multi-select headless runs, `--all`, and Windows autostart now pass the active stagger position explicitly.
+- **Cleaner failures:** Invalid tokens stop with one actionable `401 Unauthorized` message, while accidental unknown control-prefix commands are ignored silently.
 
 ## 🔐 Termux Token Storage — v4.6.2
 
@@ -129,6 +143,7 @@ Kakera crystals are money. The bot clicks them **instantly** on every roll — b
 | **Chaos Mode** | Characters with 10+ keys have "Chaos Kakera" that costs 50% less power. Target only these for maximum efficiency. |
 | **MK Only Mode** | Only farm Kakera from `$mk` rolls. Ignore everything else. Surgical power conservation. |
 | **Sphere Detection** | Spheres cost **zero** power. The bot **always** clicks them — free money, no exceptions. |
+| **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board. |
 | **Custom Thresholds** | Fine-tune per crystal type: *"Only click Purple Kakera if I have 80%+ power."* The bot obeys. |
 
 ---

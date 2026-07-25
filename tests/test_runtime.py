@@ -2,7 +2,13 @@ import asyncio
 from types import SimpleNamespace
 import unittest
 
-from mudae_core.runtime import CommandPacer, pause_interruptible_sleep, set_client_paused
+from mudae_core.runtime import (
+    CommandPacer,
+    active_stagger_seconds,
+    pause_interruptible_sleep,
+    prepare_active_presets,
+    set_client_paused,
+)
 from mudae_core.status import initialize_status_tracking, status_dirty_fields
 
 
@@ -24,6 +30,38 @@ class _Event:
 
     def set(self):
         self.was_set = True
+
+
+class RuntimeStaggerTests(unittest.TestCase):
+    def test_stagger_uses_only_selected_runnable_presets_in_launch_order(self):
+        presets = {
+            "closed": {"token": ""},
+            "second": {"token": "token-2"},
+            "unused": {"token": "token-unused"},
+            "fifth": {"token": "token-5"},
+        }
+
+        prepared = prepare_active_presets(
+            ["closed", "second", "missing", "fifth"],
+            presets,
+        )
+
+        self.assertEqual([name for name, _ in prepared], ["second", "fifth"])
+        self.assertEqual(
+            [data["persistent_stagger_seconds"] for _, data in prepared],
+            [0.0, 20.0],
+        )
+        self.assertNotIn("persistent_stagger_seconds", presets["second"])
+
+    def test_stagger_can_continue_after_already_running_presets(self):
+        prepared = prepare_active_presets(
+            ["new"],
+            {"new": {"token": "token"}},
+            start_index=2,
+        )
+
+        self.assertEqual(active_stagger_seconds(2), 40.0)
+        self.assertEqual(prepared[0][1]["persistent_stagger_seconds"], 40.0)
 
 
 class RuntimeStateTests(unittest.TestCase):

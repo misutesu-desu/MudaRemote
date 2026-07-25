@@ -35,7 +35,8 @@ def _bootstrap_modular_core():
     required = {
         "mudae_core/__init__.py", "mudae_core/claiming.py", "mudae_core/config.py",
         "mudae_core/coordinator.py", "mudae_core/runtime.py", "mudae_core/secrets.py",
-        "mudae_core/status.py", "mudae_core/kakera.py", "mudae_core/updater.py", "mudae_core/versioning.py",
+        "mudae_core/status.py", "mudae_core/kakera.py", "mudae_core/spheres.py",
+        "mudae_core/updater.py", "mudae_core/versioning.py",
     }
     if not required.issubset({entry.get("path") for entry in entries}):
         raise RuntimeError("The modular core manifest is incomplete.")
@@ -67,13 +68,14 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
-        calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
+        active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
-        mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
+        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
+        choose_chest_position, choose_harvest_position, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -90,13 +92,14 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
-        calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
+        active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
-        mark_status_dirty, pause_interruptible_sleep, record_tu_failure,
+        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
+        choose_chest_position, choose_harvest_position, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 
@@ -111,7 +114,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.5"
+CURRENT_VERSION = "4.6.6"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -498,7 +501,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             immediate_kakera_click_preset=True,
             farm_forcedivorce_after_claim_preset=False,
             farm_forcedivorce_before_roll_preset=True,
-            farm_forcedivorce_after_other_claim_preset=False):
+            farm_forcedivorce_after_other_claim_preset=False,
+            auto_oh_enabled_preset=False,
+            auto_oc_enabled_preset=False):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -605,6 +610,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
     client.sphere_click_targets = set([t.lower() for t in sphere_click_targets])
     client.immediate_kakera_click = immediate_kakera_click_preset
+    client.auto_oh_enabled = bool(auto_oh_enabled_preset)
+    client.auto_oc_enabled = bool(auto_oc_enabled_preset)
+    client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
+    client.sphere_game_refill_at_utc = None
+    client._sphere_game_lock = asyncio.Lock()
+    client._sphere_game_response_future = None
+    client._sphere_game_response_channel_id = None
+    client._sphere_game_response_kind = None
+    client._sphere_game_retry_after = {"oh": 0.0, "oc": 0.0}
+    client._sphere_board_update_events = {}
     client.collected_kakera_rolls = []
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
@@ -700,19 +715,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.sphere_emojis = SPHERE_EMOJIS
     client.kakera_power_thresholds = kakera_power_thresholds or {}
     client.debug_mode = debug_mode
-    # Automatically calculate stable, deterministic stagger offset based on the alphabetical index of the preset name
-    try:
-        # Access the globally loaded 'presets' dictionary and sort its keys alphabetically
-        all_preset_names = sorted(list(presets.keys()))
-        account_index = all_preset_names.index(preset_name) if preset_name in all_preset_names else 0
-    except Exception:
-        account_index = 0
-
-    stagger_interval = 20  # Safe, automated delay gap in seconds between active accounts
-    client.persistent_stagger_seconds = account_index * stagger_interval
+    client.persistent_stagger_seconds = max(0.0, float(persistent_stagger_seconds_preset or 0.0))
+    account_index = int(client.persistent_stagger_seconds // active_stagger_seconds(1))
 
     BotLogger.log(
-        f"Automated Staggering: Assigned index {account_index} (Preset: '{preset_name}') -> "
+        f"Automated Staggering: Assigned active index {account_index} (Preset: '{preset_name}') -> "
         f"+{client.persistent_stagger_seconds}s persistent sleep offset applied.",
         preset_name, "INFO"
     )
@@ -792,6 +799,49 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         future.set_result(message.content)
         return True
 
+    def sphere_game_kind(message):
+        text = str(getattr(message, 'content', '') or '').lower()
+        if "1 red sphere" in text and "never at the center" in text:
+            return "oc"
+        if "blue spheres unveil 3 buttons" in text and "multiplier:" in text:
+            return "oh"
+        return None
+
+    def sphere_game_buttons(message):
+        buttons = []
+        for component in getattr(message, 'components', None) or []:
+            buttons.extend(getattr(component, 'children', None) or [])
+        return buttons
+
+    def sphere_game_belongs_to_self(message):
+        interaction = (
+            getattr(message, 'interaction', None)
+            or getattr(message, 'interaction_metadata', None)
+        )
+        interaction_user = getattr(interaction, 'user', None)
+        interaction_user_id = getattr(interaction_user, 'id', None)
+        client_user_id = getattr(getattr(client, 'user', None), 'id', None)
+        return interaction_user_id is None or interaction_user_id == client_user_id
+
+    def capture_sphere_game_response(message):
+        future = getattr(client, '_sphere_game_response_future', None)
+        if future is None or future.done():
+            return False
+        if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
+            return False
+        expected_channel_id = getattr(client, '_sphere_game_response_channel_id', None)
+        if expected_channel_id is not None and getattr(message.channel, 'id', None) != expected_channel_id:
+            return False
+        kind = sphere_game_kind(message)
+        if kind != getattr(client, '_sphere_game_response_kind', None):
+            return False
+        if not sphere_game_belongs_to_self(message):
+            return False
+        if len(sphere_game_buttons(message)) != 25:
+            return False
+        future.set_result(message)
+        return True
+
     def record_claim_text_evidence(message):
         pending = getattr(client, 'pending_claim', None)
         if not pending or not getattr(message, 'content', None):
@@ -867,6 +917,206 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def active_delay(seconds):
         return await pause_interruptible_sleep(client, seconds, abort_on_pause=True)
+
+    def sphere_board_snapshot(message):
+        buttons = sphere_game_buttons(message)
+        emojis = [str(getattr(getattr(button, 'emoji', None), 'name', '') or '') for button in buttons]
+        disabled = [bool(getattr(button, 'disabled', False)) for button in buttons]
+        styles = [str(getattr(button, 'style', '')) for button in buttons]
+        return buttons, emojis, disabled, tuple(zip(emojis, disabled, styles))
+
+    async def wait_for_sphere_board_update(channel, message_id, previous_snapshot, update_event=None):
+        latest = None
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if client.is_paused or is_maintenance_active():
+                return None
+            if update_event is not None:
+                try:
+                    await asyncio.wait_for(update_event.wait(), timeout=0.75)
+                    update_event.clear()
+                except asyncio.TimeoutError:
+                    pass
+            elif not await active_delay(0.75):
+                return None
+            try:
+                latest = await channel.fetch_message(message_id)
+            except Exception:
+                continue
+            if sphere_board_snapshot(latest)[3] != previous_snapshot:
+                return latest
+        return latest
+
+    async def play_sphere_game(channel, message, kind):
+        clicked_positions = set()
+        current = message
+        game_label = "$oh" if kind == "oh" else "$oc"
+
+        paid_clicks = 0
+        total_clicks = 0
+        red_found = False
+        while paid_clicks < 5 and total_clicks < 25:
+            buttons, emojis, disabled, snapshot = sphere_board_snapshot(current)
+            if len(buttons) != 25:
+                BotLogger.log(f"{game_label}: Expected 25 sphere buttons but received {len(buttons)}.", preset_name, "WARN")
+                return False
+            if all(disabled):
+                break
+
+            if kind == "oc":
+                position = choose_chest_position(emojis, disabled)
+            else:
+                position = choose_harvest_position(emojis, disabled, paid_clicks=paid_clicks)
+            if position is None or position < 0 or position >= len(buttons):
+                BotLogger.log(f"{game_label}: No safe enabled sphere button remains.", preset_name, "WARN")
+                break
+
+            if not await active_delay(random.uniform(0.45, 0.85)):
+                return False
+            refreshed = None
+            for click_attempt in range(2):
+                update_event = asyncio.Event()
+                client._sphere_board_update_events[current.id] = update_event
+                try:
+                    if not click_attempt:
+                        BotLogger.log(
+                            f"{game_label}: Clicking row {position // 5 + 1}, column {position % 5 + 1} ({emojis[position]}).",
+                            preset_name,
+                            "INFO",
+                        )
+                    else:
+                        BotLogger.log(f"{game_label}: No board edit received; retrying the click once.", preset_name, "WARN")
+                    if not await guarded_click(buttons[position]):
+                        return False
+                    refreshed = await wait_for_sphere_board_update(
+                        channel,
+                        current.id,
+                        snapshot,
+                        update_event=update_event,
+                    )
+                except Exception as error:
+                    BotLogger.log(f"{game_label}: Sphere click failed: {error}", preset_name, "WARN")
+                    return False
+                finally:
+                    if client._sphere_board_update_events.get(current.id) is update_event:
+                        client._sphere_board_update_events.pop(current.id, None)
+                if refreshed is not None and sphere_board_snapshot(refreshed)[3] != snapshot:
+                    break
+
+            if refreshed is None or sphere_board_snapshot(refreshed)[3] == snapshot:
+                BotLogger.log(f"{game_label}: Board did not update after two click attempts; stopping safely.", preset_name, "WARN")
+                return False
+
+            clicked_positions.add(position)
+            total_clicks += 1
+            current = refreshed
+            _, revealed_emojis, _, _ = sphere_board_snapshot(current)
+            revealed = revealed_emojis[position] if position < len(revealed_emojis) else ""
+            if kind != "oh" or revealed != "spP":
+                paid_clicks += 1
+            BotLogger.log(
+                f"{game_label}: Click {total_clicks} ({paid_clicks}/5 used) at row {position // 5 + 1}, column {position % 5 + 1}"
+                + (f" revealed {revealed}." if revealed else "."),
+                preset_name,
+                "INFO",
+            )
+            if kind == "oc" and revealed == "sp" and position in clicked_positions:
+                if not red_found:
+                    BotLogger.log(
+                        f"$oc: Red sphere found with {5 - paid_clicks} paid click(s) remaining; collecting bonus spheres.",
+                        preset_name,
+                        "KAKERA",
+                    )
+                red_found = True
+
+        if kind == "oh":
+            BotLogger.log(f"$oh: Harvest finished after {len(clicked_positions)} click(s).", preset_name, "KAKERA")
+        elif red_found:
+            BotLogger.log("$oc: Chest finished after finding red and using all available clicks.", preset_name, "KAKERA")
+        else:
+            BotLogger.log("$oc: Board finished without finding the red sphere.", preset_name, "WARN")
+        return bool(clicked_positions)
+
+    async def find_recent_sphere_game(channel, kind, started_at):
+        try:
+            async for candidate in channel.history(limit=15):
+                created_at = getattr(candidate, 'created_at', None)
+                if created_at is not None and created_at < started_at - datetime.timedelta(seconds=1):
+                    continue
+                if (getattr(getattr(candidate, 'author', None), 'id', None) == TARGET_BOT_ID
+                        and sphere_game_kind(candidate) == kind
+                        and sphere_game_belongs_to_self(candidate)
+                        and len(sphere_game_buttons(candidate)) == 25):
+                    return candidate
+        except Exception:
+            return None
+        return None
+
+    async def run_sphere_game(channel, kind, uses):
+        uses = max(1, int(uses or 1))
+        async with client._sphere_game_lock:
+            started_at = datetime.datetime.now(timezone.utc)
+            response_future = asyncio.get_running_loop().create_future()
+            client._sphere_game_response_future = response_future
+            client._sphere_game_response_channel_id = getattr(channel, 'id', None)
+            client._sphere_game_response_kind = kind
+            try:
+                BotLogger.log(f"{kind.upper()}: Starting with {uses} available use(s).", preset_name, "INFO")
+                if not await guarded_send(channel, f"{client.mudae_prefix}{kind} {uses}"):
+                    return False
+                try:
+                    game_message = await asyncio.wait_for(asyncio.shield(response_future), timeout=8.0)
+                except asyncio.TimeoutError:
+                    game_message = await find_recent_sphere_game(channel, kind, started_at)
+                if game_message is None:
+                    BotLogger.log(f"${kind}: Game board did not arrive; retrying later.", preset_name, "WARN")
+                    return False
+                await play_sphere_game(channel, game_message, kind)
+                # Starting the board consumes the selected stock even if the chest is lost.
+                return True
+            finally:
+                if client._sphere_game_response_future is response_future:
+                    client._sphere_game_response_future = None
+                    client._sphere_game_response_channel_id = None
+                    client._sphere_game_response_kind = None
+                if not response_future.done():
+                    response_future.cancel()
+
+    async def run_available_sphere_games(channel, status):
+        available_oh = status.available_for("oh")
+        available_oc = status.available_for("oc")
+        client.sphere_game_counts = {
+            "oh": available_oh,
+            "oc": available_oc,
+            "oq": status.available_for("oq"),
+            "ot": status.available_for("ot"),
+        }
+        if status.refill_minutes is not None:
+            previous_refill = client.sphere_game_refill_at_utc
+            client.sphere_game_refill_at_utc = (
+                datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=status.refill_minutes)
+            ).replace(second=0, microsecond=0)
+            if previous_refill != client.sphere_game_refill_at_utc:
+                client.loop.call_later(max(5.0, status.refill_minutes * 60.0 + 2.0), wake_status_loop)
+
+        enabled_games = (
+            ("oh", client.auto_oh_enabled, available_oh),
+            ("oc", client.auto_oc_enabled, available_oc),
+        )
+        for kind, enabled, available in enabled_games:
+            if not enabled or available <= 0:
+                continue
+            now_monotonic = time.monotonic()
+            if now_monotonic < client._sphere_game_retry_after.get(kind, 0.0):
+                continue
+            completed = await run_sphere_game(channel, kind, available)
+            if completed:
+                client.sphere_game_counts[kind] = 0
+                refill_seconds = max(300.0, float(status.refill_minutes or 60) * 60.0)
+                client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
+            else:
+                client._sphere_game_retry_after[kind] = time.monotonic() + 300.0
+                client.loop.call_later(302.0, wake_status_loop)
 
     def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
         if client.next_claim_reset_at_utc:
@@ -1433,6 +1683,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check:
                                     pending_mk = True
                             if pending_rolls or pending_us or pending_mk: can_bypass = False
+                        sphere_retry_due = any(
+                            enabled
+                            and client.sphere_game_counts.get(kind, 0) > 0
+                            and time.monotonic() >= client._sphere_game_retry_after.get(kind, 0.0)
+                            for kind, enabled in (
+                                ("oh", client.auto_oh_enabled),
+                                ("oc", client.auto_oc_enabled),
+                            )
+                        )
+                        sphere_refill_due = bool(
+                            (client.auto_oh_enabled or client.auto_oc_enabled)
+                            and client.sphere_game_refill_at_utc is not None
+                            and now_utc >= client.sphere_game_refill_at_utc
+                        )
+                        if sphere_retry_due or sphere_refill_due:
+                            can_bypass = False
 
             if can_bypass:
                 BotLogger.log("Skipping $tu (using cached status).", preset_name, "CHECK")
@@ -1595,6 +1861,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 return
 
             rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"])
+            sphere_status = parse_sphere_game_status(tu_content)
+            if sphere_status is not None:
+                if client.auto_oh_enabled or client.auto_oc_enabled:
+                    BotLogger.log(
+                        f"Sphere games: $oh {sphere_status.available_for('oh')}"
+                        + (f" ({sphere_status.oh} daily + {sphere_status.oh_stored} stored)" if sphere_status.oh_stored else "")
+                        + f", $oc {sphere_status.available_for('oc')}"
+                        + (f" ({sphere_status.oc} daily + {sphere_status.oc_stored} stored)" if sphere_status.oc_stored else "")
+                        + (f", refill in {sphere_status.refill_minutes}m." if sphere_status.refill_minutes is not None else "."),
+                        preset_name,
+                        "INFO",
+                    )
+                await run_available_sphere_games(cmd_channel, sphere_status)
+            elif client.auto_oh_enabled or client.auto_oc_enabled:
+                BotLogger.log(
+                    "Auto $oh/$oc is enabled but sphere-game stocks are missing from $tu.",
+                    preset_name,
+                    "WARN",
+                )
+
             rt_reset_minutes = parse_timer_minutes("RT_RESET", c_lower)
             if rt_reset_minutes is not None:
                 client.rt_available = False
@@ -3079,9 +3365,28 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         return
 
     @client.event
+    async def on_message_edit(before, after):
+        update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
+        if update_event is not None:
+            update_event.set()
+
+    @client.event
+    async def on_raw_message_edit(payload):
+        update_event = client._sphere_board_update_events.get(getattr(payload, 'message_id', None))
+        if update_event is not None:
+            update_event.set()
+
+    @client.event
+    async def on_command_error(ctx, error):
+        if isinstance(error, commands.CommandNotFound):
+            return
+        BotLogger.log(f"Control command failed: {error}", preset_name, "WARN")
+
+    @client.event
     async def on_message(message):
         update_dynamic_thresholds()
         capture_tu_response(message)
+        capture_sphere_game_response(message)
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
 
@@ -3406,10 +3711,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     try:
         client.run(token, reconnect=True)
     except Exception as e:
-        if "set_wakeup_fd" not in str(e):
-            BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
         if isinstance(e, getattr(discord, "LoginFailure", ())):
             raise
+        if "set_wakeup_fd" not in str(e):
+            BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
     finally:
         with _active_clients_lock:
             if client in _active_clients: _active_clients.remove(client)
@@ -3487,12 +3792,18 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                     and not preset_data.get("farm_forcedivorce_after_other_claim", False),
                 ),
                 preset_data.get("farm_forcedivorce_after_other_claim", False),
+                preset_data.get("auto_oh_enabled", False),
+                preset_data.get("auto_oc_enabled", False),
             )
         except Exception as e:
-            print_log(f"Instance crashed: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
             if isinstance(e, getattr(discord, "LoginFailure", ())):
-                print_log("Authentication failed permanently; automatic restart has been stopped.", preset_name, "ERROR")
+                print_log(
+                    "Discord rejected this token (401 Unauthorized). Re-enter the current token in the preset, save it, then restart. Automatic restart has been stopped.",
+                    preset_name,
+                    "ERROR",
+                )
                 return
+            print_log(f"Instance crashed: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
         time.sleep(60)
 
 def start_preset_thread(preset_name, preset_data):
@@ -3502,6 +3813,20 @@ def start_preset_thread(preset_name, preset_data):
     t = threading.Thread(target=bot_lifecycle_wrapper, args=(preset_name, preset_data), daemon=True)
     t.start()
     return t
+
+
+def start_active_preset_threads(preset_names, start_index=0):
+    """Start only selected runnable presets with compact active-order stagger offsets."""
+    started = []
+    for preset_name, preset_data in prepare_active_presets(
+        preset_names,
+        presets,
+        start_index=start_index,
+    ):
+        thread = start_preset_thread(preset_name, preset_data)
+        if thread:
+            started.append(thread)
+    return started
 
 class StdinEnterMapper:
     def __init__(self, original_stdin):
@@ -3557,11 +3882,14 @@ def main_menu():
 
             if ans['opt'] == 'Select and Run Preset':
                 p_ans = safe_prompt([inquirer.List('p', message="Preset", choices=list(presets.keys()))])
-                if p_ans: threads.append(start_preset_thread(p_ans['p'], presets[p_ans['p']]))
+                if p_ans:
+                    threads = [thread for thread in threads if thread and thread.is_alive()]
+                    threads.extend(start_active_preset_threads([p_ans['p']], start_index=len(threads)))
             elif ans['opt'] == 'Select and Run Multiple':
                 p_ans = safe_prompt([inquirer.Checkbox('p', message="Presets", choices=list(presets.keys()))])
                 if p_ans:
-                    for p in p_ans['p']: threads.append(start_preset_thread(p, presets[p]))
+                    threads = [thread for thread in threads if thread and thread.is_alive()]
+                    threads.extend(start_active_preset_threads(p_ans['p'], start_index=len(threads)))
     finally:
         sys.stdin = original_stdin
         _menu_active.clear()
@@ -3573,6 +3901,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Mudae Bot Helper")
     parser.add_argument("--preset", type=str, help="Name of the preset to run")
     parser.add_argument("--all", action="store_true", help="Run all presets")
+    parser.add_argument("--stagger-index", type=int, default=0, help="Active preset position for automated staggering")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -3581,14 +3910,15 @@ if __name__ == "__main__":
     args = parse_args()
     if args.preset:
         if args.preset in presets:
-            bot_lifecycle_wrapper(args.preset, presets[args.preset])
+            prepared = prepare_active_presets([args.preset], presets, start_index=args.stagger_index)
+            if prepared:
+                bot_lifecycle_wrapper(*prepared[0])
+            else:
+                print(f"Preset '{args.preset}' has no token.")
         else:
             print(f"Preset '{args.preset}' not found.")
     elif args.all:
-        started = []
-        for p_name, p_data in presets.items():
-            t = start_preset_thread(p_name, p_data)
-            if t: started.append(t)
+        started = start_active_preset_threads(list(presets.keys()), start_index=args.stagger_index)
         for t in started:
             if t: t.join()
     else:
