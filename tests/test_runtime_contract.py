@@ -172,6 +172,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("parse_sphere_game_status(tu_content)", status_source)
         self.assertIn("await run_available_sphere_games", status_source)
         self.assertIn("await guarded_send", game_source)
+        self.assertIn("if client._sphere_game_lock is None", game_source)
+        self.assertIn("client._sphere_game_lock = asyncio.Lock()", game_source)
         self.assertIn("await guarded_click", board_source)
         self.assertIn('revealed != "spP"', board_source)
         self.assertIn("for click_attempt in range(2)", board_source)

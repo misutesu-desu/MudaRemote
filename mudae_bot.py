@@ -114,7 +114,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.6"
+CURRENT_VERSION = "4.6.7"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -614,7 +614,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_oc_enabled = bool(auto_oc_enabled_preset)
     client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
     client.sphere_game_refill_at_utc = None
-    client._sphere_game_lock = asyncio.Lock()
+    # run_bot is entered from a worker thread before discord.py creates that
+    # thread's event loop. Bind the lock lazily from the first async game task.
+    client._sphere_game_lock = None
     client._sphere_game_response_future = None
     client._sphere_game_response_channel_id = None
     client._sphere_game_response_kind = None
@@ -1054,6 +1056,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def run_sphere_game(channel, kind, uses):
         uses = max(1, int(uses or 1))
+        if client._sphere_game_lock is None:
+            client._sphere_game_lock = asyncio.Lock()
         async with client._sphere_game_lock:
             started_at = datetime.datetime.now(timezone.utc)
             response_future = asyncio.get_running_loop().create_future()
