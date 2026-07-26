@@ -98,6 +98,20 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("wake_status_loop", called_names)
         self.assertIn("request_status_refresh", called_names)
 
+    def test_tu_snapshot_does_not_trigger_another_status_refresh(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        cooldown_source = ast.get_source_segment(
+            self.source,
+            functions["process_claim_cooldown_message"],
+        )
+        snapshot_guard = cooldown_source.index("if is_tu_status_snapshot_for_self(message)")
+        refresh_call = cooldown_source.index("request_status_refresh")
+        self.assertLess(snapshot_guard, refresh_call)
+
     def test_exact_extra_roll_message_uses_local_state_without_tu(self):
         functions = {
             node.name: node
@@ -175,7 +189,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("if client._sphere_game_lock is None", game_source)
         self.assertIn("client._sphere_game_lock = asyncio.Lock()", game_source)
         self.assertIn("await guarded_click", board_source)
-        self.assertIn('revealed != "spP"', board_source)
+        self.assertIn("revealed = normalize_sphere_emoji", board_source)
+        self.assertIn("not harvest_reveal_is_free(revealed)", board_source)
         self.assertIn("for click_attempt in range(2)", board_source)
         self.assertIn("_sphere_board_update_events", board_source)
         self.assertIn("collecting bonus spheres", board_source)

@@ -7,6 +7,27 @@ STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
 TU_FAILURE_BACKOFF_SECONDS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
 
 
+def looks_like_tu_status_snapshot(content) -> bool:
+    """Distinguish a multi-section ``$tu`` snapshot from a claim rejection."""
+    text = str(content or "")
+    if text.count("\n") < 2:
+        return False
+    lowered = text.lower()
+    marker_groups = (
+        ("roll", "rolls"),
+        ("claim",),
+        ("$rt",),
+        ("$dk",),
+        ("$daily",),
+        ("$p",),
+        ("react", "kakera"),
+    )
+    matched_groups = sum(
+        1 for markers in marker_groups if any(marker in lowered for marker in markers)
+    )
+    return matched_groups >= 3
+
+
 def _normalize_fields(fields):
     if fields is None:
         return set(STATUS_FIELDS)

@@ -14,10 +14,17 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.7-f97316?style=for-the-badge" alt="Version 4.6.7"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🛠️ Status & Sphere Hotfix — v4.6.8
+
+- **No more `/tu` loops:** Manual status checks and responses created by another running MudaRemote instance no longer trigger another `/tu` query.
+- **Correct free clicks:** Purple sphere variants grant their extra `$oh` click without consuming one of the five paid clicks.
+- **Localized stored uses:** Stored `$oh` and `$oc` counts are detected even when Mudae translates labels such as `stored` to `armazenados`.
+- **Better guaranteed rewards:** Revealed green-or-better spheres are collected before the bot continues exploring blue and teal reveal paths.
 
 ## 🔴 Sphere Mini-Games — v4.6.6
 

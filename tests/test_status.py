@@ -7,6 +7,7 @@ from mudae_core.status import (
     consume_tu_urgent_bypass,
     defer_tu_queries,
     initialize_status_tracking,
+    looks_like_tu_status_snapshot,
     mark_status_dirty,
     record_tu_failure,
     record_tu_success,
@@ -69,6 +70,16 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertFalse(consume_tu_urgent_bypass(self.client))
         mark_status_dirty(self.client, {"claim"}, reason="claim-reset", urgent=True)
         self.assertTrue(consume_tu_urgent_bypass(self.client))
+
+    def test_full_tu_snapshot_is_not_confused_with_claim_rejection(self):
+        snapshot = (
+            "**Visionaire**, you can't claim right now. Next claim in **3** min.\n"
+            "You have **15** rolls left. Next rolls reset in **44** min.\n"
+            "$rt is available!\n$dk is ready!\nYou can react to kakera right now!"
+        )
+        rejection = "**Visionaire**, you can't claim another character for **3** min."
+        self.assertTrue(looks_like_tu_status_snapshot(snapshot))
+        self.assertFalse(looks_like_tu_status_snapshot(rejection))
 
 
 if __name__ == "__main__":

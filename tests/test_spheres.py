@@ -5,6 +5,8 @@ from mudae_core.spheres import (
     choose_chest_position,
     choose_chest_reward_position,
     choose_harvest_position,
+    harvest_reveal_is_free,
+    normalize_sphere_emoji,
     parse_sphere_game_status,
 )
 
@@ -34,6 +36,16 @@ class SphereStatusTests(unittest.TestCase):
         self.assertEqual(status.oc_stored, 4)
         self.assertEqual(status.available_for("oc"), 4)
         self.assertEqual(status.refill_minutes, 651)
+
+    def test_localized_stored_uses_are_added(self):
+        status = parse_sphere_game_status(
+            "0 $oh restantes hoje (+8 armazenados), 0 $oc (+7 armazenados), "
+            "0 $oq (+7 armazenados) e 0 $ot (+3 armazenados)."
+        )
+
+        self.assertIsNotNone(status)
+        self.assertEqual(status.available_for("oh"), 8)
+        self.assertEqual(status.available_for("oc"), 7)
 
 
 class SphereBoardTests(unittest.TestCase):
@@ -93,6 +105,17 @@ class SphereBoardTests(unittest.TestCase):
         board[7] = "spW"
         self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), 7)
 
+    def test_harvest_secures_high_value_reveal_before_early_unknown(self):
+        board = ["spU"] * 25
+        board[3] = "spT"
+        board[7] = "spG"
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 7)
+
+    def test_free_purple_variant_is_normalized(self):
+        self.assertEqual(normalize_sphere_emoji("spP2"), "spP")
+        self.assertTrue(harvest_reveal_is_free("spP2"))
+        self.assertFalse(harvest_reveal_is_free("spB2"))
+
     def test_harvest_preserves_enough_clicks_for_all_guaranteed_prizes(self):
         board = ["spU"] * 25
         board[7] = "spR"
@@ -109,7 +132,7 @@ class SphereBoardTests(unittest.TestCase):
         board = ["spU"] * 25
         board[12] = "spB"
         board[14] = "spT"
-        board[23] = "spG"
+        board[23] = "spB"
         self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 7)
 
     def test_harvest_saves_dark_sphere_for_last_two_paid_clicks(self):

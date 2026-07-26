@@ -41,7 +41,9 @@ def parse_sphere_game_status(text: str) -> Optional[SphereGameStatus]:
     for game in ("oh", "oc", "oq", "ot"):
         match = re.search(
             r"([\d,]+)\s+\$" + game + r"\b"
-            r"(?:\s*\(\s*\+\s*([\d,]+)\s+stored\s*\))?",
+            # Mudae localizes the label after the bonus count (for example,
+            # "stored" and "armazenados"), while the (+N ...) shape is stable.
+            r"(?:[^,$\r\n]*?\(\s*\+\s*([\d,]+)(?:\s+[^)]*)?\))?",
             normalized,
             re.IGNORECASE,
         )
@@ -80,6 +82,11 @@ def normalize_sphere_emoji(value) -> str:
     if normalized.startswith("sp") and normalized.endswith("2"):
         return normalized[:-1]
     return normalized
+
+
+def harvest_reveal_is_free(value) -> bool:
+    """Return whether an $oh result grants another click instead of spending one."""
+    return normalize_sphere_emoji(value) == "spP"
 
 
 def _coordinates(index: int) -> Tuple[int, int]:
@@ -317,14 +324,14 @@ def choose_harvest_position(
 
     guaranteed_high_value = [
         index for index in enabled
-        if board[index] in {"spW", "spL", "spM", "spR", "spO"}
+        if board[index] in {"spW", "spL", "spM", "spR", "spO", "spY", "spG"}
     ]
     unknown = [index for index in enabled if board[index] == UNKNOWN_SPHERE]
     used_clicks = max(0, int(paid_clicks or 0))
-    paid_clicks_left = max(1, 5 - used_clicks)
 
-    # Lock in guaranteed prizes when they already fill every paid click left.
-    if guaranteed_high_value and len(guaranteed_high_value) >= paid_clicks_left:
+    # Secure visible green-or-better rewards before exploring more blue/teal
+    # reveal chains, matching the guaranteed-value preference users expect.
+    if guaranteed_high_value:
         return max(guaranteed_high_value, key=lambda index: (_SPHERE_VALUES[board[index]], -index))
 
     # Early unknown clicks can expose blue/teal chains, purple free clicks, or the

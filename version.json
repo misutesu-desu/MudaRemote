@@ -1,14 +1,14 @@
 {
-  "version": "4.6.7",
+  "version": "4.6.8",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "239651ae995812e6f7a706a0c37d228c208b055b4602b5562c6dafb1a70d5b10",
+  "exe_sha256": "84dfd1f2e94244f8bacd86f8b91316f429b922cdce1752bda5b5d0f0242d9c19",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "b51f1ac972cfc70b87c75ac1a5725d6fdc2c27f39e17eaff963ec920b82f5cab"
+      "sha256": "595188d37b4662011acba57a9a728858e3973231a302995b6fcbeaf19244c4a1"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -18,7 +18,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "48af86051c56533727b0178211d998322fbe809845fe35157f556d9aa2259a3a"
+      "sha256": "01cd4e0970b6ffccd9281d4dea5f49a7615f7cbb4befa9d39d515fff2b624eef"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -53,12 +53,12 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/status.py",
-      "sha256": "703824045ae884944d0bd4951bc67cdf556e1b86c7c38c8c20959ce2bdcd0083"
+      "sha256": "479152129f8e45701f272dd21360b97fbc6adf3f3b57ee046f9b86b90f0acb16"
     },
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/spheres.py",
-      "sha256": "c29533c8014cf99ed4a7c6e506d81e39f846b892f2d0b2417a3a9929fe148b84"
+      "sha256": "c4c91fe1ff847a7a37ff8190ed251c73e6fe0157a9a577c56052a0c1770a95eb"
     },
     {
       "path": "mudae_core/updater.py",

@@ -70,12 +70,13 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
+        looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
-        choose_chest_position, choose_harvest_position, parse_sphere_game_status,
+        choose_chest_position, choose_harvest_position, normalize_sphere_emoji, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -94,12 +95,13 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
+        looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
         status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
-        choose_chest_position, choose_harvest_position, parse_sphere_game_status,
+        choose_chest_position, choose_harvest_position, normalize_sphere_emoji, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 
@@ -114,7 +116,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.7"
+CURRENT_VERSION = "4.6.8"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -801,6 +803,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         future.set_result(message.content)
         return True
 
+    def is_tu_status_snapshot_for_self(message):
+        if not is_tu_response_for_self(message):
+            return False
+        interaction = (
+            getattr(message, 'interaction_metadata', None)
+            or getattr(message, 'interaction', None)
+        )
+        command_name = str(getattr(interaction, 'name', '') or '').strip().lower().lstrip('/')
+        return command_name == "tu" or looks_like_tu_status_snapshot(message.content)
+
     def sphere_game_kind(message):
         text = str(getattr(message, 'content', '') or '').lower()
         if "1 red sphere" in text and "never at the center" in text:
@@ -863,6 +875,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     def process_claim_cooldown_message(message):
         if not getattr(message, 'content', None) or getattr(message, 'embeds', None):
+            return False
+        # A manual /tu (or another MudaRemote instance's /tu) is already an
+        # authoritative status snapshot, not a rejected claim. Refreshing in
+        # response makes two running instances trigger each other forever.
+        if is_tu_status_snapshot_for_self(message):
             return False
         c_low = message.content.lower()
         user = getattr(client, 'user', None)
@@ -1013,8 +1030,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             total_clicks += 1
             current = refreshed
             _, revealed_emojis, _, _ = sphere_board_snapshot(current)
-            revealed = revealed_emojis[position] if position < len(revealed_emojis) else ""
-            if kind != "oh" or revealed != "spP":
+            revealed = normalize_sphere_emoji(
+                revealed_emojis[position] if position < len(revealed_emojis) else ""
+            )
+            if kind != "oh" or not harvest_reveal_is_free(revealed):
                 paid_clicks += 1
             BotLogger.log(
                 f"{game_label}: Click {total_clicks} ({paid_clicks}/5 used) at row {position // 5 + 1}, column {position % 5 + 1}"
