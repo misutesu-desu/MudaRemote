@@ -93,8 +93,15 @@ class ConfigTests(unittest.TestCase):
             farm_forcedivorce_before_roll=True,
             farm_forcedivorce_after_claim=True,
             farm_forcedivorce_after_other_claim=True,
+            forcedivorce_channel_id="456",
         )
         self.assertEqual(validate_preset(valid), [])
+
+        invalid_forcedivorce_channel = dict(base, forcedivorce_channel_id="not-an-id")
+        self.assertTrue(any(
+            "Forcedivorce Channel ID" in error
+            for error in validate_preset(invalid_forcedivorce_channel)
+        ))
 
 
 if __name__ == "__main__":

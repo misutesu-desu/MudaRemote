@@ -328,6 +328,7 @@ DEFAULTS = {
     "mudae_prefix": "$",
     "channel_id": "",
     "command_channel_id": "",
+    "forcedivorce_channel_id": "",
     "roll_command": "wa",
     "min_kakera": 100,
     "delay_seconds": 0,
@@ -338,6 +339,7 @@ DEFAULTS = {
     "roll_speed": 0.4,
     "snipe_delay": 2,
     "series_snipe_delay": 3,
+    "series_snipe_only_self_rolls": False,
     "kakera_snipe_threshold": 0,
     "kakera_reaction_snipe_delay": 0.75,
     "humanization_window_minutes": 40,
@@ -398,6 +400,7 @@ BOOL_SETTINGS = [
     ("snipe_mode", "Snipe Characters (Claim characters rolled by other people)", False),
     ("snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)", False),
     ("series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)", False),
+    ("series_snipe_only_self_rolls", "Series Claims on Own Rolls Only (Never steal series characters from other players)", False),
     ("kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)", False),
     ("kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)", False),
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
@@ -468,6 +471,7 @@ TEXT_SETTINGS = [
     ("prefix", "Self-Bot Prefix (Command prefix for controlling the bot)", "/////////////", False),
     ("mudae_prefix", "Mudae Game Prefix (Usually $)", "$", False),
     ("channel_id", "Discord Channel ID (Where the bot should roll)", "", False),
+    ("forcedivorce_channel_id", "Forcedivorce Channel ID (Optional: leave empty to use roll channel)", "", False),
     ("roll_command", "Roll Type (wa, ha, ma, etc.)", "wa", False),
     ("wishlist", "Character Wishlist (Names of characters you want to auto-claim)", [], True),
     ("series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)", [], True),
@@ -1264,6 +1268,7 @@ class PresetEditor:
         # Series snipe
         series_snipe_var = self.add_checkbox(char_snipe_frame.content, "series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)")
         series_sub = self.create_subframe(char_snipe_frame.content, series_snipe_var, "series_snipe_mode")
+        self.add_checkbox(series_sub, "series_snipe_only_self_rolls", "Series Claims on Own Rolls Only (Never steal series characters from other players)")
         self.add_number_field(series_sub, "series_snipe_delay", "Series Snipe Wait Time (Wait X seconds before stealing from series)", 3)
         self.add_list_field(series_sub, "series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)")
 
@@ -1312,6 +1317,7 @@ class PresetEditor:
         farm_var = self.add_checkbox(list_frame.content, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
         farm_sub = self.create_subframe(list_frame.content, farm_var, "farm_character_enabled")
         self.add_text_field(farm_sub, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
+        self.add_text_field(farm_sub, "forcedivorce_channel_id", "Forcedivorce Channel ID (Optional: leave empty to use roll channel)")
         self.add_checkbox(
             farm_sub,
             "farm_forcedivorce_before_roll",
@@ -1781,7 +1787,7 @@ class PresetEditor:
 
         # Populate text/number fields
         # [NEW] Include max_dk_power and main_account_id in text/number population
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id",
+        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id",
                     "roll_command",
                     "min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
@@ -1802,7 +1808,7 @@ class PresetEditor:
 
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
-                    "series_snipe_mode", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
+                    "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
@@ -1933,11 +1939,11 @@ class PresetEditor:
 
         # Collect text fields
         # [NEW] Include main_account_id and farm_character in text fields collection
-        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "roll_command", "main_account_id", "farm_character"]:
+        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "farm_character"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 # Special handling for channel_id
-                if key in ("channel_id", "command_channel_id") and value:
+                if key in ("channel_id", "command_channel_id", "forcedivorce_channel_id") and value:
                     try:
                         data[key] = int(value)
                     except ValueError:
@@ -1985,7 +1991,7 @@ class PresetEditor:
 
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
-                    "series_snipe_mode", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
+                    "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
@@ -2230,6 +2236,7 @@ class PresetEditor:
                 "rolling": True,
                 "wishlist": [],
                 "series_wishlist": [],
+                "series_snipe_only_self_rolls": False,
                 "auto_us_enabled": False,
                 "auto_us_limit": 0,
                 "auto_us_stop_on_claim": True,
@@ -2251,6 +2258,7 @@ class PresetEditor:
                 "farm_forcedivorce_before_roll": False,
                 "farm_forcedivorce_after_claim": False,
                 "farm_forcedivorce_after_other_claim": False,
+                "forcedivorce_channel_id": "",
                 "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
                 "immediate_kakera_click": True,
                 "character_snipe_targets": [],
@@ -2454,7 +2462,30 @@ def launch_gui():
             pass
 
     root = tk.Tk()
+    root.withdraw()
+    try:
+        import mudae_bot
+
+        mudae_bot.cleanup_after_update()
+
+        def confirm_update(latest_version, changelog):
+            return messagebox.askyesno(
+                "MudaRemote Update Available",
+                (
+                    f"MudaRemote v{latest_version} is available.\n\n"
+                    f"Changelog:\n{changelog}\n\n"
+                    "Install this update now?\n\n"
+                    "Your saved presets will be kept."
+                ),
+                parent=root,
+            )
+
+        mudae_bot.check_for_updates(confirm_update=confirm_update)
+    except Exception as e:
+        print(f"[MudaRemote] Update check failed: {e}")
+
     app = PresetEditor(root)
+    root.deiconify()
     root.mainloop()
 
 
@@ -2512,16 +2543,6 @@ def run_headless(preset_names, start_index=0):
 
 
 def main():
-    # [NEW] Feature 5: Move Auto-Update Trigger to GUI Startup
-    # Check for updates and cleanup backup files before doing anything else.
-    # This ensures the batch script swaps the .exe before the UI even appears.
-    try:
-        import mudae_bot
-        mudae_bot.cleanup_after_update()
-        mudae_bot.check_for_updates()
-    except Exception as e:
-        print(f"[MudaRemote] Update check failed: {e}")
-
     parser = argparse.ArgumentParser(
         description="MudaRemote - Mudae Bot Manager & Preset Editor",
         prog="MudaRemote"

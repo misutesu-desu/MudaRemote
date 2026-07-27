@@ -10,6 +10,20 @@ from .status import STATUS_FIELDS, mark_status_dirty
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
 
 
+def split_command_batches(total, maximum_batch_size=10):
+    """Split a command quantity into positive batches capped at the requested size."""
+    remaining = max(0, int(total or 0))
+    batch_size = int(maximum_batch_size or 0)
+    if batch_size <= 0:
+        raise ValueError("Maximum batch size must be greater than zero.")
+    batches = []
+    while remaining > 0:
+        current = min(batch_size, remaining)
+        batches.append(current)
+        remaining -= current
+    return batches
+
+
 def active_stagger_seconds(active_index, interval=AUTOMATED_STAGGER_INTERVAL_SECONDS):
     """Return the deterministic delay for a preset's position in the active launch set."""
     return max(0, int(active_index or 0)) * max(0.0, float(interval or 0.0))

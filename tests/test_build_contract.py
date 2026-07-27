@@ -44,6 +44,15 @@ class BuildContractTests(unittest.TestCase):
         self.assertEqual(product_version.group(1), release_version)
         self.assertEqual(file_version.group(1), release_version + ".0")
 
+    def test_gui_update_prompt_shows_changelog_before_installing(self):
+        editor = read_project_file("mudae_preset_editor.py")
+        launch_start = editor.index("def launch_gui():")
+        launch_end = editor.index("\ndef run_headless(", launch_start)
+        launch_source = editor[launch_start:launch_end]
+        self.assertIn("messagebox.askyesno", launch_source)
+        self.assertIn("Changelog:", launch_source)
+        self.assertIn("check_for_updates(confirm_update=confirm_update)", launch_source)
+
 
 if __name__ == "__main__":
     unittest.main()

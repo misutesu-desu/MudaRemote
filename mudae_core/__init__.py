@@ -19,6 +19,7 @@ from .runtime import (
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
+    split_command_batches,
     wait_until_resumed,
 )
 from .secrets import SecretStore
@@ -46,7 +47,7 @@ from .status import (
     status_refresh_reasons,
     tu_retry_wait,
 )
-from .updater import UpdateError, apply_update
+from .updater import UpdateError, apply_update, format_update_changelog
 from .versioning import compare_versions, is_newer_version
 
 __all__ = [
@@ -60,6 +61,7 @@ __all__ = [
     "STATUS_FIELDS",
     "UpdateError",
     "apply_update",
+    "format_update_changelog",
     "active_stagger_seconds",
     "atomic_write_json",
     "calculate_kakera_power_cost",
@@ -90,6 +92,7 @@ __all__ = [
     "record_tu_failure",
     "record_tu_success",
     "set_client_paused",
+    "split_command_batches",
     "status_dirty_fields",
     "status_refresh_reasons",
     "tu_retry_wait",

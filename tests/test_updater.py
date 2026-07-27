@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from mudae_core.updater import UpdateError, apply_update
+from mudae_core.updater import UpdateError, apply_update, format_update_changelog
 
 
 class _Response:
@@ -34,6 +34,16 @@ def _entry(path, url, content, checksum=None):
 
 
 class UpdaterTests(unittest.TestCase):
+    def test_structured_changelog_is_formatted_for_confirmation(self):
+        changelog = format_update_changelog({
+            "changelog": {
+                "Improvements": ["First change", "Second change"],
+                "Safety": ["Presets stay untouched"],
+            },
+        })
+        self.assertIn("Improvements\n- First change\n- Second change", changelog)
+        self.assertIn("Safety\n- Presets stay untouched", changelog)
+
     def test_frozen_download_uses_bounded_startup_timeouts(self):
         content = b"fake executable"
         session = _Session({"exe": content})
@@ -90,6 +100,31 @@ class UpdaterTests(unittest.TestCase):
                 apply_update(_Session(files), manifest, "4.0.0", directory)
             with open(bot_path, "rb") as handle:
                 self.assertEqual(handle.read(), b"VALUE = 'old'\n")
+
+    def test_manifest_cannot_replace_user_presets(self):
+        files = {
+            "bot": b"VALUE = 'new'\n",
+            "editor": b"VALUE = 'new'\n",
+            "core": b"VALUE = 'new'\n",
+            "presets": b"{}\n",
+        }
+        manifest = {
+            "version": "5.0.0",
+            "source_files": [
+                _entry("mudae_bot.py", "bot", files["bot"]),
+                _entry("mudae_preset_editor.py", "editor", files["editor"]),
+                _entry("mudae_core/__init__.py", "core", files["core"]),
+                _entry("presets.json", "presets", files["presets"]),
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            presets_path = os.path.join(directory, "presets.json")
+            with open(presets_path, "wb") as handle:
+                handle.write(b'{"Saved": {"rolling": true}}\n')
+            with self.assertRaises(UpdateError):
+                apply_update(_Session(files), manifest, "4.0.0", directory)
+            with open(presets_path, "rb") as handle:
+                self.assertEqual(handle.read(), b'{"Saved": {"rolling": true}}\n')
 
 
 if __name__ == "__main__":

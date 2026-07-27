@@ -14,10 +14,27 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.9-f97316?style=for-the-badge" alt="Version 4.6.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🆕 Safer Automation Controls — v4.6.9
+
+### ✨ New Features
+
+- **Own-Rolls-Only Series Claims:** Series Sniping can now claim matching characters only from your own rolls, without stealing them from other players.
+- **Separate Forcedivorce Channel:** Farm forcedivorce commands can now be sent in a dedicated channel instead of the main rolling channel.
+- **Update Confirmation:** New updates now show their changelog first, letting you choose whether to install or skip them.
+
+### 🐛 Bug Fixes
+
+- **Sphere Game Limits:** `$oh` and `$oc` now respect Mudae's maximum of 10 uses per command. For example, 11 uses will be sent as `$oc 10` followed by `$oc 1`.
+
+### ⚡ Improvements
+
+- **Safer Updates:** Skipping an update leaves your current installation unchanged.
+- **Preset Protection:** Update files can no longer overwrite your saved `presets.json` configurations.
 
 ## 🛠️ Status & Sphere Hotfix — v4.6.8
 
@@ -55,7 +72,7 @@
 - **Far fewer `$tu` commands:** Authoritative cooldowns, completed roll cycles, and exact bonus-roll messages update only the affected local state; fresh-response matching, bounded retries, and backoff prevent query spam without sacrificing recovery.
 - **Safer configuration and updates:** Tokens use Windows DPAPI, the operating system keyring, or Termux-private app storage, JSON writes are atomic, and the manifest-based modular updater verifies every downloaded file before applying the release.
 - **More resilient automation:** Multi-account claim coordination, scheduled rolls, Kakera cost handling, empty embeds, zero-valued thresholds, and retry exhaustion have been corrected.
-- **Flexible Kakera farming:** Independent pre-roll and post-claim forcedivorce controls can be enabled separately or together, covering shared-server farming, solo key farming, and characters already owned at startup.
+- **Flexible Kakera farming:** Independent pre-roll and post-claim forcedivorce controls can be enabled separately or together, and forcedivorce commands can use their own optional channel.
 - **Correct stacked power discounts:** The 10+ key discount and visible `💎/2` Perk 8 discount now stack independently, including fractional power costs such as 7.5%.
 - **Improved preset editor and diagnostics:** Presets are validated and persisted consistently, dynamic values survive edits, child-process status is visible, logs rotate with tracebacks, and automated regression tests protect the critical flows.
 
@@ -92,7 +109,7 @@ Here's what you get out of the box:
 - 👥 **Multi-Account Sync** — Run alt accounts simultaneously. Main + alts working in perfect coordination.
 - 🕒 **Timing Controls** — Optional random delays, sleep schedules, and channel-idle waits. These reduce repetitive timing only; they do not prevent detection or bans.
 - 🖥️ **Beautiful GUI** — No config files. No code. Just a clean settings window with buttons and dropdowns.
-- 🔄 **Auto Updates** — The `.exe` updates itself when a new version drops. You never re-download manually.
+- 🔄 **Confirmed Updates** — The `.exe` shows the changelog and lets you install or skip each new version.
 
 > [!WARNING]
 > **This is a self-bot.** Self-bots violate Discord's Terms of Service. Using this software may result in your account being permanently banned. This project exists for **educational purposes only**. You assume all risk. See the [full disclaimer](#%EF%B8%8F-disclaimer).
@@ -112,7 +129,7 @@ Still using a janky Python script from 2022 that makes you edit JSON files in No
 | **Safety** | Gets you banned in a week | ✅ Ghost Mode — random delays, sleep schedule, channel awareness |
 | **Accounts** | One account, one terminal | ✅ Unlimited accounts running simultaneously in sync |
 | **Interface** | Scary black terminal window | ✅ Beautiful graphical settings editor with live preview |
-| **Updates** | Re-download the whole repo | ✅ Self-updating `.exe` — always on the latest version |
+| **Updates** | Re-download the whole repo | ✅ Verified in-app updates with changelog and confirmation |
 | **Support** | Abandoned repo, no Discord | ✅ Active dev + 140+ member community on Discord |
 
 ---
@@ -126,7 +143,7 @@ The bot watches **every single roll** in your channel — yours and everyone els
 | Feature | What You Get |
 | :--- | :--- |
 | **Wishlist Claim** | Build your dream list. The moment a wishlist character appears, it's yours — claimed in under a second. |
-| **Series Claim** | Love "Naruto"? "Jujutsu Kaisen"? The bot claims **any** character from your favorite series automatically. |
+| **Series Claim** | Love "Naruto"? "Jujutsu Kaisen"? The bot claims characters from your favorite series automatically, with an optional own-rolls-only mode. |
 | **Value Snipe** | Set a Kakera threshold (e.g., 500+). The bot hijacks expensive characters from other people's rolls. |
 | **Instant Self-Claim** | Mid-roll and something incredible appears? Claimed on the spot — no waiting for the batch to finish. |
 | **Panic Claim** | Claim timer expiring and nothing good showed up? The bot grabs the best available so you never waste a claim. |
@@ -150,7 +167,7 @@ Kakera crystals are money. The bot clicks them **instantly** on every roll — b
 | **Chaos Mode** | Characters with 10+ keys have "Chaos Kakera" that costs 50% less power. Target only these for maximum efficiency. |
 | **MK Only Mode** | Only farm Kakera from `$mk` rolls. Ignore everything else. Surgical power conservation. |
 | **Sphere Detection** | Spheres cost **zero** power. The bot **always** clicks them — free money, no exceptions. |
-| **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board. |
+| **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board; stored uses are sent in batches of at most 10. |
 | **Custom Thresholds** | Fine-tune per crystal type: *"Only click Purple Kakera if I have 80%+ power."* The bot obeys. |
 
 ---
@@ -188,7 +205,7 @@ These controls vary timing and avoid configured inactive periods. They cannot ma
 
 ### 🔄 Auto Updates & Multi-Account Sync
 
-Every time you launch MudaRemote, it checks for updates. Frozen builds require a published SHA-256 checksum; source installs use a complete per-file manifest and apply all modules transactionally. Git checkouts are never overwritten and instead ask you to run `git pull`.
+Every time you launch MudaRemote, it checks for updates. When a newer version exists, the changelog is shown first and you can install it or continue without updating. Frozen builds require a published SHA-256 checksum; source installs use a complete per-file manifest, protect `presets.json`, and apply all modules transactionally. Git checkouts are never overwritten and instead ask you to run `git pull`.
 
 Running multiple accounts? Your **main account and alts sync in real-time**. If an alt rolls your wishlist character, your main claims it instantly. Full coordination, zero effort.
 

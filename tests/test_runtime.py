@@ -8,6 +8,7 @@ from mudae_core.runtime import (
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
+    split_command_batches,
 )
 from mudae_core.status import initialize_status_tracking, status_dirty_fields
 
@@ -33,6 +34,12 @@ class _Event:
 
 
 class RuntimeStaggerTests(unittest.TestCase):
+    def test_command_quantities_are_split_into_ten_item_batches(self):
+        self.assertEqual(split_command_batches(0), [])
+        self.assertEqual(split_command_batches(10), [10])
+        self.assertEqual(split_command_batches(11), [10, 1])
+        self.assertEqual(split_command_batches(25), [10, 10, 5])
+
     def test_stagger_uses_only_selected_runnable_presets_in_launch_order(self):
         presets = {
             "closed": {"token": ""},

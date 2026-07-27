@@ -37,6 +37,11 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), version)
 
+    def test_manifest_includes_changelog_for_update_confirmation(self):
+        with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
+            changelog = json.load(handle).get("changelog")
+        self.assertTrue(changelog)
+
     def test_local_release_executable_matches_manifest_when_present(self):
         executable = os.path.join(PROJECT_ROOT, "MudaRemote.exe")
         if not os.path.exists(executable):

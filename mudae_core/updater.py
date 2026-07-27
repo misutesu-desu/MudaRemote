@@ -18,6 +18,34 @@ class UpdateError(RuntimeError):
 # Keep startup failures short. ``requests`` applies these as separate connect
 # and read-idle limits, including redirected GitHub release downloads.
 UPDATE_DOWNLOAD_TIMEOUT = (5.0, 20.0)
+PROTECTED_UPDATE_PATHS = {"presets.json"}
+
+
+def format_update_changelog(manifest):
+    """Return human-readable release notes from a manifest changelog value."""
+    changelog = manifest.get("changelog") if isinstance(manifest, dict) else None
+    if isinstance(changelog, str):
+        return changelog.strip() or "No changelog was provided for this update."
+    if isinstance(changelog, (list, tuple)):
+        entries = [str(entry).strip() for entry in changelog if str(entry).strip()]
+        if entries:
+            return "\n".join("- {}".format(entry) for entry in entries)
+    if isinstance(changelog, dict):
+        sections = []
+        for heading, entries in changelog.items():
+            heading = str(heading).strip()
+            if isinstance(entries, (list, tuple)):
+                lines = [str(entry).strip() for entry in entries if str(entry).strip()]
+                if lines:
+                    sections.append("{}\n{}".format(
+                        heading,
+                        "\n".join("- {}".format(entry) for entry in lines),
+                    ))
+            elif str(entries).strip():
+                sections.append("{}\n{}".format(heading, str(entries).strip()))
+        if sections:
+            return "\n\n".join(sections)
+    return "No changelog was provided for this update."
 
 
 def sha256_bytes(content):
@@ -60,6 +88,8 @@ def _stage_source_manifest(session, manifest, stage_dir):
         relative_path = _validate_relative_path(entry.get("path", ""))
         if not relative_path:
             raise UpdateError("The source_files manifest contains an empty path.")
+        if relative_path.replace("\\", "/").casefold() in PROTECTED_UPDATE_PATHS:
+            raise UpdateError("The update manifest may not replace user configuration files.")
         if relative_path in seen_paths:
             raise UpdateError("The source_files manifest contains a duplicate path: {}.".format(relative_path))
         seen_paths.add(relative_path)

@@ -10,12 +10,15 @@
     "claim_interval": 180,
     "roll_interval": 60,
     "rolling": true,
+    "series_snipe_mode": false,
+    "series_snipe_only_self_rolls": false,
     "auto_oh_enabled": false,
     "auto_oc_enabled": false,
     "farm_character_enabled": false,
     "farm_character": "",
     "farm_forcedivorce_before_roll": false,
     "farm_forcedivorce_after_claim": false,
-    "farm_forcedivorce_after_other_claim": false
+    "farm_forcedivorce_after_other_claim": false,
+    "forcedivorce_channel_id": ""
   }
 }

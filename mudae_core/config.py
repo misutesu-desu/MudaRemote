@@ -110,6 +110,13 @@ def validate_preset(data, resolved_token=None):
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("Command Channel ID must be empty or a positive number.")
+    forcedivorce_channel = data.get("forcedivorce_channel_id")
+    if forcedivorce_channel not in (None, ""):
+        try:
+            if int(forcedivorce_channel) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("Forcedivorce Channel ID must be empty or a positive number.")
     main_account_id = data.get("main_account_id")
     if main_account_id not in (None, ""):
         try:

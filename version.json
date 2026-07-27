@@ -1,24 +1,35 @@
 {
-  "version": "4.6.8",
+  "version": "4.6.9",
+  "changelog": {
+    "Improvements": [
+      "Added an own-rolls-only option for Series Sniping.",
+      "Split $oh and $oc quantities into batches of at most 10.",
+      "Added an optional separate channel for farm forcedivorce commands.",
+      "Show release notes and ask for confirmation before installing updates."
+    ],
+    "Safety": [
+      "User presets are protected from source update manifests."
+    ]
+  },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "84dfd1f2e94244f8bacd86f8b91316f429b922cdce1752bda5b5d0f0242d9c19",
+  "exe_sha256": "f4cf9790971417fb9003242de8561bdf0a25d257b838f4446d83d845d6e11a04",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "595188d37b4662011acba57a9a728858e3973231a302995b6fcbeaf19244c4a1"
+      "sha256": "371bce41b063787e13b4ab31d3ce6fb5793c45088424c8489fb7b582999979c2"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "0e7b0607277960d15ffe665c828ef30016dc5ea40e5e93e11a4de21ab7077ec6"
+      "sha256": "283929602a271c8d21fa4a4ed0302de0c811ac1f0c2161f3b04acc2c76314e18"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "01cd4e0970b6ffccd9281d4dea5f49a7615f7cbb4befa9d39d515fff2b624eef"
+      "sha256": "3da6c64cd96c34961daf9b4581ebeab4d4996a106f4c5f0e744b27a5bb27111c"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -28,7 +39,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/config.py",
-      "sha256": "6fc6eec0cf231e1f5dfd691dfb225d3466e2f9b9ca6cd4c6e6e595d81b7bc082"
+      "sha256": "e1b8aede480788596e27be61fcbfe6de15c842fb69c342dbeb8c53b70ebd6fe4"
     },
     {
       "path": "mudae_core/kakera.py",
@@ -43,7 +54,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/runtime.py",
-      "sha256": "7b7e574152dbbc6abcc19888c98802db27033f1911a8886a43e4df2e965dfa36"
+      "sha256": "823f0ff580f8d8079e51a217817bee5a50dada1c391aaf94fb664d4b8ca542bb"
     },
     {
       "path": "mudae_core/secrets.py",
@@ -63,7 +74,7 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/updater.py",
-      "sha256": "02d5ce4206174639a093b6974dba1e963f1b0ef8857d6976896d4721159897cb"
+      "sha256": "a33344812c1551c067774446221442d78b8478a1434f67116e464cfe10895171"
     },
     {
       "path": "mudae_core/versioning.py",

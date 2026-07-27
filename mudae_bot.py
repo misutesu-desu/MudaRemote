@@ -70,12 +70,12 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
-        looks_like_tu_status_snapshot,
+        is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
-        status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
+        status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         choose_chest_position, choose_harvest_position, normalize_sphere_emoji, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
@@ -95,12 +95,12 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
-        looks_like_tu_status_snapshot,
+        is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields,
-        status_refresh_reasons, tu_retry_wait, has_perk_eight_discount,
+        status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         choose_chest_position, choose_harvest_position, normalize_sphere_emoji, parse_sphere_game_status,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
@@ -116,7 +116,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.6.8"
+CURRENT_VERSION = "4.6.9"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -312,8 +312,24 @@ except Exception:
 
 UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/"
 
-def check_for_updates():
-    if not UPDATE_URL: return
+def _confirm_update_in_console(latest_version, changelog):
+    print(f"\nMudaRemote v{latest_version} is available.\n")
+    print("Changelog:")
+    print(changelog)
+    print()
+    if not getattr(sys.stdin, "isatty", lambda: False)():
+        print_system_log("Update confirmation is unavailable in this session. Update skipped.", "WARN")
+        return False
+    try:
+        answer = input("Install this update now? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return answer in {"y", "yes"}
+
+
+def check_for_updates(confirm_update=None):
+    if not UPDATE_URL:
+        return "disabled"
     is_frozen = getattr(sys, 'frozen', False)
     print_system_log(f"Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'EXE' if is_frozen else 'Script'})", "RESET")
     try:
@@ -321,20 +337,31 @@ def check_for_updates():
         response.raise_for_status()
         data = response.json()
         latest_version = data.get("version")
+        if not latest_version or not is_newer_version(latest_version, CURRENT_VERSION):
+            print_system_log("You are up to date.", "INFO")
+            return "current"
+
+        changelog = format_update_changelog(data)
+        base_path = get_base_path()
+        if not is_frozen and os.path.isdir(os.path.join(base_path, ".git")):
+            print(f"\nChangelog for v{latest_version}:\n{changelog}\n")
+            print_system_log(f"v{latest_version} is available. This is a Git checkout; run 'git pull' so local changes are never overwritten.", "WARN")
+            return "git"
+
+        confirmation = confirm_update or _confirm_update_in_console
+        print_system_log(f"v{latest_version} is available. Waiting for update confirmation.", "RESET")
+        if not confirmation(latest_version, changelog):
+            print_system_log(f"Update to v{latest_version} was skipped. Your current files and presets were not changed.", "INFO")
+            return "skipped"
+
         result = apply_update(
             requests,
             data,
             CURRENT_VERSION,
-            get_base_path(),
+            base_path,
             frozen=is_frozen,
             executable=sys.executable,
         )
-        if result == "current":
-            print_system_log("You are up to date.", "INFO")
-            return
-        if result == "git":
-            print_system_log(f"v{latest_version} is available. This is a Git checkout; run 'git pull' so local changes are never overwritten.", "WARN")
-            return
         if result == "frozen":
             print_system_log("Verified update staged. Restarting via updater...", "RESET")
             os._exit(0)
@@ -345,8 +372,10 @@ def check_for_updates():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except UpdateError as e:
         print_system_log(f"Update was not applied safely: {e}", "WARN")
+        return "failed"
     except Exception as e:
         print_system_log(f"Update failed: {e}", "ERROR")
+        return "failed"
 
 def cleanup_after_update():
     """Compatibility hook retained for older launchers; updates are now transactional."""
@@ -505,7 +534,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             farm_forcedivorce_before_roll_preset=True,
             farm_forcedivorce_after_other_claim_preset=False,
             auto_oh_enabled_preset=False,
-            auto_oc_enabled_preset=False):
+            auto_oc_enabled_preset=False,
+            series_snipe_only_self_rolls_preset=False,
+            forcedivorce_channel_id_preset=""):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -527,6 +558,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.snipe_ignore_min_kakera_reset = snipe_ignore_min_kakera_reset
     client.wishlist = set([w.lower() for w in wishlist])
     client.series_snipe_mode = series_snipe_mode
+    client.series_snipe_only_self_rolls = bool(series_snipe_only_self_rolls_preset)
     client.series_snipe_delay = series_snipe_delay
     client.series_wishlist = set([sw.lower() for sw in series_wishlist])
     client.avoid_list = set([a.lower() for a in (avoid_list or [])])
@@ -543,6 +575,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.claim_right_available = False
     client.target_channel_id = target_channel_id
     client.command_channel_id_preset = str(command_channel_id_preset or "").strip()
+    client.forcedivorce_channel_id_preset = str(forcedivorce_channel_id_preset or "").strip()
     client.roll_speed = roll_speed
     client.mudae_prefix = mudae_prefix
     client.key_mode = key_mode
@@ -633,6 +666,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.farm_forcedivorce_after_claim = bool(farm_forcedivorce_after_claim_preset)
     client.farm_forcedivorce_before_roll = bool(farm_forcedivorce_before_roll_preset)
     client.farm_forcedivorce_after_other_claim = bool(farm_forcedivorce_after_other_claim_preset)
+    client.forcedivorce_channel = None
     client._farm_release_recent = {}
     client.op_perk_5_only = op_perk_5_only_preset
 
@@ -1132,14 +1166,37 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             now_monotonic = time.monotonic()
             if now_monotonic < client._sphere_game_retry_after.get(kind, 0.0):
                 continue
-            completed = await run_sphere_game(channel, kind, available)
-            if completed:
-                client.sphere_game_counts[kind] = 0
+            remaining = available
+            completed_all = True
+            for batch_size in split_command_batches(available, 10):
+                if not await run_sphere_game(channel, kind, batch_size):
+                    completed_all = False
+                    break
+                remaining -= batch_size
+                client.sphere_game_counts[kind] = remaining
+            if completed_all:
                 refill_seconds = max(300.0, float(status.refill_minutes or 60) * 60.0)
                 client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
             else:
                 client._sphere_game_retry_after[kind] = time.monotonic() + 300.0
                 client.loop.call_later(302.0, wake_status_loop)
+
+    async def series_wishlist_matches(message, series, known_self_roll=None):
+        if not client.series_snipe_mode or not client.series_wishlist:
+            return False
+        if not any(entry in series for entry in client.series_wishlist):
+            return False
+        if not client.series_snipe_only_self_rolls:
+            return True
+        if known_self_roll is not None:
+            return bool(known_self_roll)
+
+        owner_id, owner_name = await detect_roll_owner(client, message)
+        client_names = {
+            str(getattr(client.user, "name", "") or "").lower(),
+            str(getattr(client.user, "display_name", "") or "").lower(),
+        }
+        return owner_id == client.user.id or bool(owner_name and owner_name in client_names)
 
     def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
         if client.next_claim_reset_at_utc:
@@ -1440,6 +1497,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception: pass
         return getattr(client, '_main_channel', None)
 
+    def _get_forcedivorce_channel(fallback_channel=None):
+        configured = getattr(client, "forcedivorce_channel", None)
+        if configured is not None:
+            return configured
+        try:
+            if client.forcedivorce_channel_id_preset:
+                configured = client.get_channel(int(client.forcedivorce_channel_id_preset))
+                if configured is not None:
+                    return configured
+        except Exception:
+            pass
+        return fallback_channel or getattr(client, "_main_channel", None)
+
     async def main_status_loop(client, channel):
         BotLogger.log("Main status loop started.", preset_name, "INFO")
         while not client.is_closed():
@@ -1501,6 +1571,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     BotLogger.log(f"Command channel set: #{cmd_ch.name} ({cmd_ch.id})", preset_name, "INFO")
             except Exception:
                 BotLogger.log("Command channel config failed. Falling back to main channel.", preset_name, "WARN")
+
+        if client.forcedivorce_channel_id_preset:
+            try:
+                forcedivorce_ch = (
+                    client.get_channel(int(client.forcedivorce_channel_id_preset))
+                    or await client.fetch_channel(int(client.forcedivorce_channel_id_preset))
+                )
+                if forcedivorce_ch and isinstance(forcedivorce_ch, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+                    client.forcedivorce_channel = forcedivorce_ch
+                    BotLogger.log(
+                        f"Forcedivorce channel set: #{forcedivorce_ch.name} ({forcedivorce_ch.id})",
+                        preset_name,
+                        "INFO",
+                    )
+                else:
+                    BotLogger.log("Forcedivorce channel is not text-like. Falling back to roll channel.", preset_name, "WARN")
+            except Exception:
+                BotLogger.log("Forcedivorce channel config failed. Falling back to roll channel.", preset_name, "WARN")
 
         if client.rolling_enabled:
             if not channel.permissions_for(channel.guild.me).send_messages:
@@ -2227,6 +2315,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         """Release the configured farm character and confirm through the shared command queue."""
         if client.is_paused or is_maintenance_active():
             return False
+        channel = _get_forcedivorce_channel(channel)
+        if channel is None:
+            BotLogger.log("Kakera Farm: No channel is available for forcedivorce.", preset_name, "WARN")
+            return False
         release_key = str(char_name or "").strip().casefold()
         now_monotonic = time.monotonic()
         last_release = client._farm_release_recent.get(release_key, 0.0)
@@ -2891,7 +2983,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     series = description_lines[0].lower() if description_lines else ""
                     claims_r, likes_r = parse_mudae_ranks(embed.description or "")
                     is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                    is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(msg, client.user.id) or is_ranked
+                    is_series_wl = await series_wishlist_matches(msg, series)
+                    is_wl = c_name in client.wishlist or is_series_wl or is_wished_by_self(msg, client.user.id) or is_ranked
                     is_avoided = c_name in client.avoid_list
 
                     if is_wl and not is_avoided: wl_claims.append((msg, c_name, k_v, series))
@@ -2944,7 +3037,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
                 claims_r, likes_r = parse_mudae_ranks(msg.embeds[0].description or "")
                 is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                is_wl_rt = n in client.wishlist or (client.series_snipe_mode and any(s_in in s for s_in in client.series_wishlist)) or is_wished_by_self(msg, client.user.id) or is_ranked
+                is_series_wl_rt = await series_wishlist_matches(msg, s)
+                is_wl_rt = n in client.wishlist or is_series_wl_rt or is_wished_by_self(msg, client.user.id) or is_ranked
 
                 if (is_wl_rt and client.rt_ignore_min_kakera_for_wishlist) or v >= client.min_kakera:
                     rt_targets.append((msg, n, v))
@@ -3554,7 +3648,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             claims_r, likes_r = parse_mudae_ranks(desc)
             is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-            is_wl = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(message, client.user.id) or is_ranked
+            is_series_wl = await series_wishlist_matches(message, series)
+            is_wl = c_name in client.wishlist or is_series_wl or is_wished_by_self(message, client.user.id) or is_ranked
             is_avoided = c_name in client.avoid_list
 
             in_panic_hour = False
@@ -3648,7 +3743,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
                 claims_r, likes_r = parse_mudae_ranks(desc)
                 is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                is_wanted = c_name in client.wishlist or (client.series_snipe_mode and any(s in series for s in client.series_wishlist)) or is_wished_by_self(message, client.user.id) or is_ranked or k_val >= client.current_min_kakera_for_roll_claim
+                is_series_wl = await series_wishlist_matches(message, series, known_self_roll=True)
+                is_wanted = c_name in client.wishlist or is_series_wl or is_wished_by_self(message, client.user.id) or is_ranked or k_val >= client.current_min_kakera_for_roll_claim
                 is_avoided = c_name in client.avoid_list
                 already_in_progress = _claim_coordinator.is_reserved(message.id)
                 if is_wanted and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
@@ -3694,11 +3790,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     series = desc.splitlines()[0].lower() if desc else ""
                     is_avoided = c_name in client.avoid_list
                     already_in_progress = _claim_coordinator.is_reserved(message.id)
-                    if any(s in series for s in client.series_wishlist) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
+                    is_series_wl = await series_wishlist_matches(
+                        message,
+                        series,
+                        known_self_roll=is_manual_self_roll,
+                    )
+                    if is_series_wl and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                        is_external_series_roll = not is_manual_self_roll
+                        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external_series_roll): pass
                         else:
                             if not await active_delay(client.series_snipe_delay + random.uniform(0.05, 0.25)): return
-                            if await claim_character(client, message.channel, message, is_snipe=True):
+                            if await claim_character(client, message.channel, message, is_snipe=is_external_series_roll):
                                  client.series_snipe_happened = True; process = False
 
                 claims_r, likes_r = parse_mudae_ranks(embed.description or "")
@@ -3817,6 +3919,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("farm_forcedivorce_after_other_claim", False),
                 preset_data.get("auto_oh_enabled", False),
                 preset_data.get("auto_oc_enabled", False),
+                preset_data.get("series_snipe_only_self_rolls", False),
+                preset_data.get("forcedivorce_channel_id", ""),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

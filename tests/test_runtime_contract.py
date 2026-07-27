@@ -195,6 +195,20 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("_sphere_board_update_events", board_source)
         self.assertIn("collecting bonus spheres", board_source)
         self.assertIn('status.available_for("oc")', available_source)
+        self.assertIn("split_command_batches(available, 10)", available_source)
+        self.assertIn("remaining -= batch_size", available_source)
+
+    def test_series_claims_can_be_limited_to_self_owned_rolls(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        matcher_source = ast.get_source_segment(self.source, functions["series_wishlist_matches"])
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn("client.series_snipe_only_self_rolls", matcher_source)
+        self.assertIn("await detect_roll_owner", matcher_source)
+        self.assertIn("known_self_roll=is_manual_self_roll", handler_source)
 
     def test_unknown_control_commands_are_ignored_without_tracebacks(self):
         functions = {
@@ -205,6 +219,20 @@ class RuntimeSourceContractTests(unittest.TestCase):
         handler_source = ast.get_source_segment(self.source, functions["on_command_error"])
         self.assertIn("commands.CommandNotFound", handler_source)
         self.assertIn("return", handler_source)
+
+    def test_updates_show_changelog_and_require_confirmation_before_apply(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        update_source = ast.get_source_segment(self.source, functions["check_for_updates"])
+        self.assertIn("format_update_changelog(data)", update_source)
+        self.assertIn("confirmation(latest_version, changelog)", update_source)
+        self.assertLess(
+            update_source.index("confirmation(latest_version, changelog)"),
+            update_source.index("apply_update("),
+        )
 
     def test_login_failure_stops_with_concise_actionable_message(self):
         functions = {
@@ -381,6 +409,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
             any(isinstance(argument, ast.Constant) and argument.value == "y" for argument in guarded_arguments)
         )
         helper_source = ast.get_source_segment(self.source, helper)
+        self.assertIn("channel = _get_forcedivorce_channel(channel)", helper_source)
         self.assertLess(
             helper_source.index('f"{client.mudae_prefix}forcedivorce {char_name}"'),
             helper_source.index('guarded_send(channel, "y")'),
