@@ -89,6 +89,15 @@ def harvest_reveal_is_free(value) -> bool:
     return normalize_sphere_emoji(value) == "spP"
 
 
+def count_harvest_bonus_clicks(text: str) -> int:
+    """Count separate $oh result lines where a dark sphere becomes a free purple."""
+    return len(re.findall(
+        r"\bspD\b.{0,80}?\bturns\s+into\b.{0,80}?\bspP\b",
+        str(text or ""),
+        re.IGNORECASE | re.DOTALL,
+    ))
+
+
 def _coordinates(index: int) -> Tuple[int, int]:
     return divmod(index, BOARD_SIZE)
 

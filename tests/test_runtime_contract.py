@@ -173,6 +173,23 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(len(capture_calls), 1)
         self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
 
+    def test_separate_sphere_bonus_message_is_captured_before_channel_filter_returns(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        on_message = functions["on_message"]
+        capture_calls = [
+            child for child in ast.walk(on_message)
+            if isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "capture_sphere_game_bonus"
+        ]
+        returns = [child for child in ast.walk(on_message) if isinstance(child, ast.Return)]
+        self.assertEqual(len(capture_calls), 1)
+        self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
+
     def test_sphere_game_automation_uses_tu_counts_and_guarded_actions(self):
         functions = {
             node.name: node
@@ -191,12 +208,54 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("await guarded_click", board_source)
         self.assertIn("revealed = normalize_sphere_emoji", board_source)
         self.assertIn("not harvest_reveal_is_free(revealed)", board_source)
+        self.assertIn("_sphere_game_bonus_clicks", board_source)
+        self.assertIn("await asyncio.wait_for(bonus_event.wait()", board_source)
         self.assertIn("for click_attempt in range(2)", board_source)
         self.assertIn("_sphere_board_update_events", board_source)
         self.assertIn("collecting bonus spheres", board_source)
         self.assertIn('status.available_for("oc")', available_source)
         self.assertIn("split_command_batches(available, 10)", available_source)
         self.assertIn("remaining -= batch_size", available_source)
+
+    def test_localized_sphere_boards_do_not_require_english_text(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        kind_source = ast.get_source_segment(self.source, functions["sphere_game_kind"])
+        capture_source = ast.get_source_segment(
+            self.source,
+            functions["capture_sphere_game_response"],
+        )
+        recent_source = ast.get_source_segment(
+            self.source,
+            functions["find_recent_sphere_game"],
+        )
+        self.assertIn('command_name in {"oh", "oc"}', kind_source)
+        self.assertIn("len(buttons) != 25", capture_source)
+        self.assertIn('expected_kind not in {"oh", "oc"}', capture_source)
+        self.assertIn("sphere_game_kind(candidate) in (None, kind)", recent_source)
+
+    def test_points_cooldown_schedules_a_fresh_status_check(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        schedule_source = ast.get_source_segment(
+            self.source,
+            functions["schedule_points_refresh"],
+        )
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn("client.loop.call_later", schedule_source)
+        self.assertIn('{"points"}', schedule_source)
+        self.assertIn('"p-reset"', schedule_source)
+        self.assertIn('"$p está pronto"', status_source)
+        self.assertGreaterEqual(
+            status_source.count("schedule_points_refresh(client.next_p_claim_at_utc)"),
+            2,
+        )
 
     def test_series_claims_can_be_limited_to_self_owned_rolls(self):
         functions = {
@@ -262,6 +321,30 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn(
             "farm_character_claimed and consumes_claim and client.auto_rt_after_claim and client.rt_available",
             finalize_source,
+        )
+
+    def test_rejected_claim_is_only_released_when_it_can_be_retried(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        resolve_source = ast.get_source_segment(
+            self.source,
+            functions["resolve_pending_claim_from_status"],
+        )
+        retry_guard = (
+            "if message_id is not None and retry_count < 1 "
+            "and can_retry and not client.is_paused:"
+        )
+        self.assertIn(retry_guard, resolve_source)
+        self.assertGreater(
+            resolve_source.index("client.processed_claim_messages.discard(message_id)"),
+            resolve_source.index(retry_guard),
+        )
+        self.assertLess(
+            resolve_source.index("client.processed_claim_messages.discard(message_id)"),
+            resolve_source.index("elif not can_retry:"),
         )
 
     def test_text_and_slash_commands_share_the_same_pacer(self):
@@ -414,6 +497,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
             helper_source.index('f"{client.mudae_prefix}forcedivorce {char_name}"'),
             helper_source.index('guarded_send(channel, "y")'),
         )
+        confirmation_index = helper_source.index("Confirmed forcedivorce")
+        guard_clear_index = helper_source.index(
+            "client.last_successfully_claimed_character = None"
+        )
+        self.assertGreater(guard_clear_index, confirmation_index)
         direct_sends = [
             child
             for child in ast.walk(helper)

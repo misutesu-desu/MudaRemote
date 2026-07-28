@@ -5,6 +5,7 @@ from mudae_core.spheres import (
     choose_chest_position,
     choose_chest_reward_position,
     choose_harvest_position,
+    count_harvest_bonus_clicks,
     harvest_reveal_is_free,
     normalize_sphere_emoji,
     parse_sphere_game_status,
@@ -12,6 +13,16 @@ from mudae_core.spheres import (
 
 
 class SphereStatusTests(unittest.TestCase):
+    def test_counts_dark_to_purple_bonus_from_separate_result_message(self):
+        result = (
+            "<:spT:1> +304\n"
+            "<:spD:2> turns into <:spP:3>\n"
+            "<:spP:3> (Free) +224"
+        )
+
+        self.assertEqual(count_harvest_bonus_clicks(result), 1)
+        self.assertEqual(count_harvest_bonus_clicks("<:spD:2> +110"), 0)
+
     def test_parses_supplied_tu_stock_and_refill(self):
         status = parse_sphere_game_status(
             "**0** $oh left for today, **1** $oc, **0** $oq and **0** $ot.\n"

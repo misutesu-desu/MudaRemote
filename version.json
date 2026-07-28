@@ -1,25 +1,26 @@
 {
-  "version": "4.6.9",
+  "version": "4.7.0",
   "changelog": {
-    "Improvements": [
-      "Added an own-rolls-only option for Series Sniping.",
-      "Split $oh and $oc quantities into batches of at most 10.",
-      "Added an optional separate channel for farm forcedivorce commands.",
-      "Show release notes and ask for confirmation before installing updates."
+    "Bug Fixes": [
+      "Kakera farming can use $rt on the farm character again after a confirmed forcedivorce.",
+      "Rejected stale claims no longer trigger repeated $tu checks when neither a claim right nor $rt is ready.",
+      "Localized $oh and $oc boards are detected without relying on English board text.",
+      "Portuguese $p ready states and cooldown completions now trigger reliably."
     ],
-    "Safety": [
-      "User presets are protected from source update manifests."
+    "Improvements": [
+      "$oh now grants the extra click when a separate result message reports that spD turned into spP.",
+      "$p cooldowns schedule a fresh status check when they expire."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "f4cf9790971417fb9003242de8561bdf0a25d257b838f4446d83d845d6e11a04",
+  "exe_sha256": "0e98bec20364a8e60e0c17133a1b4be55a8277b349a8afcf5f56337dd505ea0c",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "371bce41b063787e13b4ab31d3ce6fb5793c45088424c8489fb7b582999979c2"
+      "sha256": "a19a27af519f55e065f797156af103170e1435c597109c4e2a6452f398a9069d"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -29,7 +30,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "3da6c64cd96c34961daf9b4581ebeab4d4996a106f4c5f0e744b27a5bb27111c"
+      "sha256": "8f2dd1d1e552d2b7a21279ad325e3cd463087cff75ed5e8a8f725da6cbf1cd7c"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -69,7 +70,7 @@
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/spheres.py",
-      "sha256": "c4c91fe1ff847a7a37ff8190ed251c73e6fe0157a9a577c56052a0c1770a95eb"
+      "sha256": "f2d0f79d9559cf4a357d9d2c4525284aaba5424f65a2ec98a3bba2d17fd30490"
     },
     {
       "path": "mudae_core/updater.py",
