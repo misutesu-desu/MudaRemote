@@ -14,11 +14,25 @@
     "series_snipe_only_self_rolls": false,
     "auto_oh_enabled": false,
     "auto_oc_enabled": false,
+    "oh_priority_order": ["spD", "spP", "spW"],
+    "oh_unknown_explore_clicks": 3,
+    "oc_reward_priority_order": ["spW", "spL", "spM"],
+    "oc_collect_after_red": true,
+    "wish_starwish_kakera_only": false,
+    "auto_mk_full_power_only": false,
+    "auto_divorce_protect_wishes": true,
     "farm_character_enabled": false,
     "farm_character": "",
+    "farm_characters": [],
     "farm_forcedivorce_before_roll": false,
     "farm_forcedivorce_after_claim": false,
     "farm_forcedivorce_after_other_claim": false,
-    "forcedivorce_channel_id": ""
+    "forcedivorce_channel_id": "",
+    "enable_kakera_snipe_chat_reactions": false,
+    "kakera_snipe_chat_messages": ["nice", "free kakera"],
+    "inactive_hours": [["01:30", "07:15"]],
+    "webhook_url": "",
+    "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
+    "debug_log_categories": ["claim", "kakera", "status"]
   }
 }

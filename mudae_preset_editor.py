@@ -13,6 +13,7 @@ import argparse
 import time
 import threading
 import math
+import re
 
 try:
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
@@ -324,6 +325,7 @@ BOT_SCRIPT = os.path.join(get_base_path(), "mudae_bot.py")
 # Default values (for display hints)
 DEFAULTS = {
     "token": "",
+    "additional_tokens": "",
     "prefix": "/////////////",
     "mudae_prefix": "$",
     "channel_id": "",
@@ -354,6 +356,7 @@ DEFAULTS = {
     "auto_us_stop_on_claim": True,
     "bulk_us_enabled": False,
     "auto_mk_enabled": True,
+    "auto_mk_full_power_only": False,
     "auto_rolls_enabled": False,
     "auto_rolls_limit": 0,
     "auto_rolls_in_key_mode": False,
@@ -369,13 +372,17 @@ DEFAULTS = {
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
     "snipe_chat_messages": ["omg", "ezz"],
+    "enable_kakera_snipe_chat_reactions": False,
+    "kakera_snipe_chat_messages": ["nice", "free kakera"],
     "farm_character": "",
+    "farm_characters": [],
     "farm_character_enabled": False,
     "farm_forcedivorce_before_roll": False,
     "farm_forcedivorce_after_claim": False,
     "farm_forcedivorce_after_other_claim": False,
     "op_perk_5_only": False,
     "auto_divorce_enabled": False,
+    "auto_divorce_protect_wishes": True,
     "auto_divorce_max_kakera": 50,
     "auto_divorce_series": [],
     "auto_divorce_blacklist": [],
@@ -390,6 +397,14 @@ DEFAULTS = {
     "claim_rounds_thresholds": [],
     "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
     "immediate_kakera_click": True,
+    "wish_starwish_kakera_only": False,
+    "oh_priority_order": [],
+    "oh_unknown_explore_clicks": 3,
+    "oc_reward_priority_order": [],
+    "oc_collect_after_red": True,
+    "webhook_url": "",
+    "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
+    "debug_log_categories": ["all"],
     "character_snipe_targets": [],
 }
 
@@ -423,21 +438,26 @@ BOOL_SETTINGS = [
     ("autostart", "Start with Windows", False),
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
+    ("auto_mk_full_power_only", "Use $mk Only at Full Power (Wait for power regeneration/reset checks)", False),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
     ("auto_rt_after_claim", "Auto $rt After Claim (Also controls $rt for Kakera farm claims)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
+    ("enable_kakera_snipe_chat_reactions", "Kakera Snipe Chat Message (Send after collecting Kakera from another roll)", False),
     ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("farm_forcedivorce_before_roll", "Forcedivorce Before Rolling (Solo/Startup Cleanup)", False),
     ("farm_forcedivorce_after_claim", "Forcedivorce After Own Verified Claim", False),
     ("farm_forcedivorce_after_other_claim", "Forcedivorce After Another Account Claims (Shared Server Mode)", False),
     ("auto_divorce_enabled", "Auto-Divorce (Automatically separate characters after claiming them)", False),
+    ("auto_divorce_protect_wishes", "Protect Wished/Starwished Characters and Series from Auto-Divorce", True),
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
     ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
     ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
     ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
     ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
+    ("oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red", True),
+    ("wish_starwish_kakera_only", "Only Click Kakera on Wish/Starwish Characters", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -463,6 +483,7 @@ NUMERIC_SETTINGS = [
     ("max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0, int),
     ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
+    ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (before fallback strategy)", 3, int),
 ]
 
 # Text/list settings
@@ -477,7 +498,13 @@ TEXT_SETTINGS = [
     ("series_wishlist", "Series Wishlist (Shows or Games you want to auto-claim)", [], True),
     ("avoid_list", "Blacklisted Characters (Names of characters to NEVER claim)", [], True),
     ("kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)", [], True),
-    ("farm_character", "Kakera Farm Character (Name of character to endlessly forcedivorce/claim)", "", False),
+    ("farm_characters", "Kakera Farm Characters (comma-separated)", [], True),
+    ("kakera_snipe_chat_messages", "Kakera Snipe Chat Messages", ["nice", "free kakera"], True),
+    ("oh_priority_order", "$oh Reward Priority (highest first)", [], True),
+    ("oc_reward_priority_order", "$oc Reward Priority After Red (highest first)", [], True),
+    ("webhook_url", "Remote Log Discord Webhook URL", "", False),
+    ("webhook_log_types", "Webhook Log Types", ["ERROR", "WARN", "CLAIM", "KAKERA"], True),
+    ("debug_log_categories", "Expert Log Categories", ["all"], True),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
     ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
@@ -834,6 +861,9 @@ class PresetEditor:
                 self.presets = load_json(PRESETS_FILE, {})
                 migrated = False
                 for preset_name, data in self.presets.items():
+                    if not data.get("farm_characters") and data.get("farm_character"):
+                        data["farm_characters"] = [data["farm_character"]]
+                        migrated = True
                     if "farm_forcedivorce_before_roll" not in data:
                         data["farm_forcedivorce_before_roll"] = (
                             bool(data.get("farm_character_enabled", False))
@@ -1148,6 +1178,12 @@ class PresetEditor:
         core_frame.pack(fill=tk.X, pady=(0, 15))
 
         self.add_text_field(core_frame.content, "token", "Discord Account Token (REQUIRED: Your secret account key)", show="*")
+        self.add_text_field(
+            core_frame.content,
+            "additional_tokens",
+            "Additional Tokens (Optional, comma-separated; securely encrypted)",
+            show="*",
+        )
         self.add_text_field(core_frame.content, "channel_id", "Discord Channel ID (Where the bot should roll)")
         self.add_text_field(core_frame.content, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
 
@@ -1195,6 +1231,7 @@ class PresetEditor:
         self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
         self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame.content, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
+        self.add_checkbox(us_frame.content, "auto_mk_full_power_only", "Use $mk Only at Full Power")
         self.add_checkbox(us_frame.content, "mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)")
 
         # --- Claiming ---
@@ -1288,6 +1325,21 @@ class PresetEditor:
         enable_chat_var = self.add_checkbox(char_snipe_frame.content, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
         chat_sub = self.create_subframe(char_snipe_frame.content, enable_chat_var, "enable_snipe_chat_reactions")
         self.add_list_field(chat_sub, "snipe_chat_messages", "Snipe Chat Messages (Comma-separated, e.g., omg, ezz, yay)")
+        kakera_chat_var = self.add_checkbox(
+            char_snipe_frame.content,
+            "enable_kakera_snipe_chat_reactions",
+            "Kakera Snipe Chat Message (Send after a successful external Kakera click)",
+        )
+        kakera_chat_sub = self.create_subframe(
+            char_snipe_frame.content,
+            kakera_chat_var,
+            "enable_kakera_snipe_chat_reactions",
+        )
+        self.add_list_field(
+            kakera_chat_sub,
+            "kakera_snipe_chat_messages",
+            "Kakera Snipe Chat Messages (Comma-separated)",
+        )
 
         # --- Kakera Reaction Collection ---
         kakera_react_outer = ttk.Frame(frame)
@@ -1306,6 +1358,11 @@ class PresetEditor:
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
 
         self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters")
+        self.add_checkbox(
+            kakera_react_frame.content,
+            "wish_starwish_kakera_only",
+            "Only Click Kakera on Wish/Starwish Characters (starwish = emoji on series line)",
+        )
 
         # --- Wishlists & Filters ---
         list_frame = CollapsibleLabelFrame(frame, text="Wishlists & Ignored Characters", start_open=False)
@@ -1316,7 +1373,7 @@ class PresetEditor:
 
         farm_var = self.add_checkbox(list_frame.content, "farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)")
         farm_sub = self.create_subframe(list_frame.content, farm_var, "farm_character_enabled")
-        self.add_text_field(farm_sub, "farm_character", "Kakera Farm Character (Name of character to endlessly farm)")
+        self.add_list_field(farm_sub, "farm_characters", "Kakera Farm Characters (Comma-separated names)")
         self.add_text_field(farm_sub, "forcedivorce_channel_id", "Forcedivorce Channel ID (Optional: leave empty to use roll channel)")
         self.add_checkbox(
             farm_sub,
@@ -1340,6 +1397,7 @@ class PresetEditor:
         # --- Auto-Divorce ---
         divorce_var = self.add_checkbox(list_frame.content, "auto_divorce_enabled", "Auto-Divorce (Automatically separate low-value characters after claiming)")
         divorce_sub = self.create_subframe(list_frame.content, divorce_var, "auto_divorce_enabled")
+        self.add_checkbox(divorce_sub, "auto_divorce_protect_wishes", "Protect Wished/Starwished Characters and Series")
         self.add_number_field(divorce_sub, "auto_divorce_max_kakera", "Kakera Threshold (Divorce if character value ≤ this)", 50)
         self.add_list_field(divorce_sub, "auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)")
         self.add_list_field(divorce_sub, "auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)")
@@ -1370,6 +1428,10 @@ class PresetEditor:
 
         # [NEW] Sphere click targets setting
         self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)")
+        self.add_list_field(emoji_frame.content, "oh_priority_order", "$oh Reward Priority (Highest first; e.g. spD, spP, spU)")
+        self.add_number_field(emoji_frame.content, "oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks", 3)
+        self.add_list_field(emoji_frame.content, "oc_reward_priority_order", "$oc Reward Priority After Red (Highest first)")
+        self.add_checkbox(emoji_frame.content, "oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red")
 
         # --- Anti-Detection ---
         human_outer = ttk.Frame(frame)
@@ -1386,7 +1448,7 @@ class PresetEditor:
         # Inactive hours
         inactive_row = tk.Frame(human_sub, bg=BG_DARK)
         inactive_row.pack(fill=tk.X, pady=5)
-        lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 1-7, 23-6):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 01:30-07:15, 23:45-06:10):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
         lbl_sleep.pack(anchor=tk.W)
         lbl_sleep_desc = tk.Label(inactive_row, text="The bot will not roll during these hours (uses your local time)",
                  bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
@@ -1405,7 +1467,7 @@ class PresetEditor:
         )
         inactive_entry.pack(fill=tk.X, ipady=4)
         self.widgets["inactive_hours"] = inactive_entry
-        self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (e.g. 1-7, 23-6):", "inactive_hours")
+        self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (minute precision):", "inactive_hours")
         self._bind_focus_highlight(inactive_entry)
         inactive_entry.bind("<Key>", lambda e: self.mark_dirty())
 
@@ -1468,6 +1530,9 @@ class PresetEditor:
         self.add_checkbox(power_frame.content, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
         self.add_text_field(power_frame.content, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
         self.add_checkbox(power_frame.content, "debug_mode", "Expert Logs (Show technical data for every single roll)")
+        self.add_list_field(power_frame.content, "debug_log_categories", "Expert Log Categories (all, claim, kakera, roll, status, sphere, coordination, other)")
+        self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")
+        self.add_list_field(power_frame.content, "webhook_log_types", "Webhook Log Types (ERROR, WARN, CLAIM, KAKERA, INFO, CHECK, RESET, DEBUG or ALL)")
 
         # [NEW] Task 6: Main account ID for wishlist syncing
         self.add_text_field(power_frame.content, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
@@ -1524,6 +1589,54 @@ class PresetEditor:
             self.btn_frame, "🗑 Delete Config", self.delete_preset,
             bg_color=COLOR_DANGER, fg_color=BG_DARK, hover_bg="#eba0ac"
         ).pack(side=tk.RIGHT)
+        self.create_flat_button(
+            self.btn_frame, "Apply to All", self.apply_current_to_all_presets,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT
+        ).pack(side=tk.RIGHT, padx=(0, 10))
+
+    def apply_current_to_all_presets(self):
+        """Copy the current preset settings to every preset without copying secrets."""
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No preset selected.")
+            return
+        if not self.save_current_preset(show_success=False):
+            return
+        preserve_identity = messagebox.askyesnocancel(
+            "Apply to All Presets",
+            "Apply these settings to every preset?\n\n"
+            "Yes: preserve each preset's channels, prefixes, account identity, autostart, and tokens (recommended).\n"
+            "No: copy every non-secret field.\n"
+            "Cancel: do nothing.",
+            parent=self.root,
+        )
+        if preserve_identity is None:
+            return
+
+        import copy
+        source = copy.deepcopy(self.presets[self.current_preset])
+        identity_keys = {
+            "channel_id", "command_channel_id", "forcedivorce_channel_id",
+            "prefix", "mudae_prefix", "main_account_id", "autostart",
+        }
+        for preset_name, existing in list(self.presets.items()):
+            if preset_name == self.current_preset:
+                continue
+            replacement = copy.deepcopy(source)
+            replacement["token"] = ""
+            replacement.pop("tokens", None)
+            if preserve_identity:
+                for key in identity_keys:
+                    if key in existing:
+                        replacement[key] = copy.deepcopy(existing[key])
+            self.presets[preset_name] = replacement
+        if not self.save_presets():
+            return
+        messagebox.showinfo(
+            "Applied",
+            f"Settings were applied to {max(0, len(self.presets) - 1)} other preset(s). "
+            "Secure tokens were not changed.",
+            parent=self.root,
+        )
 
     def add_text_field(self, parent, key, label, show=None, pack_side=None, description=None):
         """Add a text entry field."""
@@ -1787,7 +1900,11 @@ class PresetEditor:
 
         # Populate text/number fields
         # [NEW] Include max_dk_power and main_account_id in text/number population
-        for key in ["token", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id",
+        stored_tokens = self.secret_store.get_tokens(
+            preset_name,
+            data.get("tokens") or data.get("token", ""),
+        )
+        for key in ["token", "additional_tokens", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id",
                     "roll_command",
                     "min_kakera", "delay_seconds", "start_delay", "roll_speed",
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
@@ -1795,14 +1912,19 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
-                    "main_account_id", "farm_character", "auto_divorce_max_kakera",
+                    "main_account_id", "webhook_url", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
-                    "hybrid_panic_instant_claim_max_rank"]:
+                    "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, (ttk.Entry, tk.Entry)):
                     widget.delete(0, tk.END)
-                    value = self.secret_store.get_token(preset_name, data.get("token", "")) if key == "token" else data.get(key, DEFAULTS.get(key, ""))
+                    if key == "token":
+                        value = stored_tokens[0] if stored_tokens else ""
+                    elif key == "additional_tokens":
+                        value = ", ".join(stored_tokens[1:])
+                    else:
+                        value = data.get(key, DEFAULTS.get(key, ""))
                     if value is not None:
                         widget.insert(0, str(value))
 
@@ -1815,11 +1937,11 @@ class PresetEditor:
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
-                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
+                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled",
-                    "enable_hybrid_panic_claim", "immediate_kakera_click"]:
+                    "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
+                    "enable_hybrid_panic_claim", "immediate_kakera_click", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -1831,13 +1953,17 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list field population
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "snipe_channels", "sphere_click_targets",
-                    "character_snipe_targets"]:
+                    "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
+                    "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
+                    "snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
+                    "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, (ttk.Entry, tk.Entry, ChipListWidget)):
                     widget.delete(0, tk.END)
                     value = data.get(key, DEFAULTS.get(key, []))
+                    if key == "farm_characters" and not value and data.get("farm_character"):
+                        value = [data["farm_character"]]
                     if isinstance(value, list):
                         widget.insert(0, ", ".join(value))
 
@@ -1936,10 +2062,22 @@ class PresetEditor:
 
         data = {}
         resolved_token = self.widgets["token"].get().strip() if "token" in self.widgets else ""
+        additional_token_text = (
+            self.widgets["additional_tokens"].get().strip()
+            if "additional_tokens" in self.widgets
+            else ""
+        )
+        resolved_tokens = []
+        seen_tokens = set()
+        for candidate in [resolved_token] + re.split(r"[\s,]+", additional_token_text):
+            cleaned_token = str(candidate or "").strip()
+            if cleaned_token and cleaned_token not in seen_tokens:
+                seen_tokens.add(cleaned_token)
+                resolved_tokens.append(cleaned_token)
 
         # Collect text fields
         # [NEW] Include main_account_id and farm_character in text fields collection
-        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "farm_character"]:
+        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "webhook_url"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 # Special handling for channel_id
@@ -1960,7 +2098,8 @@ class PresetEditor:
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
                     "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
-                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank"]
+                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
+                    "oh_unknown_explore_clicks"]
         for key in numeric_keys:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
@@ -1972,7 +2111,8 @@ class PresetEditor:
                                    "claim_interval", "roll_interval", "auto_us_limit",
                                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
                                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
-                                   "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank"]:
+                                   "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
+                                   "oh_unknown_explore_clicks"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)
@@ -1998,11 +2138,11 @@ class PresetEditor:
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
-                    "autostart", "debug_mode", "auto_mk_enabled", "lurker_mode",
+                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
-                    "enable_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled",
-                    "enable_hybrid_panic_claim", "immediate_kakera_click"]:
+                    "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
+                    "enable_hybrid_panic_claim", "immediate_kakera_click", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
 
@@ -2010,14 +2150,17 @@ class PresetEditor:
         # [NEW] Include randomized_claim_reactions and kakera_priority_order in list collection
         for key in ["wishlist", "series_wishlist", "avoid_list", "kakera_reaction_snipe_targets",
                     "randomized_claim_reactions", "kakera_priority_order",
-                    "snipe_chat_messages", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "snipe_channels", "sphere_click_targets",
-                    "character_snipe_targets"]:
+                    "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
+                    "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
+                    "snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
+                    "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     data[key] = [item.strip() for item in value.split(",") if item.strip()]
                 else:
                     data[key] = []
+        data["farm_character"] = data.get("farm_characters", [""])[0] if data.get("farm_characters") else ""
 
         # Collect optional emoji fields
         # Key rule:
@@ -2145,13 +2288,13 @@ class PresetEditor:
 
         data["claim_rounds_thresholds"] = claim_rounds_thresholds
 
-        validation_errors = validate_preset(data, resolved_token=resolved_token)
+        validation_errors = validate_preset(data, resolved_token=resolved_tokens)
         if validation_errors:
             messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
             return False
 
         try:
-            self.secret_store.set_token(self.current_preset, resolved_token)
+            self.secret_store.set_tokens(self.current_preset, resolved_tokens)
         except SecretStoreError as exc:
             messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
             return False
@@ -2190,7 +2333,8 @@ class PresetEditor:
         ]
         is_frozen = getattr(sys, 'frozen', False)
         cwd = get_base_path()
-        for active_index, active_name in enumerate(active_names):
+        active_index = 0
+        for active_name in active_names:
             active_bat_path = os.path.join(startup_dir, f"MudaRemote_{active_name}.bat")
             try:
                 with open(active_bat_path, "w", encoding="utf-8") as f:
@@ -2211,6 +2355,11 @@ class PresetEditor:
                         )
             except Exception as e:
                 print(f"Failed to create autostart script for '{active_name}': {e}")
+            active_tokens = self.secret_store.get_tokens(
+                active_name,
+                self.presets.get(active_name, {}).get("token", ""),
+            )
+            active_index += max(1, len(active_tokens))
 
     def create_preset(self):
         """Create a new preset."""
@@ -2291,9 +2440,12 @@ class PresetEditor:
             import copy
             self.presets[name] = copy.deepcopy(self.presets[self.current_preset])
             try:
-                source_token = self.secret_store.get_token(self.current_preset, self.presets[self.current_preset].get("token", ""))
-                if source_token:
-                    self.secret_store.set_token(name, source_token)
+                source_tokens = self.secret_store.get_tokens(
+                    self.current_preset,
+                    self.presets[self.current_preset].get("token", ""),
+                )
+                if source_tokens:
+                    self.secret_store.set_tokens(name, source_tokens)
             except SecretStoreError as exc:
                 del self.presets[name]
                 messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
@@ -2324,6 +2476,7 @@ class PresetEditor:
         import copy
         clean_data = copy.deepcopy(preset_data)
         clean_data["token"] = ""
+        clean_data.pop("tokens", None)
 
         json_str = json.dumps(clean_data, indent=4, ensure_ascii=False)
 
@@ -2388,11 +2541,20 @@ class PresetEditor:
                 return
 
         try:
-            active_processes = [
-                process for process in self.bot_processes.values()
+            running_preset_names = [
+                name for name, process in self.bot_processes.items()
                 if process and process.poll() is None
             ]
-            stagger_index = len(active_processes)
+            stagger_index = sum(
+                max(
+                    1,
+                    len(self.secret_store.get_tokens(
+                        name,
+                        self.presets.get(name, {}).get("token", ""),
+                    )),
+                )
+                for name in running_preset_names
+            )
             if is_frozen:
                 # In frozen (.exe) mode, sys.executable IS the .exe itself.
                 # We relaunch the same .exe with --preset to run in headless bot mode.
@@ -2510,8 +2672,12 @@ def run_headless(preset_names, start_index=0):
             print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
             continue
         preset_data = dict(all_presets[name])
-        preset_data["token"] = SecretStore(get_base_path()).get_token(name, preset_data.get("token", ""))
-        if not preset_data.get("token"):
+        preset_data["tokens"] = SecretStore(get_base_path()).get_tokens(
+            name,
+            preset_data.get("tokens") or preset_data.get("token", ""),
+        )
+        preset_data["token"] = preset_data["tokens"][0] if preset_data["tokens"] else ""
+        if not preset_data["tokens"]:
             print(f"[MudaRemote] Preset '{name}' has no token. Skipping.")
             continue
         requested_names.append(name)

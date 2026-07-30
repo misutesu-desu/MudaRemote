@@ -36,7 +36,8 @@ def _bootstrap_modular_core():
         "mudae_core/__init__.py", "mudae_core/claiming.py", "mudae_core/config.py",
         "mudae_core/coordinator.py", "mudae_core/runtime.py", "mudae_core/secrets.py",
         "mudae_core/status.py", "mudae_core/kakera.py", "mudae_core/spheres.py",
-        "mudae_core/updater.py", "mudae_core/versioning.py",
+        "mudae_core/updater.py", "mudae_core/versioning.py", "mudae_core/filters.py",
+        "mudae_core/webhooks.py",
     }
     if not required.issubset({entry.get("path") for entry in entries}):
         raise RuntimeError("The modular core manifest is incomplete.")
@@ -74,10 +75,11 @@ try:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, set_client_paused, status_dirty_fields,
+        record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
-        normalize_sphere_emoji, parse_sphere_game_status,
+        normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
+        character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -100,10 +102,11 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, set_client_paused, status_dirty_fields,
+        record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
-        normalize_sphere_emoji, parse_sphere_game_status,
+        normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
+        character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 
@@ -145,12 +148,34 @@ class BotLogger:
         "ERROR":  "❌ [ERROR]  ", "CHECK":  "🔍 [CHECK]  ", "RESET":  "🔄 [RESET]  ",
         "WARN":   "⚠️  [WARN]   "
     }
+    DEBUG_CATEGORY_PATTERNS = {
+        "claim": ("claim", "wishlist", "wish", "divorce", "$rt", "forcedivorce"),
+        "kakera": ("kakera", "$mk", "$dk", "power", "react"),
+        "roll": ("roll", "$us", "key mode", "panic"),
+        "status": ("$tu", "status", "reset", "cooldown", "available"),
+        "sphere": ("sphere", "$oh", "$oc", "harvest", "chest"),
+        "coordination": ("coordinator", "stagger", "preset", "account"),
+    }
+
+    @classmethod
+    def _debug_category(cls, message):
+        lowered = str(message or "").casefold()
+        for category, markers in cls.DEBUG_CATEGORY_PATTERNS.items():
+            if any(marker in lowered for marker in markers):
+                return category
+        return "other"
 
     @classmethod
     def log(cls, message, preset_name="MudaRemote", log_type="INFO", client=None):
-        if log_type == "DEBUG" and not getattr(client, 'debug_mode', False):
+        original_log_type = str(log_type or "INFO").upper()
+        if original_log_type == "DEBUG" and not getattr(client, 'debug_mode', False):
             return
-        log_type_upper = log_type.upper()
+        if original_log_type == "DEBUG":
+            allowed_categories = set(getattr(client, "debug_log_categories", ()) or ())
+            category = cls._debug_category(message)
+            if allowed_categories and "all" not in allowed_categories and category not in allowed_categories:
+                return
+        log_type_upper = original_log_type
         msg_clean = re.sub(r"^\[[^\]]+\]\s*", "", message)
         if log_type_upper == "DEBUG":
             msg_clean = f"[DEBUG] {msg_clean}"
@@ -181,6 +206,12 @@ class BotLogger:
                     f.write(formatted + "\n")
         except Exception:
             pass
+        webhook_types = set(getattr(client, "webhook_log_types", ()) or ())
+        if (
+            getattr(client, "webhook_url", "")
+            and (not webhook_types or "ALL" in webhook_types or original_log_type in webhook_types)
+        ):
+            WebhookDispatcher.enqueue(client.webhook_url, formatted)
 
 REGEX_PATTERNS = {
     "KEYS": r'(?:🔑|<:(?:chaos)?key:\d+>)\s*\(\*?\*?([\d,.]+)\*?\*?\)',
@@ -395,7 +426,11 @@ try:
     presets = load_json(presets_path, {})
     _secret_store = SecretStore(get_base_path())
     for _preset_name, _preset_data in presets.items():
-        _preset_data["token"] = _secret_store.get_token(_preset_name, _preset_data.get("token", ""))
+        _preset_data["tokens"] = _secret_store.get_tokens(
+            _preset_name,
+            _preset_data.get("tokens") or _preset_data.get("token", ""),
+        )
+        _preset_data["token"] = _preset_data["tokens"][0] if _preset_data["tokens"] else ""
 except Exception as e:
     print_system_log(f"Failed to load {presets_path}: {e}", "ERROR")
     sys.exit(1)
@@ -538,7 +573,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_oh_enabled_preset=False,
             auto_oc_enabled_preset=False,
             series_snipe_only_self_rolls_preset=False,
-            forcedivorce_channel_id_preset=""):
+            forcedivorce_channel_id_preset="",
+            wish_starwish_kakera_only_preset=False,
+            auto_mk_full_power_only_preset=False,
+            auto_divorce_protect_wishes_preset=True,
+            farm_characters_preset=None,
+            enable_kakera_snipe_chat_reactions_preset=False,
+            kakera_snipe_chat_messages_preset=None,
+            oh_priority_order_preset=None,
+            oh_unknown_explore_clicks_preset=3,
+            oc_reward_priority_order_preset=None,
+            oc_collect_after_red_preset=True,
+            webhook_url_preset="",
+            webhook_log_types_preset=None,
+            debug_log_categories_preset=None):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -627,6 +675,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.us_pulled_this_cycle = 0
     client.mk_rolls_left = 0
     client.auto_mk_enabled = auto_mk_enabled_preset
+    client.auto_mk_full_power_only = bool(auto_mk_full_power_only_preset)
+    client._mk_full_power_refresh_at = None
 
     client.auto_rolls_enabled = auto_rolls_enabled
     client.auto_rolls_limit = auto_rolls_limit
@@ -649,6 +699,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.immediate_kakera_click = immediate_kakera_click_preset
     client.auto_oh_enabled = bool(auto_oh_enabled_preset)
     client.auto_oc_enabled = bool(auto_oc_enabled_preset)
+    client.oh_priority_order = [
+        str(item).strip() for item in (oh_priority_order_preset or []) if str(item).strip()
+    ]
+    client.oh_unknown_explore_clicks = max(0, int(oh_unknown_explore_clicks_preset or 0))
+    client.oc_reward_priority_order = [
+        str(item).strip() for item in (oc_reward_priority_order_preset or []) if str(item).strip()
+    ]
+    client.oc_collect_after_red = bool(oc_collect_after_red_preset)
     client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
     client.sphere_game_refill_at_utc = None
     # run_bot is entered from a worker thread before discord.py creates that
@@ -665,7 +723,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset or ["omg", "ezz"]
-    client.farm_character = str(farm_character_preset or "").strip().lower()
+    client.enable_kakera_snipe_chat_reactions = bool(enable_kakera_snipe_chat_reactions_preset)
+    client.kakera_snipe_chat_messages = kakera_snipe_chat_messages_preset or ["nice", "free kakera"]
+    configured_farm_characters = list(farm_characters_preset or [])
+    if farm_character_preset:
+        configured_farm_characters.insert(0, farm_character_preset)
+    client.farm_characters = []
+    seen_farm_characters = set()
+    for farm_name in configured_farm_characters:
+        cleaned_farm_name = str(farm_name or "").strip()
+        normalized_farm_name = cleaned_farm_name.casefold()
+        if cleaned_farm_name and normalized_farm_name not in seen_farm_characters:
+            seen_farm_characters.add(normalized_farm_name)
+            client.farm_characters.append(cleaned_farm_name)
+    client.farm_character = client.farm_characters[0] if client.farm_characters else ""
     client.farm_character_enabled = farm_character_enabled_preset
     client.farm_forcedivorce_after_claim = bool(farm_forcedivorce_after_claim_preset)
     client.farm_forcedivorce_before_roll = bool(farm_forcedivorce_before_roll_preset)
@@ -673,6 +744,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.forcedivorce_channel = None
     client._farm_release_recent = {}
     client.op_perk_5_only = op_perk_5_only_preset
+    client.auto_divorce_protect_wishes = bool(auto_divorce_protect_wishes_preset)
+    client.wish_starwish_kakera_only = bool(wish_starwish_kakera_only_preset)
 
     client.next_claim_reset_at_utc = None
     client.roll_reset_at_utc = None
@@ -757,6 +830,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.sphere_emojis = SPHERE_EMOJIS
     client.kakera_power_thresholds = kakera_power_thresholds or {}
     client.debug_mode = debug_mode
+    client.debug_log_categories = {
+        str(item).strip().casefold()
+        for item in (debug_log_categories_preset or ["all"])
+        if str(item).strip()
+    }
+    client.webhook_url = str(webhook_url_preset or "").strip()
+    client.webhook_log_types = {
+        str(item).strip().upper()
+        for item in (webhook_log_types_preset or ["ERROR", "WARN", "CLAIM", "KAKERA"])
+        if str(item).strip()
+    }
     client.persistent_stagger_seconds = max(0.0, float(persistent_stagger_seconds_preset or 0.0))
     account_index = int(client.persistent_stagger_seconds // active_stagger_seconds(1))
 
@@ -766,24 +850,47 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         preset_name, "INFO"
     )
 
+    def inactive_minute(value) -> int:
+        if isinstance(value, int):
+            return (value % 24) * 60
+        match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*", str(value or ""))
+        if not match:
+            return 0
+        return (int(match.group(1)) % 24) * 60 + min(59, int(match.group(2) or 0))
+
     def is_inactive_hour() -> bool:
         if not client.inactive_hours: return False
-        h = datetime.datetime.now().hour
-        for start_h, end_h in client.inactive_hours:
-            if start_h <= end_h:
-                if start_h <= h < end_h: return True
+        now = datetime.datetime.now()
+        now_minute = now.hour * 60 + now.minute
+        for start_value, end_value in client.inactive_hours:
+            start_minute = inactive_minute(start_value)
+            end_minute = inactive_minute(end_value)
+            if start_minute <= end_minute:
+                if start_minute <= now_minute < end_minute: return True
             else:
-                if h >= start_h or h < end_h: return True
+                if now_minute >= start_minute or now_minute < end_minute: return True
         return False
 
     def seconds_until_active() -> float:
         if not is_inactive_hour(): return 0
         now = datetime.datetime.now()
+        now_minute = now.hour * 60 + now.minute
         best = float('inf')
-        for start_h, end_h in client.inactive_hours:
-            in_this = (start_h <= now.hour < end_h) if start_h <= end_h else (now.hour >= start_h or now.hour < end_h)
+        for start_value, end_value in client.inactive_hours:
+            start_minute = inactive_minute(start_value)
+            end_minute = inactive_minute(end_value)
+            in_this = (
+                start_minute <= now_minute < end_minute
+                if start_minute <= end_minute
+                else now_minute >= start_minute or now_minute < end_minute
+            )
             if in_this:
-                wake = now.replace(hour=end_h, minute=0, second=0, microsecond=0)
+                wake = now.replace(
+                    hour=end_minute // 60,
+                    minute=end_minute % 60,
+                    second=0,
+                    microsecond=0,
+                )
                 if wake <= now: wake += datetime.timedelta(days=1)
                 best = min(best, (wake - now).total_seconds())
         return best if best != float('inf') else 0
@@ -828,6 +935,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if user is None:
             return []
         return [getattr(user, 'name', ''), getattr(user, 'display_name', '')]
+
+    def is_farm_character_name(name):
+        normalized = str(name or "").strip().casefold()
+        return any(normalized == item.casefold() for item in client.farm_characters)
+
+    def is_wish_or_starwish(message, embed):
+        name = getattr(getattr(embed, "author", None), "name", "")
+        series = character_series_line(getattr(embed, "description", ""))
+        return (
+            name_or_series_is_configured_wish(
+                name,
+                series,
+                client.wishlist,
+                client.series_wishlist,
+            )
+            or is_wished_by_self(message, getattr(getattr(client, "user", None), "id", 0))
+            or series_line_has_emoji(getattr(embed, "description", ""))
+        )
 
     def is_tu_response_for_self(message):
         if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
@@ -978,13 +1103,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             addressed_to_self = True
         if not addressed_to_self:
             return False
-        match = re.search(REGEX_PATTERNS["CLAIM_COOLDOWN"], c_low, re.IGNORECASE)
-        if not match:
-            match = re.search(REGEX_PATTERNS["CLAIM_INTERVAL_COOLDOWN"], c_low, re.IGNORECASE)
-        if not match:
+        cooldown_minutes = parse_claim_denied_cooldown(c_low)
+        match = None
+        if cooldown_minutes is None:
+            match = re.search(REGEX_PATTERNS["CLAIM_COOLDOWN"], c_low, re.IGNORECASE)
+            if not match:
+                match = re.search(REGEX_PATTERNS["CLAIM_INTERVAL_COOLDOWN"], c_low, re.IGNORECASE)
+        if cooldown_minutes is None and not match:
             return False
-        hours, minutes = parse_hm(match)
-        cooldown_minutes = hours * 60 + minutes
+        if cooldown_minutes is None:
+            hours, minutes = parse_hm(match)
+            cooldown_minutes = hours * 60 + minutes
         BotLogger.log(f"Detected claim cooldown message from Mudae: {cooldown_minutes}m left. Locking claim.", preset_name, "WARN")
         set_claim_cooldown(cooldown_minutes, source="Mudae message", wake=False)
         request_status_refresh({"claim", "rt"}, reason="claim-rejected-cooldown", urgent=True)
@@ -1074,9 +1203,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 break
 
             if kind == "oc":
-                position = choose_chest_position(emojis, disabled)
+                position = choose_chest_position(
+                    emojis,
+                    disabled,
+                    reward_priority_order=client.oc_reward_priority_order,
+                )
             else:
-                position = choose_harvest_position(emojis, disabled, paid_clicks=paid_clicks)
+                position = choose_harvest_position(
+                    emojis,
+                    disabled,
+                    paid_clicks=paid_clicks,
+                    priority_order=client.oh_priority_order,
+                    unknown_explore_clicks=client.oh_unknown_explore_clicks,
+                )
             if position is None or position < 0 or position >= len(buttons):
                 BotLogger.log(f"{game_label}: No safe enabled sphere button remains.", preset_name, "WARN")
                 break
@@ -1151,6 +1290,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         "KAKERA",
                     )
                 red_found = True
+                if not client.oc_collect_after_red:
+                    BotLogger.log("$oc: Configured to stop immediately after finding red.", preset_name, "INFO")
+                    break
 
         if kind == "oh":
             BotLogger.log(f"$oh: Harvest finished after {len(clicked_positions)} click(s).", preset_name, "KAKERA")
@@ -1863,7 +2005,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if not stop_c and not limit and not getattr(client, 'us_failed_this_cycle', False):
                                     pending_us = True
                             if client.auto_mk_enabled and client.mk_rolls_left > 0:
-                                if get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check:
+                                if (
+                                    get_current_dk_power() >= client.dk_consumption
+                                    or client.mk_bypass_power_check
+                                    or client.auto_mk_full_power_only
+                                ):
                                     pending_mk = True
                             if pending_rolls or pending_us or pending_mk: can_bypass = False
                         sphere_retry_due = any(
@@ -1964,8 +2110,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 c_lower = tu_content.lower()
 
             # Validate $tu response categories and log warnings if essential sections are missing
-            if not (re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower) or
+            explicit_claim_cooldown = parse_claim_denied_cooldown(c_lower)
+            if not ((
+                        explicit_claim_cooldown is None
+                        and re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower)
+                    ) or
                     re.search(REGEX_PATTERNS["CLAIM_RESET"], c_lower) or
+                    explicit_claim_cooldown is not None or
                     re.search(REGEX_PATTERNS["CLAIM_COOLDOWN"], c_lower)):
                 BotLogger.log("Your $tu response is missing the 'claim' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
@@ -2081,7 +2232,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.rt_available = False
             wait_time = 0
             can_claim = False
-            claim_ready = bool(re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower))
+            claim_ready = bool(
+                explicit_claim_cooldown is None
+                and re.search(REGEX_PATTERNS["CLAIM_READY"], c_lower)
+            )
 
             claim_reset_minutes = None
             m_reset = re.search(REGEX_PATTERNS["CLAIM_RESET"], c_lower)
@@ -2089,7 +2243,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 h_c, m_c = parse_hm(m_reset)
                 claim_reset_minutes = h_c * 60 + m_c
             else:
-                claim_reset_minutes = parse_timer_minutes("CLAIM_COOLDOWN", c_lower)
+                claim_reset_minutes = explicit_claim_cooldown
+                if claim_reset_minutes is None:
+                    claim_reset_minutes = parse_timer_minutes("CLAIM_COOLDOWN", c_lower)
 
             if claim_reset_minutes is not None:
                 wait_time = claim_reset_minutes
@@ -2168,7 +2324,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
 
             if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
-                if client.auto_mk_enabled and client.mk_rolls_left > 0 and (get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check):
+                if client.auto_mk_enabled and client.mk_rolls_left > 0 and (
+                    get_current_dk_power() >= client.dk_consumption
+                    or client.mk_bypass_power_check
+                    or client.auto_mk_full_power_only
+                ):
                     await process_mk_rolls(client, channel, current_cycle_id)
                     if not await active_delay(2): return
                     return
@@ -2341,7 +2501,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     h, m = parse_hm(m_c)
                     c_min = h * 60 + m
                 else:
-                    c_min = parse_timer_minutes("CLAIM_COOLDOWN", content_lower)
+                    c_min = parse_claim_denied_cooldown(content_lower)
+                    if c_min is None:
+                        c_min = parse_timer_minutes("CLAIM_COOLDOWN", content_lower)
 
                 if c_min is not None:
                     if not client.claim_right_available:
@@ -2362,9 +2524,38 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         if client.is_paused or not getattr(client, 'auto_mk_enabled', True) or client.mk_rolls_left <= 0: return
 
+        current_power = get_current_dk_power()
+        if client.auto_mk_full_power_only and current_power < client.max_dk_power:
+            missing_power = client.max_dk_power - current_power
+            full_power_delay = max(60.0, missing_power * 180.0 + 5.0)
+            if client.roll_reset_at_utc:
+                reset_delay = (
+                    client.roll_reset_at_utc - datetime.datetime.now(timezone.utc)
+                ).total_seconds() + 2.0
+                full_power_delay = min(full_power_delay, max(60.0, reset_delay))
+            refresh_at = time.monotonic() + full_power_delay
+            if (
+                client._mk_full_power_refresh_at is None
+                or client._mk_full_power_refresh_at <= time.monotonic()
+                or refresh_at < client._mk_full_power_refresh_at - 30
+            ):
+                client._mk_full_power_refresh_at = refresh_at
+                client.loop.call_later(full_power_delay, request_status_refresh, {"power", "rolls"}, "mk-full-power")
+            BotLogger.log(
+                f"Skipping $mk until full power ({current_power}%/{client.max_dk_power}%). "
+                f"Status refresh scheduled in about {max(1, int(full_power_delay / 60))}m.",
+                preset_name,
+                "INFO",
+            )
+            return
+
         if get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check:
             used = 0
-            while client.mk_rolls_left > 0 and (get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check):
+            while (
+                client.mk_rolls_left > 0
+                and (get_current_dk_power() >= client.dk_consumption or client.mk_bypass_power_check)
+                and (not client.auto_mk_full_power_only or get_current_dk_power() >= client.max_dk_power)
+            ):
                 if client.is_paused or is_maintenance_active() or client.interrupt_rolling:
                     mark_status_dirty(client, {"rolls", "power"}, reason="mk-interrupted")
                     break
@@ -2427,11 +2618,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
 
-        if (client.farm_character_enabled and client.farm_character and client.claim_right_available
+        if (client.farm_character_enabled and client.farm_characters and client.claim_right_available
                 and client.farm_forcedivorce_before_roll):
-            if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
-            if not await execute_farm_forcedivorce(client, channel, client.farm_character, "before rolling (configured timing)"):
-                return
+            for farm_name in client.farm_characters:
+                if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
+                if not await execute_farm_forcedivorce(
+                    client,
+                    channel,
+                    farm_name,
+                    "before rolling (configured timing)",
+                ):
+                    return
 
         if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
         await process_mk_rolls(client, channel, current_cycle_id)
@@ -2740,6 +2937,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             "consumes_claim": bool(consumes_claim),
             "claim_was_available": bool(client.claim_right_available),
             "is_rt_claim": bool(is_rt_claim),
+            "protect_from_auto_divorce": bool(
+                msg.embeds
+                and is_wish_or_starwish(msg, msg.embeds[0])
+            ),
             "created_monotonic": time.monotonic(),
             "finalized": False,
         }
@@ -2793,8 +2994,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         farm_character_claimed = (
             client.farm_character_enabled
-            and bool(client.farm_character)
-            and char_name.casefold() == client.farm_character.casefold()
+            and is_farm_character_name(char_name)
         )
         post_claim_farm_mode = farm_character_claimed and client.farm_forcedivorce_after_claim
         farm_release_sent = False
@@ -2808,8 +3008,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
 
         if client.auto_divorce_enabled and not farm_character_claimed:
-            is_blacklisted = False
-            if char_name.lower() in getattr(client, 'auto_divorce_blacklist', set()):
+            is_blacklisted = bool(
+                client.auto_divorce_protect_wishes
+                and pending.get("protect_from_auto_divorce")
+            )
+            if is_blacklisted:
+                BotLogger.log(
+                    f"Auto-Divorce: {char_name} is wished/starwished. Keeping character.",
+                    preset_name,
+                    "INFO",
+                )
+            elif char_name.lower() in getattr(client, 'auto_divorce_blacklist', set()):
                 is_blacklisted = True
                 BotLogger.log(f"Auto-Divorce: {char_name} is in the blacklist. Keeping character.", preset_name, "INFO")
             elif character_series and getattr(client, 'auto_divorce_blacklist_series', []):
@@ -2856,7 +3065,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await execute_farm_forcedivorce(
                         client,
                         channel,
-                        client.farm_character,
+                        char_name,
                         "after $rt (solo/key mode)",
                     )
                 request_status_refresh({"claim", "rt"}, reason="farm-rt-used", urgent=True)
@@ -3297,6 +3506,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if is_free_claim and not await active_delay(random.uniform(1.0, 2.5)): return False
 
             if is_kakera:
+                if client.wish_starwish_kakera_only and not is_wish_or_starwish(msg, embed):
+                    BotLogger.log(
+                        f"Kakera skipped for {char_name}: character is not wished/starwished.",
+                        preset_name,
+                        "DEBUG",
+                        client,
+                    )
+                    return False
+
                 if client.op_perk_5_only:
                     has_free = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name == 'kakeraP' or b.emoji.name in client.sphere_emojis or check_is_green(b)) for c in msg.components for b in c.children)
                     if not has_free:
@@ -3447,6 +3665,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                         except Exception as e:
                             BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
+                if (
+                    clicked
+                    and is_snipe
+                    and client.enable_kakera_snipe_chat_reactions
+                    and client.kakera_snipe_chat_messages
+                ):
+                    try:
+                        if await active_delay(random.uniform(2.0, 5.0)):
+                            await guarded_send(
+                                channel,
+                                random.choice(client.kakera_snipe_chat_messages),
+                            )
+                    except Exception as error:
+                        BotLogger.log(
+                            f"Kakera snipe chat reaction failed: {error}",
+                            preset_name,
+                            "ERROR",
+                        )
                 return clicked
 
             clicked_claim = False
@@ -3643,23 +3879,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if (
             is_roll
             and client.farm_character_enabled
-            and client.farm_character
+            and client.farm_characters
             and client.farm_forcedivorce_after_other_claim
-            and is_claim_announcement_for_character(message.content, client.farm_character)
         ):
-            farm_claim_evidence = classify_claim_text(
-                message.content,
-                client.farm_character,
-                claim_identities(),
-                user_id=getattr(getattr(client, "user", None), "id", None),
-            )
-            if farm_claim_evidence.outcome != ClaimOutcome.SUCCESS:
-                client.loop.create_task(execute_farm_forcedivorce(
-                    client,
-                    message.channel,
-                    client.farm_character,
-                    "after another account claimed it (configured timing)",
-                ))
+            for farm_name in client.farm_characters:
+                if not is_claim_announcement_for_character(message.content, farm_name):
+                    continue
+                farm_claim_evidence = classify_claim_text(
+                    message.content,
+                    farm_name,
+                    claim_identities(),
+                    user_id=getattr(getattr(client, "user", None), "id", None),
+                )
+                if farm_claim_evidence.outcome != ClaimOutcome.SUCCESS:
+                    client.loop.create_task(execute_farm_forcedivorce(
+                        client,
+                        message.channel,
+                        farm_name,
+                        "after another account claimed it (configured timing)",
+                    ))
+                break
 
         if client.main_account_id:
             try: main_id = int(client.main_account_id)
@@ -4007,6 +4246,19 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_oc_enabled", False),
                 preset_data.get("series_snipe_only_self_rolls", False),
                 preset_data.get("forcedivorce_channel_id", ""),
+                preset_data.get("wish_starwish_kakera_only", False),
+                preset_data.get("auto_mk_full_power_only", False),
+                preset_data.get("auto_divorce_protect_wishes", True),
+                preset_data.get("farm_characters", []),
+                preset_data.get("enable_kakera_snipe_chat_reactions", False),
+                preset_data.get("kakera_snipe_chat_messages", None),
+                preset_data.get("oh_priority_order", None),
+                preset_data.get("oh_unknown_explore_clicks", 3),
+                preset_data.get("oc_reward_priority_order", None),
+                preset_data.get("oc_collect_after_red", True),
+                preset_data.get("webhook_url", ""),
+                preset_data.get("webhook_log_types", None),
+                preset_data.get("debug_log_categories", None),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):
@@ -4125,7 +4377,16 @@ if __name__ == "__main__":
         if args.preset in presets:
             prepared = prepare_active_presets([args.preset], presets, start_index=args.stagger_index)
             if prepared:
-                bot_lifecycle_wrapper(*prepared[0])
+                if len(prepared) == 1:
+                    bot_lifecycle_wrapper(*prepared[0])
+                else:
+                    launched = [
+                        start_preset_thread(preset_name, preset_data)
+                        for preset_name, preset_data in prepared
+                    ]
+                    for thread in launched:
+                        if thread:
+                            thread.join()
             else:
                 print(f"Preset '{args.preset}' has no token.")
         else:

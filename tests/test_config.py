@@ -22,7 +22,10 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(errors)
 
         values, errors = parse_inactive_hours("1-7, 23-6")
-        self.assertEqual(values, [[1, 7], [23, 6]])
+        self.assertEqual(values, [["01:00", "07:00"], ["23:00", "06:00"]])
+        self.assertEqual(errors, [])
+        values, errors = parse_inactive_hours("01:30-07:15")
+        self.assertEqual(values, [["01:30", "07:15"]])
         self.assertEqual(errors, [])
         _, errors = parse_inactive_hours("7-7")
         self.assertTrue(errors)
@@ -39,6 +42,29 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(any("Channel ID" in error for error in errors))
         self.assertTrue(any("claim_interval" in error for error in errors))
         self.assertTrue(any("minimum" in error for error in errors))
+
+    def test_webhook_and_expert_log_selectors_are_validated(self):
+        preset = {
+            "token": "secret", "prefix": "////////", "mudae_prefix": "$",
+            "roll_command": "wa", "channel_id": "123", "claim_interval": 180,
+            "roll_interval": 60, "max_dk_power": 100,
+            "reactive_kakera_delay_range": [0.3, 1.0],
+            "webhook_url": "https://discord.com/api/webhooks/123/secret",
+            "webhook_log_types": ["ERROR", "KAKERA"],
+            "debug_log_categories": ["claim", "sphere"],
+        }
+        self.assertEqual(validate_preset(preset), [])
+
+        invalid = dict(
+            preset,
+            webhook_url="http://example.com/hook",
+            webhook_log_types=["NOPE"],
+            debug_log_categories=["unknown-category"],
+        )
+        errors = validate_preset(invalid)
+        self.assertTrue(any("Webhook URL" in error for error in errors))
+        self.assertTrue(any("log type" in error for error in errors))
+        self.assertTrue(any("Expert Log" in error for error in errors))
 
     def test_farm_timing_requires_a_complete_farm_configuration(self):
         base = {

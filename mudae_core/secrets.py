@@ -2,6 +2,7 @@
 
 import base64
 import ctypes
+import json
 import os
 import re
 from ctypes import wintypes
@@ -33,19 +34,48 @@ class SecretStore:
         return "MUDAREMOTE_TOKEN_{}".format(clean)
 
     def get_token(self, preset_name, legacy_token=""):
+        tokens = self.get_tokens(preset_name, legacy_token)
+        return tokens[0] if tokens else ""
+
+    def get_tokens(self, preset_name, legacy_tokens=None):
+        """Return every token stored for a preset, preserving legacy stores."""
         env_token = os.environ.get(self._env_name(preset_name))
         if env_token:
-            return env_token
+            return self._decode_tokens(env_token)
         try:
             stored = self._get_platform_secret(preset_name)
             if stored:
-                return stored
+                return self._decode_tokens(stored)
         except SecretStoreError:
             pass
-        return str(legacy_token or "")
+        return self._decode_tokens(legacy_tokens)
+
+    @staticmethod
+    def _decode_tokens(value):
+        if isinstance(value, (list, tuple)):
+            candidates = value
+        else:
+            text = str(value or "").strip()
+            if not text:
+                return []
+            try:
+                decoded = json.loads(text)
+                candidates = decoded if isinstance(decoded, list) else [text]
+            except (TypeError, ValueError):
+                candidates = [text]
+        result = []
+        for candidate in candidates:
+            token = str(candidate or "").strip()
+            if token and token not in result:
+                result.append(token)
+        return result
 
     def set_token(self, preset_name, token):
-        token = str(token or "")
+        self.set_tokens(preset_name, [token] if token else [])
+
+    def set_tokens(self, preset_name, tokens):
+        values = self._decode_tokens(tokens)
+        token = values[0] if len(values) == 1 else (json.dumps(values) if values else "")
         if token and os.environ.get(self._env_name(preset_name)) == token:
             return
         if self._is_termux():

@@ -70,6 +70,26 @@ class RuntimeStaggerTests(unittest.TestCase):
         self.assertEqual(active_stagger_seconds(2), 40.0)
         self.assertEqual(prepared[0][1]["persistent_stagger_seconds"], 40.0)
 
+    def test_one_preset_expands_multiple_secure_tokens(self):
+        prepared = prepare_active_presets(
+            ["main"],
+            {"main": {"token": "legacy-first", "tokens": ["first", "second"]}},
+        )
+
+        self.assertEqual([name for name, _ in prepared], ["main", "main #2"])
+        self.assertEqual([data["token"] for _, data in prepared], ["first", "second"])
+        self.assertEqual(
+            [data["persistent_stagger_seconds"] for _, data in prepared],
+            [0.0, 20.0],
+        )
+
+    def test_empty_new_token_list_falls_back_to_legacy_token(self):
+        prepared = prepare_active_presets(
+            ["legacy"],
+            {"legacy": {"token": "old-token", "tokens": []}},
+        )
+        self.assertEqual(prepared[0][1]["token"], "old-token")
+
 
 class RuntimeStateTests(unittest.TestCase):
     def test_idle_pause_is_propagated_without_forcing_status_refresh(self):

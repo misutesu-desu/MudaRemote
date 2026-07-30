@@ -9,6 +9,7 @@ from mudae_core.status import (
     initialize_status_tracking,
     looks_like_tu_status_snapshot,
     mark_status_dirty,
+    parse_claim_denied_cooldown,
     record_tu_failure,
     record_tu_success,
     status_dirty_fields,
@@ -18,6 +19,35 @@ from mudae_core.status import (
 
 
 class StatusFreshnessTests(unittest.TestCase):
+    def test_localized_claim_denials_override_positive_substrings(self):
+        self.assertEqual(
+            parse_claim_denied_cooldown(
+                "aakiras_, no puedes reclamar hasta dentro de 7 min."
+            ),
+            7,
+        )
+        self.assertEqual(
+            parse_claim_denied_cooldown(
+                "You can't claim for another **2h 9** min."
+            ),
+            129,
+        )
+        self.assertEqual(
+            parse_claim_denied_cooldown(
+                "Você não pode se casar por mais **14** min."
+            ),
+            14,
+        )
+        self.assertEqual(
+            parse_claim_denied_cooldown(
+                "Vous ne pouvez pas vous marier avant **1h 3** min."
+            ),
+            63,
+        )
+        self.assertIsNone(
+            parse_claim_denied_cooldown("¡Puedes reclamar ahora!")
+        )
+
     def setUp(self):
         self.client = SimpleNamespace()
         initialize_status_tracking(self.client)

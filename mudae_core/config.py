@@ -9,6 +9,25 @@ import tempfile
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 
+def _normalize_clock(value):
+    """Return HH:MM for legacy integer hours or minute-precise clock text."""
+    if isinstance(value, bool):
+        raise ValueError
+    if isinstance(value, int):
+        if not 0 <= value <= 23:
+            raise ValueError
+        return "{:02d}:00".format(value)
+    text = str(value or "").strip()
+    if text.isdigit():
+        hour = int(text)
+        if not 0 <= hour <= 23:
+            raise ValueError
+        return "{:02d}:00".format(hour)
+    if not _TIME_RE.match(text):
+        raise ValueError
+    return text
+
+
 def load_json(path, default=None):
     if not os.path.exists(path):
         return {} if default is None else default
@@ -60,14 +79,14 @@ def parse_inactive_hours(value):
                 continue
             start, end = [item.strip() for item in part.split("-", 1)]
             try:
-                start_i, end_i = int(start), int(end)
+                start_clock, end_clock = _normalize_clock(start), _normalize_clock(end)
             except ValueError:
                 errors.append("Invalid inactive-hours window {!r}.".format(part))
                 continue
-            if not 0 <= start_i <= 23 or not 0 <= end_i <= 23 or start_i == end_i:
-                errors.append("Inactive hours must use distinct hours from 0 to 23: {!r}.".format(part))
+            if start_clock == end_clock:
+                errors.append("Inactive hours must use distinct start and end times: {!r}.".format(part))
                 continue
-            result.append([start_i, end_i])
+            result.append([start_clock, end_clock])
         return result, errors
 
     result = []
@@ -77,14 +96,14 @@ def parse_inactive_hours(value):
             errors.append("Invalid inactive-hours entry: {!r}.".format(item))
             continue
         try:
-            start_i, end_i = int(item[0]), int(item[1])
+            start_clock, end_clock = _normalize_clock(item[0]), _normalize_clock(item[1])
         except (TypeError, ValueError):
             errors.append("Invalid inactive-hours entry: {!r}.".format(item))
             continue
-        if not 0 <= start_i <= 23 or not 0 <= end_i <= 23 or start_i == end_i:
+        if start_clock == end_clock:
             errors.append("Inactive hours must use distinct hours from 0 to 23: {!r}.".format(item))
             continue
-        result.append([start_i, end_i])
+        result.append([start_clock, end_clock])
     return result, errors
 
 
@@ -92,7 +111,8 @@ def validate_preset(data, resolved_token=None):
     """Return user-facing validation errors for a fully collected preset."""
     errors = []
     token = resolved_token if resolved_token is not None else data.get("token")
-    if not str(token or "").strip():
+    token_values = token if isinstance(token, (list, tuple)) else [token]
+    if not any(str(item or "").strip() for item in token_values):
         errors.append("Discord token is required.")
     for key, label in (("prefix", "Bot command prefix"), ("mudae_prefix", "Mudae prefix"), ("roll_command", "Roll command")):
         if not str(data.get(key, "")).strip():
@@ -124,6 +144,23 @@ def validate_preset(data, resolved_token=None):
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("Main Account ID must be empty or a positive number.")
+    webhook_url = str(data.get("webhook_url", "") or "").strip()
+    if webhook_url and not re.match(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/", webhook_url):
+        errors.append("Remote Log Webhook URL must be a Discord HTTPS webhook URL.")
+    allowed_webhook_types = {"ALL", "ERROR", "WARN", "CLAIM", "KAKERA", "INFO", "CHECK", "RESET", "DEBUG"}
+    invalid_webhook_types = [
+        item for item in (data.get("webhook_log_types") or [])
+        if str(item).strip().upper() not in allowed_webhook_types
+    ]
+    if invalid_webhook_types:
+        errors.append("Unknown webhook log type(s): {}.".format(", ".join(map(str, invalid_webhook_types))))
+    allowed_debug_categories = {"all", "claim", "kakera", "roll", "status", "sphere", "coordination", "other"}
+    invalid_debug_categories = [
+        item for item in (data.get("debug_log_categories") or [])
+        if str(item).strip().casefold() not in allowed_debug_categories
+    ]
+    if invalid_debug_categories:
+        errors.append("Unknown Expert Log category/categories: {}.".format(", ".join(map(str, invalid_debug_categories))))
     for channel in data.get("snipe_channels", []) or []:
         try:
             if int(channel) <= 0:
@@ -132,14 +169,21 @@ def validate_preset(data, resolved_token=None):
             errors.append("Snipe Channel ID {!r} must be a positive number.".format(channel))
 
     farm_enabled = bool(data.get("farm_character_enabled", False))
+    farm_characters = [
+        str(item or "").strip()
+        for item in (data.get("farm_characters") or [])
+        if str(item or "").strip()
+    ]
+    if str(data.get("farm_character", "") or "").strip():
+        farm_characters.insert(0, str(data.get("farm_character")).strip())
     farm_after_claim = bool(data.get("farm_forcedivorce_after_claim", False))
     farm_after_other_claim = bool(data.get("farm_forcedivorce_after_other_claim", False))
     farm_before_roll = bool(data.get(
         "farm_forcedivorce_before_roll",
         farm_enabled and not farm_after_claim and not farm_after_other_claim,
     ))
-    if farm_enabled and not str(data.get("farm_character", "") or "").strip():
-        errors.append("Kakera Farm Character is required when the farming loop is enabled.")
+    if farm_enabled and not farm_characters:
+        errors.append("At least one Kakera Farm Character is required when the farming loop is enabled.")
     if farm_after_claim and not farm_enabled:
         errors.append("Forcedivorce After Verified Claim requires the Kakera Farming Loop.")
     if farm_after_other_claim and not farm_enabled:
@@ -155,7 +199,7 @@ def validate_preset(data, resolved_token=None):
         "humanization_window_minutes", "humanization_inactivity_seconds", "reactive_snipe_delay",
         "auto_us_limit", "auto_rolls_limit", "panic_roll_minutes", "auto_divorce_max_kakera",
         "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
-        "hybrid_panic_instant_claim_max_rank",
+        "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
     ]
     for key in non_negative:
         if key in data and data[key] is not None:

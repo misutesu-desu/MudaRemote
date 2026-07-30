@@ -1,10 +1,42 @@
 """Status freshness helpers used to minimize physical Mudae ``$tu`` queries."""
 
+import re
 import time
+import unicodedata
 
 
 STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
 TU_FAILURE_BACKOFF_SECONDS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
+
+
+_CLAIM_DENIED_COOLDOWN_RE = re.compile(
+    r"(?:"
+    r"can(?:not|'t)\s+(?:claim|marry)"
+    r"|nao\s+pode[^\n]{0,80}?(?:casar|reclamar)"
+    r"|no\s+puedes[^\n]{0,80}?(?:reclamar|casarte)"
+    r"|ne\s+pouvez\s+pas[^\n]{0,80}?(?:marier|reclamer)"
+    r")[^\n]{0,160}?\*{0,2}(?:(\d+)\s*h)?\s*(\d+)\*{0,2}\s*min\b",
+    re.IGNORECASE,
+)
+
+
+def _fold_status_text(value):
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    ).casefold()
+
+
+def parse_claim_denied_cooldown(content):
+    """Return minutes for an explicit localized claim denial, else ``None``."""
+    match = _CLAIM_DENIED_COOLDOWN_RE.search(_fold_status_text(content))
+    if not match:
+        return None
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    return hours * 60 + minutes
 
 
 def looks_like_tu_status_snapshot(content) -> bool:

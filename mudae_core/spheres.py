@@ -240,6 +240,7 @@ def choose_chest_reward_position(
     emojis: Sequence[str],
     disabled: Sequence[bool],
     red_position: int,
+    priority_order: Optional[Sequence[str]] = None,
 ) -> Optional[int]:
     """Spend post-red $oc clicks on the enabled cell with the best expected value."""
     board = [normalize_sphere_emoji(value) for value in emojis]
@@ -251,8 +252,18 @@ def choose_chest_reward_position(
     if not enabled:
         return None
 
-    def expected_value(position: int) -> Tuple[float, int]:
+    configured_priority = {
+        normalize_sphere_emoji(name): len(priority_order or ()) - index
+        for index, name in enumerate(priority_order or ())
+    }
+
+    def expected_value(position: int):
         name = board[position]
+        if configured_priority:
+            # Listed revealed rewards are deterministic; unknown cells remain
+            # available after every configured visible reward.
+            configured = configured_priority.get(name, 0)
+            return configured, name != UNKNOWN_SPHERE, -position
         value = (
             _chest_unknown_value(board, red_position, position)
             if name == UNKNOWN_SPHERE
@@ -263,7 +274,11 @@ def choose_chest_reward_position(
     return max(enabled, key=expected_value)
 
 
-def choose_chest_position(emojis: Sequence[str], disabled: Sequence[bool]) -> Optional[int]:
+def choose_chest_position(
+    emojis: Sequence[str],
+    disabled: Sequence[bool],
+    reward_priority_order: Optional[Sequence[str]] = None,
+) -> Optional[int]:
     """Choose the next enabled $oc cell using all revealed geometry clues."""
     board = [normalize_sphere_emoji(value) for value in emojis]
     blocked = [bool(value) for value in disabled]
@@ -275,7 +290,12 @@ def choose_chest_position(emojis: Sequence[str], disabled: Sequence[bool]) -> Op
         if not blocked[red_position]:
             return red_position
     if red_positions:
-        return choose_chest_reward_position(board, blocked, red_positions[0])
+        return choose_chest_reward_position(
+            board,
+            blocked,
+            red_positions[0],
+            priority_order=reward_priority_order,
+        )
 
     enabled_unknown = [
         index for index, name in enumerate(board)
@@ -308,6 +328,8 @@ def choose_harvest_position(
     emojis: Sequence[str],
     disabled: Sequence[bool],
     paid_clicks: int = 0,
+    priority_order: Optional[Sequence[str]] = None,
+    unknown_explore_clicks: int = 3,
 ) -> Optional[int]:
     """Choose an $oh cell with an EV-oriented reveal and endgame heuristic."""
     board = [normalize_sphere_emoji(value) for value in emojis]
@@ -331,6 +353,24 @@ def choose_harvest_position(
     if purple:
         return closest_to_center(purple)
 
+    configured_priority = {
+        normalize_sphere_emoji(name): len(priority_order or ()) - index
+        for index, name in enumerate(priority_order or ())
+    }
+    if configured_priority:
+        configured_visible = [
+            index for index in enabled
+            if board[index] != UNKNOWN_SPHERE and board[index] in configured_priority
+        ]
+        if configured_visible:
+            return max(
+                configured_visible,
+                key=lambda index: (configured_priority[board[index]], -index),
+            )
+        unknown = [index for index in enabled if board[index] == UNKNOWN_SPHERE]
+        if unknown and max(0, int(paid_clicks or 0)) < max(0, int(unknown_explore_clicks or 0)):
+            return closest_to_center(unknown)
+
     guaranteed_high_value = [
         index for index in enabled
         if board[index] in {"spW", "spL", "spM", "spR", "spO", "spY", "spG"}
@@ -345,7 +385,7 @@ def choose_harvest_position(
 
     # Early unknown clicks can expose blue/teal chains, purple free clicks, or the
     # hidden $oc reward while the guaranteed prizes remain available for later.
-    if used_clicks < 3 and unknown:
+    if used_clicks < max(0, int(unknown_explore_clicks or 0)) and unknown:
         return closest_to_center(unknown)
 
     dark = [index for index in enabled if board[index] == "spD"]

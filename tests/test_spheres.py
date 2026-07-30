@@ -110,11 +110,42 @@ class SphereBoardTests(unittest.TestCase):
 
         self.assertEqual(choose_chest_reward_position(board, disabled, 4), 3)
 
+    def test_custom_chest_reward_priority_overrides_default_value_order(self):
+        board = ["spB"] * 25
+        board[4] = "sp"
+        board[3] = "spO"
+        board[2] = "spG"
+        disabled = [False] * 25
+        disabled[4] = True
+
+        self.assertEqual(
+            choose_chest_position(
+                board,
+                disabled,
+                reward_priority_order=["spG", "spO"],
+            ),
+            2,
+        )
+
     def test_harvest_prefers_high_value_revealed_sphere(self):
         board = ["spU"] * 25
         board[2] = "spB"
         board[7] = "spW"
         self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), 7)
+
+    def test_custom_harvest_priority_can_prefer_a_lower_default_reward(self):
+        board = ["spB"] * 25
+        board[2] = "spG"
+        board[7] = "spW"
+        self.assertEqual(
+            choose_harvest_position(
+                board,
+                [False] * 25,
+                paid_clicks=4,
+                priority_order=["spG", "spW"],
+            ),
+            2,
+        )
 
     def test_harvest_secures_high_value_reveal_before_early_unknown(self):
         board = ["spU"] * 25

@@ -98,6 +98,23 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("wake_status_loop", called_names)
         self.assertIn("request_status_refresh", called_names)
 
+    def test_explicit_localized_claim_denial_overrides_ready_substring(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn(
+            "explicit_claim_cooldown = parse_claim_denied_cooldown(c_lower)",
+            status_source,
+        )
+        self.assertIn(
+            "explicit_claim_cooldown is None\n"
+            "                and re.search(REGEX_PATTERNS[\"CLAIM_READY\"], c_lower)",
+            status_source,
+        )
+
     def test_tu_snapshot_does_not_trigger_another_status_refresh(self):
         functions = {
             node.name: node

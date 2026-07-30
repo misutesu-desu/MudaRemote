@@ -19,10 +19,23 @@
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
 
-## 🆕 Farming & Localization Fixes — v4.7.0
+## 🆕 Advanced Automation & Multi-Account Presets — v4.7.0
+
+### ✨ New Features
+
+- Restrict Kakera clicks to wished/starwished characters; a starwish is detected by an emoji on the character's series line.
+- Optionally wait for full Kakera power before using `$mk`, with regeneration/reset-aware status refreshes.
+- Auto-divorce can protect wished/starwished characters and series automatically.
+- Configure multiple farm characters and multiple encrypted Discord tokens in one preset.
+- Apply a preset's settings to every preset while optionally preserving each account's identity and channels.
+- Define `$oh` and post-red `$oc` reward priorities, including `$oh` exploration depth and `$oc` stop/continue behavior.
+- Inactive-hour windows now support minute precision such as `01:30-07:15`.
+- Send a configurable chat message after a successful Kakera snipe.
+- Forward selected log types to a Discord webhook and filter Expert Logs by category.
 
 ### 🐛 Bug Fixes
 
+- **Spanish Claim Status:** Spanish cooldown messages such as `no puedes reclamar` can no longer be mistaken for `Claim: Ready`, preventing repeated claim attempts.
 - **Reliable Farm Restores:** A confirmed forcedivorce now lets the next farm-character roll use `$rt` normally instead of being blocked as a duplicate.
 - **No Rejected-Claim `$tu` Loops:** Failed stale claims stay closed when neither a claim right nor `$rt` can retry them.
 - **Localized Sphere Boards:** `$oh` and `$oc` now recognize localized 25-button boards without requiring English descriptions.

@@ -30,7 +30,7 @@ def active_stagger_seconds(active_index, interval=AUTOMATED_STAGGER_INTERVAL_SEC
 
 
 def prepare_active_presets(preset_names, preset_mapping, start_index=0):
-    """Clone runnable selected presets and assign compact stagger offsets in launch order."""
+    """Expand preset accounts and assign compact stagger offsets in launch order."""
     prepared = []
     seen = set()
     for name in preset_names:
@@ -38,11 +38,24 @@ def prepare_active_presets(preset_names, preset_mapping, start_index=0):
             continue
         seen.add(name)
         data = dict(preset_mapping[name])
-        if not data.get("token"):
-            continue
-        active_index = max(0, int(start_index or 0)) + len(prepared)
-        data["persistent_stagger_seconds"] = active_stagger_seconds(active_index)
-        prepared.append((name, data))
+        configured_tokens = data.get("tokens")
+        if not isinstance(configured_tokens, (list, tuple)) or not configured_tokens:
+            configured_tokens = [data.get("token")]
+        tokens = []
+        seen_tokens = set()
+        for token in configured_tokens:
+            cleaned = str(token or "").strip()
+            if cleaned and cleaned not in seen_tokens:
+                seen_tokens.add(cleaned)
+                tokens.append(cleaned)
+        for token_index, token in enumerate(tokens, 1):
+            account_data = dict(data)
+            account_data.pop("tokens", None)
+            account_data["token"] = token
+            active_index = max(0, int(start_index or 0)) + len(prepared)
+            account_data["persistent_stagger_seconds"] = active_stagger_seconds(active_index)
+            account_name = name if token_index == 1 else "{} #{}".format(name, token_index)
+            prepared.append((account_name, account_data))
     return prepared
 
 

@@ -64,6 +64,22 @@ class SecretStoreTests(unittest.TestCase):
                 store.delete_token("ALT")
                 self.assertFalse(os.path.exists(store.termux_path))
 
+    def test_termux_store_round_trips_multiple_tokens_and_legacy_single_token(self):
+        with tempfile.TemporaryDirectory() as project_directory, tempfile.TemporaryDirectory() as termux_home:
+            environment = {
+                "HOME": termux_home,
+                "PREFIX": "/data/data/com.termux/files/usr",
+                "TERMUX_VERSION": "0.118.3",
+            }
+            with mock.patch.dict(os.environ, environment, clear=False):
+                store = SecretStore(project_directory)
+                store.set_tokens("MULTI", ["first", "second", "first"])
+                store.set_token("LEGACY", "single")
+
+                self.assertEqual(store.get_tokens("MULTI"), ["first", "second"])
+                self.assertEqual(store.get_token("MULTI"), "first")
+                self.assertEqual(store.get_tokens("LEGACY"), ["single"])
+
 
 if __name__ == "__main__":
     unittest.main()
