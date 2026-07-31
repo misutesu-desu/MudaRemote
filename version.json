@@ -1,5 +1,5 @@
 {
-  "version": "4.7.0",
+  "version": "4.7.1",
   "changelog": {
     "Automation": [
       "Kakera clicks can be limited to wished/starwished characters, with starwish detected from the series-line emoji.",
@@ -12,6 +12,7 @@
       "Selected log types can be forwarded to a Discord webhook, with category filters for Expert Logs."
     ],
     "Bug Fixes": [
+      "Perk 5 Kakera rolls now collect every eligible button instead of stopping early.",
       "Spanish claim cooldown messages can no longer be mistaken for a ready claim, preventing repeated claim attempts."
     ]
   },
@@ -23,7 +24,7 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "31da2b39e9e2097ce10195c71ad2af13bd1eafd8dcf9d6f047eb814245e510cf"
+      "sha256": "8b65534b10e600a67184ccd2312f0626490cae8b00aeab48b9f7945ea2c75074"
     },
     {
       "path": "mudae_preset_editor.py",

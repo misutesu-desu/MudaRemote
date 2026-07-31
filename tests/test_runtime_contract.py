@@ -449,6 +449,17 @@ class RuntimeSourceContractTests(unittest.TestCase):
             claim_source,
         )
 
+    def test_kakera_collection_is_not_limited_to_three_buttons(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+
+        self.assertNotIn("max_clicks = 3", claim_source)
+        self.assertIn("if match_custom or match_pos:", claim_source)
+
     def test_idle_manual_self_rolls_use_reactive_claiming(self):
         functions = {
             node.name: node

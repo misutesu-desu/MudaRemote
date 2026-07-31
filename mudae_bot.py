@@ -121,7 +121,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.7.0"
+CURRENT_VERSION = "4.7.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -3574,10 +3574,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     buttons_to_click = all_btns_tracked
 
-                    max_clicks = 3
                     clicked_count = 0
                     for item in buttons_to_click:
-                        if clicked_count >= max_clicks: break
                         btn = item['btn']
                         custom_id = item['custom_id']
                         pos = item['pos']
@@ -3590,8 +3588,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 for row_idx, c_f in enumerate(msg.components):
                                     for child_idx, b_f in enumerate(c_f.children):
                                         match_custom = (custom_id is not None and b_f.custom_id == custom_id)
-                                        match_pos = (pos == (row_idx, child_idx))
-                                        if match_custom or (custom_id is None and match_pos):
+                                        # Mudae can regenerate button custom IDs after a
+                                        # reaction. Keep the original position as a safe
+                                        # fallback when the emoji still matches.
+                                        fetched_name = getattr(getattr(b_f, 'emoji', None), 'name', None)
+                                        match_pos = (
+                                            pos == (row_idx, child_idx)
+                                            and fetched_name == name
+                                        )
+                                        if match_custom or match_pos:
                                             btn, found = b_f, True
                                             break
                                     if found: break
