@@ -29,6 +29,7 @@ def build(onefile=False, console=False, update_manifest=False):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     entry_point = os.path.join(script_dir, "mudae_preset_editor.py")
     icon_path = os.path.join(script_dir, "icon.png")
+    emoji_assets_path = os.path.join(script_dir, "mudae_emoji_assets")
     release_spec = os.path.join(script_dir, "MudaRemote.spec")
     version_file = os.path.join(script_dir, "packaging", "windows_version_info.txt")
     spec_dir = os.path.join(script_dir, "build", "spec")
@@ -64,6 +65,8 @@ def build(onefile=False, console=False, update_manifest=False):
             "--hidden-import=keyring",
             f"--version-file={version_file}",
         ]
+        if os.path.isdir(emoji_assets_path):
+            args.append(f"--add-data={emoji_assets_path}{os.pathsep}mudae_emoji_assets")
         print("[BUILD] Mode: Directory (faster startup)")
 
     if onefile:

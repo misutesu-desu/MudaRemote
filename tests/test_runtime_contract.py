@@ -515,7 +515,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
             handler_source,
         )
 
-    def test_op5_filter_requires_the_authoritative_spr_marker(self):
+    def test_op5_filter_requires_the_authoritative_sp_marker(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -531,6 +531,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertNotIn('any(f"sp"', op5_source)
         self.assertIn("has_op5 = has_op_perk_five_marker(embed.description)", claim_source)
         self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
+
+    def test_mudae_button_artwork_is_cached_for_the_preset_editor(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        cache_source = ast.get_source_segment(self.source, functions["cache_mudae_emoji_asset"])
+        schedule_source = ast.get_source_segment(self.source, functions["schedule_mudae_emoji_asset_cache"])
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("MUDAE_EMOJI_ASSET_DIR", cache_source)
+        self.assertIn("cdn.discordapp.com/emojis", cache_source)
+        self.assertIn("cache_mudae_emoji_asset", schedule_source)
+        self.assertIn("schedule_mudae_emoji_asset_cache(client, message)", handler_source)
 
     def test_kakera_collection_is_not_limited_to_three_buttons(self):
         functions = {

@@ -47,6 +47,17 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+
+def get_mudae_emoji_asset_path(option):
+    """Find bundled Fandom artwork first, while allowing Discord cache updates."""
+    filename = f"{option}.png"
+    external_path = os.path.join(get_base_path(), "mudae_emoji_assets", filename)
+    if os.path.isfile(external_path):
+        return external_path
+    bundled_root = getattr(sys, "_MEIPASS", "")
+    bundled_path = os.path.join(bundled_root, "mudae_emoji_assets", filename)
+    return bundled_path if os.path.isfile(bundled_path) else None
+
 # Premium Catppuccin Mocha Color Palette
 BG_DARK = "#0f0f14"          # Main application background
 BG_PANEL = "#151521"         # Sidebar, card backgrounds, labels
@@ -176,6 +187,7 @@ class ChipListWidget(tk.Frame):
         self.bg_panel = bg_panel
         self.text_muted = text_muted
         self.state_callback = state_callback
+        self.change_callback = None
 
         self.chips = []
 
@@ -186,6 +198,8 @@ class ChipListWidget(tk.Frame):
             self.entry_frame,
             bg=bg_input,
             fg=text_main,
+            disabledbackground=bg_panel,
+            disabledforeground=text_muted,
             insertbackground=text_main,
             font=("Segoe UI", 10),
             bd=0,
@@ -265,12 +279,28 @@ class ChipListWidget(tk.Frame):
             chip.pack(side=tk.LEFT, padx=(0, 4))
             current_width += chip_width + 4
 
+        if self.change_callback:
+            self.change_callback()
+
     def _remove_chip(self, text):
         if text in self.chips:
             self.chips.remove(text)
             if self.state_callback:
                 self.state_callback()
             self._redraw_chips()
+
+    def toggle_chip(self, text):
+        """Toggle a predefined option without removing custom text entry."""
+        text = str(text).strip()
+        if not text:
+            return
+        if text in self.chips:
+            self.chips.remove(text)
+        else:
+            self.chips.append(text)
+        if self.state_callback:
+            self.state_callback()
+        self._redraw_chips()
 
     def get(self):
         current_entry = self.entry.get().strip()
@@ -311,12 +341,157 @@ class ChipListWidget(tk.Frame):
             state = kwargs["state"]
             self.entry.configure(state=state)
             if state == "disabled":
-                self.entry.configure(bg=self.bg_panel)
+                self.entry.configure(
+                    bg=self.bg_panel,
+                    disabledbackground=self.bg_panel,
+                    disabledforeground=self.text_muted,
+                )
             else:
                 self.entry.configure(bg=self.bg_input)
 
     def bind(self, sequence=None, func=None, add=None):
         return self.entry.bind(sequence, func, add)
+
+
+class EmojiOptionPicker(tk.Frame):
+    """Visual emoji picker with explicit selection state and optional reordering."""
+    _COLORS = {
+        "Y": "#f9e2af", "O": "#fab387", "R": "#f38ba8", "W": "#f5f5f5",
+        "L": "#cba6f7", "P": "#cba6f7", "D": "#89b4fa", "C": "#a6e3a1",
+        "G": "#a6e3a1", "T": "#94e2d5",
+    }
+
+    def __init__(self, parent, chip_widget, options, reorderable=False):
+        super().__init__(parent, bg=parent.cget("bg"))
+        self.chip_widget = chip_widget
+        self.options = list(options)
+        self.reorderable = reorderable
+        self.cards = {}
+        self.images = {}
+        self.enable_callback = None
+        self.drag_option = None
+        chip_widget.change_callback = self.refresh
+
+        controls = tk.Frame(self, bg=self.cget("bg"))
+        controls.pack(fill=tk.X, pady=(0, 2))
+        control_label = "Drag to reorder" if reorderable else "Options"
+        tk.Label(controls, text=control_label, bg=controls.cget("bg"), fg=TEXT_MUTED,
+                 font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        for text, command in (("Select all", self.select_all), ("Clear", self.clear_all)):
+            tk.Button(controls, text=text, command=command, bg=BG_PANEL, fg=TEXT_MAIN,
+                      activebackground=BG_INPUT, activeforeground=TEXT_MAIN, bd=0,
+                      font=("Segoe UI", 8), padx=6, pady=1, cursor="hand2").pack(side=tk.RIGHT, padx=(4, 0))
+
+        self.card_row = tk.Frame(self, bg=self.cget("bg"))
+        self.card_row.pack(fill=tk.X)
+        self.refresh()
+
+    def _toggle(self, option):
+        if self.enable_callback:
+            self.enable_callback()
+        self.chip_widget.toggle_chip(option)
+
+    def select_all(self):
+        if self.enable_callback:
+            self.enable_callback()
+        custom_values = [value for value in self.chip_widget.chips if value not in self.options]
+        self.chip_widget.chips = list(self.options) + custom_values
+        if self.chip_widget.state_callback:
+            self.chip_widget.state_callback()
+        self.chip_widget._redraw_chips()
+
+    def clear_all(self):
+        self.chip_widget.chips = [value for value in self.chip_widget.chips if value not in self.options]
+        if self.chip_widget.state_callback:
+            self.chip_widget.state_callback()
+        self.chip_widget._redraw_chips()
+
+    def _display_options(self):
+        if not self.reorderable:
+            return self.options
+        selected = [value for value in self.chip_widget.chips if value in self.options]
+        return selected + [value for value in self.options if value not in selected]
+
+    def _build_cards(self):
+        for child in self.card_row.winfo_children():
+            child.destroy()
+        self.cards.clear()
+        self.images.clear()
+        selected = set(self.chip_widget.chips)
+        for option in self._display_options():
+            selected_option = option in selected
+            background = BG_INPUT if selected_option else BG_PANEL
+            card = tk.Frame(self.card_row, bg=background, highlightthickness=2,
+                            highlightbackground=ACCENT if selected_option else BORDER_COLOR, cursor="hand2")
+            card.pack(side=tk.LEFT, padx=(0, 5), pady=(2, 4))
+            icon = tk.Canvas(card, width=28, height=28, bg=background, highlightthickness=0)
+            icon.pack(padx=4, pady=4)
+            self._draw_icon(icon, option)
+            if selected_option:
+                tk.Label(card, text="✓", bg=ACCENT, fg=BG_DARK, font=("Segoe UI", 7, "bold"),
+                         padx=2).place(relx=1, rely=0, anchor="ne")
+            Tooltip(card, option + (" — drag to reorder" if self.reorderable else ""))
+            for widget in (card, icon):
+                widget.bind("<ButtonPress-1>", lambda event, value=option: self._start_drag(event, value))
+                widget.bind("<ButtonRelease-1>", lambda event, value=option: self._finish_drag(event, value))
+            self.cards[option] = card
+
+    def _start_drag(self, _event, option):
+        self.drag_option = option
+
+    def _finish_drag(self, event, option):
+        dragged = self.drag_option
+        self.drag_option = None
+        if not self.reorderable or dragged not in self.chip_widget.chips:
+            self._toggle(option)
+            return
+        targets = [value for value in self._display_options() if value in self.chip_widget.chips]
+        if not targets:
+            self._toggle(option)
+            return
+        target = min(targets, key=lambda value: abs(event.x_root - (self.cards[value].winfo_rootx() + self.cards[value].winfo_width() / 2)))
+        if target == dragged:
+            self._toggle(option)
+            return
+        ordered = list(self.chip_widget.chips)
+        ordered.remove(dragged)
+        ordered.insert(ordered.index(target), dragged)
+        self.chip_widget.chips = ordered
+        if self.chip_widget.state_callback:
+            self.chip_widget.state_callback()
+        self.chip_widget._redraw_chips()
+
+    def _draw_icon(self, canvas, option):
+        image = self._load_mudae_emoji_image(option)
+        if image is not None:
+            canvas.create_image(14, 14, image=image)
+            self.images[option] = image
+            return
+
+        if option.startswith("kakera") or option.startswith("sp"):
+            prefix = "kakera" if option.startswith("kakera") else "sp"
+            color = self._COLORS.get(option[len(prefix):].rstrip("2"), "#cba6f7")
+            canvas.create_polygon(14, 3, 25, 14, 14, 25, 3, 14,
+                                 fill=color, outline="#ffffff")
+        else:
+            canvas.create_text(14, 14, text=option, fill="#f5c2e7",
+                               font=("Segoe UI Emoji", 14))
+
+    @staticmethod
+    def _load_mudae_emoji_image(option):
+        """Use Mudae's cached Discord artwork, with a drawn fallback until synced."""
+        path = get_mudae_emoji_asset_path(option)
+        if path is None:
+            return None
+        try:
+            image = tk.PhotoImage(file=path)
+            factor = max(1, math.ceil(max(image.width(), image.height()) / 23))
+            return image.subsample(factor, factor)
+        except tk.TclError:
+            return None
+
+    def refresh(self):
+        self._build_cards()
 
 # --- Constants ---
 PRESETS_FILE = os.path.join(get_base_path(), "presets.json")
@@ -395,7 +570,7 @@ DEFAULTS = {
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
-    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
+    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
     "immediate_kakera_click": True,
     "wish_starwish_kakera_only": False,
     "oh_priority_order": [],
@@ -509,7 +684,7 @@ TEXT_SETTINGS = [
     ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
     ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
-    ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
+    ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
 ]
 
@@ -1413,8 +1588,8 @@ class PresetEditor:
         emoji_frame = CollapsibleLabelFrame(frame, text="Custom Emojis (Advanced)", start_open=False)
         emoji_frame.pack(fill=tk.X, pady=(0, 15))
 
-        ttk.Label(emoji_frame.content, text="Uncheck to use defaults. Check with empty field to disable.",
-                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(emoji_frame.content, text="Choose from the cards. Use ‘Add custom emoji’ only when you need a custom emoji name.",
+                 foreground="#a6adc8", font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(0, 8))
 
         self.add_optional_list_field(emoji_frame.content, "claim_emojis", "Claim Emojis",
                                      ", ".join(DEFAULT_CLAIM_EMOJIS))
@@ -1429,11 +1604,11 @@ class PresetEditor:
         self.add_list_field(emoji_frame.content, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
 
         # [NEW] Task 8: Customizable kakera/sphere priority map
-        self.add_list_field(emoji_frame.content, "kakera_priority_order", "Kakera Priority Order (Highest priority first, comma-separated)",
-                            description="Default: kakeraP, kakeraC, kakeraL, kakeraW, kakeraR, kakeraO, kakeraD, kakeraY, kakeraG, kakeraT, kakera")
+        self.add_list_field(emoji_frame.content, "kakera_priority_order", "Kakera Priority Order",
+                            description="Drag cards from highest to lowest priority.")
 
         # [NEW] Sphere click targets setting
-        self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)")
+        self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis")
         self.add_list_field(emoji_frame.content, "oh_priority_order", "$oh Reward Priority (Highest first; e.g. spD, spP, spU)")
         self.add_number_field(emoji_frame.content, "oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks", 3)
         self.add_list_field(emoji_frame.content, "oc_reward_priority_order", "$oc Reward Priority After Red (Highest first)")
@@ -1799,6 +1974,40 @@ class PresetEditor:
         var.trace_add("write", toggle)
         return subframe
 
+    def add_custom_emoji_toggle(self, parent, entry, padx=0, enable_callback=None):
+        """Keep manual emoji input available without duplicating the icon grid."""
+        entry.pack_forget()
+        visible = tk.BooleanVar(value=False)
+        button = tk.Button(
+            parent,
+            text="Add custom emoji",
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            activebackground=BG_INPUT,
+            activeforeground=TEXT_MAIN,
+            bd=0,
+            font=("Segoe UI", 8),
+            padx=8,
+            pady=3,
+            cursor="hand2",
+        )
+        button.pack(anchor=tk.W, padx=padx, pady=(3, 0))
+
+        def toggle():
+            if not visible.get():
+                if enable_callback:
+                    enable_callback()
+                entry.pack(fill=tk.X, padx=padx, pady=(4, 0), after=button)
+                button.configure(text="Hide custom emoji input")
+                visible.set(True)
+            else:
+                entry.pack_forget()
+                button.configure(text="Add custom emoji")
+                visible.set(False)
+
+        button.configure(command=toggle)
+        return button
+
     def add_list_field(self, parent, key, label, description=None):
         """Add a comma-separated list field with tag chip functionality."""
         container = tk.Frame(parent, bg=self._get_parent_bg(parent))
@@ -1823,6 +2032,15 @@ class PresetEditor:
         )
         entry.pack(fill=tk.X)
         self.widgets[key] = entry
+
+        option_sets = {
+            "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
+            "sphere_click_targets": ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
+        }
+        if key in option_sets:
+            picker = EmojiOptionPicker(container, entry, option_sets[key], reorderable=(key == "kakera_priority_order"))
+            picker.pack(fill=tk.X, before=entry)
+            self.add_custom_emoji_toggle(container, entry)
 
         self._register_settings_widget(parent, container, label + " " + (description or ""), key)
         self._bind_focus_highlight(entry)
@@ -1851,6 +2069,17 @@ class PresetEditor:
         entry.pack(fill=tk.X, padx=(20, 0))
         entry.insert(0, placeholder)
         entry.configure(state="disabled")
+
+        option_sets = {
+            "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
+            "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
+            "sphere_perk_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
+        }
+        if key in option_sets:
+            picker = EmojiOptionPicker(container, entry, option_sets[key])
+            picker.pack(fill=tk.X, padx=(20, 0), before=entry)
+            picker.enable_callback = lambda: var.set(True)
+            self.add_custom_emoji_toggle(container, entry, padx=20, enable_callback=lambda: var.set(True))
 
         # Toggle entry state based on checkbox
         def toggle_entry():
@@ -2414,7 +2643,7 @@ class PresetEditor:
                 "farm_forcedivorce_after_claim": False,
                 "farm_forcedivorce_after_other_claim": False,
                 "forcedivorce_channel_id": "",
-                "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
+                "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
                 "immediate_kakera_click": True,
                 "character_snipe_targets": [],
             }

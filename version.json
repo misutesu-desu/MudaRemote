@@ -1,7 +1,9 @@
 {
-  "version": "4.7.2",
+  "version": "4.7.3",
   "changelog": {
     "Bug Fixes": [
+      "Mudae Fandom emoji artwork is displayed correctly in the preset editor.",
+      "Removed the invalid spM sphere option and fixed dark disabled emoji inputs.",
       "Starwished characters are detected correctly even if the series name continues onto another line.",
       "OP5-only collection now uses the correct OP5 indicator without confusing it with other perks.",
       "Perk 8 power discounts are recognized separately from OP5 filtering.",
@@ -13,6 +15,8 @@
       "Failed update verification keeps the current installation safe and reports a clearer error."
     ],
     "Improvements": [
+      "Emoji selection uses compact visual cards with clear selected states, bulk actions, and optional custom input.",
+      "Kakera priority order can be rearranged by dragging visual cards.",
       "Preset filters explain that enabled Only rules must all match.",
       "Chaos emoji settings clearly state that they apply to the user's own rolls.",
       "Kakera skip logs provide clearer reasons for easier troubleshooting."
@@ -21,17 +25,17 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "b011561ebdd11aba3b08870c49c2cb4bc6406248c24dd21e176db5e7e8acd97c",
+  "exe_sha256": "132abc067b100c9568b0915bb60230925e0ff4ef64298898d8fd5600b7242b85",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "22ad65c0f39d60b0598ed7430a8223271a374d8608611a4893cdac6b7598ba3a"
+      "sha256": "7ea0d6b958576ce4451f008b0a52f40293f50104c1899773f124d62c9a11d749"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "5f98e67f9d93ee330bb8e0e24cfac85c13cbc27e0c34ac19d9de7d5e04d38ef3"
+      "sha256": "e6e26c28b853036d2f44e4f96cfee14812a63d8edabec4eb24465104547cbddc"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -51,7 +55,7 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "8e97154d20f2de7bf56f9d048d41798314ca983a420c69a93fedde3ce967ce19"
+      "sha256": "609ba0e170e1b261747c08408ca1f95447ffde7efc6917d55d62e8d5d6058c0b"
     },
     {
       "path": "mudae_core/coordinator.py",
@@ -76,7 +80,7 @@
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/spheres.py",
-      "sha256": "ebda20aca55d0126f24da80f8002d4ca6112dfd47fdc31cbd9adb3bcb616f148"
+      "sha256": "1080a6f21eed38e911f71668c4ad9459e5468474da07f57ee015b74bdaadd5dd"
     },
     {
       "path": "mudae_core/filters.py",

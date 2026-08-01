@@ -44,10 +44,10 @@ class KakeraPowerTests(unittest.TestCase):
         )
 
     def test_op5_and_perk_eight_use_distinct_markers(self):
-        self.assertTrue(has_op_perk_five_marker("<:spR:1234567890>"))
-        self.assertTrue(has_op_perk_five_marker("<a:spR:1234567890>"))
+        self.assertTrue(has_op_perk_five_marker("<:sp:1234567890>"))
+        self.assertTrue(has_op_perk_five_marker("<a:sp:1234567890>"))
         self.assertFalse(has_op_perk_five_marker("💎 / 2"))
-        self.assertFalse(has_op_perk_five_marker("<:spr:1234567890>"))
+        self.assertFalse(has_op_perk_five_marker("<:spR:1234567890>"))
         for marker in ("💎/2", "💎 / 2", "💎 ÷ 2", "💎 ➗ 2️⃣"):
             self.assertTrue(has_perk_eight_discount("Perk 8: {}".format(marker)), marker)
         self.assertFalse(has_perk_eight_discount("<:spR:1234567890>"))

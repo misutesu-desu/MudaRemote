@@ -123,7 +123,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.7.2"
+CURRENT_VERSION = "4.7.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -277,6 +277,56 @@ def get_base_path():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+
+MUDAE_EMOJI_ASSET_DIR = os.path.join(get_base_path(), "mudae_emoji_assets")
+_mudae_emoji_asset_tasks = set()
+
+
+async def cache_mudae_emoji_asset(emoji):
+    """Store a real Mudae custom emoji locally for the preset editor."""
+    name = str(getattr(emoji, "name", "") or "")
+    emoji_id = getattr(emoji, "id", None)
+    if not emoji_id or not re.fullmatch(r"(?:kakera|sp)[A-Za-z0-9]*", name):
+        return
+
+    destination = os.path.join(MUDAE_EMOJI_ASSET_DIR, f"{name}.png")
+    if os.path.isfile(destination):
+        return
+
+    os.makedirs(MUDAE_EMOJI_ASSET_DIR, exist_ok=True)
+    url = f"https://cdn.discordapp.com/emojis/{emoji_id}.png?size=64&quality=lossless"
+
+    def download():
+        response = requests.get(url, timeout=(3.05, 10))
+        response.raise_for_status()
+        temporary = f"{destination}.tmp"
+        with open(temporary, "wb") as handle:
+            handle.write(response.content)
+        os.replace(temporary, destination)
+
+    try:
+        await asyncio.to_thread(download)
+    except Exception:
+        # The picker retains its built-in colour fallback if Discord's CDN is
+        # unavailable or a custom emoji has been removed.
+        return
+
+
+def schedule_mudae_emoji_asset_cache(client, message):
+    """Cache real button artwork without delaying roll/claim handling."""
+    for component in getattr(message, "components", ()) or ():
+        for button in getattr(component, "children", ()) or ():
+            emoji = getattr(button, "emoji", None)
+            name = str(getattr(emoji, "name", "") or "")
+            if not re.fullmatch(r"(?:kakera|sp)[A-Za-z0-9]*", name):
+                continue
+            task_key = (getattr(emoji, "id", None), name)
+            if not task_key[0] or task_key in _mudae_emoji_asset_tasks:
+                continue
+            _mudae_emoji_asset_tasks.add(task_key)
+            task = client.loop.create_task(cache_mudae_emoji_asset(emoji))
+            task.add_done_callback(lambda _task, key=task_key: _mudae_emoji_asset_tasks.discard(key))
 
 def _toggle_global_pause():
     global _global_paused
@@ -443,7 +493,7 @@ TARGET_BOT_ID = 432610292342587392
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
 CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
-SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
+SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'spW', 'spL', 'spD', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 async def detect_roll_owner(client, message) -> tuple:
     """
@@ -696,7 +746,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_priority_order = kakera_priority_order_preset or [
         'kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera'
     ]
-    sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
+    sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"]
     client.sphere_click_targets = set([t.lower() for t in sphere_click_targets])
     client.immediate_kakera_click = immediate_kakera_click_preset
     client.auto_oh_enabled = bool(auto_oh_enabled_preset)
@@ -3543,7 +3593,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if client.op_perk_5_only:
                     if not has_op5:
                         BotLogger.log(
-                            f"Kakera skipped for {char_name}: embed has no OP5 spR emoji.",
+                            f"Kakera skipped for {char_name}: embed has no OP5 sp emoji.",
                             preset_name,
                             "DEBUG",
                             client,
@@ -3909,6 +3959,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         record_claim_text_evidence(message)
         process_claim_cooldown_message(message)
+        schedule_mudae_emoji_asset_cache(client, message)
 
         if message.content and "under maintenance" in message.content.lower():
             m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content, re.IGNORECASE)

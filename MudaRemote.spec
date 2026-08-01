@@ -19,7 +19,7 @@ a = Analysis(
     [str(project_root / 'mudae_preset_editor.py')],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[],
+    datas=[(str(project_root / 'mudae_emoji_assets'), 'mudae_emoji_assets')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

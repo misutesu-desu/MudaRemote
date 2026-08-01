@@ -16,7 +16,7 @@
     "auto_oc_enabled": false,
     "oh_priority_order": ["spD", "spP", "spW"],
     "oh_unknown_explore_clicks": 3,
-    "oc_reward_priority_order": ["spW", "spL", "spM"],
+    "oc_reward_priority_order": ["spW", "spL", "spR"],
     "oc_collect_after_red": true,
     "wish_starwish_kakera_only": false,
     "auto_mk_full_power_only": false,

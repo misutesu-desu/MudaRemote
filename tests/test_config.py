@@ -10,9 +10,9 @@ class ConfigTests(unittest.TestCase):
     def test_atomic_json_write_round_trips_unicode(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "presets.json")
-            atomic_write_json(path, {"Türkçe": {"token": ""}})
+            atomic_write_json(path, {"Example": {"token": ""}})
             with open(path, "r", encoding="utf-8") as handle:
-                self.assertEqual(json.load(handle), {"Türkçe": {"token": ""}})
+                self.assertEqual(json.load(handle), {"Example": {"token": ""}})
 
     def test_schedule_and_inactive_hour_validation(self):
         values, errors = parse_scheduled_times("09:05, 23:59, 09:05")

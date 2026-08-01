@@ -4,8 +4,8 @@ import re
 
 
 def has_op_perk_five_marker(description: object) -> bool:
-    """Detect OP5 from Mudae's dedicated ``spR`` custom emoji."""
-    return re.search(r"<a?:spR:\d+>", str(description or "")) is not None
+    """Detect OP5 from Mudae's dedicated ``sp`` custom emoji."""
+    return re.search(r"<a?:sp:\d+>", str(description or "")) is not None
 
 
 def has_perk_eight_discount(description: object) -> bool:

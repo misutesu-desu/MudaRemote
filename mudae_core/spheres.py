@@ -177,7 +177,6 @@ _SPHERE_VALUES = {
     "spR": 150.0,
     RED_SPHERE: 150.0,
     "spD": 110.0,
-    "spM": 180.0,
     "spL": 240.0,
     "spW": 500.0,
 }
@@ -373,7 +372,7 @@ def choose_harvest_position(
 
     guaranteed_high_value = [
         index for index in enabled
-        if board[index] in {"spW", "spL", "spM", "spR", "spO", "spY", "spG"}
+        if board[index] in {"spW", "spL", "spR", "spO", "spY", "spG"}
     ]
     unknown = [index for index in enabled if board[index] == UNKNOWN_SPHERE]
     used_clicks = max(0, int(paid_clicks or 0))
