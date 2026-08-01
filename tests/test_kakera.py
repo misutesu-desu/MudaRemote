@@ -4,10 +4,27 @@ from mudae_core.kakera import (
     calculate_kakera_power_cost,
     has_op_perk_five_marker,
     has_perk_eight_discount,
+    has_purple_kakera_button,
 )
 
 
 class KakeraPowerTests(unittest.TestCase):
+    def test_purple_kakera_button_is_detected_even_with_a_variant_suffix(self):
+        class Emoji:
+            def __init__(self, name):
+                self.name = name
+
+        class Button:
+            def __init__(self, name):
+                self.emoji = Emoji(name)
+
+        class Row:
+            def __init__(self, *buttons):
+                self.children = buttons
+
+        self.assertTrue(has_purple_kakera_button([Row(Button("kakeraP2"))]))
+        self.assertFalse(has_purple_kakera_button([Row(Button("kakeraL"))]))
+
     def test_independent_half_cost_discounts_stack(self):
         self.assertEqual(calculate_kakera_power_cost(30), 30)
         self.assertEqual(calculate_kakera_power_cost(30, has_chaos_discount=True), 15)

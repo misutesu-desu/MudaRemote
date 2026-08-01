@@ -526,11 +526,28 @@ class RuntimeSourceContractTests(unittest.TestCase):
         op5_end = claim_source.index("if client.mk_only", op5_start)
         op5_source = claim_source[op5_start:op5_end]
 
-        self.assertIn("if not has_op5:", op5_source)
+        self.assertIn("if not has_op5 and not has_purple_kakera:", op5_source)
         self.assertNotIn("has_free", op5_source)
         self.assertNotIn('any(f"sp"', op5_source)
         self.assertIn("has_op5 = has_op_perk_five_marker(embed.description)", claim_source)
         self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
+
+    def test_purple_kakera_bypasses_all_collection_filters(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("has_purple_kakera = has_purple_kakera_button(msg.components)", claim_source)
+        self.assertIn("not has_purple_kakera and not is_wish_or_starwish", claim_source)
+        self.assertIn("not has_op5 and not has_purple_kakera", claim_source)
+        self.assertIn("not has_purple_kakera and not is_mk_roll", claim_source)
+        self.assertIn("name_clean == 'kakeraP'", claim_source)
+        self.assertIn("has_purple_kakera_button(message.components)", handler_source)
+        self.assertIn("client.kakera_reaction_snipe_targets and not has_purple_kakera", handler_source)
 
     def test_mudae_button_artwork_is_cached_for_the_preset_editor(self):
         functions = {
@@ -600,6 +617,18 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertLess(free_index, active_roll_index)
         self.assertIn("is_free_claim=True", handler_source[free_index:active_roll_index])
+
+    def test_perk_six_free_claims_can_be_disabled_per_preset(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("client.auto_free_claim_enabled and has_free_claim_button", handler_source)
+        self.assertIn("client.auto_free_claim_enabled = bool(auto_free_claim_preset)", self.source)
+        self.assertIn('preset_data.get("auto_free_claim", True)', self.source)
 
     def test_farm_forcedivorce_sends_confirmation_through_guarded_queue(self):
         functions = {

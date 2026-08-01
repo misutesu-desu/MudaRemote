@@ -1,7 +1,9 @@
 {
-  "version": "4.7.3",
+  "version": "4.7.4",
   "changelog": {
     "Bug Fixes": [
+      "Perk 6 free-claim collection can be disabled separately for each preset.",
+      "Purple Kakera is always collected while Kakera collection is active, regardless of filters, selections, or snipe targets.",
       "Mudae Fandom emoji artwork is displayed correctly in the preset editor.",
       "Removed the invalid spM sphere option and fixed dark disabled emoji inputs.",
       "Starwished characters are detected correctly even if the series name continues onto another line.",
@@ -25,22 +27,22 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "132abc067b100c9568b0915bb60230925e0ff4ef64298898d8fd5600b7242b85",
+  "exe_sha256": "072c973d8e5e8de94611aa7ac2fccad2339f3b9e6bab52dbccb5c8bf90e0cfbb",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "7ea0d6b958576ce4451f008b0a52f40293f50104c1899773f124d62c9a11d749"
+      "sha256": "cab86cc0a7fd1ca99af864d709502982c3dad9eddb5de80692fce19fca1c4369"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "e6e26c28b853036d2f44e4f96cfee14812a63d8edabec4eb24465104547cbddc"
+      "sha256": "ba739c25aa92fdec0028cc1ab48dd5874c041a511a90f5011a2d196e771163d7"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "cc819c7ed5955cdb5057bfd18eed20ec8999de539ee49f28dea93c37d45f334e"
+      "sha256": "bdaa78172190ef0182ba8cdf5106de8b8ab0715272c6dbca8fe128540f112831"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -55,7 +57,7 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "609ba0e170e1b261747c08408ca1f95447ffde7efc6917d55d62e8d5d6058c0b"
+      "sha256": "52b060bf757e86fc8bf63cc8e23b69b46a2f6b3d731ad30e87dd41d0e0433121"
     },
     {
       "path": "mudae_core/coordinator.py",

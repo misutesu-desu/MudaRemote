@@ -581,6 +581,7 @@ DEFAULTS = {
     "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
     "debug_log_categories": ["all"],
     "character_snipe_targets": [],
+    "auto_free_claim": True,
 }
 
 # Boolean settings with their display names and defaults
@@ -594,6 +595,7 @@ BOOL_SETTINGS = [
     ("kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)", False),
     ("kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)", False),
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
+    ("auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
     ("only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)", False),
     ("mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)", False),
@@ -1415,6 +1417,7 @@ class PresetEditor:
 
         self.add_number_field(claim_frame.content, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
         claim_interval_entry = self.add_number_field(claim_frame.content, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
+        self.add_checkbox(claim_frame.content, "auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)")
         self.add_number_field(claim_frame.content, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0,
                               description="Claim/Like rank limits let you claim highly-ranked characters even if they are worth less than your Minimum Kakera value.")
         self.add_number_field(claim_frame.content, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
@@ -1540,7 +1543,7 @@ class PresetEditor:
         )
         ttk.Label(
             kakera_react_frame.content,
-            text="Filter rule: every enabled 'Only' option must match. Chaos Emojis apply only to your own rolls.",
+            text="Filter rule: every enabled 'Only' option must match. Purple Kakera is always collected. Chaos Emojis apply only to your own rolls.",
             foreground="#f9e2af",
             font=("Segoe UI", 9),
         ).pack(anchor=tk.W, padx=20, pady=(2, 6))
@@ -2167,6 +2170,7 @@ class PresetEditor:
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
+                    "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
@@ -2368,6 +2372,7 @@ class PresetEditor:
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
+                    "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
                     "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",

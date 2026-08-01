@@ -8,6 +8,16 @@ def has_op_perk_five_marker(description: object) -> bool:
     return re.search(r"<a?:sp:\d+>", str(description or "")) is not None
 
 
+def has_purple_kakera_button(components: object) -> bool:
+    """Return whether a Mudae message contains a free purple Kakera button."""
+    for component in components or ():
+        for button in getattr(component, "children", ()) or ():
+            name = getattr(getattr(button, "emoji", None), "name", None)
+            if str(name or "").rstrip("2") == "kakeraP":
+                return True
+    return False
+
+
 def has_perk_eight_discount(description: object) -> bool:
     """Detect Perk 8's rendered half-power marker across Unicode variants."""
     normalized = str(description or "").replace("\ufe0f", "").replace("\u20e3", "")
