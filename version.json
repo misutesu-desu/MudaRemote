@@ -1,5 +1,5 @@
 {
-  "version": "4.7.1",
+  "version": "4.7.2",
   "changelog": {
     "Bug Fixes": [
       "Starwished characters are detected correctly even if the series name continues onto another line.",
@@ -21,12 +21,12 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "994fff2297b769837c1b18f54fcb728f85ff28b7981764a604436e970eeecbc2",
+  "exe_sha256": "b011561ebdd11aba3b08870c49c2cb4bc6406248c24dd21e176db5e7e8acd97c",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "a60b9498431e882393df5fd69611e1e0d8b41fb252ec0a3c211f65a74ca45d8b"
+      "sha256": "22ad65c0f39d60b0598ed7430a8223271a374d8608611a4893cdac6b7598ba3a"
     },
     {
       "path": "mudae_preset_editor.py",
