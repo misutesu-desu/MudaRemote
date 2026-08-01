@@ -129,6 +129,20 @@ class ConfigTests(unittest.TestCase):
             for error in validate_preset(invalid_forcedivorce_channel)
         ))
 
+    def test_kakera_settings_reject_self_defeating_combinations(self):
+        base = {
+            "token": "secret", "prefix": "////////", "mudae_prefix": "$",
+            "roll_command": "wa", "channel_id": "123", "claim_interval": 180,
+            "roll_interval": 60, "max_dk_power": 100,
+            "reactive_kakera_delay_range": [0.3, 1.0],
+        }
+
+        empty_chaos = dict(base, only_chaos=True, chaos_emojis=[])
+        self.assertTrue(any("Chaos Emojis" in error for error in validate_preset(empty_chaos)))
+
+        empty_general = dict(base, kakera_reaction_snipe_mode=True, kakera_emojis=[])
+        self.assertTrue(any("Kakera Emojis" in error for error in validate_preset(empty_general)))
+
 
 if __name__ == "__main__":
     unittest.main()

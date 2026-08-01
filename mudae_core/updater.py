@@ -71,7 +71,13 @@ def _verified_download(session, url, expected_hash, timeout=UPDATE_DOWNLOAD_TIME
     content = _download(session, url, timeout)
     actual_hash = sha256_bytes(content)
     if actual_hash.lower() != str(expected_hash).lower():
-        raise UpdateError("SHA-256 verification failed for {}.".format(url))
+        raise UpdateError(
+            "The published download does not match its checksum "
+            "(expected {}..., received {}...). Your current installation was kept unchanged; "
+            "please retry after the release is corrected.".format(
+                str(expected_hash)[:12], actual_hash[:12]
+            )
+        )
     return content
 
 

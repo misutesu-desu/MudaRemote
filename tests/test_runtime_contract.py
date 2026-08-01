@@ -449,6 +449,89 @@ class RuntimeSourceContractTests(unittest.TestCase):
             claim_source,
         )
 
+    def test_kakera_threshold_check_and_click_are_serialized_per_client(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        lock_source = ast.get_source_segment(self.source, functions["get_kakera_action_lock"])
+        self.assertIn("if client._kakera_action_lock is None", lock_source)
+        self.assertIn("client._kakera_action_lock = asyncio.Lock()", lock_source)
+
+        for function_name in ("start_roll_commands", "claim_character"):
+            lock_blocks = []
+            for node in ast.walk(functions[function_name]):
+                if not isinstance(node, ast.AsyncWith):
+                    continue
+                for item in node.items:
+                    context = item.context_expr
+                    if (
+                        isinstance(context, ast.Call)
+                        and isinstance(context.func, ast.Name)
+                        and context.func.id == "get_kakera_action_lock"
+                    ):
+                        lock_blocks.append(node)
+                        break
+
+            self.assertEqual(len(lock_blocks), 1, function_name)
+            block_source = ast.get_source_segment(self.source, lock_blocks[0])
+            ordered_actions = (
+                "current_pow = get_current_dk_power()",
+                "threshold = first_configured",
+                "await guarded_click(btn)",
+                "client.current_dk_power = max(0, get_current_dk_power() - cost)",
+            )
+            positions = [block_source.index(action) for action in ordered_actions]
+            self.assertEqual(positions, sorted(positions), function_name)
+
+    def test_external_kakera_clicks_reconcile_estimated_power(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        reconcile_source = ast.get_source_segment(
+            self.source,
+            functions["schedule_external_kakera_power_reconcile"],
+        )
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+
+        self.assertIn('reason="external-kakera-result-reconcile"', reconcile_source)
+        self.assertIn("client.loop.call_later(5.0, reconcile)", reconcile_source)
+        self.assertIn("if is_snipe:\n                                    schedule_external_kakera_power_reconcile()", claim_source)
+        self.assertIn("Estimated Pw", claim_source)
+
+    def test_kakera_snipe_channels_do_not_require_character_sniping(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn("is_kakera_snipe_channel", handler_source)
+        self.assertIn(
+            "not (is_roll or is_snipe or is_kakera_snipe_channel)",
+            handler_source,
+        )
+
+    def test_op5_filter_requires_the_authoritative_spr_marker(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        op5_start = claim_source.index("if client.op_perk_5_only:")
+        op5_end = claim_source.index("if client.mk_only", op5_start)
+        op5_source = claim_source[op5_start:op5_end]
+
+        self.assertIn("if not has_op5:", op5_source)
+        self.assertNotIn("has_free", op5_source)
+        self.assertNotIn('any(f"sp"', op5_source)
+        self.assertIn("has_op5 = has_op_perk_five_marker(embed.description)", claim_source)
+        self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
+
     def test_kakera_collection_is_not_limited_to_three_buttons(self):
         functions = {
             node.name: node
@@ -456,8 +539,10 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, ast.AsyncFunctionDef)
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
 
         self.assertNotIn("max_clicks = 3", claim_source)
+        self.assertNotIn("clicks_per_message", roll_source)
         self.assertIn("if match_custom or match_pos:", claim_source)
 
     def test_idle_manual_self_rolls_use_reactive_claiming(self):

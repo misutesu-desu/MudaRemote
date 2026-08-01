@@ -96,7 +96,7 @@ class UpdaterTests(unittest.TestCase):
             bot_path = os.path.join(directory, "mudae_bot.py")
             with open(bot_path, "wb") as handle:
                 handle.write(b"VALUE = 'old'\n")
-            with self.assertRaises(UpdateError):
+            with self.assertRaisesRegex(UpdateError, "current installation was kept unchanged"):
                 apply_update(_Session(files), manifest, "4.0.0", directory)
             with open(bot_path, "rb") as handle:
                 self.assertEqual(handle.read(), b"VALUE = 'old'\n")

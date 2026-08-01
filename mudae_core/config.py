@@ -216,6 +216,11 @@ def validate_preset(data, resolved_token=None):
         except (TypeError, ValueError):
             errors.append("{} must be numeric.".format(key))
 
+    if data.get("only_chaos", False) and data.get("chaos_emojis") == []:
+        errors.append("Chaos Kakera Only cannot be used with an explicitly empty Chaos Emojis list.")
+    if data.get("kakera_reaction_snipe_mode", False) and data.get("kakera_emojis") == []:
+        errors.append("Auto-Collect Kakera cannot use an explicitly empty Kakera Emojis list.")
+
     delay_range = data.get("reactive_kakera_delay_range", [0.3, 1.0])
     if not isinstance(delay_range, (list, tuple)) or len(delay_range) != 2:
         errors.append("Reactive Kakera delay must contain minimum and maximum values.")

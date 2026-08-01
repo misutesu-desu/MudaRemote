@@ -16,16 +16,43 @@ _UNICODE_EMOJI_RE = re.compile(
 )
 
 
+_SERIES_METADATA_RE = re.compile(
+    r"^(?:"
+    r"<a?:[^:>]+:\d+>\s*\(\*{0,2}[\d,]+\*{0,2}\)"
+    r"|claims?\s*:|likes?\s*:"
+    r"|[\d,.]+\s+kakera\b"
+    r"|\*{0,2}[\d,.]+\*{0,2}\s*<a?:kakera:"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def character_series_line(description):
-    """Return the first non-empty line, which is Mudae's series line."""
-    for line in str(description or "").splitlines():
-        if line.strip():
-            return line.strip()
-    return ""
+    """Return Mudae's series text, including any visual line wrapping.
+
+    Long series names can be split across multiple description lines. The
+    series block ends when the key/rank/value metadata begins.
+    """
+    series_lines = []
+    for raw_line in str(description or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            if series_lines:
+                break
+            continue
+        if series_lines:
+            if _SERIES_METADATA_RE.search(line):
+                break
+            # Discord/Mudae only splits the logical series marker in the cases
+            # we need to recover here. Do not absorb arbitrary value lines.
+            if not (_CUSTOM_EMOJI_RE.search(line) or _UNICODE_EMOJI_RE.search(line)):
+                break
+        series_lines.append(line)
+    return " ".join(series_lines)
 
 
 def series_line_has_emoji(description):
-    """Treat any custom or Unicode emoji beside the series as a starwish marker."""
+    """Treat an emoji anywhere in the wrapped series block as a starwish marker."""
     line = character_series_line(description)
     return bool(_CUSTOM_EMOJI_RE.search(line) or _UNICODE_EMOJI_RE.search(line))
 

@@ -1,40 +1,42 @@
 {
   "version": "4.7.1",
   "changelog": {
-    "Automation": [
-      "Kakera clicks can be limited to wished/starwished characters, with starwish detected from the series-line emoji.",
-      "$mk can wait for full power, and auto-divorce can protect wished/starwished characters and series.",
-      "Presets now support multiple farm characters, minute-precision inactive windows, and custom $oh/$oc strategies."
-    ],
-    "Multi-Account & Logging": [
-      "One preset can securely run multiple Discord tokens, and settings can be applied across all presets without copying secrets.",
-      "Kakera snipes can send a configurable follow-up chat message.",
-      "Selected log types can be forwarded to a Discord webhook, with category filters for Expert Logs."
-    ],
     "Bug Fixes": [
-      "Perk 5 Kakera rolls now collect every eligible button instead of stopping early.",
-      "Spanish claim cooldown messages can no longer be mistaken for a ready claim, preventing repeated claim attempts."
+      "Starwished characters are detected correctly even if the series name continues onto another line.",
+      "OP5-only collection now uses the correct OP5 indicator without confusing it with other perks.",
+      "Perk 8 power discounts are recognized separately from OP5 filtering.",
+      "Spanish $dk status categories are recognized correctly.",
+      "Kakera power is refreshed after attempts on other users' rolls to reduce incorrect readings.",
+      "Kakera logs distinguish sent reactions from confirmed collections.",
+      "Perk 5 collection can click every eligible kakera button.",
+      "Kakera collection works in configured snipe channels without requiring character snipe mode.",
+      "Failed update verification keeps the current installation safe and reports a clearer error."
+    ],
+    "Improvements": [
+      "Preset filters explain that enabled Only rules must all match.",
+      "Chaos emoji settings clearly state that they apply to the user's own rolls.",
+      "Kakera skip logs provide clearer reasons for easier troubleshooting."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "9b094c0624b85daa6f6563f8ca869a18c5c619921d38c24792665bd39f103ef5",
+  "exe_sha256": "994fff2297b769837c1b18f54fcb728f85ff28b7981764a604436e970eeecbc2",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "8b65534b10e600a67184ccd2312f0626490cae8b00aeab48b9f7945ea2c75074"
+      "sha256": "a60b9498431e882393df5fd69611e1e0d8b41fb252ec0a3c211f65a74ca45d8b"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "a06fae44b1c25251407a7b0a1e32a8a6a6108f00b81c587134348d8214eb742a"
+      "sha256": "5f98e67f9d93ee330bb8e0e24cfac85c13cbc27e0c34ac19d9de7d5e04d38ef3"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "a5279b870a04953ae09166229ec0eea7f724f24271cd54cd8d6bda8e35222052"
+      "sha256": "cc819c7ed5955cdb5057bfd18eed20ec8999de539ee49f28dea93c37d45f334e"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -44,12 +46,12 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/config.py",
-      "sha256": "ebbf667c762fcb73d20ec116eccb84b47815ea62b1f2a4af6ed6c81554b6a1bd"
+      "sha256": "286656f7f879a84537432603ca2694a84d03d31975faf619a4803c1550fc2ac0"
     },
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "bc521c3b61fb54d651c56b74b53fe4b46590a471075be14bd72d6a7a1a3aa7b4"
+      "sha256": "8e97154d20f2de7bf56f9d048d41798314ca983a420c69a93fedde3ce967ce19"
     },
     {
       "path": "mudae_core/coordinator.py",
@@ -79,7 +81,7 @@
     {
       "path": "mudae_core/filters.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/filters.py",
-      "sha256": "cba81ca52ae84aa9be31544f57e8edfe63780822e57cb9b11b682cd1ceabbf7f"
+      "sha256": "ff2f80010e13c459ab39ef5d21cf836ec5d029ce1628b2c0ee0a13d6fc02b10b"
     },
     {
       "path": "mudae_core/webhooks.py",
@@ -89,7 +91,7 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/updater.py",
-      "sha256": "a33344812c1551c067774446221442d78b8478a1434f67116e464cfe10895171"
+      "sha256": "28e8410aeef6e51942f8b823469e1cb63961820b4d8fc042a4ce301575afc861"
     },
     {
       "path": "mudae_core/versioning.py",

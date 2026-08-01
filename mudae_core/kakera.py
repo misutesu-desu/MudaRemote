@@ -3,8 +3,13 @@
 import re
 
 
+def has_op_perk_five_marker(description: object) -> bool:
+    """Detect OP5 from Mudae's dedicated ``spR`` custom emoji."""
+    return re.search(r"<a?:spR:\d+>", str(description or "")) is not None
+
+
 def has_perk_eight_discount(description: object) -> bool:
-    """Detect the Perk 8 half-power marker across common Unicode variants."""
+    """Detect Perk 8's rendered half-power marker across Unicode variants."""
     normalized = str(description or "").replace("\ufe0f", "").replace("\u20e3", "")
     return re.search(r"💎\s*(?:/|÷|➗)\s*2", normalized) is not None
 
@@ -21,7 +26,8 @@ def calculate_kakera_power_cost(
 
     The 10+ key discount is only assumed for the bot's own rolls because external
     rolls do not prove that the reacting account owns the character. The visible
-    Perk 8 marker is authoritative and therefore applies to either roll source.
+    The visible Perk 8 ``💎 / 2`` marker is authoritative and therefore
+    applies to either roll source.
     """
     if is_free:
         return 0

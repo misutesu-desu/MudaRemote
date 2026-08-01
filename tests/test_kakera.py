@@ -1,6 +1,10 @@
 import unittest
 
-from mudae_core.kakera import calculate_kakera_power_cost, has_perk_eight_discount
+from mudae_core.kakera import (
+    calculate_kakera_power_cost,
+    has_op_perk_five_marker,
+    has_perk_eight_discount,
+)
 
 
 class KakeraPowerTests(unittest.TestCase):
@@ -39,9 +43,14 @@ class KakeraPowerTests(unittest.TestCase):
             0,
         )
 
-    def test_perk_eight_marker_accepts_unicode_variants(self):
+    def test_op5_and_perk_eight_use_distinct_markers(self):
+        self.assertTrue(has_op_perk_five_marker("<:spR:1234567890>"))
+        self.assertTrue(has_op_perk_five_marker("<a:spR:1234567890>"))
+        self.assertFalse(has_op_perk_five_marker("💎 / 2"))
+        self.assertFalse(has_op_perk_five_marker("<:spr:1234567890>"))
         for marker in ("💎/2", "💎 / 2", "💎 ÷ 2", "💎 ➗ 2️⃣"):
             self.assertTrue(has_perk_eight_discount("Perk 8: {}".format(marker)), marker)
+        self.assertFalse(has_perk_eight_discount("<:spR:1234567890>"))
         self.assertFalse(has_perk_eight_discount("2x spheres"))
 
 

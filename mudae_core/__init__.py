@@ -11,7 +11,7 @@ from .claiming import (
     is_claim_announcement_for_character,
 )
 from .coordinator import ClaimCoordinator
-from .kakera import calculate_kakera_power_cost, has_perk_eight_discount
+from .kakera import calculate_kakera_power_cost, has_op_perk_five_marker, has_perk_eight_discount
 from .filters import (
     character_series_line,
     name_or_series_is_configured_wish,
@@ -93,6 +93,7 @@ __all__ = [
     "is_claim_announcement_for_character",
     "is_newer_version",
     "has_perk_eight_discount",
+    "has_op_perk_five_marker",
     "load_json",
     "looks_like_tu_status_snapshot",
     "mark_status_dirty",

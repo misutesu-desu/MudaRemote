@@ -443,7 +443,7 @@ BOOL_SETTINGS = [
     ("auto_rt_after_claim", "Auto $rt After Claim (Also controls $rt for Kakera farm claims)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("enable_kakera_snipe_chat_reactions", "Kakera Snipe Chat Message (Send after collecting Kakera from another roll)", False),
-    ("op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters", False),
+    ("op_perk_5_only", "Only Click Kakera on OP5 Characters", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("farm_forcedivorce_before_roll", "Forcedivorce Before Rolling (Solo/Startup Cleanup)", False),
     ("farm_forcedivorce_after_claim", "Forcedivorce After Own Verified Claim", False),
@@ -457,7 +457,7 @@ BOOL_SETTINGS = [
     ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
     ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
     ("oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red", True),
-    ("wish_starwish_kakera_only", "Only Click Kakera on Wish/Starwish Characters", False),
+    ("wish_starwish_kakera_only", "Only Click Kakera on Wish/Starwish Characters (combines with other filters)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -1357,12 +1357,18 @@ class PresetEditor:
 
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
 
-        self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on $op (Perk 5) Characters")
+        self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on OP5 Characters")
         self.add_checkbox(
             kakera_react_frame.content,
             "wish_starwish_kakera_only",
-            "Only Click Kakera on Wish/Starwish Characters (starwish = emoji on series line)",
+            "Only Click Kakera on Wish/Starwish Characters (combines with other filters; starwish = sw emoji in series)",
         )
+        ttk.Label(
+            kakera_react_frame.content,
+            text="Filter rule: every enabled 'Only' option must match. Chaos Emojis apply only to your own rolls.",
+            foreground="#f9e2af",
+            font=("Segoe UI", 9),
+        ).pack(anchor=tk.W, padx=20, pady=(2, 6))
 
         # --- Wishlists & Filters ---
         list_frame = CollapsibleLabelFrame(frame, text="Wishlists & Ignored Characters", start_open=False)
@@ -1414,7 +1420,7 @@ class PresetEditor:
                                      ", ".join(DEFAULT_CLAIM_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "kakera_emojis", "Kakera Emojis",
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
-        self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Chaos Emojis",
+        self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Chaos Emojis (Own Rolls Only)",
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Sphere Perk Emojis",
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))

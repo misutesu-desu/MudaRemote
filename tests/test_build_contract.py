@@ -23,6 +23,12 @@ class BuildContractTests(unittest.TestCase):
         self.assertIn('args = [release_spec, "--noconfirm", "--clean"]', build_script)
         self.assertNotIn('"--collect-all=discord"', build_script)
 
+    def test_release_build_can_update_the_manifest_from_the_exact_artifact(self):
+        build_script = read_project_file("build.py")
+        self.assertIn('manifest["exe_sha256"] = digest', build_script)
+        self.assertIn('entry["sha256"] = hashlib.sha256', build_script)
+        self.assertIn('"--update-manifest"', build_script)
+
     def test_directory_build_explicitly_disables_upx(self):
         build_script = read_project_file("build.py")
         self.assertIn('"--noupx"', build_script)

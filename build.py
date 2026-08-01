@@ -11,11 +11,12 @@ Usage:
 
 import argparse
 import hashlib
+import json
 import os
 import sys
 
 
-def build(onefile=False, console=False):
+def build(onefile=False, console=False, update_manifest=False):
     """Run PyInstaller to compile MudaRemote."""
     try:
         import PyInstaller.__main__
@@ -99,6 +100,22 @@ def build(onefile=False, console=False):
         with open(output_path, "rb") as executable:
             digest = hashlib.sha256(executable.read()).hexdigest()
         print(f"[BUILD] SHA256: {digest}")
+        if update_manifest:
+            if not onefile:
+                print("[BUILD] ERROR: --update-manifest requires --onefile.")
+                sys.exit(1)
+            manifest_path = os.path.join(script_dir, "version.json")
+            with open(manifest_path, "r", encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            manifest["exe_sha256"] = digest
+            for entry in manifest.get("source_files", []):
+                source_path = os.path.join(script_dir, *entry["path"].split("/"))
+                with open(source_path, "rb") as source_file:
+                    entry["sha256"] = hashlib.sha256(source_file.read()).hexdigest()
+            with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(manifest, handle, indent=2, ensure_ascii=False)
+                handle.write("\n")
+            print("[BUILD] Updated version.json checksums for this exact release set.")
     print("[BUILD] Make sure presets.json is in the same directory as the .exe when running.")
 
 
@@ -106,6 +123,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build MudaRemote into a standalone .exe")
     parser.add_argument("--onefile", action="store_true", help="Build as a single .exe file (slower startup)")
     parser.add_argument("--console", action="store_true", help="Show console window (useful for debugging)")
+    parser.add_argument("--update-manifest", action="store_true", help="Write the exact one-file EXE checksum to version.json")
     args = parser.parse_args()
 
-    build(onefile=args.onefile, console=args.console)
+    build(onefile=args.onefile, console=args.console, update_manifest=args.update_manifest)
