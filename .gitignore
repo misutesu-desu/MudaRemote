@@ -23,3 +23,9 @@ update.bat
 venv/
 .idea/
 .vscode/
+.zed/
+.codex/
+
+# Personal project context
+/PROJECT_FULL_CONTEXT.md
+/generate_context.py

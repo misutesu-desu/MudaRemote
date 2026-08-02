@@ -5,6 +5,7 @@ A graphical interface for managing mudae_bot.py presets.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
+import copy
 import json
 import os
 import subprocess
@@ -570,7 +571,7 @@ DEFAULTS = {
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
     "claim_rounds_thresholds": [],
-    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
+    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
     "immediate_kakera_click": True,
     "wish_starwish_kakera_only": False,
     "oh_priority_order": [],
@@ -686,7 +687,7 @@ TEXT_SETTINGS = [
     ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
     ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
     ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
-    ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spU, spG, spY)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"], True),
+    ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spM, spU, spG)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
 ]
 
@@ -704,6 +705,51 @@ DEFAULT_KAKERA_PRIORITY_ORDER = ['kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'ka
 
 # [NEW] Default snipe chat reaction messages
 DEFAULT_SNIPE_CHAT_MESSAGES = ['omg', 'ezz']
+
+
+# Opinionated defaults for the common single-account workflow. These are used
+# for new profiles and the Quick Setup reset action; existing profiles retain
+# their explicit advanced values.
+RECOMMENDED_PRESET_OVERRIDES = {
+    "rolling": True,
+    "reactive_snipe_on_own_rolls": True,
+    "auto_free_claim": True,
+    "use_slash_rolls": True,
+    "snipe_mode": False,
+    "kakera_reaction_snipe_mode": False,
+    "series_snipe_mode": False,
+    "series_snipe_only_self_rolls": True,
+    "kakera_snipe_mode": False,
+    "key_mode": False,
+    "time_rolls_to_claim_reset": False,
+    "auto_mk_enabled": True,
+    "auto_dk_enabled": True,
+    "auto_p_enabled": True,
+    "immediate_kakera_click": True,
+    "min_kakera": 100,
+    "roll_command": "wa",
+}
+
+
+def build_recommended_preset():
+    """Return a complete, independent preset for the mainstream workflow."""
+    data = copy.deepcopy(DEFAULTS)
+    for key, _label, default in BOOL_SETTINGS:
+        data.setdefault(key, copy.deepcopy(default))
+    for key, _label, default, _value_type in NUMERIC_SETTINGS:
+        data.setdefault(key, copy.deepcopy(default))
+    for key, _label, default, _is_list in TEXT_SETTINGS:
+        data.setdefault(key, copy.deepcopy(default))
+    data.update(copy.deepcopy(RECOMMENDED_PRESET_OVERRIDES))
+    data.update({
+        "inactive_hours": [],
+        "kakera_power_thresholds": {},
+        "reactive_kakera_delay_range": [0.3, 1.0],
+        "scheduled_roll_times": [],
+    })
+    data.pop("additional_tokens", None)
+    data["token"] = ""
+    return data
 
 
 class PresetEditor:
@@ -729,6 +775,10 @@ class PresetEditor:
         self.secret_store = SecretStore(get_base_path())
         self.bot_processes = {}
         self._round_count = 0
+        self.editor_mode = "quick"
+        self.quick_widgets = {}
+        self.quick_goal_vars = {}
+        self.quick_summary_var = tk.StringVar(value="Select a profile to begin.")
 
         # Load presets
         self.load_presets()
@@ -769,7 +819,7 @@ class PresetEditor:
             parent=self.root
         )
         if ans is True:  # Yes, save and proceed
-            self.save_current_preset()
+            self.save_active_preset()
             # If save was aborted due to validation error, is_dirty remains True
             return not self.is_dirty
         elif ans is False:  # No, discard changes and proceed
@@ -808,6 +858,28 @@ class PresetEditor:
         style.configure("TButton", background=BG_PANEL, foreground=TEXT_MAIN, font=("Segoe UI", 10, "bold"), borderwidth=1, bordercolor=BORDER_COLOR, padding=8)
         style.map("TButton", background=[("active", BG_INPUT)])
 
+        # Read-only comboboxes otherwise inherit a bright native field on
+        # Windows, which breaks the dark theme in Quick Setup.
+        style.configure(
+            "Quick.TCombobox",
+            fieldbackground=BG_INPUT,
+            background=BG_INPUT,
+            foreground=TEXT_MAIN,
+            arrowcolor=ACCENT,
+            bordercolor=BORDER_COLOR,
+            lightcolor=BORDER_COLOR,
+            darkcolor=BORDER_COLOR,
+            padding=5,
+        )
+        style.map(
+            "Quick.TCombobox",
+            fieldbackground=[("readonly", BG_INPUT), ("focus", BG_INPUT)],
+            foreground=[("readonly", TEXT_MAIN), ("focus", TEXT_MAIN)],
+            background=[("active", BG_INPUT), ("readonly", BG_INPUT)],
+            selectbackground=[("readonly", BG_INPUT)],
+            selectforeground=[("readonly", TEXT_MAIN)],
+        )
+
         self.listbox_config = {
             "bg": BG_PANEL,
             "fg": TEXT_MAIN,
@@ -833,12 +905,24 @@ class PresetEditor:
     def _bind_hover_animation(self, button, normal_bg, hover_bg):
         """Transition background color smoothly on hover."""
         def on_enter(e):
-            button.configure(bg=hover_bg)
+            button.configure(bg=button._flat_hover_bg, fg=button._flat_fg)
         def on_leave(e):
-            button.configure(bg=normal_bg)
+            button.configure(bg=button._flat_normal_bg, fg=button._flat_fg)
 
         button.bind("<Enter>", on_enter)
         button.bind("<Leave>", on_leave)
+
+    def set_flat_button_colors(self, button, bg_color, fg_color, hover_bg):
+        """Update every visual state of a custom flat button together."""
+        button._flat_normal_bg = bg_color
+        button._flat_hover_bg = hover_bg
+        button._flat_fg = fg_color
+        button.configure(
+            bg=bg_color,
+            fg=fg_color,
+            activebackground=hover_bg,
+            activeforeground=fg_color,
+        )
 
     def create_flat_button(self, parent, text, command, bg_color, fg_color, hover_bg, font=("Segoe UI", 10, "bold"), **kwargs):
         """Create a premium borderless flat button with hover animations."""
@@ -857,6 +941,9 @@ class PresetEditor:
             pady=8,
             cursor="hand2"
         )
+        btn._flat_normal_bg = bg_color
+        btn._flat_hover_bg = hover_bg
+        btn._flat_fg = fg_color
         self._bind_hover_animation(btn, bg_color, hover_bg)
         return btn
 
@@ -1164,15 +1251,48 @@ class PresetEditor:
         self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
         self.settings_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # First-run users start in the guided flow. The existing form remains
+        # available as an explicit advanced mode for power users.
+        self.mode_bar = tk.Frame(self.settings_container, bg=BG_DARK)
+        self.mode_bar.pack(fill=tk.X, pady=(0, 10))
+        mode_title = tk.Label(
+            self.mode_bar,
+            text="Configuration",
+            bg=BG_DARK,
+            fg=TEXT_MAIN,
+            font=("Segoe UI", 13, "bold"),
+        )
+        mode_title.pack(side=tk.LEFT)
+        self.advanced_mode_btn = self.create_flat_button(
+            self.mode_bar,
+            "Advanced Settings",
+            lambda: self.show_editor_mode("advanced"),
+            bg_color=BG_PANEL,
+            fg_color=TEXT_MAIN,
+            hover_bg=BG_INPUT,
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.advanced_mode_btn.pack(side=tk.RIGHT)
+        self.quick_mode_btn = self.create_flat_button(
+            self.mode_bar,
+            "Quick Setup",
+            lambda: self.show_editor_mode("quick"),
+            bg_color=ACCENT,
+            fg_color=BG_DARK,
+            hover_bg=ACCENT_ALT,
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.quick_mode_btn.pack(side=tk.RIGHT, padx=(0, 6))
+
         # Settings Search Frame at the top of settings
-        search_frame = tk.Frame(self.settings_container, bg=BG_DARK, bd=0)
-        search_frame.pack(fill=tk.X, pady=(0, 10))
+        self.advanced_search_frame = tk.Frame(self.settings_container, bg=BG_DARK, bd=0)
+        self.advanced_search_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.settings_search_var = tk.StringVar()
         self.settings_search_var.trace_add("write", self.filter_settings)
 
         self.settings_search_entry = tk.Entry(
-            search_frame,
+            self.advanced_search_frame,
             textvariable=self.settings_search_var,
             bg=BG_INPUT,
             fg=TEXT_MAIN,
@@ -1204,10 +1324,10 @@ class PresetEditor:
         self._bind_focus_highlight(self.settings_search_entry)
 
         # Scrollable settings area; action buttons live in a fixed footer below it.
-        scroll_area = tk.Frame(self.settings_container, bg=BG_DARK)
-        scroll_area.pack(fill=tk.BOTH, expand=True)
-        self.canvas = tk.Canvas(scroll_area, bg=BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(scroll_area, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.advanced_scroll_area = tk.Frame(self.settings_container, bg=BG_DARK)
+        self.advanced_scroll_area.pack(fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(self.advanced_scroll_area, bg=BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.advanced_scroll_area, orient=tk.VERTICAL, command=self.canvas.yview)
         self.scrollable_frame = tk.Frame(self.canvas, bg=BG_DARK)
 
         self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
@@ -1229,6 +1349,391 @@ class PresetEditor:
 
         # Build settings form
         self.build_settings_form()
+        self.build_quick_setup()
+        self.show_editor_mode("quick")
+
+    def _quick_label(self, parent, text, muted=False):
+        label = tk.Label(
+            parent,
+            text=text,
+            bg=parent.cget("bg"),
+            fg=TEXT_MUTED if muted else TEXT_MAIN,
+            font=("Segoe UI", 9 if muted else 10),
+            justify=tk.LEFT,
+            anchor="w",
+            wraplength=620,
+        )
+        label.pack(anchor=tk.W, fill=tk.X)
+        return label
+
+    def _quick_entry(self, parent, key, label, placeholder="", show=None):
+        container = tk.Frame(parent, bg=parent.cget("bg"))
+        container.pack(fill=tk.X, pady=(6, 0))
+        self._quick_label(container, label)
+        entry = tk.Entry(
+            container,
+            show=show,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat",
+        )
+        entry.pack(fill=tk.X, ipady=5, pady=(3, 0))
+        if placeholder:
+            entry.insert(0, placeholder)
+            entry.configure(fg=TEXT_MUTED)
+
+            def focus_in(_event):
+                if entry.get() == placeholder:
+                    entry.delete(0, tk.END)
+                    entry.configure(fg=TEXT_MAIN)
+
+            def focus_out(_event):
+                if not entry.get().strip():
+                    entry.insert(0, placeholder)
+                    entry.configure(fg=TEXT_MUTED)
+
+            entry.bind("<FocusIn>", focus_in)
+            entry.bind("<FocusOut>", focus_out)
+        entry.bind("<Key>", lambda _event: self.mark_dirty())
+        self._bind_focus_highlight(entry)
+        self.quick_widgets[key] = entry
+        return entry
+
+    def _quick_combo(self, parent, key, label, values, description=None):
+        container = tk.Frame(parent, bg=parent.cget("bg"))
+        container.pack(fill=tk.X, pady=(6, 0))
+        self._quick_label(container, label)
+        if description:
+            self._quick_label(container, description, muted=True)
+        combo = ttk.Combobox(
+            container,
+            values=values,
+            state="readonly",
+            style="Quick.TCombobox",
+            font=("Segoe UI", 10),
+        )
+        combo.pack(anchor=tk.W, fill=tk.X, ipady=3, pady=(3, 0))
+        combo.bind("<<ComboboxSelected>>", lambda _event: (self.mark_dirty(), self.update_quick_summary()))
+        self.quick_widgets[key] = combo
+        return combo
+
+    def _quick_list(self, parent, key, label, description):
+        container = tk.Frame(parent, bg=parent.cget("bg"))
+        container.pack(fill=tk.X, pady=(6, 0))
+        self._quick_label(container, label)
+        self._quick_label(container, description, muted=True)
+        def on_list_change():
+            self.mark_dirty()
+            self.update_quick_summary()
+
+        widget = ChipListWidget(
+            container,
+            bg_input=BG_INPUT,
+            text_main=TEXT_MAIN,
+            border_color=BORDER_COLOR,
+            accent=ACCENT,
+            bg_panel=BG_PANEL,
+            text_muted=TEXT_MUTED,
+            state_callback=on_list_change,
+        )
+        widget.pack(fill=tk.X, pady=(3, 0))
+        self.quick_widgets[key] = widget
+        return widget
+
+    def _quick_check(self, parent, key, text, description):
+        container = tk.Frame(parent, bg=parent.cget("bg"))
+        container.pack(fill=tk.X, pady=(5, 0))
+        var = tk.BooleanVar(value=False)
+        check = ttk.Checkbutton(container, text=text, variable=var)
+        check.pack(anchor=tk.W)
+        self._quick_label(container, description, muted=True)
+        var.trace_add("write", lambda *_args: self.mark_dirty())
+        self.quick_widgets[key] = var
+        return var
+
+    def build_quick_setup(self):
+        """Build a task-oriented first-run flow over the existing preset model."""
+        self.quick_view = tk.Frame(self.settings_container, bg=BG_DARK)
+        self.quick_canvas = tk.Canvas(self.quick_view, bg=BG_DARK, highlightthickness=0)
+        quick_scrollbar = ttk.Scrollbar(self.quick_view, orient=tk.VERTICAL, command=self.quick_canvas.yview)
+        self.quick_content = tk.Frame(self.quick_canvas, bg=BG_DARK)
+        self.quick_content.bind(
+            "<Configure>",
+            lambda _event: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox("all")),
+        )
+        self.quick_canvas_window = self.quick_canvas.create_window(
+            (0, 0), window=self.quick_content, anchor=tk.NW
+        )
+        self.quick_canvas.bind(
+            "<Configure>",
+            lambda event: self.quick_canvas.itemconfigure(self.quick_canvas_window, width=event.width),
+        )
+        self.quick_canvas.configure(yscrollcommand=quick_scrollbar.set)
+        self.quick_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        quick_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        content = self.quick_content
+        header = tk.Frame(content, bg=BG_DARK)
+        header.pack(fill=tk.X, pady=(0, 14))
+        tk.Label(
+            header,
+            text="Quick Setup",
+            bg=BG_DARK,
+            fg=TEXT_MAIN,
+            font=("Segoe UI", 18, "bold"),
+        ).pack(anchor=tk.W)
+        self._quick_label(
+            header,
+            "The recommended profile covers the common single-account workflow. Advanced settings stay preserved and can be edited any time.",
+            muted=True,
+        )
+
+        connection = tk.Frame(content, bg=BG_PANEL, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        connection.pack(fill=tk.X, pady=(0, 10), padx=1)
+        inner = tk.Frame(connection, bg=BG_PANEL)
+        inner.pack(fill=tk.X, padx=14, pady=12)
+        self._quick_label(inner, "1. Connect your account")
+        self._quick_label(inner, "Only the account and channel are required for a first run.", muted=True)
+        self._quick_entry(inner, "token", "Discord account token", "Paste your token here", show="*")
+        self._quick_entry(inner, "channel_id", "Roll channel ID", "Paste the Discord channel ID")
+
+        behavior = tk.Frame(content, bg=BG_PANEL, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        behavior.pack(fill=tk.X, pady=(0, 10), padx=1)
+        inner = tk.Frame(behavior, bg=BG_PANEL)
+        inner.pack(fill=tk.X, padx=14, pady=12)
+        self._quick_label(inner, "2. Choose what the bot should do")
+        self._quick_label(inner, "Recommended options are enabled for new profiles. External-player actions stay opt-in.", muted=True)
+        self._quick_combo(
+            inner,
+            "roll_command",
+            "Roll pool",
+            ("wa", "ha", "ma", "wg", "hg", "mg"),
+            "wa is the recommended default. Choose the pool you normally use in Mudae.",
+        )
+        self.quick_goal_vars["roll"] = self._quick_check(
+            inner, "rolling", "Roll automatically", "Send the configured Mudae roll command on schedule.")
+        self.quick_goal_vars["claim"] = self._quick_check(
+            inner, "reactive_snipe_on_own_rolls", "Claim matching characters", "Claim wishlist and value-based matches from your own rolls, including free green claim buttons.")
+        self.quick_goal_vars["slash"] = self._quick_check(
+            inner, "use_slash_rolls", "Use slash roll commands (+10% Kakera)", "Recommended. Text commands are used automatically if slash commands are unavailable.")
+        self._quick_label(inner, "Kakera on your own automated rolls is collected automatically.", muted=True)
+        self.quick_goal_vars["kakera"] = self._quick_check(
+            inner, "kakera_reaction_snipe_mode", "Collect Kakera from other players", "Optional. Click Kakera on other players' rolls in monitored channels.")
+        self.quick_goal_vars["snipe"] = self._quick_check(
+            inner, "snipe_mode", "Claim wishlist matches from other players", "Optional. Watch other players' rolls for your wishlist and series targets.")
+        self.create_flat_button(
+            inner,
+            "Restore Recommended Behavior",
+            self.apply_recommended_quick_defaults,
+            bg_color=BG_INPUT,
+            fg_color=TEXT_MAIN,
+            hover_bg=BORDER_COLOR,
+            font=("Segoe UI", 9, "bold"),
+        ).pack(anchor=tk.W, pady=(10, 0))
+
+        targets = tk.Frame(content, bg=BG_PANEL, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        targets.pack(fill=tk.X, pady=(0, 10), padx=1)
+        inner = tk.Frame(targets, bg=BG_PANEL)
+        inner.pack(fill=tk.X, padx=14, pady=12)
+        self._quick_label(inner, "3. Define your targets")
+        self._quick_label(inner, "These are optional. Mudae's own wish indicator is also recognized automatically.", muted=True)
+        self._quick_list(inner, "wishlist", "Additional character targets", "Characters to prioritize in addition to your Mudae wishlist.")
+        self._quick_list(inner, "series_wishlist", "Series targets", "Series to prioritize; external rolls are included only when the external-claim option is enabled.")
+        self._quick_list(inner, "avoid_list", "Never claim", "Characters to exclude from automated claiming.")
+        self._quick_entry(inner, "min_kakera", "Minimum Kakera value (recommended: 100)", "100")
+
+        review = tk.Frame(content, bg=BG_INPUT, highlightbackground=ACCENT, highlightthickness=1)
+        review.pack(fill=tk.X, pady=(0, 12), padx=1)
+        review_inner = tk.Frame(review, bg=BG_INPUT)
+        review_inner.pack(fill=tk.X, padx=14, pady=12)
+        self._quick_label(review_inner, "4. Review and start")
+        self._quick_label(review_inner, "Check the summary below, save the profile, then start the bot.", muted=True)
+        summary = tk.Label(
+            review_inner,
+            textvariable=self.quick_summary_var,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            font=("Segoe UI", 10),
+            justify=tk.LEFT,
+            anchor="w",
+            wraplength=620,
+        )
+        summary.pack(fill=tk.X, pady=(8, 0))
+
+        for widget in self.quick_widgets.values():
+            if isinstance(widget, tk.Variable):
+                widget.trace_add("write", lambda *_args: self.update_quick_summary())
+            else:
+                widget.bind("<KeyRelease>", lambda _event: self.update_quick_summary(), add="+")
+
+    def apply_recommended_quick_defaults(self):
+        """Restore mainstream behavior without touching identity or target lists."""
+        recommended_quick_values = {
+            "rolling": True,
+            "reactive_snipe_on_own_rolls": True,
+            "use_slash_rolls": True,
+            "kakera_reaction_snipe_mode": False,
+            "snipe_mode": False,
+        }
+        for key, value in recommended_quick_values.items():
+            widget = self.quick_widgets.get(key)
+            if isinstance(widget, tk.BooleanVar):
+                widget.set(value)
+        roll_combo = self.quick_widgets.get("roll_command")
+        if roll_combo:
+            roll_combo.set(RECOMMENDED_PRESET_OVERRIDES["roll_command"])
+        threshold = self.quick_widgets.get("min_kakera")
+        if threshold:
+            threshold.delete(0, tk.END)
+            threshold.insert(0, str(RECOMMENDED_PRESET_OVERRIDES["min_kakera"]))
+            threshold.configure(fg=TEXT_MAIN)
+        self.mark_dirty()
+        self.update_quick_summary()
+
+    def show_editor_mode(self, mode):
+        """Switch between the guided setup and the complete expert editor."""
+        mode = "advanced" if mode == "advanced" else "quick"
+        self.editor_mode = mode
+        if mode == "quick":
+            self.advanced_search_frame.pack_forget()
+            self.advanced_scroll_area.pack_forget()
+            self.quick_view.pack(fill=tk.BOTH, expand=True, before=self.footer_frame)
+            self.set_flat_button_colors(self.quick_mode_btn, ACCENT, BG_DARK, ACCENT_ALT)
+            self.set_flat_button_colors(self.advanced_mode_btn, BG_PANEL, TEXT_MAIN, BG_INPUT)
+            self.update_quick_summary()
+        else:
+            self.quick_view.pack_forget()
+            self.advanced_search_frame.pack(fill=tk.X, pady=(0, 10), before=self.footer_frame)
+            self.advanced_scroll_area.pack(fill=tk.BOTH, expand=True, before=self.footer_frame)
+            self.set_flat_button_colors(self.quick_mode_btn, BG_PANEL, TEXT_MAIN, BG_INPUT)
+            self.set_flat_button_colors(self.advanced_mode_btn, ACCENT, BG_DARK, ACCENT_ALT)
+
+    def _quick_value(self, key, default=""):
+        widget = self.quick_widgets.get(key)
+        if widget is None:
+            return default
+        if isinstance(widget, tk.Variable):
+            return widget.get()
+        value = widget.get().strip()
+        placeholder = {
+            "token": "Paste your token here",
+            "additional_tokens": "Leave empty for a single account",
+            "channel_id": "Paste the Discord channel ID",
+        }.get(key)
+        return "" if placeholder and value == placeholder else value
+
+    def update_quick_summary(self, *_args):
+        if not self.current_preset or not self.quick_widgets:
+            self.quick_summary_var.set("Select a profile to begin.")
+            return
+        channel = self._quick_value("channel_id") or "not set"
+        roll_command = self._quick_value("roll_command") or RECOMMENDED_PRESET_OVERRIDES["roll_command"]
+        min_kakera = self._quick_value("min_kakera") or str(RECOMMENDED_PRESET_OVERRIDES["min_kakera"])
+        core_actions = []
+        if self._quick_value("rolling"):
+            command_prefix = "/" if self._quick_value("use_slash_rolls") else "$"
+            core_actions.append(f"roll automatically with {command_prefix}{roll_command}")
+            core_actions.append("collect Kakera from your own rolls")
+        if self._quick_value("reactive_snipe_on_own_rolls"):
+            core_actions.append(f"claim own-roll matches worth {min_kakera}+ Kakera")
+        external_actions = []
+        if self._quick_value("kakera_reaction_snipe_mode"):
+            external_actions.append("collect Kakera")
+        if self._quick_value("snipe_mode"):
+            external_actions.append("claim wishlist/series matches")
+        has_automation = bool(core_actions or external_actions)
+        if not core_actions and not external_actions:
+            core_actions.append("wait for manual actions")
+        wishlist = self._quick_value("wishlist")
+        series = self._quick_value("series_wishlist")
+        target_count = len([item for item in wishlist.split(",") if item.strip()])
+        series_count = len([item for item in series.split(",") if item.strip()])
+        token_ready = bool(self._quick_token_values())
+        channel_ready = channel.isdigit() and int(channel) > 0
+        try:
+            threshold_ready = float(min_kakera) >= 0
+        except (TypeError, ValueError):
+            threshold_ready = False
+        missing = []
+        if not token_ready:
+            missing.append("account token")
+        if not channel_ready:
+            missing.append("valid channel ID")
+        if not threshold_ready:
+            missing.append("valid minimum Kakera value")
+        if not has_automation:
+            missing.append("at least one automation option")
+        status = "Ready to start" if not missing else "Needs: " + ", ".join(missing)
+        external_text = ", ".join(external_actions) if external_actions else "off (recommended)"
+        self.quick_summary_var.set(
+            f"{status}\n"
+            f"Profile: {self.current_preset} · Channel: {channel}\n"
+            f"Core automation: {', '.join(core_actions)}.\n"
+            f"External-player actions: {external_text}.\n"
+            f"Extra targets: {target_count} characters, {series_count} series."
+        )
+
+    def _quick_token_values(self):
+        primary = self._quick_value("token")
+        additional_widget = self.quick_widgets.get("additional_tokens")
+        if additional_widget is None and self.current_preset:
+            stored = self.secret_store.get_tokens(
+                self.current_preset,
+                self.presets.get(self.current_preset, {}).get("token", ""),
+            )
+            additional_candidates = stored[1:]
+        else:
+            additional = self._quick_value("additional_tokens")
+            additional_candidates = re.split(r"[\s,]+", additional)
+        values = []
+        seen = set()
+        for candidate in [primary] + list(additional_candidates):
+            candidate = str(candidate or "").strip()
+            if candidate and candidate not in seen:
+                values.append(candidate)
+                seen.add(candidate)
+        return values
+
+    def save_active_preset(self, show_success=True):
+        return self.save_quick_setup(show_success=show_success) if self.editor_mode == "quick" else self.save_current_preset(show_success=show_success)
+
+    def save_quick_setup(self, show_success=True):
+        """Persist only the guided fields while retaining every advanced option."""
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No profile selected.")
+            return False
+        import copy
+        data = copy.deepcopy(self.presets.get(self.current_preset, {}))
+        for key, value in DEFAULTS.items():
+            data.setdefault(key, copy.deepcopy(value))
+        channel = self._quick_value("channel_id")
+        min_kakera = self._quick_value("min_kakera") or "100"
+        try:
+            data["min_kakera"] = int(float(min_kakera))
+        except ValueError:
+            messagebox.showerror("Validation Error", "Minimum Kakera value must be a number.", parent=self.root)
+            return False
+        data["channel_id"] = channel
+        data["roll_command"] = self._quick_value("roll_command") or RECOMMENDED_PRESET_OVERRIDES["roll_command"]
+        data["rolling"] = bool(self._quick_value("rolling"))
+        data["reactive_snipe_on_own_rolls"] = bool(self._quick_value("reactive_snipe_on_own_rolls"))
+        data["auto_free_claim"] = data["reactive_snipe_on_own_rolls"]
+        data["use_slash_rolls"] = bool(self._quick_value("use_slash_rolls"))
+        data["kakera_reaction_snipe_mode"] = bool(self._quick_value("kakera_reaction_snipe_mode"))
+        data["snipe_mode"] = bool(self._quick_value("snipe_mode"))
+        data["wishlist"] = [item.strip() for item in self._quick_value("wishlist").split(",") if item.strip()]
+        data["series_wishlist"] = [item.strip() for item in self._quick_value("series_wishlist").split(",") if item.strip()]
+        data["avoid_list"] = [item.strip() for item in self._quick_value("avoid_list").split(",") if item.strip()]
+        data["series_snipe_mode"] = bool(data["series_wishlist"])
+        data["series_snipe_only_self_rolls"] = not data["snipe_mode"]
+        data["token"] = ""
+        return self._persist_preset_data(data, self._quick_token_values(), show_success=show_success)
 
     def _on_mousewheel(self, event):
         if getattr(event, "num", None) == 4:
@@ -1239,7 +1744,8 @@ class PresetEditor:
             raw_delta = getattr(event, "delta", 0)
             delta = -1 if raw_delta > 0 else 1 if raw_delta < 0 else 0
         if delta:
-            self.canvas.yview_scroll(delta, "units")
+            scroll_target = self.quick_canvas if self.editor_mode == "quick" else self.canvas
+            scroll_target.yview_scroll(delta, "units")
 
     def rebuild_rounds_frame(self, claim_interval_mins, preserve=True):
         """Dynamically generate round row inputs based on claim interval."""
@@ -1600,7 +2106,7 @@ class PresetEditor:
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Chaos Emojis (Own Rolls Only)",
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
-        self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Sphere Perk Emojis",
+        self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Ouroperk 8 Discounted Kakera Emojis",
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
 
         # [NEW] Task 5: Randomized claim reaction emojis
@@ -1752,12 +2258,12 @@ class PresetEditor:
         self.btn_frame.pack(fill=tk.X, padx=10)
 
         self.create_flat_button(
-            self.btn_frame, "💾 Save Changes", self.save_current_preset,
+            self.btn_frame, "💾 Save Changes", self.save_active_preset,
             bg_color=COLOR_SUCCESS, fg_color=BG_DARK, hover_bg="#b5e8b0"
         ).pack(side=tk.LEFT, padx=(0, 10))
 
         self.create_flat_button(
-            self.btn_frame, "▶ Launch Bot", self.run_bot,
+            self.btn_frame, "▶ Save & Start Bot", self.run_bot,
             bg_color=ACCENT, fg_color=BG_DARK, hover_bg=ACCENT_ALT
         ).pack(side=tk.LEFT, padx=(0, 10))
 
@@ -1783,7 +2289,7 @@ class PresetEditor:
         if not self.current_preset:
             messagebox.showwarning("Warning", "No preset selected.")
             return
-        if not self.save_current_preset(show_success=False):
+        if not self.save_active_preset(show_success=False):
             return
         preserve_identity = messagebox.askyesnocancel(
             "Apply to All Presets",
@@ -2038,7 +2544,7 @@ class PresetEditor:
 
         option_sets = {
             "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
-            "sphere_click_targets": ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
+            "sphere_click_targets": ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
         }
         if key in option_sets:
             picker = EmojiOptionPicker(container, entry, option_sets[key], reorderable=(key == "kakera_priority_order"))
@@ -2099,6 +2605,49 @@ class PresetEditor:
 
         self._register_settings_widget(parent, container, label, key)
         self._bind_focus_highlight(entry)
+
+    def _populate_quick_setup(self, data, stored_tokens=None):
+        """Mirror the selected preset into the small guided form."""
+        stored_tokens = stored_tokens if stored_tokens is not None else []
+
+        def set_entry(key, value, placeholder=None):
+            widget = self.quick_widgets.get(key)
+            if not widget:
+                return
+            widget.delete(0, tk.END)
+            value = "" if value is None else str(value)
+            if not value and placeholder:
+                widget.insert(0, placeholder)
+                widget.configure(fg=TEXT_MUTED)
+            else:
+                widget.insert(0, value)
+                widget.configure(fg=TEXT_MAIN)
+
+        set_entry("token", stored_tokens[0] if stored_tokens else "", "Paste your token here")
+        set_entry("additional_tokens", ", ".join(stored_tokens[1:]), "Leave empty for a single account")
+        set_entry("channel_id", data.get("channel_id", ""), "Paste the Discord channel ID")
+        set_entry("min_kakera", data.get("min_kakera", DEFAULTS["min_kakera"]), "100")
+        roll_combo = self.quick_widgets.get("roll_command")
+        if roll_combo:
+            roll_combo.set(data.get("roll_command", RECOMMENDED_PRESET_OVERRIDES["roll_command"]))
+
+        for key in ("wishlist", "series_wishlist", "avoid_list"):
+            widget = self.quick_widgets.get(key)
+            if widget:
+                widget.delete(0, tk.END)
+                value = data.get(key, [])
+                if isinstance(value, list):
+                    widget.insert(0, ", ".join(str(item) for item in value))
+
+        for key in ("rolling", "reactive_snipe_on_own_rolls", "use_slash_rolls", "kakera_reaction_snipe_mode", "snipe_mode"):
+            var = self.quick_widgets.get(key)
+            if isinstance(var, tk.BooleanVar):
+                default = RECOMMENDED_PRESET_OVERRIDES.get(
+                    key,
+                    next((item[2] for item in BOOL_SETTINGS if item[0] == key), False),
+                )
+                var.set(bool(data.get(key, default)))
+        self.update_quick_summary()
 
     def on_preset_select(self, event):
         """Handle preset selection from listbox."""
@@ -2286,12 +2835,51 @@ class PresetEditor:
                     if widget and suffix in rt:
                         widget.insert(0, str(rt[suffix]))
 
+        self._populate_quick_setup(data, stored_tokens=stored_tokens)
+
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
             if self.preset_listbox.get(i) == preset_name:
                 self.preset_listbox.selection_clear(0, tk.END)
                 self.preset_listbox.selection_set(i)
                 break
+
+    def _persist_preset_data(self, data, resolved_tokens, show_success=True):
+        """Validate and persist a complete preset from either editor mode."""
+        validation_errors = validate_preset(data, resolved_token=resolved_tokens)
+        if validation_errors:
+            messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
+            return False
+
+        try:
+            self.secret_store.set_tokens(self.current_preset, resolved_tokens)
+        except SecretStoreError as exc:
+            messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
+            return False
+
+        data["token"] = ""
+        previous_data = self.presets.get(self.current_preset)
+        self.presets[self.current_preset] = data
+        if not self.save_presets():
+            self.presets[self.current_preset] = previous_data
+            return False
+
+        if show_success:
+            messagebox.showinfo("Success", f"Settings for '{self.current_preset}' are now saved!")
+        self.is_dirty = False
+        self.title_label.config(text=f"Editing: {self.current_preset}")
+        self._manage_autostart(self.current_preset, data.get("autostart", False))
+        was_loading = self.loading_preset
+        self.loading_preset = True
+        try:
+            self._populate_quick_setup(
+                data,
+                stored_tokens=self.secret_store.get_tokens(self.current_preset, ""),
+            )
+        finally:
+            self.loading_preset = was_loading
+        self.is_dirty = False
+        return True
 
     def save_current_preset(self, show_success=True):
         """Save the current form data to the preset."""
@@ -2528,30 +3116,7 @@ class PresetEditor:
 
         data["claim_rounds_thresholds"] = claim_rounds_thresholds
 
-        validation_errors = validate_preset(data, resolved_token=resolved_tokens)
-        if validation_errors:
-            messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
-            return False
-
-        try:
-            self.secret_store.set_tokens(self.current_preset, resolved_tokens)
-        except SecretStoreError as exc:
-            messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
-            return False
-
-        data["token"] = ""
-        previous_data = self.presets.get(self.current_preset)
-        self.presets[self.current_preset] = data
-        if not self.save_presets():
-            self.presets[self.current_preset] = previous_data
-            return False
-
-        if show_success:
-            messagebox.showinfo("Success", f"Settings for '{self.current_preset}' are now saved!")
-        self.is_dirty = False
-        self.title_label.config(text=f"Editing: {self.current_preset}")
-        self._manage_autostart(self.current_preset, data.get("autostart", False))
-        return True
+        return self._persist_preset_data(data, resolved_tokens, show_success=show_success)
 
     def _manage_autostart(self, preset_name, enable):
         """Refresh Windows Startup scripts using only enabled presets for stagger order."""
@@ -2612,46 +3177,7 @@ class PresetEditor:
                 messagebox.showwarning("Name Taken", f"You already have a config named '{name}'. Please choose a different name.")
                 return
 
-            # Create with minimal defaults
-            self.presets[name] = {
-                "token": "",
-                "prefix": "/////////////",
-                "mudae_prefix": "$",
-                "channel_id": "",
-                "roll_command": "wa",
-                "min_kakera": 100,
-                "delay_seconds": 0,
-                "start_delay": 0,
-                "rolling": True,
-                "wishlist": [],
-                "series_wishlist": [],
-                "series_snipe_only_self_rolls": False,
-                "auto_us_enabled": False,
-                "auto_us_limit": 0,
-                "auto_us_stop_on_claim": True,
-                "bulk_us_enabled": False,
-                "auto_rolls_enabled": False,
-                "auto_rolls_limit": 0,
-                "auto_rolls_in_key_mode": False,
-                "auto_rolls_only_claim_hour": False,
-                "auto_mk_enabled": True,
-                "mk_bypass_power_check": False,
-                "auto_rt_after_claim": False,
-                "mk_only": False,
-                "auto_dk_enabled": True,
-                "auto_p_enabled": True,
-                "auto_oh_enabled": False,
-                "auto_oc_enabled": False,
-                "enable_snipe_chat_reactions": False,
-                "snipe_chat_messages": ["omg", "ezz"],
-                "farm_forcedivorce_before_roll": False,
-                "farm_forcedivorce_after_claim": False,
-                "farm_forcedivorce_after_other_claim": False,
-                "forcedivorce_channel_id": "",
-                "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spU"],
-                "immediate_kakera_click": True,
-                "character_snipe_targets": [],
-            }
+            self.presets[name] = build_recommended_preset()
             if not self.save_presets():
                 del self.presets[name]
                 return
@@ -2706,7 +3232,7 @@ class PresetEditor:
         if not self.current_preset:
             messagebox.showwarning("Warning", "No preset selected.")
             return
-        if self.is_dirty and not self.save_current_preset(show_success=False):
+        if self.is_dirty and not self.save_active_preset(show_success=False):
             return
 
         preset_data = self.presets.get(self.current_preset)
@@ -2764,7 +3290,7 @@ class PresetEditor:
             messagebox.showwarning("Warning", "No preset selected.")
             return
 
-        if not self.save_current_preset(show_success=False):
+        if not self.save_active_preset(show_success=False):
             return
 
         existing = self.bot_processes.get(self.current_preset)

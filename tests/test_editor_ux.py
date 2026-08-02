@@ -1,0 +1,113 @@
+import os
+import re
+from types import SimpleNamespace
+import unittest
+
+from mudae_preset_editor import PresetEditor, build_recommended_preset
+from mudae_core.config import validate_preset
+
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class EditorUxContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(PROJECT_ROOT, "mudae_preset_editor.py"), "r", encoding="utf-8") as handle:
+            cls.editor = handle.read()
+        with open(os.path.join(PROJECT_ROOT, "README.md"), "r", encoding="utf-8") as handle:
+            cls.readme = handle.read()
+
+    def test_guided_setup_is_the_default_and_expert_mode_remains_available(self):
+        self.assertIn('self.editor_mode = "quick"', self.editor)
+        self.assertIn('self.show_editor_mode("quick")', self.editor)
+        self.assertIn('"Quick Setup"', self.editor)
+        self.assertIn('"Advanced Settings"', self.editor)
+
+    def test_guided_setup_uses_user_facing_goals_not_free_claim_internal_setting(self):
+        self.assertIn('"Claim matching characters"', self.editor)
+        self.assertIn('"reactive_snipe_on_own_rolls"', self.editor)
+        quick_block = self.editor[self.editor.index("def build_quick_setup"):self.editor.index("def show_editor_mode")]
+        self.assertNotIn('"auto_free_claim", "Claim matching characters"', quick_block)
+
+    def test_recommended_profile_covers_the_mainstream_flow(self):
+        preset = build_recommended_preset()
+        self.assertEqual(preset["roll_command"], "wa")
+        self.assertEqual(preset["min_kakera"], 100)
+        for key in (
+            "rolling",
+            "reactive_snipe_on_own_rolls",
+            "use_slash_rolls",
+            "auto_free_claim",
+            "auto_mk_enabled",
+            "auto_dk_enabled",
+            "auto_p_enabled",
+            "immediate_kakera_click",
+        ):
+            self.assertTrue(preset[key], key)
+        self.assertFalse(preset["snipe_mode"])
+        self.assertFalse(preset["kakera_reaction_snipe_mode"])
+        self.assertTrue(preset["series_snipe_only_self_rolls"])
+        preset["channel_id"] = 123456789
+        self.assertEqual(validate_preset(preset, resolved_token=["token"]), [])
+
+    def test_recommended_profiles_do_not_share_mutable_values(self):
+        first = build_recommended_preset()
+        second = build_recommended_preset()
+        first["wishlist"].append("Example")
+        self.assertEqual(second["wishlist"], [])
+
+    def test_quick_setup_separates_own_rolls_from_external_actions(self):
+        self.assertIn("Kakera on your own automated rolls is collected automatically.", self.editor)
+        self.assertIn("Collect Kakera from other players", self.editor)
+        self.assertIn("Claim wishlist matches from other players", self.editor)
+        self.assertIn('data["series_snipe_only_self_rolls"] = not data["snipe_mode"]', self.editor)
+        self.assertIn('data["auto_free_claim"] = data["reactive_snipe_on_own_rolls"]', self.editor)
+        quick_block = self.editor[self.editor.index("def build_quick_setup"):self.editor.index("def show_editor_mode")]
+        self.assertNotIn('_quick_entry(inner, "additional_tokens"', quick_block)
+
+    def test_quick_setup_preserves_hidden_additional_tokens(self):
+        class FakeSecretStore:
+            def get_tokens(self, _name, _legacy):
+                return ["old-primary", "second", "third"]
+
+        editor = SimpleNamespace(
+            current_preset="Profile",
+            presets={"Profile": {"token": ""}},
+            quick_widgets={},
+            secret_store=FakeSecretStore(),
+            _quick_value=lambda key: "new-primary" if key == "token" else "",
+        )
+        self.assertEqual(
+            PresetEditor._quick_token_values(editor),
+            ["new-primary", "second", "third"],
+        )
+
+    def test_save_and_start_uses_the_active_editor_mode(self):
+        self.assertIn("def save_active_preset", self.editor)
+        self.assertIn("self.save_active_preset(show_success=False)", self.editor)
+        self.assertIn('"▶ Save & Start Bot"', self.editor)
+
+    def test_gui_source_contains_no_turkish_user_interface_text(self):
+        self.assertIsNone(re.search(r"[ğüşöçıİĞÜŞÖÇ]", self.editor))
+
+    def test_documented_windows_flow_matches_the_new_primary_action(self):
+        self.assertIn("Quick Setup", self.readme)
+        self.assertIn("Save & Start Bot", self.readme)
+        self.assertNotIn("hit **▶ Launch Bot**", self.readme)
+
+    def test_quick_setup_uses_the_active_scroll_target_and_dark_combobox_style(self):
+        self.assertIn('"Quick.TCombobox"', self.editor)
+        self.assertIn('scroll_target = self.quick_canvas if self.editor_mode == "quick" else self.canvas', self.editor)
+        self.assertIn('style="Quick.TCombobox"', self.editor)
+
+    def test_mode_switch_updates_flat_button_hover_and_pressed_colours(self):
+        self.assertIn("def set_flat_button_colors", self.editor)
+        self.assertIn("activeforeground=fg_color", self.editor)
+        self.assertIn("button._flat_normal_bg", self.editor)
+        self.assertIn("self.set_flat_button_colors(self.quick_mode_btn", self.editor)
+        self.assertIn("self.set_flat_button_colors(self.advanced_mode_btn", self.editor)
+
+
+if __name__ == "__main__":
+    unittest.main()

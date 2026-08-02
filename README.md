@@ -246,8 +246,10 @@ Running multiple accounts? Your **main account and alts sync in real-time**. If 
 1. **[⬇️ Download `MudaRemote.exe`](https://github.com/misutesu-desu/MudaRemote/releases/latest)** from the Releases page.
 2. Put it in a new folder (e.g., on your Desktop).
 3. **Double-click** `MudaRemote.exe` — the settings window opens instantly.
-4. Paste your **Discord Token** and **Channel ID**, then hit **▶ Launch Bot**.
-5. That's it. You're farming. Go do something else. 🎉
+4. In **Quick Setup**, paste your **Discord Token** and **Channel ID**, choose what the bot should do, and review the live summary.
+5. Click **▶ Save & Start Bot**. Use **Advanced Settings** only when you need detailed control. 🎉
+
+New profiles use a recommended baseline: `/wa` rolls with text fallback, automatic matching claims at 100+ Kakera, free-claim collection, and Kakera collection on your own rolls. Claiming or collecting from other players is always opt-in in Quick Setup.
 
 ---
 

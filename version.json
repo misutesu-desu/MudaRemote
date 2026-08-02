@@ -1,11 +1,16 @@
 {
-  "version": "4.7.4",
+  "version": "4.7.6",
   "changelog": {
     "Bug Fixes": [
       "Perk 6 free-claim collection can be disabled separately for each preset.",
       "Purple Kakera is always collected while Kakera collection is active, regardless of filters, selections, or snipe targets.",
       "Mudae Fandom emoji artwork is displayed correctly in the preset editor.",
-      "Removed the invalid spM sphere option and fixed dark disabled emoji inputs.",
+      "Restored the valid spM megasphere button across runtime defaults and the visual preset editor.",
+      "Ouroperk 9 sphere buttons are collected independently from Kakera-only wish, OP5, MK, and Chaos filters.",
+      "Ouroperk 8 half-power Kakera now works with Chaos Only and with manual self-roll detection.",
+      "Deferred Kakera collection now applies the same filters as immediate collection.",
+      "External and manual-roll Kakera detection now includes the discounted Kakera selection list.",
+      "Claim clicks begin verification after a short ACK deadline instead of issuing delayed duplicate attempts.",
       "Starwished characters are detected correctly even if the series name continues onto another line.",
       "OP5-only collection now uses the correct OP5 indicator without confusing it with other perks.",
       "Perk 8 power discounts are recognized separately from OP5 filtering.",
@@ -14,9 +19,13 @@
       "Kakera logs distinguish sent reactions from confirmed collections.",
       "Perk 5 collection can click every eligible kakera button.",
       "Kakera collection works in configured snipe channels without requiring character snipe mode.",
-      "Failed update verification keeps the current installation safe and reports a clearer error."
+      "Failed update verification keeps the current installation safe and reports a clearer error.",
+      "Successful external Kakera confirmations now suppress the unnecessary fallback $tu refresh."
     ],
     "Improvements": [
+      "The preset editor now opens in an English Quick Setup flow with goal-based choices, a live behavior summary, and a direct Save & Start action.",
+      "The complete expert configuration remains available through Advanced Settings without changing the preset data model.",
+      "New profiles now use a centralized recommended baseline, while Quick Setup clearly separates own-roll automation from opt-in external-player actions.",
       "Emoji selection uses compact visual cards with clear selected states, bulk actions, and optional custom input.",
       "Kakera priority order can be rearranged by dragging visual cards.",
       "Preset filters explain that enabled Only rules must all match.",
@@ -27,22 +36,22 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "072c973d8e5e8de94611aa7ac2fccad2339f3b9e6bab52dbccb5c8bf90e0cfbb",
+  "exe_sha256": "9e80674471369ba1308882d57840e3b5b81d50f56b2c5106b2f6f5e6175bfc7b",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "cab86cc0a7fd1ca99af864d709502982c3dad9eddb5de80692fce19fca1c4369"
+      "sha256": "af0a3a59050e35b72812861320a3121dc47c8d2cc28aedef91fbea52d22381e1"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "ba739c25aa92fdec0028cc1ab48dd5874c041a511a90f5011a2d196e771163d7"
+      "sha256": "369d065db91c69a6f1d2e9f3a9ab2b210bf4ce3b5abad1f521c5b7143a1fb566"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "bdaa78172190ef0182ba8cdf5106de8b8ab0715272c6dbca8fe128540f112831"
+      "sha256": "c4e5f806b3301ebb310fc64025a9553ae0ee26639656eaf6234f9a9ad12e6a03"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -57,7 +66,7 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "52b060bf757e86fc8bf63cc8e23b69b46a2f6b3d731ad30e87dd41d0e0433121"
+      "sha256": "bae5e55a78a8f9249a2d01b10e1306a6ab8a87a3afc85fe38b66a7eee7b6e4c4"
     },
     {
       "path": "mudae_core/coordinator.py",

@@ -11,7 +11,7 @@ from .claiming import (
     is_claim_announcement_for_character,
 )
 from .coordinator import ClaimCoordinator
-from .kakera import calculate_kakera_power_cost, has_op_perk_five_marker, has_perk_eight_discount, has_purple_kakera_button
+from .kakera import calculate_kakera_power_cost, get_regular_kakera_filter_reason, has_op_perk_five_marker, has_perk_eight_discount, has_purple_kakera_button, parse_kakera_result_amount
 from .filters import (
     character_series_line,
     name_or_series_is_configured_wish,
@@ -74,6 +74,7 @@ __all__ = [
     "active_stagger_seconds",
     "atomic_write_json",
     "calculate_kakera_power_cost",
+    "get_regular_kakera_filter_reason",
     "character_series_line",
     "classify_claim_owner",
     "classify_claim_text",
@@ -95,6 +96,7 @@ __all__ = [
     "has_perk_eight_discount",
     "has_op_perk_five_marker",
     "has_purple_kakera_button",
+    "parse_kakera_result_amount",
     "load_json",
     "looks_like_tu_status_snapshot",
     "mark_status_dirty",

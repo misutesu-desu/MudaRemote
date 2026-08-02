@@ -519,17 +519,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
-            if isinstance(node, ast.AsyncFunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
-        op5_start = claim_source.index("if client.op_perk_5_only:")
-        op5_end = claim_source.index("if client.mk_only", op5_start)
-        op5_source = claim_source[op5_start:op5_end]
+        filter_source = ast.get_source_segment(self.source, functions["regular_kakera_filter_reason"])
 
-        self.assertIn("if not has_op5 and not has_purple_kakera:", op5_source)
-        self.assertNotIn("has_free", op5_source)
-        self.assertNotIn('any(f"sp"', op5_source)
-        self.assertIn("has_op5 = has_op_perk_five_marker(embed.description)", claim_source)
+        self.assertIn("op5_only=client.op_perk_5_only", filter_source)
+        self.assertIn("has_op5=has_op_perk_five_marker(embed.description)", filter_source)
+        self.assertNotIn('any(f"sp"', filter_source)
+        self.assertIn("filter_reason = regular_kakera_filter_reason", claim_source)
         self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
 
     def test_purple_kakera_bypasses_all_collection_filters(self):
@@ -542,12 +540,73 @@ class RuntimeSourceContractTests(unittest.TestCase):
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
 
         self.assertIn("has_purple_kakera = has_purple_kakera_button(msg.components)", claim_source)
-        self.assertIn("not has_purple_kakera and not is_wish_or_starwish", claim_source)
-        self.assertIn("not has_op5 and not has_purple_kakera", claim_source)
-        self.assertIn("not has_purple_kakera and not is_mk_roll", claim_source)
+        self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
         self.assertIn("name_clean == 'kakeraP'", claim_source)
         self.assertIn("has_purple_kakera_button(message.components)", handler_source)
         self.assertIn("client.kakera_reaction_snipe_targets and not has_purple_kakera", handler_source)
+
+    def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        sphere_source = ast.get_source_segment(self.source, functions["has_targeted_sphere_button"])
+
+        self.assertIn("has_targeted_sphere = has_targeted_sphere_button", claim_source)
+        self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
+        self.assertIn("filter_reason is None and regular_match", claim_source)
+        self.assertIn("client.sphere_click_targets", sphere_source)
+
+    def test_megasphere_is_a_supported_default_sphere_target(self):
+        self.assertIn("'spM'", self.source)
+        self.assertIn('"spM", "spU"', self.source)
+
+    def test_ouroperk_eight_counts_as_half_power_for_chaos_only(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        filter_source = ast.get_source_segment(self.source, functions["regular_kakera_filter_reason"])
+        self.assertIn("has_chaos_discount=chaos_count > 0", filter_source)
+        self.assertIn("has_perk_eight_discount=has_perk_eight_discount(embed.description)", filter_source)
+
+    def test_manual_self_roll_kakera_is_not_treated_as_external(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn("is_snipe=not is_manual_self_roll", handler_source)
+        self.assertIn("and not is_manual_self_roll", handler_source)
+
+    def test_deferred_collection_reuses_regular_kakera_filters(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        self.assertIn("filter_reason = regular_kakera_filter_reason", roll_source)
+        self.assertIn("filter_reason is None and regular_match", roll_source)
+
+    def test_claim_click_ack_timeout_verifies_without_duplicate_click(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        click_source = ast.get_source_segment(self.source, functions["send_claim_click"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        verify_source = ast.get_source_segment(self.source, functions["verify_snipe_outcome"])
+
+        self.assertIn("asyncio.wait_for(asyncio.shield(task)", click_source)
+        self.assertIn("return True, False", click_source)
+        self.assertIn("click_sent, acknowledged = await send_claim_click", claim_source)
+        self.assertIn("deadline = time.monotonic() + 5.0", verify_source)
 
     def test_mudae_button_artwork_is_cached_for_the_preset_editor(self):
         functions = {
