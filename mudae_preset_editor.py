@@ -573,6 +573,7 @@ DEFAULTS = {
     "claim_rounds_thresholds": [],
     "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
     "immediate_kakera_click": True,
+    "collect_purple_kakera": True,
     "wish_starwish_kakera_only": False,
     "oh_priority_order": [],
     "oh_unknown_explore_clicks": 3,
@@ -631,6 +632,7 @@ BOOL_SETTINGS = [
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
     ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
+    ("collect_purple_kakera", "Collect Purple Kakera (Disable on extra accounts to avoid reaction races)", True),
     ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
     ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
     ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
@@ -762,6 +764,8 @@ class PresetEditor:
         # Track unsaved edits
         self.is_dirty = False
         self.loading_preset = False
+        self._preset_selection_generation = 0
+        self._preset_selection_in_progress = False
 
         # Apply dark theme
         self.apply_theme()
@@ -2040,6 +2044,7 @@ class PresetEditor:
         self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
 
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
+        self.add_checkbox(kakera_react_frame.content, "collect_purple_kakera", "Collect Purple Kakera", description="Turn this off on extra accounts when several accounts watch the same rolls.")
 
         self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on OP5 Characters")
         self.add_checkbox(
@@ -2049,7 +2054,7 @@ class PresetEditor:
         )
         ttk.Label(
             kakera_react_frame.content,
-            text="Filter rule: every enabled 'Only' option must match. Purple Kakera is always collected. Chaos Emojis apply only to your own rolls.",
+            text="Filter rule: every enabled 'Only' option must match. Purple Kakera follows this preset's toggle. Chaos Emojis apply only to your own rolls.",
             foreground="#f9e2af",
             font=("Segoe UI", 9),
         ).pack(anchor=tk.W, padx=20, pady=(2, 6))
@@ -2650,15 +2655,47 @@ class PresetEditor:
         self.update_quick_summary()
 
     def on_preset_select(self, event):
-        """Handle preset selection from listbox."""
+        """Queue only the most recent listbox choice for loading."""
+        if self.loading_preset or self._preset_selection_in_progress:
+            return
         selection = self.preset_listbox.curselection()
-        if selection:
-            preset_name = self.preset_listbox.get(selection[0])
-            if preset_name != self.current_preset:
-                if self.prompt_unsaved_changes():
-                    self.select_preset(preset_name)
-                else:
-                    self.update_listbox_selection(self.current_preset)
+        if not selection:
+            return
+        preset_name = self.preset_listbox.get(selection[0])
+        if preset_name == self.current_preset:
+            return
+
+        # ListboxSelect can be queued both by a user click and by the
+        # selection update performed while loading a preset.  Defer handling
+        # until Tk has drained that event burst; only the final visible choice
+        # is allowed to replace the current preset.
+        self._preset_selection_generation += 1
+        generation = self._preset_selection_generation
+        self.root.after_idle(
+            lambda: self._commit_preset_selection(preset_name, generation)
+        )
+
+    def _commit_preset_selection(self, preset_name, generation):
+        """Apply a still-current listbox selection as one atomic transition."""
+        if (
+            generation != self._preset_selection_generation
+            or self.loading_preset
+            or self._preset_selection_in_progress
+            or preset_name == self.current_preset
+        ):
+            return
+        selection = self.preset_listbox.curselection()
+        if not selection or self.preset_listbox.get(selection[0]) != preset_name:
+            return
+
+        self._preset_selection_in_progress = True
+        try:
+            if self.prompt_unsaved_changes():
+                self.select_preset(preset_name)
+            else:
+                self.update_listbox_selection(self.current_preset)
+        finally:
+            self._preset_selection_in_progress = False
 
     def select_preset(self, preset_name):
         """Load preset data into the form with loading/dirty flag safety wrapper."""
@@ -2729,7 +2766,7 @@ class PresetEditor:
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
-                    "enable_hybrid_panic_claim", "immediate_kakera_click", "wish_starwish_kakera_only"]:
+                    "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
                 if isinstance(var, tk.BooleanVar):
@@ -2970,7 +3007,7 @@ class PresetEditor:
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
-                    "enable_hybrid_panic_claim", "immediate_kakera_click", "wish_starwish_kakera_only"]:
+                    "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
 

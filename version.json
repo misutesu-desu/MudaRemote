@@ -1,5 +1,5 @@
 {
-  "version": "4.7.6",
+  "version": "4.7.7",
   "changelog": {
     "Bug Fixes": [
       "Perk 6 free-claim collection can be disabled separately for each preset.",
@@ -20,7 +20,10 @@
       "Perk 5 collection can click every eligible kakera button.",
       "Kakera collection works in configured snipe channels without requiring character snipe mode.",
       "Failed update verification keeps the current installation safe and reports a clearer error.",
-      "Successful external Kakera confirmations now suppress the unnecessary fallback $tu refresh."
+      "Successful external Kakera confirmations now suppress the unnecessary fallback $tu refresh.",
+      "Unconfirmed ready claims now retry the live claim button once before requesting $tu, preserving short snipe windows.",
+      "Rapid preset clicks now load only the last selected preset instead of reverting to an earlier selection.",
+      "Purple Kakera collection can now be disabled per preset for multi-account setups."
     ],
     "Improvements": [
       "The preset editor now opens in an English Quick Setup flow with goal-based choices, a live behavior summary, and a direct Save & Start action.",
@@ -36,17 +39,17 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "9e80674471369ba1308882d57840e3b5b81d50f56b2c5106b2f6f5e6175bfc7b",
+  "exe_sha256": "06979367d4787ffee602efe6105345814453d6407f7e96af7a08c546fcdefaf6",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "af0a3a59050e35b72812861320a3121dc47c8d2cc28aedef91fbea52d22381e1"
+      "sha256": "529b345fb7da8470921b898d52cfcc3b9b5ed248cb767aa6cc974a588d2baf49"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "369d065db91c69a6f1d2e9f3a9ab2b210bf4ce3b5abad1f521c5b7143a1fb566"
+      "sha256": "818cd407fbd31584fedcac2f294f9b95023792814ac9af984cb4ca3ed52c2e83"
     },
     {
       "path": "mudae_core/__init__.py",

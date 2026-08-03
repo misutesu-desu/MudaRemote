@@ -125,7 +125,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.7.6"
+CURRENT_VERSION = "4.7.7"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -641,7 +641,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             webhook_url_preset="",
             webhook_log_types_preset=None,
             debug_log_categories_preset=None,
-            auto_free_claim_preset=True):
+            auto_free_claim_preset=True,
+            collect_purple_kakera_preset=True):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -753,6 +754,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     sphere_click_targets = sphere_click_targets_preset or ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
     client.sphere_click_targets = set([t.lower() for t in sphere_click_targets])
     client.immediate_kakera_click = immediate_kakera_click_preset
+    # Purple Kakera is free, but in a shared channel every account may race
+    # for it. Keep legacy presets opt-in by default while allowing each preset
+    # to opt out independently.
+    client.collect_purple_kakera = bool(collect_purple_kakera_preset)
     client.auto_oh_enabled = bool(auto_oh_enabled_preset)
     client.auto_oc_enabled = bool(auto_oc_enabled_preset)
     client.oh_priority_order = [
@@ -2797,7 +2802,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             prio_map = {k.strip(): (idx + 1) * 10 for idx, k in enumerate(reversed(client.kakera_priority_order))}
             for s in client.sphere_emojis: prio_map[s] = 999
-            prio_map['kakeraP'] = 999
+            if client.collect_purple_kakera:
+                prio_map['kakeraP'] = 999
 
             clickable_buttons = []
             for msg in client.collected_kakera_rolls:
@@ -2821,6 +2827,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if hasattr(btn.emoji, 'name') and btn.emoji.name:
                             name = btn.emoji.name
                             name_clean = name.rstrip('2')
+
+                            if name_clean == 'kakeraP' and not client.collect_purple_kakera:
+                                continue
 
                             is_sphere = (name in client.sphere_emojis) or (name_clean in client.sphere_emojis)
                             is_free = name_clean == 'kakeraP' or is_sphere or check_is_green(btn)
@@ -3162,6 +3171,34 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 BotLogger.log(f"Snipe chat reaction failed: {e}", preset_name, "ERROR")
 
+    def retry_pending_claim_from_cached_state(pending, pending_channel):
+        """Retry one unconfirmed click without spending time on a redundant $tu."""
+        message_id = pending.get("message_id")
+        retry_count = client.claim_retry_counts.get(message_id, 0)
+        if (
+            message_id is None
+            or retry_count >= 1
+            or client.is_paused
+            or pending.get("rejected_by_cooldown")
+            or not pending.get("claim_was_available")
+            or not client.claim_right_available
+        ):
+            return False
+
+        # The click was made while a verified claim right was cached.  Do not
+        # block a live snipe window on a round trip to $tu just to rediscover
+        # that same state.  The retry helper refetches the roll and only clicks
+        # again if its claim button is still present.
+        clear_pending_claim(pending)
+        client.processed_claim_messages.discard(message_id)
+        client.claim_retry_counts[message_id] = retry_count + 1
+        client.loop.create_task(retry_pending_claim_after_release(
+            pending,
+            pending_channel,
+            f"Retrying {pending['character_name']} once from the cached ready claim state.",
+        ))
+        return True
+
     async def retry_pending_claim_after_release(pending, pending_channel, retry_log):
         message_id = pending.get("message_id")
         try:
@@ -3247,7 +3284,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         char_name = pending["character_name"]
         lbl = "Snipe Verification" if pending["is_snipe_action"] else "Claim Verification"
         evidence = None
-        deadline = time.monotonic() + 5.0
+        # A cached ready claim is enough to make one safe, immediate retry.
+        # Keep its grace period short so a lost interaction cannot consume the
+        # whole external-snipe window before the retry is sent.  $rt/cooldown
+        # claims keep the longer confirmation period because their cached
+        # state is not independently retryable.
+        verification_seconds = (
+            1.5
+            if pending.get("consumes_claim")
+            and pending.get("claim_was_available")
+            and client.claim_right_available
+            else 5.0
+        )
+        deadline = time.monotonic() + verification_seconds
 
         while time.monotonic() < deadline:
             if client.pending_claim is not pending:
@@ -3317,6 +3366,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             clear_status_dirty(client, {"claim"})
             return ClaimOutcome.FAILURE
 
+        if pending.get("consumes_claim") and retry_pending_claim_from_cached_state(pending, channel):
+            BotLogger.log(
+                f"{lbl}: Inconclusive after {verification_seconds:.1f}s; "
+                "claim is still cached as ready, retrying the live roll once without $tu.",
+                preset_name,
+                "WARN",
+            )
+            return ClaimOutcome.INCONCLUSIVE
+
         BotLogger.log(f"{lbl}: Inconclusive. Refreshing $tu before changing claim state.", preset_name, "WARN")
         if pending.get("consumes_claim"):
             request_status_refresh({"claim"}, reason="claim-verification-inconclusive", urgent=True)
@@ -3337,13 +3395,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not is_character_embed(embed): continue
 
             all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-            is_k = msg.components and any(
-                hasattr(b.emoji, 'name') and b.emoji.name and (
-                    b.emoji.name in all_k or
-                    b.emoji.name.rstrip('2') in all_k or
-                    ("kakera" in b.emoji.name.lower() and check_is_green(b))
-                ) for comp in msg.components for b in comp.children
-            )
+            is_k = has_collectible_kakera_button(msg.components, all_k)
             if is_k:
                 k_claims.append(msg)
             else:
@@ -3515,6 +3567,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return True
         return False
 
+    def has_collectible_kakera_button(components, allowed_emojis):
+        """Return whether this preset may click at least one Kakera button."""
+        allowed = set(allowed_emojis or ())
+        for component in components or ():
+            for button in getattr(component, "children", ()) or ():
+                name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
+                clean = name.rstrip("2")
+                if clean == "kakeraP":
+                    if client.collect_purple_kakera:
+                        return True
+                    continue
+                if (
+                    name in allowed
+                    or clean in allowed
+                    or ("kakera" in name.lower() and check_is_green(button))
+                ):
+                    return True
+        return False
+
     async def send_claim_click(button, timeout=2.0):
         """Start a claim immediately without treating a missing Discord ACK as a failed send."""
         task = client.loop.create_task(guarded_click(button))
@@ -3639,7 +3710,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if is_kakera:
                 chaos_count = count_chaos_keys(embed)
                 has_sp_perk = has_perk_eight_discount(embed.description)
-                has_purple_kakera = has_purple_kakera_button(msg.components)
+                has_purple_kakera = (
+                    client.collect_purple_kakera
+                    and has_purple_kakera_button(msg.components)
+                )
                 has_targeted_sphere = has_targeted_sphere_button(msg.components)
                 filter_reason = regular_kakera_filter_reason(
                     client,
@@ -3662,7 +3736,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 target_list = client.kakera_emojis if is_snipe else (client.sphere_perk_emojis if has_sp_perk else (client.chaos_emojis if chaos_count > 0 else client.kakera_emojis))
 
                 cooldown_active = not is_kakera_reaction_allowed()
-                has_free_button = msg.components and any(hasattr(b.emoji, 'name') and (b.emoji.name.rstrip('2') == 'kakeraP' or b.emoji.name in client.sphere_emojis or b.emoji.name.rstrip('2') in client.sphere_emojis or check_is_green(b)) for c in msg.components for b in c.children)
+                has_free_button = msg.components and any(
+                    hasattr(b.emoji, 'name') and (
+                        (client.collect_purple_kakera and b.emoji.name.rstrip('2') == 'kakeraP')
+                        or b.emoji.name in client.sphere_emojis
+                        or b.emoji.name.rstrip('2') in client.sphere_emojis
+                        or (b.emoji.name.rstrip('2') != 'kakeraP' and check_is_green(b))
+                    ) for c in msg.components for b in c.children
+                )
                 # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
                 if cooldown_active and not has_free_button and (chaos_count == 0 or is_snipe) and not has_sp_perk:
                     BotLogger.log(
@@ -3684,6 +3765,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if hasattr(btn.emoji, 'name') and btn.emoji.name:
                                 name = btn.emoji.name
                                 name_clean = name.rstrip('2')
+                                if name_clean == 'kakeraP' and not client.collect_purple_kakera:
+                                    continue
                                 is_sphere = (name in client.sphere_emojis) or (name_clean in client.sphere_emojis)
                                 if is_sphere:
                                     if (name.lower() in client.sphere_click_targets) or (name_clean.lower() in client.sphere_click_targets):
@@ -4110,7 +4193,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not is_character_embed(embed):
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                 all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-                has_btn = message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children)
+                has_btn = has_collectible_kakera_button(message.components, all_k)
                 if has_btn:
                     if client.kakera_reaction_snipe_targets:
                         owner_id, owner_name = await detect_roll_owner(client, message)
@@ -4221,7 +4304,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 process = False
 
                 all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-                has_btn = has_purple_kakera_button(message.components) or (message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children))
+                has_btn = has_collectible_kakera_button(message.components, all_k)
                 if has_btn:
                     if getattr(client, 'immediate_kakera_click', True):
                         d_min, d_max = client.reactive_kakera_delay_range
@@ -4263,8 +4346,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-                 has_purple_kakera = has_purple_kakera_button(message.components)
-                 has_btn = has_purple_kakera or (message.components and any(hasattr(b.emoji, 'name') and b.emoji.name and (b.emoji.name in all_k or b.emoji.name.rstrip('2') in all_k) for comp in message.components for b in comp.children))
+                 has_purple_kakera = client.collect_purple_kakera and has_purple_kakera_button(message.components)
+                 has_btn = has_collectible_kakera_button(message.components, all_k)
                  if has_btn:
                     target_ok = True
                     if client.kakera_reaction_snipe_targets and not has_purple_kakera and not is_manual_self_roll:
@@ -4449,6 +4532,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("webhook_log_types", None),
                 preset_data.get("debug_log_categories", None),
                 preset_data.get("auto_free_claim", True),
+                preset_data.get("collect_purple_kakera", True),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

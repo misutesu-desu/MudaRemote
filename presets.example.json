@@ -25,6 +25,7 @@
     "auto_dk_enabled": true,
     "auto_p_enabled": true,
     "immediate_kakera_click": true,
+    "collect_purple_kakera": true,
     "reactive_kakera_delay_range": [0.3, 1.0],
     "auto_oh_enabled": false,
     "auto_oc_enabled": false,

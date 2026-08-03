@@ -43,6 +43,7 @@ class EditorUxContractTests(unittest.TestCase):
             "auto_dk_enabled",
             "auto_p_enabled",
             "immediate_kakera_click",
+            "collect_purple_kakera",
         ):
             self.assertTrue(preset[key], key)
         self.assertFalse(preset["snipe_mode"])
@@ -107,6 +108,13 @@ class EditorUxContractTests(unittest.TestCase):
         self.assertIn("button._flat_normal_bg", self.editor)
         self.assertIn("self.set_flat_button_colors(self.quick_mode_btn", self.editor)
         self.assertIn("self.set_flat_button_colors(self.advanced_mode_btn", self.editor)
+
+    def test_preset_selection_commits_only_the_last_queued_choice(self):
+        self.assertIn("self._preset_selection_generation = 0", self.editor)
+        self.assertIn("self.root.after_idle(", self.editor)
+        self.assertIn("def _commit_preset_selection", self.editor)
+        self.assertIn("generation != self._preset_selection_generation", self.editor)
+        self.assertIn("self._preset_selection_in_progress = True", self.editor)
 
 
 if __name__ == "__main__":

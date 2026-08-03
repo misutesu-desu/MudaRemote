@@ -47,7 +47,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
-            if isinstance(node, ast.AsyncFunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         for function_name in ("start_roll_commands", "process_mk_rolls"):
             node = functions[function_name]
@@ -530,20 +530,23 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("filter_reason = regular_kakera_filter_reason", claim_source)
         self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
 
-    def test_purple_kakera_bypasses_all_collection_filters(self):
+    def test_purple_kakera_bypass_is_controlled_per_preset(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
-            if isinstance(node, ast.AsyncFunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        helper_source = ast.get_source_segment(self.source, functions["has_collectible_kakera_button"])
 
-        self.assertIn("has_purple_kakera = has_purple_kakera_button(msg.components)", claim_source)
+        self.assertIn("client.collect_purple_kakera", claim_source)
+        self.assertIn("client.collect_purple_kakera", handler_source)
+        self.assertIn('if clean == "kakeraP":', helper_source)
+        self.assertIn("if client.collect_purple_kakera:", helper_source)
         self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
-        self.assertIn("name_clean == 'kakeraP'", claim_source)
-        self.assertIn("has_purple_kakera_button(message.components)", handler_source)
-        self.assertIn("client.kakera_reaction_snipe_targets and not has_purple_kakera", handler_source)
+        self.assertIn("name_clean == 'kakeraP' and not client.collect_purple_kakera", claim_source)
+        self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
 
     def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
         functions = {
@@ -606,7 +609,27 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("asyncio.wait_for(asyncio.shield(task)", click_source)
         self.assertIn("return True, False", click_source)
         self.assertIn("click_sent, acknowledged = await send_claim_click", claim_source)
-        self.assertIn("deadline = time.monotonic() + 5.0", verify_source)
+        self.assertIn("verification_seconds = (", verify_source)
+        self.assertIn("if pending.get(\"consumes_claim\")", verify_source)
+        self.assertIn("else 5.0", verify_source)
+
+    def test_ready_claim_retries_once_without_a_tu_round_trip(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        retry_source = ast.get_source_segment(
+            self.source,
+            functions["retry_pending_claim_from_cached_state"],
+        )
+        verify_source = ast.get_source_segment(self.source, functions["verify_snipe_outcome"])
+
+        self.assertIn('or not pending.get("claim_was_available")', retry_source)
+        self.assertIn("client.claim_retry_counts[message_id] = retry_count + 1", retry_source)
+        self.assertIn("retry_pending_claim_after_release", retry_source)
+        self.assertIn("retry_pending_claim_from_cached_state(pending, channel)", verify_source)
+        self.assertIn("without $tu", verify_source)
 
     def test_mudae_button_artwork_is_cached_for_the_preset_editor(self):
         functions = {
