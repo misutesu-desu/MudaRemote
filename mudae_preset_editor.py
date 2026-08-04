@@ -766,6 +766,7 @@ class PresetEditor:
         self.loading_preset = False
         self._preset_selection_generation = 0
         self._preset_selection_in_progress = False
+        self._pending_preset_selection = None
 
         # Apply dark theme
         self.apply_theme()
@@ -2656,7 +2657,7 @@ class PresetEditor:
 
     def on_preset_select(self, event):
         """Queue only the most recent listbox choice for loading."""
-        if self.loading_preset or self._preset_selection_in_progress:
+        if self.loading_preset:
             return
         selection = self.preset_listbox.curselection()
         if not selection:
@@ -2671,6 +2672,13 @@ class PresetEditor:
         # is allowed to replace the current preset.
         self._preset_selection_generation += 1
         generation = self._preset_selection_generation
+        if self._preset_selection_in_progress:
+            self._pending_preset_selection = (preset_name, generation)
+            return
+        self._schedule_preset_selection(preset_name, generation)
+
+    def _schedule_preset_selection(self, preset_name, generation):
+        """Defer a preset transition until Tk has drained the current event burst."""
         self.root.after_idle(
             lambda: self._commit_preset_selection(preset_name, generation)
         )
@@ -2680,9 +2688,11 @@ class PresetEditor:
         if (
             generation != self._preset_selection_generation
             or self.loading_preset
-            or self._preset_selection_in_progress
             or preset_name == self.current_preset
         ):
+            return
+        if self._preset_selection_in_progress:
+            self._pending_preset_selection = (preset_name, generation)
             return
         selection = self.preset_listbox.curselection()
         if not selection or self.preset_listbox.get(selection[0]) != preset_name:
@@ -2690,12 +2700,19 @@ class PresetEditor:
 
         self._preset_selection_in_progress = True
         try:
-            if self.prompt_unsaved_changes():
+            can_switch = self.prompt_unsaved_changes()
+            if generation != self._preset_selection_generation:
+                return
+            if can_switch:
                 self.select_preset(preset_name)
             else:
                 self.update_listbox_selection(self.current_preset)
         finally:
             self._preset_selection_in_progress = False
+            pending = self._pending_preset_selection
+            self._pending_preset_selection = None
+            if pending and pending[1] == self._preset_selection_generation:
+                self._schedule_preset_selection(*pending)
 
     def select_preset(self, preset_name):
         """Load preset data into the form with loading/dirty flag safety wrapper."""

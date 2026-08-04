@@ -1,8 +1,10 @@
+import datetime
 from types import SimpleNamespace
 import unittest
 
 from mudae_core.status import (
     STATUS_FIELDS,
+    ServerResetCoordinator,
     clear_status_dirty,
     consume_tu_urgent_bypass,
     defer_tu_queries,
@@ -13,6 +15,7 @@ from mudae_core.status import (
     record_tu_failure,
     record_tu_success,
     status_dirty_fields,
+    status_message_addresses_identity,
     status_refresh_reasons,
     tu_retry_wait,
 )
@@ -110,6 +113,47 @@ class StatusFreshnessTests(unittest.TestCase):
         rejection = "**Visionaire**, you can't claim another character for **3** min."
         self.assertTrue(looks_like_tu_status_snapshot(snapshot))
         self.assertFalse(looks_like_tu_status_snapshot(rejection))
+
+    def test_status_address_matching_is_exact(self):
+        self.assertTrue(status_message_addresses_identity(
+            "**alt-1**, you can't claim for another **2** min.",
+            ["alt-1"],
+        ))
+        self.assertFalse(status_message_addresses_identity(
+            "**alt-10**, you can't claim for another **2** min.",
+            ["alt-1"],
+        ))
+        self.assertTrue(status_message_addresses_identity(
+            "<@123>, you can't claim for another **2** min.",
+            ["different-name"],
+            user_id=123,
+        ))
+
+    def test_server_reset_observations_are_shared_per_server_and_deduplicated(self):
+        coordinator = ServerResetCoordinator(message_limit=2)
+        observed = datetime.datetime(2026, 8, 4, 12, 0, tzinfo=datetime.timezone.utc)
+        claim_deadline = observed + datetime.timedelta(minutes=30)
+        roll_deadline = observed + datetime.timedelta(minutes=15)
+
+        snapshot, changed = coordinator.observe(
+            10,
+            100,
+            observed,
+            claim_reset_at_utc=claim_deadline,
+            roll_reset_at_utc=roll_deadline,
+        )
+        duplicate, duplicate_changed = coordinator.observe(
+            10,
+            100,
+            observed + datetime.timedelta(seconds=1),
+            claim_reset_at_utc=observed + datetime.timedelta(hours=3),
+        )
+
+        self.assertTrue(changed)
+        self.assertFalse(duplicate_changed)
+        self.assertEqual(snapshot, duplicate)
+        self.assertEqual(coordinator.snapshot(10).claim_reset_at_utc, claim_deadline)
+        self.assertIsNone(coordinator.snapshot(11))
 
 
 if __name__ == "__main__":

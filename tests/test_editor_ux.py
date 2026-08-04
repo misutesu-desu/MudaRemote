@@ -111,10 +111,65 @@ class EditorUxContractTests(unittest.TestCase):
 
     def test_preset_selection_commits_only_the_last_queued_choice(self):
         self.assertIn("self._preset_selection_generation = 0", self.editor)
+        self.assertIn("self._pending_preset_selection = None", self.editor)
         self.assertIn("self.root.after_idle(", self.editor)
         self.assertIn("def _commit_preset_selection", self.editor)
         self.assertIn("generation != self._preset_selection_generation", self.editor)
         self.assertIn("self._preset_selection_in_progress = True", self.editor)
+
+    def test_new_selection_during_unsaved_prompt_supersedes_the_old_target(self):
+        class FakeRoot:
+            def __init__(self):
+                self.callbacks = []
+
+            def after_idle(self, callback):
+                self.callbacks.append(callback)
+
+            def run_next(self):
+                self.callbacks.pop(0)()
+
+        class FakeListbox:
+            selected = "second"
+
+            def curselection(self):
+                return (0,)
+
+            def get(self, _index):
+                return self.selected
+
+        editor = object.__new__(PresetEditor)
+        editor.root = FakeRoot()
+        editor.preset_listbox = FakeListbox()
+        editor.loading_preset = False
+        editor._preset_selection_generation = 0
+        editor._preset_selection_in_progress = False
+        editor._pending_preset_selection = None
+        editor.current_preset = "first"
+        loaded = []
+
+        def select_preset(name):
+            loaded.append(name)
+            editor.current_preset = name
+
+        prompt_count = [0]
+
+        def prompt_unsaved_changes():
+            prompt_count[0] += 1
+            if prompt_count[0] == 1:
+                editor.preset_listbox.selected = "third"
+                editor.on_preset_select(None)
+            return True
+
+        editor.select_preset = select_preset
+        editor.prompt_unsaved_changes = prompt_unsaved_changes
+        editor.update_listbox_selection = lambda _name: None
+
+        editor.on_preset_select(None)
+        editor.root.run_next()
+        editor.root.run_next()
+
+        self.assertEqual(loaded, ["third"])
+        self.assertEqual(editor.current_preset, "third")
 
 
 if __name__ == "__main__":

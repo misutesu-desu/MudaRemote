@@ -1,12 +1,76 @@
 """Status freshness helpers used to minimize physical Mudae ``$tu`` queries."""
 
+from collections import OrderedDict
+from dataclasses import dataclass
+import datetime
 import re
+import threading
 import time
 import unicodedata
 
 
 STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
 TU_FAILURE_BACKOFF_SECONDS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
+
+
+@dataclass(frozen=True)
+class ServerResetSnapshot:
+    server_id: int
+    observed_at_utc: datetime.datetime
+    claim_reset_at_utc: datetime.datetime = None
+    roll_reset_at_utc: datetime.datetime = None
+
+
+class ServerResetCoordinator:
+    """Stores shared reset boundaries learned passively from server ``$tu`` output."""
+
+    def __init__(self, message_limit=2000):
+        self._lock = threading.RLock()
+        self._snapshots = {}
+        self._seen_messages = OrderedDict()
+        self._message_limit = max(1, int(message_limit))
+
+    def observe(
+        self,
+        server_id,
+        message_id,
+        observed_at_utc,
+        claim_reset_at_utc=None,
+        roll_reset_at_utc=None,
+    ):
+        """Record one status message and return ``(snapshot, changed)``."""
+        if server_id is None or message_id is None:
+            return None, False
+        if claim_reset_at_utc is None and roll_reset_at_utc is None:
+            return self.snapshot(server_id), False
+        with self._lock:
+            if message_id in self._seen_messages:
+                return self._snapshots.get(server_id), False
+            self._seen_messages[message_id] = None
+            while len(self._seen_messages) > self._message_limit:
+                self._seen_messages.popitem(last=False)
+
+            previous = self._snapshots.get(server_id)
+            snapshot = ServerResetSnapshot(
+                server_id=int(server_id),
+                observed_at_utc=observed_at_utc,
+                claim_reset_at_utc=(
+                    claim_reset_at_utc
+                    if claim_reset_at_utc is not None
+                    else getattr(previous, "claim_reset_at_utc", None)
+                ),
+                roll_reset_at_utc=(
+                    roll_reset_at_utc
+                    if roll_reset_at_utc is not None
+                    else getattr(previous, "roll_reset_at_utc", None)
+                ),
+            )
+            self._snapshots[server_id] = snapshot
+            return snapshot, True
+
+    def snapshot(self, server_id):
+        with self._lock:
+            return self._snapshots.get(server_id)
 
 
 _CLAIM_DENIED_COOLDOWN_RE = re.compile(
@@ -27,6 +91,32 @@ def _fold_status_text(value):
         for character in normalized
         if not unicodedata.combining(character)
     ).casefold()
+
+
+def status_message_addresses_identity(content, identities, user_id=None):
+    """Return whether a Mudae status line explicitly addresses one identity."""
+    text = str(content or "")
+    if user_id is not None and (
+        "<@{}>".format(user_id) in text
+        or "<@!{}>".format(user_id) in text
+    ):
+        return True
+
+    identity_keys = {
+        str(identity).strip().casefold()
+        for identity in identities or ()
+        if str(identity or "").strip()
+    }
+    if not identity_keys:
+        return False
+
+    bold_match = re.match(r"^\s*\*\*([^*]+)\*\*", text)
+    if bold_match:
+        addressed_name = bold_match.group(1)
+    else:
+        plain_match = re.match(r"^\s*([^,\n]{1,80})\s*,", text)
+        addressed_name = plain_match.group(1).strip(" *_`~") if plain_match else ""
+    return addressed_name.strip().casefold() in identity_keys
 
 
 def parse_claim_denied_cooldown(content):

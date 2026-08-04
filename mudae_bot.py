@@ -68,15 +68,15 @@ def _bootstrap_modular_core():
 
 try:
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
-        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
+        humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         get_regular_kakera_filter_reason, has_op_perk_five_marker, has_purple_kakera_button,
         parse_kakera_result_amount,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
@@ -97,15 +97,15 @@ except (ModuleNotFoundError, ImportError) as core_error:
         if loaded_module == "mudae_core" or loaded_module.startswith("mudae_core."):
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
-        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
+        humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
         get_regular_kakera_filter_reason, has_op_perk_five_marker, has_purple_kakera_button,
         parse_kakera_result_amount,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
@@ -125,7 +125,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.7.7"
+CURRENT_VERSION = "4.7.8"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -137,6 +137,72 @@ _menu_active = threading.Event()
 _original_terminal_settings = None
 
 _claim_coordinator = ClaimCoordinator()
+_server_reset_coordinator = ServerResetCoordinator()
+
+
+def _apply_shared_reset_snapshot(client, snapshot):
+    """Apply only server-wide reset boundaries, never another user's private state."""
+    observed_at = getattr(snapshot, "observed_at_utc", None)
+    claim_deadline = getattr(snapshot, "claim_reset_at_utc", None)
+    roll_deadline = getattr(snapshot, "roll_reset_at_utc", None)
+
+    if observed_at is None:
+        return
+
+    previous_observation = getattr(client, "_shared_reset_observed_at_utc", None)
+    if previous_observation is not None and observed_at < previous_observation:
+        return
+    client._shared_reset_observed_at_utc = observed_at
+
+    if roll_deadline is not None:
+        client.roll_reset_at_utc = roll_deadline
+
+    if claim_deadline is None or getattr(client, "pending_claim", None) is not None:
+        return
+
+    current_deadline = getattr(client, "next_claim_reset_at_utc", None)
+    claimed_character = getattr(client, "last_successfully_claimed_character", None)
+    if (
+        current_deadline is not None
+        and claimed_character
+        and current_deadline > claim_deadline + datetime.timedelta(minutes=1)
+    ):
+        # This account claimed after the shared snapshot was produced. Its
+        # later local deadline must not be moved backwards by stale evidence.
+        return
+
+    client.next_claim_reset_at_utc = claim_deadline
+    if not getattr(client, "claim_right_available", False):
+        client.claim_cooldown_until_utc = claim_deadline
+
+    old_handle = getattr(client, "_shared_claim_reset_handle", None)
+    if old_handle is not None and not old_handle.cancelled():
+        old_handle.cancel()
+
+    def unlock_at_shared_boundary():
+        client._shared_claim_reset_handle = None
+        if getattr(client, "pending_claim", None) is not None:
+            return
+        current = getattr(client, "next_claim_reset_at_utc", None)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if current is None or abs((current - claim_deadline).total_seconds()) > 1.0 or now_utc < current:
+            return
+        client.claim_right_available = True
+        client.last_successfully_claimed_character = None
+        client.claim_cooldown_until_utc = None
+        client._claim_reset_refresh_requested = False
+        clear_status_dirty(client, {"claim"})
+        event = getattr(client, "_immediate_check_event", None)
+        if event is not None:
+            event.set()
+
+    loop = getattr(client, "loop", None)
+    if loop is not None and loop.is_running():
+        delay = max(
+            0.0,
+            (claim_deadline - datetime.datetime.now(datetime.timezone.utc)).total_seconds(),
+        )
+        client._shared_claim_reset_handle = loop.call_later(delay, unlock_at_shared_boundary)
 
 class BotLogger:
     _file_lock = threading.Lock()
@@ -833,6 +899,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._claim_evidence_event = None
     client._claim_text_evidence = None
     client._claim_reset_refresh_requested = False
+    client._shared_reset_observed_at_utc = None
+    client._shared_claim_reset_handle = None
+    client._snipe_claim_refresh_reset_at_utc = None
+    client._snipe_claim_refresh_at_utc = None
+    client._snipe_claim_refresh_completed_for = None
 
     client.use_slash_rolls = bool(use_slash_rolls and Route is not None)
     client.slash_fallback_active = False
@@ -1023,6 +1094,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return []
         return [getattr(user, 'name', ''), getattr(user, 'display_name', '')]
 
+    def message_addresses_self(message):
+        """Match the addressed account exactly instead of by unsafe substring."""
+        user = getattr(client, 'user', None)
+        if user is None:
+            return False
+        user_id = getattr(user, 'id', None)
+        identities = list(claim_identities())
+        guild = getattr(message, 'guild', None)
+        member = guild.get_member(user_id) if guild is not None and user_id is not None else None
+        member_display_name = getattr(member, 'display_name', '')
+        if member_display_name:
+            identities.append(member_display_name)
+        return status_message_addresses_identity(
+            getattr(message, 'content', ''),
+            identities,
+            user_id=user_id,
+        )
+
     def is_farm_character_name(name):
         normalized = str(name or "").strip().casefold()
         return any(normalized == item.casefold() for item in client.farm_characters)
@@ -1065,6 +1154,72 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not is_tu_response_for_self(message):
             return False
         future.set_result(message.content)
+        return True
+
+    def observe_shared_tu_resets(message):
+        """Share only claim/roll reset boundaries from any visible server $tu."""
+        if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
+            return False
+        guild = getattr(message, 'guild', None)
+        if guild is None or not looks_like_tu_status_snapshot(getattr(message, 'content', '')):
+            return False
+
+        content = str(message.content or '')
+        lowered = content.lower()
+        observed_at = datetime.datetime.now(datetime.timezone.utc)
+
+        claim_minutes = None
+        claim_match = re.search(REGEX_PATTERNS["CLAIM_RESET"], lowered)
+        if claim_match and not any(marker in claim_match.group(0) for marker in ("$daily", "$dk", "$rt")):
+            claim_hours, claim_mins = parse_hm(claim_match)
+            claim_minutes = claim_hours * 60 + claim_mins
+        if claim_minutes is None:
+            claim_minutes = parse_claim_denied_cooldown(lowered)
+        if claim_minutes is None:
+            claim_minutes = parse_timer_minutes("CLAIM_COOLDOWN", lowered)
+
+        roll_minutes = None
+        rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], lowered, re.DOTALL)
+        if rolls_match:
+            roll_minutes = parse_timer_minutes("ROLL_RESET_TU", lowered[rolls_match.end():])
+        if roll_minutes is None:
+            roll_minutes = parse_timer_minutes("ROLL_RESET", lowered)
+
+        claim_deadline = (
+            cooldown_deadline(observed_at, claim_minutes)
+            if claim_minutes is not None
+            else None
+        )
+        roll_deadline = (
+            cooldown_deadline(observed_at, roll_minutes)
+            if roll_minutes is not None
+            else None
+        )
+        snapshot, changed = _server_reset_coordinator.observe(
+            getattr(guild, 'id', None),
+            getattr(message, 'id', None),
+            observed_at,
+            claim_reset_at_utc=claim_deadline,
+            roll_reset_at_utc=roll_deadline,
+        )
+        if not changed or snapshot is None:
+            return False
+
+        with _active_clients_lock:
+            active_clients = list(_active_clients)
+        for active_client in active_clients:
+            try:
+                if active_client.get_guild(guild.id) is None:
+                    continue
+                active_loop = getattr(active_client, 'loop', None)
+                if active_loop is not None and active_loop.is_running():
+                    active_loop.call_soon_threadsafe(
+                        _apply_shared_reset_snapshot,
+                        active_client,
+                        snapshot,
+                    )
+            except Exception:
+                continue
         return True
 
     def is_tu_status_snapshot_for_self(message):
@@ -1182,13 +1337,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if is_tu_status_snapshot_for_self(message):
             return False
         c_low = message.content.lower()
-        user = getattr(client, 'user', None)
-        identity_values = [getattr(user, 'name', '').lower(), getattr(user, 'display_name', '').lower()]
-        user_id = getattr(user, 'id', None)
-        addressed_to_self = any(identity and identity in c_low for identity in identity_values)
-        if user_id is not None and (f"<@{user_id}>" in message.content or f"<@!{user_id}>" in message.content):
-            addressed_to_self = True
-        if not addressed_to_self:
+        if not message_addresses_self(message):
             return False
         cooldown_minutes = parse_claim_denied_cooldown(c_low)
         match = None
@@ -1203,17 +1352,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             cooldown_minutes = hours * 60 + minutes
         BotLogger.log(f"Detected claim cooldown message from Mudae: {cooldown_minutes}m left. Locking claim.", preset_name, "WARN")
         set_claim_cooldown(cooldown_minutes, source="Mudae message", wake=False)
-        request_status_refresh({"claim", "rt"}, reason="claim-rejected-cooldown", urgent=True)
-        wake_status_loop()
         pending = getattr(client, 'pending_claim', None)
         if pending and pending.get("consumes_claim"):
             # This is explicit rejection evidence, not proof that the click
             # consumed a claim. Keep the roll pending until $tu confirms
             # whether it can be retried with a claim right or $rt.
             pending["rejected_by_cooldown"] = True
+            request_status_refresh({"claim", "rt"}, reason="claim-rejected-cooldown", urgent=True)
             event = getattr(client, '_claim_evidence_event', None)
             if event is not None:
                 event.set()
+        else:
+            # The rejection itself authoritatively locks a manual claim. There
+            # is no pending automated click to resolve, so another $tu would
+            # only repeat the same cooldown and can fan out across many alts.
+            clear_status_dirty(client, {"claim"})
+            wake_status_loop()
         return True
 
     async def paced_mudae_action(action):
@@ -2010,20 +2164,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await active_delay(1)
                 continue
             now = datetime.datetime.now(datetime.timezone.utc)
-            if not client.claim_right_available:
-                if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now:
-                    wait_s = max(5.0, (client.next_claim_reset_at_utc - now).total_seconds() + 2.0)
+            reset_at = client.next_claim_reset_at_utc
+            cached_reset = getattr(client, "_snipe_claim_refresh_reset_at_utc", None)
+            if reset_at and cached_reset != reset_at:
+                refresh_at = humanized_claim_refresh_deadline(
+                    reset_at,
+                    client.humanization_enabled,
+                    client.humanization_window_minutes,
+                )
+                client._snipe_claim_refresh_reset_at_utc = reset_at
+                client._snipe_claim_refresh_at_utc = refresh_at
+                client._snipe_claim_refresh_completed_for = None
+                delay_seconds = max(0.0, (refresh_at - reset_at).total_seconds())
+                if delay_seconds > 0:
+                    BotLogger.log(
+                        f"Snipe-only: Humanized claim status refresh scheduled {delay_seconds/60:.1f}m after reset.",
+                        preset_name,
+                        "RESET",
+                    )
+
+            refresh_at = getattr(client, "_snipe_claim_refresh_at_utc", None)
+            refresh_completed_for = getattr(client, "_snipe_claim_refresh_completed_for", None)
+            if reset_at and refresh_at and refresh_completed_for != reset_at:
+                if refresh_at > now:
+                    wait_s = max(1.0, (refresh_at - now).total_seconds())
                     BotLogger.log(f"Snipe-only: Silent. Sleeping {wait_s/60:.1f}m.", preset_name, "RESET")
                     try: await _interruptible_sleep(wait_s)
                     except asyncio.CancelledError: break
-                    if datetime.datetime.now(datetime.timezone.utc) >= client.next_claim_reset_at_utc:
-                        client._claim_reset_refresh_requested = True
-                        request_status_refresh({"claim"}, reason="snipe-claim-reset", urgent=True)
-                        await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
-                else:
-                    await _interruptible_sleep(10)
-            else:
-                await _interruptible_sleep(10)
+                    continue
+
+                client._snipe_claim_refresh_completed_for = reset_at
+                client._claim_reset_refresh_requested = True
+                request_status_refresh({"claim"}, reason="snipe-claim-reset", urgent=True)
+                await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
+                continue
+
+            await _interruptible_sleep(10)
 
     async def _interruptible_sleep(seconds):
         evt = client._immediate_check_event
@@ -3058,6 +3234,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if pending.get("finalized"):
             return
         pending["finalized"] = True
+        _claim_coordinator.mark_completed(pending.get("message_id"))
         client.claim_retry_counts.pop(pending.get("message_id"), None)
         char_name = pending["character_name"]
         character_kakera = pending["character_kakera"]
@@ -3362,6 +3539,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if evidence is not None and evidence.outcome == ClaimOutcome.FAILURE:
             BotLogger.log(f"{lbl}: FAILED. Taken by {evidence.winner or 'someone else'}.", preset_name, "WARN")
             client.claim_retry_counts.pop(pending.get("message_id"), None)
+            _claim_coordinator.mark_completed(pending.get("message_id"))
             clear_pending_claim(pending)
             clear_status_dirty(client, {"claim"})
             return ClaimOutcome.FAILURE
@@ -4074,6 +4252,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     @client.event
     async def on_message(message):
         update_dynamic_thresholds()
+        observe_shared_tu_resets(message)
         capture_tu_response(message)
         capture_sphere_game_response(message)
         capture_sphere_game_bonus(message)

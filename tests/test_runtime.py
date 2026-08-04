@@ -1,10 +1,12 @@
 import asyncio
+import datetime
 from types import SimpleNamespace
 import unittest
 
 from mudae_core.runtime import (
     CommandPacer,
     active_stagger_seconds,
+    humanized_claim_refresh_deadline,
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
@@ -34,6 +36,23 @@ class _Event:
 
 
 class RuntimeStaggerTests(unittest.TestCase):
+    def test_snipe_claim_refresh_uses_one_delay_inside_humanization_window(self):
+        reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)
+        deadline = humanized_claim_refresh_deadline(
+            reset_at,
+            humanization_enabled=True,
+            window_minutes=40,
+            jitter=lambda start, end: (start + end) / 4,
+        )
+        self.assertEqual(deadline, reset_at + datetime.timedelta(minutes=10))
+
+    def test_snipe_claim_refresh_stays_exact_when_humanization_is_disabled(self):
+        reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)
+        self.assertEqual(
+            humanized_claim_refresh_deadline(reset_at, False, 40),
+            reset_at,
+        )
+
     def test_command_quantities_are_split_into_ten_item_batches(self):
         self.assertEqual(split_command_batches(0), [])
         self.assertEqual(split_command_batches(10), [10])

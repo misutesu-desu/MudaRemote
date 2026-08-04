@@ -57,6 +57,17 @@ class RuntimeSourceContractTests(unittest.TestCase):
             ]
             self.assertTrue(pause_checks, function_name)
 
+    def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        loop_source = ast.get_source_segment(self.source, functions["snipe_only_status_loop"])
+        self.assertIn("humanized_claim_refresh_deadline(", loop_source)
+        self.assertIn("cached_reset != reset_at", loop_source)
+        self.assertIn('reason="snipe-claim-reset"', loop_source)
+
     def test_tu_response_retry_budget_is_two_commands(self):
         functions = {
             node.name: node
@@ -684,6 +695,54 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertNotIn("resolve_pending_claim_from_status(False", cooldown_source)
         self.assertIn("rejected_by_cooldown", resolve_source)
         self.assertIn("client.rt_available", resolve_source)
+
+    def test_manual_claim_cooldown_does_not_force_a_redundant_tu(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        cooldown_source = ast.get_source_segment(
+            self.source,
+            functions["process_claim_cooldown_message"],
+        )
+        pending_guard = cooldown_source.index('if pending and pending.get("consumes_claim"):')
+        refresh_call = cooldown_source.index('request_status_refresh({"claim", "rt"}')
+        authoritative_branch = cooldown_source.index("The rejection itself authoritatively locks a manual claim")
+        self.assertLess(pending_guard, refresh_call)
+        self.assertLess(refresh_call, authoritative_branch)
+
+    def test_verified_claims_become_terminal_cross_account_messages(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        success_source = ast.get_source_segment(
+            self.source,
+            functions["finalize_successful_claim"],
+        )
+        verify_source = ast.get_source_segment(
+            self.source,
+            functions["verify_snipe_outcome"],
+        )
+        self.assertIn("_claim_coordinator.mark_completed", success_source)
+        self.assertIn("_claim_coordinator.mark_completed", verify_source)
+
+    def test_all_visible_tu_snapshots_feed_the_shared_server_clock(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        observer_source = ast.get_source_segment(
+            self.source,
+            functions["observe_shared_tu_resets"],
+        )
+        self.assertIn("observe_shared_tu_resets(message)", handler_source)
+        self.assertIn("looks_like_tu_status_snapshot", observer_source)
+        self.assertIn("_server_reset_coordinator.observe", observer_source)
 
     def test_green_claim_button_is_handled_before_normal_claim_filters(self):
         functions = {

@@ -1,6 +1,7 @@
 """Cross-thread pause state and asyncio waiting helpers."""
 
 import asyncio
+import datetime
 import random
 import time
 
@@ -8,6 +9,23 @@ from .status import STATUS_FIELDS, mark_status_dirty
 
 
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
+
+
+def humanized_claim_refresh_deadline(
+    reset_at_utc,
+    humanization_enabled=False,
+    window_minutes=0,
+    jitter=None,
+):
+    """Return a stable post-reset deadline for a claim status refresh."""
+    if reset_at_utc is None:
+        return None
+    window_seconds = max(0.0, float(window_minutes or 0) * 60.0)
+    if not humanization_enabled or window_seconds <= 0:
+        return reset_at_utc
+    jitter_source = jitter or random.uniform
+    delay_seconds = max(0.0, min(window_seconds, float(jitter_source(0.0, window_seconds))))
+    return reset_at_utc + datetime.timedelta(seconds=delay_seconds)
 
 
 def split_command_batches(total, maximum_batch_size=10):

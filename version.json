@@ -1,5 +1,5 @@
 {
-  "version": "4.7.7",
+  "version": "4.7.8",
   "changelog": {
     "Bug Fixes": [
       "Perk 6 free-claim collection can be disabled separately for each preset.",
@@ -22,7 +22,10 @@
       "Failed update verification keeps the current installation safe and reports a clearer error.",
       "Successful external Kakera confirmations now suppress the unnecessary fallback $tu refresh.",
       "Unconfirmed ready claims now retry the live claim button once before requesting $tu, preserving short snipe windows.",
-      "Rapid preset clicks now load only the last selected preset instead of reverting to an earlier selection.",
+      "Verified or already-taken claim messages remain blocked across presets so delayed accounts cannot retry the same roll.",
+      "Manual claim cooldown messages lock the addressed account without triggering a redundant $tu status check.",
+      "Claim cooldown messages use exact usernames, mentions, and server display names instead of unsafe substring matching.",
+      "Preset changes now keep the newest selection even when it arrives while an unsaved-changes prompt is open.",
       "Purple Kakera collection can now be disabled per preset for multi-account setups."
     ],
     "Improvements": [
@@ -33,28 +36,30 @@
       "Kakera priority order can be rearranged by dragging visual cards.",
       "Preset filters explain that enabled Only rules must all match.",
       "Chaos emoji settings clearly state that they apply to the user's own rolls.",
-      "Kakera skip logs provide clearer reasons for easier troubleshooting."
+      "Kakera skip logs provide clearer reasons for easier troubleshooting.",
+      "Visible $tu responses share only server-wide claim and roll reset boundaries across presets in the same server.",
+      "Snipe-only presets now schedule their post-reset $tu refresh at one stable random point inside the configured humanization window."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "06979367d4787ffee602efe6105345814453d6407f7e96af7a08c546fcdefaf6",
+  "exe_sha256": "9580fe0d951b7013aaec2e665b28f79517a17e58f84c5cc0bf8092e9f548efb9",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "529b345fb7da8470921b898d52cfcc3b9b5ed248cb767aa6cc974a588d2baf49"
+      "sha256": "718350252a6696866160e8559374b66129a629569785c14b6d5a796f678904f2"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "818cd407fbd31584fedcac2f294f9b95023792814ac9af984cb4ca3ed52c2e83"
+      "sha256": "a3bb9e6c430ae0f313c7d893a392c066bc91ce71ef953c277d2f7dc050965e81"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "c4e5f806b3301ebb310fc64025a9553ae0ee26639656eaf6234f9a9ad12e6a03"
+      "sha256": "af172169f198c30837d3f8861fdeb26c65210d13284955d9cf02cf3f7ae04cd6"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -74,12 +79,12 @@
     {
       "path": "mudae_core/coordinator.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/coordinator.py",
-      "sha256": "e3fa86adf0a5906f3da57e11c7e4a5693ad5716bae10021d353244c4465acad5"
+      "sha256": "eb9abb633baeaedcb4ff34fadb8da222a0c190c0e2bec0eebf8b321e0983b168"
     },
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/runtime.py",
-      "sha256": "0e787dd5b9aac73f4c3e04a34a40badd4b80185620340d119b752bbf3718e43e"
+      "sha256": "25fb5ebb35c4898b4f3f331f44fb3f2a6190a32f59e7b049237cb74a22c614da"
     },
     {
       "path": "mudae_core/secrets.py",
@@ -89,7 +94,7 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/status.py",
-      "sha256": "cf303e3aa60f6cc2794f9fbcf70ddca07eea0d69fef0de8bace1ac914cf7765e"
+      "sha256": "ae12251a5cb75a4f470826c547885be159f55a4365e8060ee4bf20cac4a285ce"
     },
     {
       "path": "mudae_core/spheres.py",
