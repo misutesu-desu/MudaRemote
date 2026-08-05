@@ -536,10 +536,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
         filter_source = ast.get_source_segment(self.source, functions["regular_kakera_filter_reason"])
 
         self.assertIn("op5_only=client.op_perk_5_only", filter_source)
-        self.assertIn("has_op5=has_op_perk_five_marker(embed.description)", filter_source)
+        self.assertIn("marker_text = kakera_embed_text(embed)", filter_source)
+        self.assertIn("has_op5=has_op_perk_five_marker(marker_text)", filter_source)
         self.assertNotIn('any(f"sp"', filter_source)
         self.assertIn("filter_reason = regular_kakera_filter_reason", claim_source)
-        self.assertIn("has_sp_perk = has_perk_eight_discount(embed.description)", claim_source)
+        self.assertIn("has_sp_perk = has_perk_eight_discount(kakera_embed_text(embed))", claim_source)
 
     def test_purple_kakera_bypass_is_controlled_per_preset(self):
         functions = {
@@ -572,10 +573,22 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
         self.assertIn("filter_reason is None and regular_match", claim_source)
         self.assertIn("client.sphere_click_targets", sphere_source)
+        self.assertIn("sphere_target_matches", sphere_source)
 
     def test_megasphere_is_a_supported_default_sphere_target(self):
         self.assertIn("'spM'", self.source)
         self.assertIn('"spM", "spU"', self.source)
+        self.assertIn("'spR', 'sp'", self.source)
+
+    def test_missing_context_overrides_inherit_regular_kakera_selection(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        self.assertIn("else list(client.kakera_emojis)", run_source)
+        self.assertIn("if sphere_click_targets_preset is None", run_source)
 
     def test_ouroperk_eight_counts_as_half_power_for_chaos_only(self):
         functions = {
@@ -585,7 +598,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         filter_source = ast.get_source_segment(self.source, functions["regular_kakera_filter_reason"])
         self.assertIn("has_chaos_discount=chaos_count > 0", filter_source)
-        self.assertIn("has_perk_eight_discount=has_perk_eight_discount(embed.description)", filter_source)
+        self.assertIn("has_perk_eight_discount=has_perk_eight_discount(marker_text)", filter_source)
 
     def test_manual_self_roll_kakera_is_not_treated_as_external(self):
         functions = {
@@ -668,7 +681,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
         self.assertNotIn("max_clicks = 3", claim_source)
         self.assertNotIn("clicks_per_message", roll_source)
-        self.assertIn("if match_custom or match_pos:", claim_source)
+        self.assertIn("find_refreshed_component_button", claim_source)
+        self.assertIn("find_refreshed_component_button", roll_source)
 
     def test_idle_manual_self_rolls_use_reactive_claiming(self):
         functions = {

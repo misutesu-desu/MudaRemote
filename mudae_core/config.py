@@ -107,22 +107,24 @@ def parse_inactive_hours(value):
     return result, errors
 
 
-def validate_preset(data, resolved_token=None):
-    """Return user-facing validation errors for a fully collected preset."""
+def validate_preset(data, resolved_token=None, require_runtime=True):
+    """Return validation errors, optionally allowing an incomplete editor draft."""
     errors = []
     token = resolved_token if resolved_token is not None else data.get("token")
     token_values = token if isinstance(token, (list, tuple)) else [token]
-    if not any(str(item or "").strip() for item in token_values):
+    if require_runtime and not any(str(item or "").strip() for item in token_values):
         errors.append("Discord token is required.")
     for key, label in (("prefix", "Bot command prefix"), ("mudae_prefix", "Mudae prefix"), ("roll_command", "Roll command")):
         if not str(data.get(key, "")).strip():
             errors.append("{} is required.".format(label))
-    try:
-        channel_id = int(data.get("channel_id", 0))
-        if channel_id <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        errors.append("Discord Channel ID must be a positive number.")
+    channel_id = data.get("channel_id")
+    if require_runtime or channel_id not in (None, ""):
+        try:
+            channel_id = int(channel_id or 0)
+            if channel_id <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("Discord Channel ID must be a positive number.")
     command_channel = data.get("command_channel_id")
     if command_channel not in (None, ""):
         try:

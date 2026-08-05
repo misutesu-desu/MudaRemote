@@ -67,6 +67,12 @@ class EditorUxContractTests(unittest.TestCase):
         quick_block = self.editor[self.editor.index("def build_quick_setup"):self.editor.index("def show_editor_mode")]
         self.assertNotIn('_quick_entry(inner, "additional_tokens"', quick_block)
 
+    def test_quick_setup_includes_every_supported_x_roll_pool(self):
+        self.assertIn(
+            '("wa", "ha", "ma", "wx", "hx", "mx", "wg", "hg", "mg")',
+            self.editor,
+        )
+
     def test_quick_setup_preserves_hidden_additional_tokens(self):
         class FakeSecretStore:
             def get_tokens(self, _name, _legacy):
@@ -86,8 +92,23 @@ class EditorUxContractTests(unittest.TestCase):
 
     def test_save_and_start_uses_the_active_editor_mode(self):
         self.assertIn("def save_active_preset", self.editor)
-        self.assertIn("self.save_active_preset(show_success=False)", self.editor)
+        self.assertIn("self.save_active_preset(show_success=False, require_runtime=True)", self.editor)
+        self.assertIn("def save_active_preset(self, show_success=True, require_runtime=False)", self.editor)
         self.assertIn('"▶ Save & Start Bot"', self.editor)
+
+    def test_preset_list_keeps_its_selection_when_focus_moves(self):
+        self.assertIn("exportselection=False", self.editor)
+        self.assertIn("selectmode=tk.BROWSE", self.editor)
+
+    def test_preset_loading_batches_chip_updates_and_reuses_emoji_cards(self):
+        self.assertIn("def replace(self, value):", self.editor)
+        self.assertIn("widget.replace(serialized)", self.editor)
+        refresh_source = self.editor[
+            self.editor.index("def refresh(self):"):
+            self.editor.index("# --- Constants ---")
+        ]
+        self.assertIn("if set(self.cards) != set(display_options):", refresh_source)
+        self.assertIn("card.pack_forget()", refresh_source)
 
     def test_gui_source_contains_no_turkish_user_interface_text(self):
         self.assertIsNone(re.search(r"[ğüşöçıİĞÜŞÖÇ]", self.editor))
@@ -109,25 +130,63 @@ class EditorUxContractTests(unittest.TestCase):
         self.assertIn("self.set_flat_button_colors(self.quick_mode_btn", self.editor)
         self.assertIn("self.set_flat_button_colors(self.advanced_mode_btn", self.editor)
 
+    def test_mode_switch_resolves_active_form_before_reloading_both_views(self):
+        mode_source = self.editor[
+            self.editor.index("def show_editor_mode"):
+            self.editor.index("def _quick_value")
+        ]
+        self.assertIn("if not self.prompt_unsaved_changes():", mode_source)
+        self.assertIn("self.select_preset(self.current_preset)", mode_source)
+
+    def test_context_emoji_overrides_document_regular_selection_inheritance(self):
+        self.assertIn("unchecked inherits Kakera Emojis", self.editor)
+        self.assertIn('data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)', self.editor)
+
+    def test_sidebar_rebuild_preserves_the_current_visible_preset(self):
+        class FakeListbox:
+            def __init__(self):
+                self.items = []
+                self.selected = None
+
+            def delete(self, _first, _last):
+                self.items = []
+
+            def insert(self, _where, name):
+                self.items.append(name)
+
+            def selection_set(self, index):
+                self.selected = index
+
+            def activate(self, _index):
+                pass
+
+            def see(self, _index):
+                pass
+
+        editor = SimpleNamespace(
+            preset_listbox=FakeListbox(),
+            loading_preset=False,
+            current_preset="second",
+        )
+        PresetEditor._replace_preset_list(editor, ["first", "second", "third"])
+        self.assertEqual(editor.preset_listbox.items, ["first", "second", "third"])
+        self.assertEqual(editor.preset_listbox.selected, 1)
+        self.assertFalse(editor.loading_preset)
+
     def test_preset_selection_commits_only_the_last_queued_choice(self):
         self.assertIn("self._preset_selection_generation = 0", self.editor)
         self.assertIn("self._pending_preset_selection = None", self.editor)
-        self.assertIn("self.root.after_idle(", self.editor)
         self.assertIn("def _commit_preset_selection", self.editor)
         self.assertIn("generation != self._preset_selection_generation", self.editor)
         self.assertIn("self._preset_selection_in_progress = True", self.editor)
+        selection_source = self.editor[
+            self.editor.index("def on_preset_select"):
+            self.editor.index("def select_preset")
+        ]
+        self.assertNotIn("after_idle", selection_source)
+        self.assertIn("self._commit_preset_selection(preset_name, generation)", selection_source)
 
     def test_new_selection_during_unsaved_prompt_supersedes_the_old_target(self):
-        class FakeRoot:
-            def __init__(self):
-                self.callbacks = []
-
-            def after_idle(self, callback):
-                self.callbacks.append(callback)
-
-            def run_next(self):
-                self.callbacks.pop(0)()
-
         class FakeListbox:
             selected = "second"
 
@@ -138,8 +197,8 @@ class EditorUxContractTests(unittest.TestCase):
                 return self.selected
 
         editor = object.__new__(PresetEditor)
-        editor.root = FakeRoot()
         editor.preset_listbox = FakeListbox()
+        editor.presets = {"first": {}, "second": {}, "third": {}}
         editor.loading_preset = False
         editor._preset_selection_generation = 0
         editor._preset_selection_in_progress = False
@@ -165,11 +224,34 @@ class EditorUxContractTests(unittest.TestCase):
         editor.update_listbox_selection = lambda _name: None
 
         editor.on_preset_select(None)
-        editor.root.run_next()
-        editor.root.run_next()
 
         self.assertEqual(loaded, ["third"])
         self.assertEqual(editor.current_preset, "third")
+
+    def test_clean_preset_selection_loads_synchronously(self):
+        class FakeListbox:
+            def curselection(self):
+                return (0,)
+
+            def get(self, _index):
+                return "second"
+
+        editor = object.__new__(PresetEditor)
+        editor.preset_listbox = FakeListbox()
+        editor.presets = {"first": {}, "second": {}}
+        editor.loading_preset = False
+        editor._preset_selection_generation = 0
+        editor._preset_selection_in_progress = False
+        editor._pending_preset_selection = None
+        editor.current_preset = "first"
+        editor.prompt_unsaved_changes = lambda: True
+        editor.update_listbox_selection = lambda _name: None
+        loaded = []
+        editor.select_preset = lambda name: loaded.append(name)
+
+        editor.on_preset_select(None)
+
+        self.assertEqual(loaded, ["second"])
 
 
 if __name__ == "__main__":

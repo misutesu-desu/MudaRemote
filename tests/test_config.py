@@ -43,6 +43,23 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(any("claim_interval" in error for error in errors))
         self.assertTrue(any("minimum" in error for error in errors))
 
+    def test_editor_drafts_may_omit_runtime_credentials(self):
+        draft = {
+            "token": "", "prefix": "////////", "mudae_prefix": "$", "roll_command": "wa",
+            "channel_id": "", "claim_interval": 180, "roll_interval": 60,
+            "max_dk_power": 100, "reactive_kakera_delay_range": [0.3, 1.0],
+        }
+        self.assertEqual(validate_preset(draft, resolved_token=[], require_runtime=False), [])
+        runtime_errors = validate_preset(draft, resolved_token=[], require_runtime=True)
+        self.assertTrue(any("token" in error.lower() for error in runtime_errors))
+        self.assertTrue(any("Channel ID" in error for error in runtime_errors))
+
+        invalid_draft = dict(draft, webhook_url="http://example.com/hook")
+        self.assertTrue(any(
+            "Webhook URL" in error
+            for error in validate_preset(invalid_draft, resolved_token=[], require_runtime=False)
+        ))
+
     def test_webhook_and_expert_log_selectors_are_validated(self):
         preset = {
             "token": "secret", "prefix": "////////", "mudae_prefix": "$",

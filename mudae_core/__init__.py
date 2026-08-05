@@ -11,7 +11,20 @@ from .claiming import (
     is_claim_announcement_for_character,
 )
 from .coordinator import ClaimCoordinator
-from .kakera import calculate_kakera_power_cost, get_regular_kakera_filter_reason, has_op_perk_five_marker, has_perk_eight_discount, has_purple_kakera_button, parse_kakera_result_amount
+from .kakera import (
+    calculate_kakera_power_cost,
+    find_refreshed_component_button,
+    get_kakera_emoji_targets,
+    get_regular_kakera_filter_reason,
+    has_op_perk_five_marker,
+    has_perk_eight_discount,
+    has_purple_kakera_button,
+    is_character_sphere_emoji,
+    kakera_embed_text,
+    normalize_character_sphere_emoji,
+    parse_kakera_result_amount,
+    sphere_target_matches,
+)
 from .filters import (
     character_series_line,
     name_or_series_is_configured_wish,
@@ -81,6 +94,8 @@ __all__ = [
     "humanized_claim_refresh_deadline",
     "atomic_write_json",
     "calculate_kakera_power_cost",
+    "find_refreshed_component_button",
+    "get_kakera_emoji_targets",
     "get_regular_kakera_filter_reason",
     "character_series_line",
     "classify_claim_owner",
@@ -103,7 +118,11 @@ __all__ = [
     "has_perk_eight_discount",
     "has_op_perk_five_marker",
     "has_purple_kakera_button",
+    "is_character_sphere_emoji",
+    "kakera_embed_text",
+    "normalize_character_sphere_emoji",
     "parse_kakera_result_amount",
+    "sphere_target_matches",
     "load_json",
     "looks_like_tu_status_snapshot",
     "mark_status_dirty",

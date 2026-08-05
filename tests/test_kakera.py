@@ -1,12 +1,19 @@
 import unittest
+from types import SimpleNamespace
 
 from mudae_core.kakera import (
     calculate_kakera_power_cost,
+    find_refreshed_component_button,
+    get_kakera_emoji_targets,
     get_regular_kakera_filter_reason,
     has_op_perk_five_marker,
     has_perk_eight_discount,
     has_purple_kakera_button,
+    is_character_sphere_emoji,
+    kakera_embed_text,
+    normalize_character_sphere_emoji,
     parse_kakera_result_amount,
+    sphere_target_matches,
 )
 
 
@@ -116,6 +123,82 @@ class KakeraPowerTests(unittest.TestCase):
             self.assertTrue(has_perk_eight_discount("Perk 8: {}".format(marker)), marker)
         self.assertFalse(has_perk_eight_discount("<:spR:1234567890>"))
         self.assertFalse(has_perk_eight_discount("2x spheres"))
+
+    def test_perk_markers_are_collected_from_embed_fields_and_footer(self):
+        embed = SimpleNamespace(
+            description="Series",
+            fields=[SimpleNamespace(name="Bonus", value="💎 / 2")],
+            footer=SimpleNamespace(text="<:sp:1234567890>"),
+        )
+        marker_text = kakera_embed_text(embed)
+        self.assertTrue(has_perk_eight_discount(marker_text))
+        self.assertTrue(has_op_perk_five_marker(marker_text))
+
+    def test_red_sphere_button_aliases_match_the_same_target(self):
+        self.assertEqual(normalize_character_sphere_emoji("sp"), "spR")
+        self.assertEqual(normalize_character_sphere_emoji("spR2"), "spR")
+        self.assertTrue(is_character_sphere_emoji("sp"))
+        self.assertTrue(sphere_target_matches("sp", ["spR"]))
+        self.assertTrue(sphere_target_matches("spR2", ["spR"]))
+        self.assertFalse(sphere_target_matches("sp", ["spM"]))
+
+    def test_perk_eight_selection_is_used_for_external_and_own_rolls(self):
+        normal = ["kakeraR"]
+        chaos = ["kakeraO"]
+        perk_eight = ["kakeraW"]
+        for is_external in (False, True):
+            self.assertEqual(
+                get_kakera_emoji_targets(
+                    normal,
+                    chaos,
+                    perk_eight,
+                    has_chaos_discount=True,
+                    has_perk_eight_discount=True,
+                    is_external_roll=is_external,
+                ),
+                ("kakeraW",),
+            )
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                normal,
+                chaos,
+                perk_eight,
+                has_chaos_discount=True,
+                is_external_roll=True,
+            ),
+            ("kakeraR",),
+        )
+
+    def test_explicit_empty_context_selection_stays_empty(self):
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                ["kakeraR"],
+                ["kakeraO"],
+                [],
+                has_perk_eight_discount=True,
+            ),
+            (),
+        )
+
+    def test_refreshed_repeated_buttons_prefer_position_over_shared_custom_id(self):
+        def button(name, custom_id="shared"):
+            return SimpleNamespace(
+                emoji=SimpleNamespace(name=name),
+                custom_id=custom_id,
+            )
+
+        yellow = button("kakeraY")
+        first_orange = button("kakeraO")
+        second_orange = button("kakeraO")
+        rows = [SimpleNamespace(children=[yellow, first_orange, second_orange])]
+
+        resolved = find_refreshed_component_button(
+            rows,
+            custom_id="shared",
+            position=(0, 2),
+            emoji_name="kakeraO",
+        )
+        self.assertIs(resolved, second_orange)
 
 
 if __name__ == "__main__":

@@ -325,6 +325,17 @@ class ChipListWidget(tk.Frame):
             self.chips = []
         self._redraw_chips()
 
+    def replace(self, value):
+        """Replace all values with a single redraw during preset loading."""
+        new_chips = [item.strip() for item in str(value or "").split(",") if item.strip()]
+        entry_has_text = bool(self.entry.get())
+        if new_chips == self.chips and not entry_has_text:
+            return
+        self.chips = new_chips
+        if entry_has_text:
+            self.entry.delete(0, tk.END)
+        self._redraw_chips()
+
     def configure(self, **kwargs):
         entry_kwargs = {}
         for key in ["bg", "highlightbackground", "highlightcolor"]:
@@ -368,6 +379,8 @@ class EmojiOptionPicker(tk.Frame):
         self.options = list(options)
         self.reorderable = reorderable
         self.cards = {}
+        self.icons = {}
+        self.checks = {}
         self.images = {}
         self.enable_callback = None
         self.drag_option = None
@@ -417,6 +430,8 @@ class EmojiOptionPicker(tk.Frame):
         for child in self.card_row.winfo_children():
             child.destroy()
         self.cards.clear()
+        self.icons.clear()
+        self.checks.clear()
         self.images.clear()
         selected = set(self.chip_widget.chips)
         for option in self._display_options():
@@ -428,14 +443,17 @@ class EmojiOptionPicker(tk.Frame):
             icon = tk.Canvas(card, width=28, height=28, bg=background, highlightthickness=0)
             icon.pack(padx=4, pady=4)
             self._draw_icon(icon, option)
+            check = tk.Label(card, text="✓", bg=ACCENT, fg=BG_DARK, font=("Segoe UI", 7, "bold"),
+                             padx=2)
             if selected_option:
-                tk.Label(card, text="✓", bg=ACCENT, fg=BG_DARK, font=("Segoe UI", 7, "bold"),
-                         padx=2).place(relx=1, rely=0, anchor="ne")
+                check.place(relx=1, rely=0, anchor="ne")
             Tooltip(card, option + (" — drag to reorder" if self.reorderable else ""))
             for widget in (card, icon):
                 widget.bind("<ButtonPress-1>", lambda event, value=option: self._start_drag(event, value))
                 widget.bind("<ButtonRelease-1>", lambda event, value=option: self._finish_drag(event, value))
             self.cards[option] = card
+            self.icons[option] = icon
+            self.checks[option] = check
 
     def _start_drag(self, _event, option):
         self.drag_option = option
@@ -492,7 +510,29 @@ class EmojiOptionPicker(tk.Frame):
             return None
 
     def refresh(self):
-        self._build_cards()
+        display_options = self._display_options()
+        if set(self.cards) != set(display_options):
+            self._build_cards()
+            return
+
+        selected = set(self.chip_widget.chips)
+        for option in display_options:
+            card = self.cards[option]
+            icon = self.icons[option]
+            check = self.checks[option]
+            selected_option = option in selected
+            background = BG_INPUT if selected_option else BG_PANEL
+            card.pack_forget()
+            card.pack(side=tk.LEFT, padx=(0, 5), pady=(2, 4))
+            card.configure(
+                bg=background,
+                highlightbackground=ACCENT if selected_option else BORDER_COLOR,
+            )
+            icon.configure(bg=background)
+            if selected_option:
+                check.place(relx=1, rely=0, anchor="ne")
+            else:
+                check.place_forget()
 
 # --- Constants ---
 PRESETS_FILE = os.path.join(get_base_path(), "presets.json")
@@ -835,11 +875,18 @@ class PresetEditor:
 
     def update_listbox_selection(self, preset_name):
         """Helper to restore listbox selection to avoid UI desync."""
-        for i in range(self.preset_listbox.size()):
-            if self.preset_listbox.get(i) == preset_name:
-                self.preset_listbox.selection_clear(0, tk.END)
-                self.preset_listbox.selection_set(i)
-                break
+        was_loading = self.loading_preset
+        self.loading_preset = True
+        try:
+            for i in range(self.preset_listbox.size()):
+                if self.preset_listbox.get(i) == preset_name:
+                    self.preset_listbox.selection_clear(0, tk.END)
+                    self.preset_listbox.selection_set(i)
+                    self.preset_listbox.activate(i)
+                    self.preset_listbox.see(i)
+                    break
+        finally:
+            self.loading_preset = was_loading
 
     def apply_theme(self):
         """Apply the premium Catppuccin Mocha style palette."""
@@ -1118,10 +1165,11 @@ class PresetEditor:
         if query == "🔍 search configs..." or not query:
             query = ""
 
-        self.preset_listbox.delete(0, tk.END)
-        for name in sorted(self.presets.keys()):
-            if not query or query in name.lower():
-                self.preset_listbox.insert(tk.END, name)
+        visible_names = [
+            name for name in sorted(self.presets.keys())
+            if not query or query in name.lower()
+        ]
+        self._replace_preset_list(visible_names)
 
     def load_presets(self):
         """Load presets from JSON file."""
@@ -1226,7 +1274,12 @@ class PresetEditor:
         listbox_border = tk.Frame(sidebar, bg=BORDER_COLOR, bd=0, highlightbackground=BORDER_COLOR, highlightthickness=1)
         listbox_border.pack(fill=tk.BOTH, expand=True)
 
-        self.preset_listbox = tk.Listbox(listbox_border, **self.listbox_config)
+        self.preset_listbox = tk.Listbox(
+            listbox_border,
+            exportselection=False,
+            selectmode=tk.BROWSE,
+            **self.listbox_config,
+        )
         self.preset_listbox.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         self.preset_listbox.bind("<<ListboxSelect>>", self.on_preset_select)
 
@@ -1518,7 +1571,7 @@ class PresetEditor:
             inner,
             "roll_command",
             "Roll pool",
-            ("wa", "ha", "ma", "wg", "hg", "mg"),
+            ("wa", "ha", "ma", "wx", "hx", "mx", "wg", "hg", "mg"),
             "wa is the recommended default. Choose the pool you normally use in Mudae.",
         )
         self.quick_goal_vars["roll"] = self._quick_check(
@@ -1604,6 +1657,14 @@ class PresetEditor:
     def show_editor_mode(self, mode):
         """Switch between the guided setup and the complete expert editor."""
         mode = "advanced" if mode == "advanced" else "quick"
+        if mode != self.editor_mode and self.current_preset:
+            # The two forms intentionally use separate Tk variables. Resolve
+            # the active form before switching, then reload both views from the
+            # same persisted snapshot so stale hidden widgets cannot overwrite
+            # a newer edit later.
+            if not self.prompt_unsaved_changes():
+                return False
+            self.select_preset(self.current_preset)
         self.editor_mode = mode
         if mode == "quick":
             self.advanced_search_frame.pack_forget()
@@ -1618,6 +1679,7 @@ class PresetEditor:
             self.advanced_scroll_area.pack(fill=tk.BOTH, expand=True, before=self.footer_frame)
             self.set_flat_button_colors(self.quick_mode_btn, BG_PANEL, TEXT_MAIN, BG_INPUT)
             self.set_flat_button_colors(self.advanced_mode_btn, ACCENT, BG_DARK, ACCENT_ALT)
+        return True
 
     def _quick_value(self, key, default=""):
         widget = self.quick_widgets.get(key)
@@ -1705,10 +1767,12 @@ class PresetEditor:
                 seen.add(candidate)
         return values
 
-    def save_active_preset(self, show_success=True):
-        return self.save_quick_setup(show_success=show_success) if self.editor_mode == "quick" else self.save_current_preset(show_success=show_success)
+    def save_active_preset(self, show_success=True, require_runtime=False):
+        if self.editor_mode == "quick":
+            return self.save_quick_setup(show_success=show_success, require_runtime=require_runtime)
+        return self.save_current_preset(show_success=show_success, require_runtime=require_runtime)
 
-    def save_quick_setup(self, show_success=True):
+    def save_quick_setup(self, show_success=True, require_runtime=False):
         """Persist only the guided fields while retaining every advanced option."""
         if not self.current_preset:
             messagebox.showwarning("Warning", "No profile selected.")
@@ -1738,7 +1802,12 @@ class PresetEditor:
         data["series_snipe_mode"] = bool(data["series_wishlist"])
         data["series_snipe_only_self_rolls"] = not data["snipe_mode"]
         data["token"] = ""
-        return self._persist_preset_data(data, self._quick_token_values(), show_success=show_success)
+        return self._persist_preset_data(
+            data,
+            self._quick_token_values(),
+            show_success=show_success,
+            require_runtime=require_runtime,
+        )
 
     def _on_mousewheel(self, event):
         if getattr(event, "num", None) == 4:
@@ -1845,9 +1914,24 @@ class PresetEditor:
 
     def refresh_preset_list(self):
         """Refresh the preset listbox."""
-        self.preset_listbox.delete(0, tk.END)
-        for name in sorted(self.presets.keys()):
-            self.preset_listbox.insert(tk.END, name)
+        self._replace_preset_list(sorted(self.presets.keys()))
+
+    def _replace_preset_list(self, preset_names):
+        """Rebuild the sidebar without losing or spuriously changing selection."""
+        names = list(preset_names)
+        was_loading = self.loading_preset
+        self.loading_preset = True
+        try:
+            self.preset_listbox.delete(0, tk.END)
+            for name in names:
+                self.preset_listbox.insert(tk.END, name)
+            if self.current_preset in names:
+                index = names.index(self.current_preset)
+                self.preset_listbox.selection_set(index)
+                self.preset_listbox.activate(index)
+                self.preset_listbox.see(index)
+        finally:
+            self.loading_preset = was_loading
 
     def build_settings_form(self):
         """Build the settings form inside the scrollable frame."""
@@ -2110,9 +2194,9 @@ class PresetEditor:
                                      ", ".join(DEFAULT_CLAIM_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "kakera_emojis", "Kakera Emojis",
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
-        self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Chaos Emojis (Own Rolls Only)",
+        self.add_optional_list_field(emoji_frame.content, "chaos_emojis", "Custom Chaos Emoji Override (Own Rolls Only; unchecked inherits Kakera Emojis)",
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
-        self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Ouroperk 8 Discounted Kakera Emojis",
+        self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Custom Ouroperk 8 Emoji Override (unchecked inherits Kakera Emojis)",
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
 
         # [NEW] Task 5: Randomized claim reaction emojis
@@ -2656,7 +2740,7 @@ class PresetEditor:
         self.update_quick_summary()
 
     def on_preset_select(self, event):
-        """Queue only the most recent listbox choice for loading."""
+        """Load the clicked preset immediately while retaining re-entry safety."""
         if self.loading_preset:
             return
         selection = self.preset_listbox.curselection()
@@ -2666,22 +2750,12 @@ class PresetEditor:
         if preset_name == self.current_preset:
             return
 
-        # ListboxSelect can be queued both by a user click and by the
-        # selection update performed while loading a preset.  Defer handling
-        # until Tk has drained that event burst; only the final visible choice
-        # is allowed to replace the current preset.
         self._preset_selection_generation += 1
         generation = self._preset_selection_generation
         if self._preset_selection_in_progress:
             self._pending_preset_selection = (preset_name, generation)
             return
-        self._schedule_preset_selection(preset_name, generation)
-
-    def _schedule_preset_selection(self, preset_name, generation):
-        """Defer a preset transition until Tk has drained the current event burst."""
-        self.root.after_idle(
-            lambda: self._commit_preset_selection(preset_name, generation)
-        )
+        self._commit_preset_selection(preset_name, generation)
 
     def _commit_preset_selection(self, preset_name, generation):
         """Apply a still-current listbox selection as one atomic transition."""
@@ -2694,8 +2768,7 @@ class PresetEditor:
         if self._preset_selection_in_progress:
             self._pending_preset_selection = (preset_name, generation)
             return
-        selection = self.preset_listbox.curselection()
-        if not selection or self.preset_listbox.get(selection[0]) != preset_name:
+        if preset_name not in self.presets:
             return
 
         self._preset_selection_in_progress = True
@@ -2712,16 +2785,19 @@ class PresetEditor:
             pending = self._pending_preset_selection
             self._pending_preset_selection = None
             if pending and pending[1] == self._preset_selection_generation:
-                self._schedule_preset_selection(*pending)
+                self._commit_preset_selection(*pending)
 
     def select_preset(self, preset_name):
         """Load preset data into the form with loading/dirty flag safety wrapper."""
+        if preset_name not in self.presets:
+            return False
         self.loading_preset = True
         try:
             self._select_preset_impl(preset_name)
         finally:
             self.loading_preset = False
             self.is_dirty = False
+        return True
 
     def _select_preset_impl(self, preset_name):
         """Internal implementation of loading preset data into the form."""
@@ -2802,12 +2878,16 @@ class PresetEditor:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, (ttk.Entry, tk.Entry, ChipListWidget)):
-                    widget.delete(0, tk.END)
                     value = data.get(key, DEFAULTS.get(key, []))
                     if key == "farm_characters" and not value and data.get("farm_character"):
                         value = [data["farm_character"]]
                     if isinstance(value, list):
-                        widget.insert(0, ", ".join(value))
+                        serialized = ", ".join(value)
+                        if isinstance(widget, ChipListWidget):
+                            widget.replace(serialized)
+                        else:
+                            widget.delete(0, tk.END)
+                            widget.insert(0, serialized)
 
         # Populate optional emoji fields
         for key, defaults in [("claim_emojis", DEFAULT_CLAIM_EMOJIS),
@@ -2823,16 +2903,29 @@ class PresetEditor:
                     # Key exists in preset - enable and populate
                     var.set(True)
                     entry.configure(state="normal")
-                    entry.delete(0, tk.END)
                     value = data[key]
                     if isinstance(value, list):
-                        entry.insert(0, ", ".join(value))
+                        serialized = ", ".join(value)
+                        if isinstance(entry, ChipListWidget):
+                            entry.replace(serialized)
+                        else:
+                            entry.delete(0, tk.END)
+                            entry.insert(0, serialized)
                 else:
-                    # Key missing - disable and show defaults
+                    # Context-specific overrides inherit the regular Kakera
+                    # selection. Reflect that effective runtime value instead
+                    # of displaying a misleading all-colours default.
+                    effective_defaults = defaults
+                    if key in ("chaos_emojis", "sphere_perk_emojis"):
+                        effective_defaults = data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)
                     var.set(False)
                     entry.configure(state="normal")
-                    entry.delete(0, tk.END)
-                    entry.insert(0, ", ".join(defaults))
+                    serialized = ", ".join(effective_defaults)
+                    if isinstance(entry, ChipListWidget):
+                        entry.replace(serialized)
+                    else:
+                        entry.delete(0, tk.END)
+                        entry.insert(0, serialized)
                     entry.configure(state="disabled")
 
         # Populate inactive hours
@@ -2898,9 +2991,13 @@ class PresetEditor:
                 self.preset_listbox.selection_set(i)
                 break
 
-    def _persist_preset_data(self, data, resolved_tokens, show_success=True):
-        """Validate and persist a complete preset from either editor mode."""
-        validation_errors = validate_preset(data, resolved_token=resolved_tokens)
+    def _persist_preset_data(self, data, resolved_tokens, show_success=True, require_runtime=False):
+        """Validate and persist a preset draft or a runtime-ready configuration."""
+        validation_errors = validate_preset(
+            data,
+            resolved_token=resolved_tokens,
+            require_runtime=require_runtime,
+        )
         if validation_errors:
             messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
             return False
@@ -2935,7 +3032,7 @@ class PresetEditor:
         self.is_dirty = False
         return True
 
-    def save_current_preset(self, show_success=True):
+    def save_current_preset(self, show_success=True, require_runtime=False):
         """Save the current form data to the preset."""
         if not self.current_preset:
             messagebox.showwarning("Warning", "No preset selected.")
@@ -3170,7 +3267,12 @@ class PresetEditor:
 
         data["claim_rounds_thresholds"] = claim_rounds_thresholds
 
-        return self._persist_preset_data(data, resolved_tokens, show_success=show_success)
+        return self._persist_preset_data(
+            data,
+            resolved_tokens,
+            show_success=show_success,
+            require_runtime=require_runtime,
+        )
 
     def _manage_autostart(self, preset_name, enable):
         """Refresh Windows Startup scripts using only enabled presets for stagger order."""
@@ -3344,7 +3446,7 @@ class PresetEditor:
             messagebox.showwarning("Warning", "No preset selected.")
             return
 
-        if not self.save_active_preset(show_success=False):
+        if not self.save_active_preset(show_success=False, require_runtime=True):
             return
 
         existing = self.bot_processes.get(self.current_preset)

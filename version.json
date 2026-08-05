@@ -1,65 +1,40 @@
 {
-  "version": "4.7.8",
+  "version": "4.7.9",
   "changelog": {
     "Bug Fixes": [
-      "Perk 6 free-claim collection can be disabled separately for each preset.",
-      "Purple Kakera is always collected while Kakera collection is active, regardless of filters, selections, or snipe targets.",
-      "Mudae Fandom emoji artwork is displayed correctly in the preset editor.",
-      "Restored the valid spM megasphere button across runtime defaults and the visual preset editor.",
-      "Ouroperk 9 sphere buttons are collected independently from Kakera-only wish, OP5, MK, and Chaos filters.",
-      "Ouroperk 8 half-power Kakera now works with Chaos Only and with manual self-roll detection.",
-      "Deferred Kakera collection now applies the same filters as immediate collection.",
-      "External and manual-roll Kakera detection now includes the discounted Kakera selection list.",
-      "Claim clicks begin verification after a short ACK deadline instead of issuing delayed duplicate attempts.",
-      "Starwished characters are detected correctly even if the series name continues onto another line.",
-      "OP5-only collection now uses the correct OP5 indicator without confusing it with other perks.",
-      "Perk 8 power discounts are recognized separately from OP5 filtering.",
-      "Spanish $dk status categories are recognized correctly.",
-      "Kakera power is refreshed after attempts on other users' rolls to reduce incorrect readings.",
-      "Kakera logs distinguish sent reactions from confirmed collections.",
-      "Perk 5 collection can click every eligible kakera button.",
-      "Kakera collection works in configured snipe channels without requiring character snipe mode.",
-      "Failed update verification keeps the current installation safe and reports a clearer error.",
-      "Successful external Kakera confirmations now suppress the unnecessary fallback $tu refresh.",
-      "Unconfirmed ready claims now retry the live claim button once before requesting $tu, preserving short snipe windows.",
-      "Verified or already-taken claim messages remain blocked across presets so delayed accounts cannot retry the same roll.",
-      "Manual claim cooldown messages lock the addressed account without triggering a redundant $tu status check.",
-      "Claim cooldown messages use exact usernames, mentions, and server display names instead of unsafe substring matching.",
-      "Preset changes now keep the newest selection even when it arrives while an unsaved-changes prompt is open.",
-      "Purple Kakera collection can now be disabled per preset for multi-account setups."
+      "Missing Chaos or Ouroperk 8 emoji overrides inherit the regular Kakera selection instead of silently re-enabling every colour.",
+      "Ouroperk 8 uses its configured emoji list on both own and external rolls.",
+      "Repeated four-button Kakera rolls are matched by position and emoji after Discord refreshes the message, avoiding skipped or wrong buttons.",
+      "Red sphere buttons named sp or spR now match the same configured target, including doubled variants.",
+      "An explicitly empty sphere target list remains empty instead of restoring runtime defaults.",
+      "Preset clicks load synchronously, keep their selection when focus moves, and incomplete drafts save before navigation without snapping back to the previous preset.",
+      "Save & Start Bot still requires a runtime-ready token and channel while normal Save Changes supports incomplete drafts."
     ],
     "Improvements": [
-      "The preset editor now opens in an English Quick Setup flow with goal-based choices, a live behavior summary, and a direct Save & Start action.",
-      "The complete expert configuration remains available through Advanced Settings without changing the preset data model.",
-      "New profiles now use a centralized recommended baseline, while Quick Setup clearly separates own-roll automation from opt-in external-player actions.",
-      "Emoji selection uses compact visual cards with clear selected states, bulk actions, and optional custom input.",
-      "Kakera priority order can be rearranged by dragging visual cards.",
-      "Preset filters explain that enabled Only rules must all match.",
-      "Chaos emoji settings clearly state that they apply to the user's own rolls.",
-      "Kakera skip logs provide clearer reasons for easier troubleshooting.",
-      "Visible $tu responses share only server-wide claim and roll reset boundaries across presets in the same server.",
-      "Snipe-only presets now schedule their post-reset $tu refresh at one stable random point inside the configured humanization window."
+      "Quick Setup now offers wx, hx, and mx roll pools.",
+      "The editor clearly labels Chaos and Ouroperk 8 lists as optional overrides that inherit regular Kakera choices when unchecked.",
+      "Preset switching batches chip updates and reuses loaded emoji cards instead of rebuilding every option."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "9580fe0d951b7013aaec2e665b28f79517a17e58f84c5cc0bf8092e9f548efb9",
+  "exe_sha256": "d8755224d8a0f950a6b7c65ce956b82425029515fe16e87d75ed0c8dc6e0e26a",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "718350252a6696866160e8559374b66129a629569785c14b6d5a796f678904f2"
+      "sha256": "d362e569728bf001cdc54ec63b08c23c7465d54ef3391b33ce867732ce3b6cd7"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "a3bb9e6c430ae0f313c7d893a392c066bc91ce71ef953c277d2f7dc050965e81"
+      "sha256": "adece8a8e47316856ff3416cf3fc0cbb392a85318c710c2260744564735e2e06"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "af172169f198c30837d3f8861fdeb26c65210d13284955d9cf02cf3f7ae04cd6"
+      "sha256": "e45352ca6e30413d3440a9062a514d215c54292a2e728ac69174a348fc9cd425"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -69,12 +44,12 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/config.py",
-      "sha256": "286656f7f879a84537432603ca2694a84d03d31975faf619a4803c1550fc2ac0"
+      "sha256": "9223e637809632b3fbf3af2e70a71380d0e167ed5a2a31e2d0331a80460354c0"
     },
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "bae5e55a78a8f9249a2d01b10e1306a6ab8a87a3afc85fe38b66a7eee7b6e4c4"
+      "sha256": "aefdbaf4726d8d05e58cc7a4f184e398e921999d7c03a2b44fc7092ad8779802"
     },
     {
       "path": "mudae_core/coordinator.py",

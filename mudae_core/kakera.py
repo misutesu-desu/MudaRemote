@@ -3,6 +3,12 @@
 import re
 
 
+_CHARACTER_SPHERE_EMOJIS = frozenset({
+    "spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL",
+    "spD", "spM", "spU",
+})
+
+
 _KAKERA_RESULT_RE = re.compile(
     r"<a?:kakera[A-Za-z0-9_]*:\d+>\s*"
     r"\*{0,2}\s*(?P<user>[^*\r\n+]+?)\s*"
@@ -49,6 +55,100 @@ def has_perk_eight_discount(description: object) -> bool:
     """Detect Perk 8's rendered half-power marker across Unicode variants."""
     normalized = str(description or "").replace("\ufe0f", "").replace("\u20e3", "")
     return re.search(r"💎\s*(?:/|÷|➗)\s*2", normalized) is not None
+
+
+def kakera_embed_text(embed: object) -> str:
+    """Return all stable text locations where Mudae renders perk markers."""
+    if embed is None:
+        return ""
+    parts = [str(getattr(embed, "description", "") or "")]
+    footer = getattr(embed, "footer", None)
+    parts.append(str(getattr(footer, "text", "") or ""))
+    for field in getattr(embed, "fields", ()) or ():
+        parts.append(str(getattr(field, "name", "") or ""))
+        parts.append(str(getattr(field, "value", "") or ""))
+    return "\n".join(part for part in parts if part)
+
+
+def normalize_character_sphere_emoji(value: object) -> str:
+    """Normalize character-roll sphere aliases and doubled variants.
+
+    Mudae uses ``sp`` for the red sphere in some button payloads and ``spR``
+    in others. This is separate from mini-game normalization, where ``sp`` has
+    board-specific meaning.
+    """
+    name = str(value or "").strip()
+    if name == "sp2":
+        name = "sp"
+    if name.endswith("2") and name[:-1] in _CHARACTER_SPHERE_EMOJIS:
+        name = name[:-1]
+    if name == "sp":
+        return "spR"
+    return name
+
+
+def is_character_sphere_emoji(value: object) -> bool:
+    """Return whether a component emoji is an Ouroperk sphere button."""
+    return normalize_character_sphere_emoji(value) in _CHARACTER_SPHERE_EMOJIS
+
+
+def sphere_target_matches(value: object, targets: object) -> bool:
+    """Match a sphere button against configured targets with alias support."""
+    normalized = normalize_character_sphere_emoji(value).casefold()
+    configured = {
+        normalize_character_sphere_emoji(target).casefold()
+        for target in targets or ()
+        if str(target or "").strip()
+    }
+    return bool(normalized and normalized in configured)
+
+
+def get_kakera_emoji_targets(
+    kakera_emojis: object,
+    chaos_emojis: object,
+    perk_eight_emojis: object,
+    *,
+    has_chaos_discount: bool = False,
+    has_perk_eight_discount: bool = False,
+    is_external_roll: bool = False,
+):
+    """Choose the one authoritative emoji list for a Kakera roll.
+
+    The visible Perk 8 marker is authoritative even on another user's roll.
+    The 10+ key/Chaos discount remains owner-only because an external roll does
+    not prove that the reacting account owns the character.
+    """
+    if has_perk_eight_discount:
+        return tuple(perk_eight_emojis or ())
+    if has_chaos_discount and not is_external_roll:
+        return tuple(chaos_emojis or ())
+    return tuple(kakera_emojis or ())
+
+
+def find_refreshed_component_button(components, *, custom_id, position, emoji_name):
+    """Resolve the same button after a Discord component refresh.
+
+    Mudae's repeated Kakera buttons can share or regenerate custom IDs, so the
+    original grid position plus emoji must take precedence over ID matching.
+    """
+    rows = list(components or ())
+    row_index, child_index = position
+    if 0 <= row_index < len(rows):
+        children = list(getattr(rows[row_index], "children", ()) or ())
+        if 0 <= child_index < len(children):
+            candidate = children[child_index]
+            candidate_name = getattr(getattr(candidate, "emoji", None), "name", None)
+            if candidate_name == emoji_name:
+                return candidate
+
+    if custom_id is None:
+        return None
+    for component in rows:
+        for candidate in getattr(component, "children", ()) or ():
+            candidate_name = getattr(getattr(candidate, "emoji", None), "name", None)
+            if getattr(candidate, "custom_id", None) == custom_id and candidate_name == emoji_name:
+                return candidate
+    return None
 
 
 def get_regular_kakera_filter_reason(

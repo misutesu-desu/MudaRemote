@@ -14,10 +14,26 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Standalone_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.8-f97316?style=for-the-badge" alt="Version 4.7.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+## 🛠️ Kakera & Preset Stability — v4.7.9
+
+### 🐛 Bug Fixes
+
+- **Exact Kakera colours:** Missing Chaos or Perk 8 overrides now inherit your regular Kakera selection, so a disabled colour cannot silently return through an all-colours default.
+- **Reliable Perk 8 collection:** The configured Perk 8 list is honored on both own and external rolls, and repeated four-button rolls remain correctly matched after each Discord message refresh.
+- **Red sphere compatibility:** Both `sp` and `spR` button names map to the same red sphere target, including doubled variants.
+- **Sphere filters stay explicit:** Clearing every sphere target now disables sphere collection instead of restoring defaults.
+- **Stable preset transitions:** Presets load on the click, keep their selection when focus moves, and incomplete drafts can be saved before switching without snapping back to the previous preset. Runtime credentials are still required by **Save & Start Bot**.
+
+### ✨ Improvements
+
+- **More Quick Setup pools:** `wx`, `hx`, and `mx` are now available alongside the existing roll commands.
+- **Clearer context overrides:** The editor states when Chaos and Perk 8 emoji lists inherit the regular Kakera selection.
+- **Faster editor switching:** Chip updates are batched and emoji cards reuse their loaded artwork instead of rebuilding every option during each preset change.
 
 ## 🆕 Advanced Automation & Multi-Account Presets — v4.7.0
 
