@@ -1,10 +1,10 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Discord İçin Gelişmiş Mudae Otomasyonu</h1>
+  <h1 align="center">⚡ MudaRemote: Discord için Mudae Otomasyonu</h1>
   <p align="center">
-    <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
+    <strong>Roll, claim, Kakera toplama ve çoklu hesap ayarlarını tek bir uygulamadan yönetin.</strong>
   </p>
   <p align="center">
-    Roll, claim, Kakera toplama ve çoklu hesap presetlerini tek bir masaüstü uygulamasından yönetin.<br>
+    Sık kullanılan ayarlar için dosya düzenlemek gerekmez.<br>
     Zamanlama seçenekleri ban veya tespit edilmeme garantisi vermez.
   </p>
 </p>
@@ -29,114 +29,112 @@
 
 ## 💖 MudaRemote'u Destekle
 
-MudaRemote **ücretsiz ve açık kaynaklı** kalacak. Sana zaman kazandırdıysa, koleksiyonunu oluşturmana yardımcı olduysa veya Kakera farming'i kolaylaştırdıysa geliştirme çalışmalarına gönüllü olarak destek olabilirsin.
+MudaRemote ücretsiz ve açık kaynaklıdır. Düzenli kullanıyorsan ve bakım için harcanan zamana katkıda bulunmak istersen bağış yapabilirsin. Bağış tamamen isteğe bağlıdır.
 
-Projeyi birlikte kullanan, test eden ve geliştiren **310+ üyelik** büyüyen Discord topluluğunun bir parçasısın.
+Discord sunucusunda uygulamayı kullanan, sorun bildiren ve ayarlarını paylaşan **310'dan fazla üye** bulunuyor.
 
-### İlk topluluk hedefimiz
+### Güncel hedef
 
 **Hedefin %40'ı tamamlandı • İlk topluluk destekçileriyle $40 / $100 • Son güncelleme: Ağustos 2026**
 
-Desteğin bağımsız geliştiriciye şu işler için daha fazla zaman sağlar:
+Bağışlar şu işler için ayrılan zamanı destekler:
 
-- Discord veya Mudae değiştiğinde uyumluluk düzeltmeleri ve regresyon testleri;
-- doğrulanmış Windows sürümleri, checksum'lar ve daha güvenli güncellemeler;
-- dokümantasyon, çeviriler ve doğrudan topluluk desteği;
-- özellik ve hata listesinde bekleyen işlerin tamamlanması.
+- Discord veya Mudae değiştiğinde gereken uyumluluk düzeltmeleri ve testler;
+- Windows sürümleri, checksum kontrolleri ve güncelleme testleri;
+- dokümantasyon, çeviriler ve topluluk desteği;
+- açık hata kayıtları ve özellik istekleri.
 
-Her miktar değerlidir. Bir referans istersen **$5**, **$15** veya **$30+** karşılığı kripto düşünebilirsin. Bunlar seviye veya alt sınır değil, yalnızca öneridir; senin için doğru olan miktarı seç.
+Her miktar değerlidir. Bir referans istersen **$5**, **$15** veya **$30** karşılığı kripto düşünebilirsin. Alt sınır yoktur.
 
 | Varlık | Ağ | Adres |
 | :--- | :--- | :--- |
 | **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
-| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+| **USDT** | TRON (TRC20) | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
 
 > [!IMPORTANT]
 > Göndermeden önce varlık ve ağı birlikte doğrula; kripto işlemleri geri alınamaz. İsteğe bağlı **Donator** rolünü almak için işlem kimliğini veya ekran görüntüsünü geliştiriciye Discord DM üzerinden gönder. İlgisiz cüzdan bilgilerini gizleyebilirsin. **Seed phrase veya private key'ini asla paylaşma.** Doğrulanan her bağış miktarı rol için yeterlidir.
 
-Şu anda bağış yapmak istemiyorsan GitHub yıldızı vermek, faydalı bir hata bildirimi göndermek veya topluluktaki başka bir kullanıcıya yardım etmek de projeyi destekler.
+Bağış dışında GitHub yıldızı vermek, tekrar üretilebilir bir hata bildirmek veya Discord'da bir soruyu yanıtlamak da yardımcı olur.
 
 ---
 
 ## ❓ Bu Ne İşe Yarar?
 
-**MudaRemote** bir **Mudae botudur** — Discord'daki Mudae oyununu sizin yerinize otomatik olarak oynayan bir programdır.
+**MudaRemote**, Discord'daki Mudae oyununun tekrarlayan işlemlerini otomatikleştiren bir masaüstü aracıdır.
 
-Neler yapabilir:
+Başlıca özellikler:
 
-- 🎲 **Auto roll Mudae** — Sizin yerinize karakter çıkartma komutlarını (`$wa`, `$ha`, vb.) gönderir.
-- 💍 **Mudae auto claim** — İyi bir karakter mi gördü? Hemen yakalar. Anında.
-- 💎 **Mudae auto kakera** — Size para kazandırmak için çıkartılan karakterlerdeki kakera kristallerine tıklar.
-- 🎯 **Wishlist takibi** — Ayarladığınız wishlist karakterlerini algılar ve uygun olduğunda hemen claim etmeyi dener.
-- 🤖 **Mudae slash commands bot** — %10 daha fazla kakera bonusu için `/wa` komutlarını kullanabilir.
-- 👥 **Mudae multi-account sync** — Yan hesaplarınız mı var? Birlikte çalışabilirler.
-- 🕒 **Zamanlama kontrolleri** — Tekrarlayan zamanlamayı azaltmak için gecikme, pasif saat ve kanal aktivitesi seçenekleri sunar; güvenlik garantisi vermez.
-- 🖥️ **Kolay Arayüz** — Kod düzenleme yok. Ayarlamak için sadece düğmelere tıklayın.
+- 🎲 **Otomatik roll**: `$wa`, `$ha` ve ayarladığınız diğer roll komutlarını gönderir.
+- 💍 **Otomatik claim**: Karakterleri belirlediğiniz kurallarla karşılaştırıp uygun claim'i dener.
+- 💎 **Kakera toplama**: Seçtiğiniz Kakera türlerine güç sınırlarını gözeterek tıklar.
+- 🎯 **Wishlist takibi**: Ayarladığınız wishlist karakterlerini algılar ve uygun olduğunda hemen claim etmeyi dener.
+- 🤖 **Mudae slash commands bot**: %10 daha fazla kakera bonusu için `/wa` komutlarını kullanabilir.
+- 👥 **Çoklu hesap desteği**: Birden fazla preset çalıştırabilir ve claim işlemlerini koordine edebilir.
+- 🕒 **Zamanlama kontrolleri**: Tekrarlayan zamanlamayı azaltmak için gecikme, pasif saat ve kanal aktivitesi seçenekleri sunar; güvenlik garantisi vermez.
+- 🖥️ **Ayar arayüzü**: Sık kullanılan ve gelişmiş seçenekleri preset editöründen yönetir.
 
 > **⚠️ UYARI:** Bu bir **self-bot** aracıdır. Self-bot kullanımı **Discord kurallarına aykırıdır**. **Banlanabilirsiniz**. Bu proje sadece **öğrenme amaçlıdır**. Kullanırsanız, bu **sizin tercihiniz ve riskinizdir**. Sorumluluk kabul etmiyoruz.
 
 ---
 
-## 🏆 Neden Diğer Mudae Scriptlerinden Daha İyi?
+## 🏆 Neden MudaRemote?
 
-| | Eski Mudae Botları | **MudaRemote** |
+| | Temel scriptler | **MudaRemote** |
 | :--- | :---: | :---: |
-| Karakter Çıkarma | Sadece yazı (`$wa`) | ✅ Slash komutları (`/wa`) — %10 daha fazla kakera |
-| Yakalama | Her şeyi yakalar | ✅ Sadece SİZİN istediğinizi yakalar |
-| Zamanlama | Her saat aynı zamanda | ✅ En mükemmel anı bekler |
-| Güvenlik | Kolayca fark edilir | ✅ Gerçek bir insan gibi davranır |
-| Hesaplar | Sadece tek hesap | ✅ Aynı anda birçok hesap |
-| Kurulum | Kod dosyalarını düzenle | ✅ Kolay grafiksel pencere |
-| Güncellemeler | Tekrar indir | ✅ Kendini otomatik olarak günceller |
-| Dil | Sadece İngilizce | ✅ İngilizce, Portekizce, İspanyolca, Fransızca |
+| Roll | Genellikle yalnızca metin komutları | Metin ve desteklenen slash komutları |
+| Claim | Temel filtreler | Wishlist, seri, değer, sıralama ve sahiplik filtreleri |
+| Zamanlama | Sabit program | Ayarlanabilir gecikmeler ve pasif saatler |
+| Hesaplar | Genellikle işlem başına tek hesap | Ortak koordinasyona sahip çoklu presetler |
+| Kurulum | Python ve elle ayar | Windows uygulaması ve grafik arayüz |
+| Güncellemeler | Dosyaları elle değiştirme | Onaylı ve doğrulanan uygulama içi güncellemeler |
 
 ---
 
-## ✨ Tüm Özellikler (Basit Açıklama)
+## ✨ Özellikler
 
-### 🎯 Karakter Yakalama — Mudae Auto Claim
+### 🎯 Karakter Eşleştirme ve Claim
 
-Bot çıkartılan her karakteri (sizinkini ve başkalarınınkini) izler ve sizin için en iyi karakterleri yakalar.
+Bot, ayarlanan kanallardaki uygun roll'ları izler ve claim denemeden önce belirlediğiniz kuralları uygular.
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
-| **Wishlist Yakalama** | İstediğiniz karakterlerin listesini yaparsınız. Bot çıktıkları an yakalar. |
-| **Seri Yakalama** | "Naruto"yu mu seviyorsunuz? Bot her Naruto karakterini yakalar. |
+| **Wishlist Yakalama** | Wishlist'inizdeki karakterler için claim dener. |
+| **Seri Yakalama** | Belirlediğiniz serilerdeki uygun karakterler için claim dener. |
 | **Değer Yakalama** | Belirlediğiniz Kakera eşiğini aşan uygun karakterleri claim etmeyi deneyebilir. |
-| **Anlık Yakalama** | Bot karakter çıkartırken iyi bir şey çıkarsa, BEKLEMEDEN hemen yakalar. |
-| **Panik Yakalama** | Yakalama süreniz mi bitiyor? Bot hiçbir şeyi boşa harcamamak için HER ŞEYİ yakalar. |
+| **Anlık Yakalama** | Roll grubu tamamlanmadan eşleşen bir karakter için claim deneyebilir. |
+| **Panik Yakalama** | Claim süresinin sonunda uygun seçenekler arasından en yüksek öncelikli olanı kullanabilir. |
 | **Ücretsiz Kartlar** | Noel veya Yılbaşı etkinlik kartları ücretsizdir. Bot bunları otomatik alır. |
 | **Auto $rt** | `$rt` size ekstra bir yakalama hakkı verir. Bot bunu gerektiğinde kullanır. |
-| **Engelleme Listesi** | ASLA istemediğiniz karakterler mi var? Listeye ekleyin, bot onları görmezden gelir. |
+| **Engelleme Listesi** | Listeye eklediğiniz karakterleri atlar. |
 
 ---
 
-### 💎 Kakera — Mudae Auto Kakera
+### 💎 Kakera: Mudae Auto Kakera
 
-Para kazanmak için kristal butonlara tıklar. Bot akıllıdır.
+Bot, seçilen Kakera butonlarına tıklayabilir ve harcanan gücü takip eder.
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
 | **Otomatik Tıklama** | Bot, sizin ve başkalarının rulolarındaki kakera butonlarına tıklar. |
-| **Öncelik Sırası** | Çok fazla buton mu var? Bot en iyisine önce tıklar. |
+| **Öncelik Sırası** | Birden fazla buton varsa belirlediğiniz sırayı kullanır. |
 | **Güç Takibi** | Tıklamak güç harcar. Bot gücünüzü takip eder, yetmiyorsa tıklamaz. |
 | **Auto $dk** | Güç düşük mü? Bot gücü doldurmak için `$dk` kullanır. |
 | **Chaos Modu** | 10+ anahtarlı karakterler %50 daha az güç harcar. Bot bunları hedefleyebilir. |
-| **Sadece MK Modu** | Sadece `$mk` rulolarındakilere tıklar. Çok fazla güç tasarrufu sağlar. |
-| **Küre Algılama** | Küreler SIFIR güç harcar. Bot bunlara HER ZAMAN tıklar. |
+| **Sadece MK Modu** | Kakera toplamayı `$mk` roll'larıyla sınırlar. |
+| **Küre Algılama** | Kakera gücü harcamayan desteklenen küre butonlarını algılar. |
 
 ---
 
-### 🎲 Karakter Çıkarma — Auto Roll Mudae
+### 🎲 Karakter Çıkarma: Auto Roll Mudae
 
-Bot sizin yerinize ve en akıllı zamanda karakter çıkartır.
+Roll'lar hemen, belirli saatlerde veya bir sonraki claim yenilenmesine göre çalıştırılabilir.
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
 | **Auto Roll** | `$wa`, `$ha` vb. komutları otomatik gönderir. |
 | **Slash Komutları** | %10 daha fazla kakera veren `/wa` komutlarını kullanır. |
 | **Akıllı Zamanlama** | Yakalama hakkınızın yenilendiği an karakter çıkartma işlemini bitirecek şekilde ayarlar. |
-| **Planlanmış Zamanlar** | "Her gün 14:00 ve 18:30'da karakter çıkart" diyebilirsiniz. |
+| **Planlanmış Zamanlar** | 14:00 ve 18:30 gibi belirli saatlerde çalışır. |
 | **Lurker Modu** | Ayarlanan kanalları izler ve kendi roll'larını claim penceresinin sonuna yakın kullanır. |
 
 ---
@@ -147,21 +145,21 @@ Bu ayarlar yalnızca tekrar eden zamanlamayı azaltır. Bir self-botu görünmez
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
-| **Rastgele Gecikmeler** | Her döngüden sonra rastgele süre bekler (0–40 dk). |
-| **Kanal İzleyici** | İnsanlar chatte konuşuyorsa bot bekler. Gerçek bir insan gibi. |
+| **Rastgele Gecikmeler** | Her döngüden sonra rastgele süre bekler (0-40 dk). |
+| **Kanal İzleyici** | Ayarlanan kanalda yakın zamanda konuşma varsa bekleyebilir. |
 | **Rastgele Reaksiyonlar** | Karakter yakalarken her seferinde farklı bir kalp emojisi seçer. |
 | **Uyku Düzeni** | "Gece 1 ile sabah 7 arası uyu" diyebilirsiniz. Bot tamamen sessiz kalır. |
 | **Bakım Algılama** | Mudae bakıma mı girdi? Bot bunu algılar ve durur. |
 
 ---
 
-### 👥 Çoklu Hesap — Mudae Multi-Account Sync
+### 👥 Çoklu Hesap: Mudae Multi-Account Sync
 
 Aynı anda birçok hesapta çalıştırın.
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
-| **Ana Hesap Senkronizasyonu** | Yan hesabınız, ana hesabınızın istediği bir karakteri görürse ANINDA yakalar. |
+| **Ana Hesap Senkronizasyonu** | Ayarlanan hesaplar arasında claim rezervasyonlarını koordine eder. |
 | **Ayrı Profiller** | Her hesabın kendi tokeni, kanalı ve ayarları vardır. |
 | **Otomatik Yeniden Başlatma** | Bot çökerse, 60 saniye sonra kendini yeniden açar. |
 
@@ -169,17 +167,18 @@ Aynı anda birçok hesapta çalıştırın.
 
 ### 🖥️ Kolay Kurulum Penceresi (GUI)
 
-Kodlarla uğraşmanıza gerek yok. `mudae_preset_editor.py` size güzel bir pencere açar:
-- ✅ Tokeninizi ve kanal ID'nizi girin
-- ✅ Özellikleri kutucukları işaretleyerek açın/kapatın
-- ✅ Tek tıkla kaydedin ve başlatın
+`mudae_preset_editor.py` üzerinden token, kanal ve otomasyon ayarlarını yönetebilirsiniz:
+
+- Token ve kanal kimliğini girin.
+- Kullanmak istediğiniz özellikleri seçin.
+- Ayarları kaydedip botu başlatın.
 
 ---
 
 ## 🛠️ Nasıl Kurulur? (Adım Adım)
 
 ### Gerekli Olanlar
-- **[Python 3.8 veya daha yenisi](https://www.python.org/downloads/)** — Kurarken ✅ **"Add to PATH"** işaretleyin
+- **[Python 3.8 veya daha yenisi](https://www.python.org/downloads/)**: Kurarken ✅ **"Add to PATH"** işaretleyin
 - Discord Tokeni ([aşağıya bakın](#-discord-tokeni-nasıl-alınır))
 
 ### Adım 1: Botu İndirin
@@ -198,7 +197,7 @@ python mudae_preset_editor.py
 **Token** ve **Kanal ID** girin, **💾 Save Changes** butonuna basın.
 
 ### Adım 4: Botu Başlatın
-Penceredeki **▶ Launch Bot** butonuna tıklayın. İşte bu kadar! 🎉
+Penceredeki **▶ Launch Bot** butonuna tıklayın.
 
 ---
 
@@ -210,7 +209,7 @@ Penceredeki **▶ Launch Bot** butonuna tıklayın. İşte bu kadar! 🎉
    ```javascript
    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
    ```
-5. Çıkan uzun yazı tokeninizdir. **🚨 BU TOKENİ ASLA KİMSEYLE PAYLAŞMAYIN.**
+5. Konsolda gösterilen tokeni MudaRemote'a kopyalayın. **Tokeninizi kimseyle paylaşmayın.**
 
 ---
 
@@ -222,9 +221,5 @@ Penceredeki **▶ Launch Bot** butonuna tıklayın. İşte bu kadar! 🎉
 ---
 
 <p align="center">
-  <strong>⭐ Beğendiyseniz Star (Yıldız) vermeyi unutmayın! ⭐</strong>
-</p>
-
-<p align="center">
-  <sub>MudaRemote — Mudae bot, Mudae auto claim, Discord Mudae sniper, Mudae auto kakera, Mudae slash commands bot, auto roll Mudae, Mudae macro, Mudae script, Mudae multi-account sync, Mudae automation, Mudae selfbot, Mudae helper, Mudae tool, Mudae farming bot, Mudae key farming, Mudae power management, Mudae wishlist bot, Mudae Discord tool 2026</sub>
+  <strong>⭐ Projeyi faydalı buluyorsanız GitHub'da yıldız verebilirsiniz. ⭐</strong>
 </p>

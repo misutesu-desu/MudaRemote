@@ -1,7 +1,7 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Automação avançada de Mudae para Discord</h1>
+  <h1 align="center">⚡ MudaRemote: automação de Mudae para Discord</h1>
   <p align="center">
-    <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
+    <strong>Gerencie rolls, claims, Kakera e várias contas em um só aplicativo.</strong>
   </p>
   <p align="center">
     Gerencie rolls, claims, coleta de Kakera e presets de várias contas em um único aplicativo.<br>
@@ -31,27 +31,27 @@
 
 ## 💖 Apoie o MudaRemote
 
-O MudaRemote continuará **gratuito e de código aberto**. Se ele economizou seu tempo, ajudou a montar sua coleção ou facilitou o farm de Kakera, você pode apoiar voluntariamente a continuidade do desenvolvimento.
+O MudaRemote é gratuito e de código aberto. Se você usa o programa com frequência e quer apoiar o tempo dedicado à manutenção, pode fazer uma doação. Isso é totalmente opcional.
 
-Você faz parte de uma comunidade crescente no Discord com **mais de 310 membros** que usam, testam e melhoram o projeto juntos.
+O servidor do Discord tem **mais de 310 membros** que usam o aplicativo, relatam problemas e compartilham configurações.
 
-### Nossa primeira meta comunitária
+### Meta atual
 
 **40% da meta financiada • US$ 40 de US$ 100 por apoiadores iniciais • Atualizado em agosto de 2026**
 
-Seu apoio dá a um desenvolvedor independente mais tempo para:
+As doações apoiam o tempo dedicado a:
 
 - correções de compatibilidade e testes de regressão quando Discord ou Mudae mudarem;
 - versões verificadas para Windows, checksums e atualizações mais seguras;
 - documentação, traduções e suporte direto à comunidade;
 - resolver os recursos e bugs acumulados.
 
-Qualquer valor ajuda. Se quiser uma referência, considere o equivalente em cripto de **US$ 5**, **US$ 15** ou **US$ 30 ou mais**. São apenas sugestões, não níveis nem valores mínimos—escolha somente o que fizer sentido para você.
+Qualquer valor é bem-vindo. Como referência, você pode escolher o equivalente a **US$ 5**, **US$ 15** ou **US$ 30**. Não há valor mínimo.
 
 | Ativo | Rede | Endereço |
 | :--- | :--- | :--- |
 | **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
-| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+| **USDT** | TRON (TRC20) | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
 
 > [!IMPORTANT]
 > Confira o ativo e a rede antes de enviar; transações em cripto não podem ser revertidas. Para receber o cargo opcional de **Donator**, envie ao desenvolvedor uma DM no Discord com o ID da transação ou uma captura de tela. Você pode ocultar dados não relacionados da carteira. **Nunca compartilhe sua frase-semente ou chave privada.** Qualquer valor confirmado dá direito ao cargo.
@@ -60,86 +60,84 @@ Não quer doar agora? Dar uma estrela no GitHub, enviar um bom relatório de bug
 
 ## ❓ O que isso faz?
 
-**MudaRemote** é um **bot de Mudae** — um programa que joga o jogo Mudae no Discord **por você**, automaticamente.
+**MudaRemote** automatiza tarefas repetitivas do minijogo Mudae no Discord.
 
-Aqui está o que ele pode fazer:
+Principais recursos:
 
-- 🎲 **Auto roll Mudae** — Ele envia comandos de rolo (`$wa`, `$ha`, etc.) para você.
-- 💍 **Mudae auto claim** — Viu um personagem bom? Ele resgata. Na hora.
-- 💎 **Mudae auto kakera** — Ele clica nos cristais de kakera nos rolos para ganhar dinheiro.
-- 🎯 **Monitoramento da wishlist** — Detecta personagens configurados e tenta um claim imediato quando permitido.
-- 🤖 **Mudae slash commands bot** — Pode usar `/wa` em vez de `$wa` para ganhar 10% a mais de kakera.
-- 👥 **Mudae multi-account sync** — Tem contas secundárias? Elas podem trabalhar juntas.
-- 🕒 **Controles de tempo** — Atrasos, horários inativos e espera por canal silencioso reduzem padrões repetitivos, sem garantia de segurança.
-- 🖥️ **GUI fácil** — Sem editar código. Basta clicar em botões para configurar tudo.
+- 🎲 **Rolls automáticos**: envia `$wa`, `$ha` ou outro comando configurado.
+- 💍 **Claims automáticos**: aplica suas regras antes de tentar um claim.
+- 💎 **Coleta de Kakera**: clica nos tipos selecionados conforme a energia disponível.
+- 🎯 **Monitoramento da wishlist**: Detecta personagens configurados e tenta um claim imediato quando permitido.
+- 🤖 **Mudae slash commands bot**: Pode usar `/wa` em vez de `$wa` para ganhar 10% a mais de kakera.
+- 👥 **Várias contas**: executa vários presets e coordena claims entre contas configuradas.
+- 🕒 **Controles de tempo**: Atrasos, horários inativos e espera por canal silencioso reduzem padrões repetitivos, sem garantia de segurança.
+- 🖥️ **Interface de configuração**: reúne opções comuns e avançadas no editor de presets.
 
 > **⚠️ AVISO:** Isto é um **self-bot**. Self-bots são **contra as regras do Discord**. Você **pode ser banido**. Isto é apenas para **aprendizado**. Se usar, é **sua escolha e seu risco**. Não somos responsáveis.
 
 ---
 
-## 🏆 Por que este é melhor que outros scripts de Mudae?
+## 🏆 Por que usar o MudaRemote?
 
-| | Bots de Mudae Antigos | **MudaRemote** |
+| | Scripts básicos | **MudaRemote** |
 | :--- | :---: | :---: |
-| Rolar | Apenas texto (`$wa`) | ✅ Comandos slash (`/wa`) — 10% mais kakera |
-| Resgatar | Resgata qualquer coisa | ✅ Só resgata o que VOCÊ quer |
-| Timing | Mesma hora todo dia | ✅ Espera o momento perfeito |
-| Segurança | Fácil de detectar | ✅ Age como um humano real |
-| Contas | Apenas uma conta | ✅ Muitas contas ao mesmo tempo |
-| Configurar | Editar arquivos de código | ✅ Janela gráfica fácil |
-| Updates | Baixar de novo | ✅ Se atualiza sozinho |
-| Idioma | Apenas Inglês | ✅ Inglês, Português, Espanhol, Francês |
+| Rolls | Geralmente apenas texto | Texto e comandos slash compatíveis |
+| Claims | Filtros básicos | Wishlist, série, valor, ranking e proprietário |
+| Horários | Agenda fixa | Atrasos e períodos inativos configuráveis |
+| Contas | Geralmente uma por processo | Vários presets com coordenação |
+| Configuração | Arquivos manuais | Editor gráfico de presets |
+| Atualizações | Substituição manual | Atualizações verificadas com confirmação |
 
 ---
 
-## ✨ Todos os Recursos (Deste Jeito Simples)
+## ✨ Recursos
 
-### 🎯 Resgatar Personagens — Mudae Auto Claim
+### 🎯 Correspondência e claim de personagens
 
-O bot vigia cada rolo (o seu e o de outras pessoas) e resgata os melhores personagens para você.
+O bot monitora rolls elegíveis e aplica suas regras antes de tentar um claim.
 
 | Recurso | O Que Faz |
 | :--- | :--- |
 | **Resgate da Wishlist** | Você faz uma lista de personagens que quer. O bot resgata na hora que eles aparecem. |
-| **Resgate por Série** | Gosta de "Naruto"? O bot resgata QUALQUER personagem de Naruto. |
+| **Resgate por Série** | Tenta claims de personagens das séries configuradas. |
 | **Claim por Valor** | Tenta claims permitidos em personagens acima do limite de Kakera definido por você. |
-| **Auto-Resgate Instantâneo** | Enquanto o bot rola, se algo bom aparecer, ele resgata AGORA — não espera. |
-| **Resgate de Pânico** | Seu tempo de resgate está acabando? O bot resgata QUALQUER COISA para não desperdiçar. |
+| **Auto-Resgate Instantâneo** | Verifica correspondências durante uma sequência de rolls. |
+| **Resgate de Pânico** | Pode usar a opção elegível de maior prioridade perto do fim da janela. |
 | **Cartas de Evento Grátis** | Personagens de Natal ou Ano Novo são grátis. O bot pega automaticamente. |
 | **Auto $rt** | `$rt` te dá um resgate extra. O bot usa sozinho quando você precisa. |
 | **Auto $rt após Resgate** | Depois de resgatar alguém, o bot usa `$rt` na hora para poder resgatar de novo. |
-| **Lista de Evitados** | Personagens que você NUNCA quer? Coloque na lista de evitados. O bot vai ignorar para sempre. |
+| **Lista de Evitados** | Ignora os personagens adicionados à lista. |
 | **Verificador de Resgate** | Depois de tentar resgatar, o bot confere se funcionou mesmo. |
 
 ---
 
-### 💎 Kakera — Mudae Auto Kakera
+### 💎 Kakera: Mudae Auto Kakera
 
-Kakeras são os cristais (botões coloridos) que aparecem nos rolos. Clicar neles dá dinheiro. O bot clica para você — mas é esperto.
+Kakeras são os cristais (botões coloridos) que aparecem nos rolos. Clicar neles dá dinheiro. O bot clica para você: mas é esperto.
 
 | Recurso | O Que Faz |
 | :--- | :--- |
 | **Clique Automático** | O bot clica nos botões de kakera sozinho nos seus rolos e nos dos outros. |
-| **Ordem de Prioridade** | Muitos botões? O bot clica no melhor primeiro (você escolhe a ordem). |
+| **Ordem de Prioridade** | Usa a ordem definida por você quando há vários botões. |
 | **Seguir Energia** | Clicar em kakera custa energia. O bot olha sua energia e não clica se estiver baixa. |
 | **Auto $dk** | Energia baixa? O bot usa `$dk` para encher. |
-| **Modo Caos** | Personagens com 10+ keys têm "caos kakera" — custa 50% menos energia. O bot pode focar só neles. |
-| **Modo Só MK** | Só clica em kakera de rolos `$mk`. Ignora todo o resto — economiza muita energia. |
-| **Detectar Spheres** | Spheres custam ZERO energia. O bot SEMPRE clica nelas. |
+| **Modo Caos** | Personagens com 10+ keys têm "caos kakera": custa 50% menos energia. O bot pode focar só neles. |
+| **Modo Só MK** | Só clica em kakera de rolos `$mk`. Ignora todo o resto: economiza muita energia. |
+| **Detectar Spheres** | Detecta spheres compatíveis, que não consomem energia. |
 | **Limites Próprios** | Pode dizer "só clique em kakeraY se eu tiver 80%+ de energia." O bot obedece. |
 | **Sem Cliques Duplos** | O bot lembra o que já clicou. Nunca gasta energia clicando na mesma coisa de novo. |
 
 ---
 
-### 🎲 Rolar — Auto Roll Mudae
+### 🎲 Rolar: Auto Roll Mudae
 
-O bot envia comandos de rolo para você e faz isso na hora mais inteligente.
+Os rolls podem começar imediatamente, em horários marcados ou perto do próximo reset de claim.
 
 | Recurso | O Que Faz |
 | :--- | :--- |
 | **Rolo Automático** | Envia `$wa`, `$ha`, `$ma`, ou qualquer um que você queira. |
-| **Comandos Slash** | Usa `/wa` em vez de `$wa` — ganha 10% mais kakera e é mais seguro. |
-| **Timing Inteligente** | O bot espera para rolar e terminar BEM na hora que seu resgate renova. Assim você ganha um novo resgate para seu melhor rolo. |
+| **Comandos Slash** | Usa comandos slash compatíveis e volta ao texto quando necessário. |
+| **Timing Inteligente** | Pode organizar uma sequência de rolls em torno do próximo reset de claim. |
 | **Horários Marcados** | Pode dizer "role às 14:00 e 18:30 todo dia" e ele fará. |
 | **Auto $us** | Tem rolos guardados? O bot usa sozinho. Pode colocar um limite. |
 | **Auto $mk** | Usa `$mk` para ganhar rolos extras de kakera e clica na kakera que vier. |
@@ -156,18 +154,18 @@ Essas opções apenas variam o tempo das ações. Elas não tornam um self-bot i
 
 | Recurso | O Que Faz |
 | :--- | :--- |
-| **Atrasos Aleatórios** | Depois de cada ciclo, o bot espera um tempo surpresa (0–40 min). Nunca é o mesmo. |
-| **Olhar Canal** | Tem gente conversando? O bot espera o canal ficar quieto. Igual uma pessoa faria. |
-| **Reações Variadas** | Ao resgatar com emoji, ele escolhe um coração diferente cada vez — não é sempre o mesmo. |
-| **Atraso de Kakera** | Antes de clicar em kakera, ele espera um tempinho aleatório (0.3–1.0 seg). Nem rápido demais, nem lerdo. |
-| **Hora de Dormir** | Diga ao bot "durma de 1h até as 7h da manhã." Ele fica mudo — como se você estivesse dormindo. |
+| **Atrasos Aleatórios** | Espera um intervalo configurável entre 0 e 40 minutos. |
+| **Olhar Canal** | Pode aguardar quando há conversa recente no canal configurado. |
+| **Reações Variadas** | Ao resgatar com emoji, ele escolhe um coração diferente cada vez: não é sempre o mesmo. |
+| **Atraso de Kakera** | Antes de clicar em kakera, ele espera um tempinho aleatório (0.3-1.0 seg). Nem rápido demais, nem lerdo. |
+| **Hora de Dormir** | Suspende as ações automáticas durante o período configurado. |
 | **Detectar Manutenção** | Mudae entrou em manutenção? O bot vê e para. Quando volta, ele espera o canal acalmar antes de girar. |
 | **Proteção de Limite de Keys** | Chegou em 1.000 keys? O bot para por 1 hora. Nada de comportamento suspeito. |
-| **Só Slash** | Ao usar comandos slash, o bot NUNCA manda texto. Se o `/wa` falhar, ele fica em silêncio. |
+| **Só Slash** | Nesse modo, nenhuma opção de texto é enviada quando `/wa` falha. |
 
 ---
 
-### 👥 Multi-Contas — Mudae Multi-Account Sync
+### 👥 Multi-Contas: Mudae Multi-Account Sync
 
 Rode o bot em muitas contas ao mesmo tempo. Cada uma com o seu jeito.
 
@@ -176,7 +174,7 @@ Rode o bot em muitas contas ao mesmo tempo. Cada uma com o seu jeito.
 | **Sincronia com Principal** | Sua conta secundária vê que a principal quer alguém ("Wished by @Principal"). Ela resgata NA HORA. |
 | **Perfies Separados** | Cada conta tem seu token, canal e lista próprios. |
 | **Rodar Tudo Junto** | Use `--all` para começar todas as contas de uma vez. |
-| **Início Escalonado** | Cada conta começa em uma hora diferente para não parecer bot. |
+| **Início Escalonado** | Separa o início dos presets para evitar comandos simultâneos. |
 | **Auto Reinício** | Se uma conta cair, ela volta sozinha depois de 60 segundos. |
 
 ---
@@ -207,7 +205,7 @@ Toda vez que você abre o bot, ele olha no GitHub se tem versão nova. Se tiver:
 3. Troca os arquivos
 4. Abre sozinho em uma janela nova
 
-Você nunca precisa baixar nada na mão.
+O programa pede confirmação antes de aplicar uma atualização disponível.
 
 ---
 
@@ -215,7 +213,7 @@ Você nunca precisa baixar nada na mão.
 
 ### Você Precisa de
 
-- **[Python 3.8 ou mais novo](https://www.python.org/downloads/)** — Ao instalar, marque ✅ **"Add to PATH"**
+- **[Python 3.8 ou mais novo](https://www.python.org/downloads/)**: Ao instalar, marque ✅ **"Add to PATH"**
 - Um token do Discord ([veja abaixo](#-como-pegar-seu-token-do-discord))
 
 ### Passo 1: Baixar o Bot
@@ -280,8 +278,8 @@ python mudae_bot.py
    ```javascript
    window.webpackChunkdiscord_app.push([[Symbol()],{},req=>{for(const m of Object.values(req.c)){if(m.exports?.getToken)console.log(m.exports.getToken())}}]);
    ```
-5. Vai aparecer um texto longo — esse é o seu token
-6. **🚨 NUNCA dê esse token pra ninguém. Eles podem roubar sua conta.**
+5. Vai aparecer um texto longo: esse é o seu token
+6. **Não compartilhe esse token. Quem tiver acesso a ele poderá acessar sua conta.**
 
 ---
 
@@ -303,9 +301,5 @@ python mudae_bot.py
 ---
 
 <p align="center">
-  <strong>⭐ Gostou? Clique no botão de Star! Ajuda outras pessoas a acharem o bot. ⭐</strong>
-</p>
-
-<p align="center">
-  <sub>MudaRemote — Mudae bot, Mudae auto claim, Discord Mudae sniper, Mudae auto kakera, Mudae slash commands bot, auto roll Mudae, Mudae macro, Mudae script, Mudae multi-account sync, Mudae automation, Mudae selfbot, Mudae helper, Mudae tool, Mudae farming bot, Mudae key farming, Mudae power management, Mudae wishlist bot, Mudae Discord tool 2026</sub>
+  <strong>⭐ Se o projeto for útil para você, considere dar uma estrela no GitHub.</strong>
 </p>
