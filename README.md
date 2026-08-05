@@ -1,12 +1,12 @@
 <p align="center">
   <img src="icon.png" alt="MudaRemote Logo" width="120">
-  <h1 align="center">⚡ MudaRemote — The #1 Mudae Bot for Discord</h1>
+  <h1 align="center">⚡ MudaRemote — Advanced Mudae Automation for Discord</h1>
   <p align="center">
-    <strong>Dominate your server. Farm Kakera while you sleep. Snipe the best waifus before anyone reacts.</strong>
+    <strong>Automate rolls, claims, Kakera collection, and multi-account presets from one polished desktop app.</strong>
   </p>
   <p align="center">
-    The most advanced Mudae auto claim bot, auto roll engine, and Kakera farming tool — wrapped in a beautiful GUI.<br>
-    No coding. No terminal. No Python. Just download, click, and <em>win</em>.
+    Built for people who want powerful controls without editing code or configuration files.<br>
+    Download the Windows app, review your settings, and start from the guided Quick Setup.
   </p>
 </p>
 
@@ -18,6 +18,44 @@
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+<p align="center">
+  <a href="README.fr.md">Français</a> •
+  <a href="README.ja.md">日本語</a> •
+  <a href="README.ko.md">한국어</a> •
+  <a href="README.tr.md">Türkçe</a> •
+  <a href="README.zh-CN.md">简体中文</a> •
+  <a href="README.pt-BR.md">Português Brasileiro</a>
+</p>
+
+## 💖 Support MudaRemote
+
+MudaRemote will remain **free and open source**. If it has saved you time, helped you build your collection, or made Kakera farming easier, you can voluntarily support its continued development.
+
+You are part of a growing Discord community of **310+ members** using, testing, and improving the project together.
+
+### Our first community milestone
+
+**40% funded • $40 of $100 raised by early community supporters • Last updated August 2026**
+
+Your support gives one independent developer more time for:
+
+- compatibility fixes and regression testing when Discord or Mudae changes;
+- verified Windows releases, checksums, and safer updates;
+- documentation, translations, and hands-on community support;
+- working through the feature and bug backlog.
+
+Every amount helps. If you would like a reference point, consider the crypto equivalent of **$5**, **$15**, or **$30+**. These are suggestions, not tiers or minimums—choose only what feels right for you.
+
+| Asset | Network | Address |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> Verify both the asset and network before sending; crypto transactions cannot be reversed. To receive the optional **Donator** role, send the developer a Discord DM with your transaction ID or a screenshot. You may redact unrelated wallet details. **Never share a seed phrase or private key.** Any confirmed amount qualifies.
+
+Not ready to donate? A GitHub star, a useful bug report, or helping another community member also supports the project.
 
 ## 🛠️ Kakera & Preset Stability — v4.7.9
 
@@ -65,7 +103,7 @@
 
 ### ✨ New Features
 
-- **Own-Rolls-Only Series Claims:** Series Sniping can now claim matching characters only from your own rolls, without stealing them from other players.
+- **Own-Rolls-Only Series Claims:** Series Sniping can now claim matching characters only from your own rolls, without claiming from other players' rolls.
 - **Separate Forcedivorce Channel:** Farm forcedivorce commands can now be sent in a dedicated channel instead of the main rolling channel.
 - **Update Confirmation:** New updates now show their changelog first, letting you choose whether to install or skip them.
 
@@ -123,20 +161,11 @@
   <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/github/downloads/misutesu-desu/MudaRemote/total?style=social&label=Downloads" alt="Downloads"></a>
 </p>
 
-<p align="center">
-  <a href="README.fr.md">Français</a> •
-  <a href="README.ja.md">日本語</a> •
-  <a href="README.ko.md">한국어</a> •
-  <a href="README.tr.md">Türkçe</a> •
-  <a href="README.zh-CN.md">简体中文</a> •
-  <a href="README.pt-BR.md">Português Brasileiro</a>
-</p>
-
 ---
 
 ## 🚀 What Is MudaRemote?
 
-**MudaRemote** is the ultimate **Mudae automation tool** — a program that plays the Mudae minigame on Discord **entirely for you**, 24/7.
+**MudaRemote** is an advanced **Mudae automation tool** that can handle repetitive parts of the Mudae minigame on Discord.
 
 While you sleep, study, or touch grass — MudaRemote can roll characters, watch wishlists, farm Kakera, and manage multiple presets. It is free and configurable, but no self-bot can guarantee account safety.
 
@@ -146,7 +175,7 @@ Here's what you get out of the box:
 - 🎲 **Auto Roll Engine** — Sends `$wa`, `$ha`, `/wa`, or any custom roll command on autopilot.
 - 💍 **Instant Auto Claim** — Sees a character you want? Claims it in milliseconds — faster than any human.
 - 💎 **Smart Kakera Farming** — Clicks crystals automatically while respecting your power limits. Never waste power again.
-- 🎯 **Wishlist Sniper** — Someone else rolls YOUR waifu? The bot steals it before they can blink.
+- 🎯 **Wishlist Monitoring** — Detects configured wishlist characters and attempts an eligible claim immediately.
 - 🤖 **Slash Command Support** — Uses `/wa` where supported for the associated Kakera bonus.
 - 👥 **Multi-Account Sync** — Run alt accounts simultaneously. Main + alts working in perfect coordination.
 - 🕒 **Timing Controls** — Optional random delays, sleep schedules, and channel-idle waits. These reduce repetitive timing only; they do not prevent detection or bans.
@@ -158,7 +187,7 @@ Here's what you get out of the box:
 
 ---
 
-## 🏆 Why MudaRemote Destroys the Competition
+## 🏆 Why Choose MudaRemote?
 
 Still using a janky Python script from 2022 that makes you edit JSON files in Notepad? Here's reality:
 
@@ -168,28 +197,28 @@ Still using a janky Python script from 2022 that makes you edit JSON files in No
 | **Rolling** | Text commands only (`$wa`) | ✅ Slash commands (`/wa`) — **+10% Kakera bonus** |
 | **Claiming** | Claims random garbage | ✅ Surgically claims only YOUR wishlist & high-value targets |
 | **Timing** | Rolls at the same second every hour | ✅ Configurable random delays and inactive hours; no safety guarantee |
-| **Safety** | Gets you banned in a week | ✅ Ghost Mode — random delays, sleep schedule, channel awareness |
-| **Accounts** | One account, one terminal | ✅ Unlimited accounts running simultaneously in sync |
+| **Timing controls** | Fixed repetitive timing | ✅ Configurable delays, inactive hours, and channel awareness; no safety guarantee |
+| **Accounts** | One account, one terminal | ✅ Multiple accounts running simultaneously in sync |
 | **Interface** | Scary black terminal window | ✅ Beautiful graphical settings editor with live preview |
 | **Updates** | Re-download the whole repo | ✅ Verified in-app updates with changelog and confirmation |
-| **Support** | Abandoned repo, no Discord | ✅ Active dev + 140+ member community on Discord |
+| **Support** | Abandoned repo, no Discord | ✅ Active development + 310+ member Discord community |
 
 ---
 
 ## ✨ Full Feature Breakdown
 
-### 🎯 Claiming — Never Miss Your Waifu Again
+### 🎯 Claiming — Fast, Configurable Character Matching
 
-The bot watches **every single roll** in your channel — yours and everyone else's — and claims the perfect characters for you with zero reaction time.
+The bot monitors eligible rolls in configured channels and applies your wishlist, series, value, rank, and ownership rules before attempting a claim.
 
 | Feature | What You Get |
 | :--- | :--- |
 | **Wishlist Claim** | Build your dream list. The moment a wishlist character appears, it's yours — claimed in under a second. |
 | **Series Claim** | Love "Naruto"? "Jujutsu Kaisen"? The bot claims characters from your favorite series automatically, with an optional own-rolls-only mode. |
-| **Value Snipe** | Set a Kakera threshold (e.g., 500+). The bot hijacks expensive characters from other people's rolls. |
+| **Value Snipe** | Set a Kakera threshold (e.g., 500+) and attempt eligible claims on high-value characters. |
 | **Instant Self-Claim** | Mid-roll and something incredible appears? Claimed on the spot — no waiting for the batch to finish. |
 | **Panic Claim** | Claim timer expiring and nothing good showed up? The bot grabs the best available so you never waste a claim. |
-| **Event Card Grab** | Holiday events (Christmas, New Year, etc.) spawn free characters. The bot snatches every single one. |
+| **Event Card Grab** | Attempts to collect eligible free characters from supported seasonal events. |
 | **Auto $rt** | Automatically uses `$rt` to unlock extra claims exactly when you need them most. |
 | **Auto $rt After Claim** | Immediately fires `$rt` after claiming — reloads your claim so you can double-tap back-to-back. |
 | **Avoid List** | Certain characters you'd never want? Blacklist them forever. The bot won't touch them. |
@@ -225,7 +254,7 @@ The bot doesn't just spam rolls. It calculates the **optimal moment** to roll so
 | **Smart Timing** | Calculates roll timing so your final roll finishes exactly when your claim resets. Perfect sync, every cycle. |
 | **Scheduled Rolls** | Set specific times — *"Roll at 14:00 and 18:30 every day."* The bot shows up on time, every time. |
 | **Auto $us & $mk** | Automatically fires your saved rolls (`$us`) and bonus Kakera rolls (`$mk`). Nothing goes to waste. |
-| **Lurker Mode** | Stays silent while others roll (and snipes their good characters). Then, in the last minutes, dumps all your rolls at once. Predator strategy. |
+| **Lurker Mode** | Watches configured channels before using your own rolls near the end of the claim window. |
 | **Key Farming** | No claim available? The bot keeps rolling anyway — farming keys so your next claimed character is worth even more. |
 
 ---
@@ -308,13 +337,13 @@ MudaRemote stores tokens outside `presets.json`: Windows uses DPAPI encryption, 
 
 ## 💬 Join the Community
 
-**You're not alone.** Join our rapidly growing community of **140+ active members** on Discord for setup help, strategy discussion, feature requests, and early access to updates.
+**You're not alone.** Join our community of **310+ members** on Discord for setup help, strategy discussion, feature requests, and release updates.
 
 <p align="center">
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/💬_Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord"></a>
 </p>
 
-We recently crossed **50+ GitHub Stars** — if MudaRemote helps you dominate your server, **drop a ⭐ to support the best free Mudae tool available** and help others find it.
+If MudaRemote helps you, **leave a GitHub star** to help other players discover the project—or support development through the crypto options above.
 
 **Got an issue?**
 
@@ -345,7 +374,7 @@ MIT License — free to use, copy, modify, and distribute. See [LICENSE](LICENSE
 ---
 
 <p align="center">
-  <strong>⭐ Love MudaRemote? Star this repo — it takes 1 second and helps thousands of players discover the best Mudae tool. ⭐</strong>
+  <strong>⭐ Find MudaRemote useful? Star the repository and help more players discover the project. ⭐</strong>
 </p>
 
 <p align="center">

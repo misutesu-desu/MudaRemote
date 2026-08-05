@@ -1,18 +1,19 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Discord 最强的 Mudae 自动脚本</h1>
+  <h1 align="center">⚡ MudaRemote — Discord 高级 Mudae 自动化工具</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    一个代替你在 Discord 上玩 Mudae 的智能<strong>自动化机器人</strong>。<br>
-    自动抽卡、自动娶妻、自动点碎片。模拟真实玩家行为，有效降低封号风险。
+    在一个桌面应用中管理抽卡、角色领取、Kakera 收集和多账号预设。<br>
+    时间控制选项不保证规避检测或保障账号安全。
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-独立_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -28,6 +29,43 @@
 
 ---
 
+## 💖 支持 MudaRemote
+
+MudaRemote 将始终保持**免费和开源**。如果它帮你节省了时间、建立了收藏或简化了 Kakera 收集，你可以自愿支持项目继续开发。
+
+你是一个不断成长的 Discord 社区的一员；**310 多名成员**正在共同使用、测试和改进本项目。
+
+### 第一个社区目标
+
+**目标已完成 40% • 早期社区支持已筹集 40 / 100 美元 • 2026 年 8 月更新**
+
+你的支持能让独立开发者投入更多时间用于：
+
+- Discord 或 Mudae 变更后的兼容修复与回归测试；
+- 经过验证的 Windows 版本、校验和与更安全的更新；
+- 文档、翻译以及直接的社区支持；
+- 处理积压的功能需求和错误。
+
+任何金额都有帮助。如果需要参考，可以考虑价值约 **5 美元**、**15 美元**或**30 美元以上**的加密货币。这些只是建议，不是等级或最低金额；请只选择适合你的数额。
+
+| 资产 | 网络 | 地址 |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> 发送前请同时核对资产和网络；加密货币交易无法撤销。若要领取可选的 **Donator** 身份组，请通过 Discord 私信向开发者发送交易 ID 或截图。你可以遮盖无关的钱包信息。**绝不要分享助记词或私钥。** 任何经确认的金额都可领取身份组。
+
+暂时不想捐赠？为 GitHub 项目点星、提交有帮助的错误报告或帮助其他社区成员，同样是在支持项目。
+
+## 🆕 最新版本 — v4.7.9
+
+- Chaos 与 Perk 8 的 Kakera 选择现在会正确继承普通 Kakera 设置。
+- Discord 消息刷新后，四按钮 Perk 8 抽卡仍能稳定处理。
+- 红色球体名称 `sp` 与 `spR` 会被识别为同一目标。
+- 预设切换速度大幅提高，并能保留选择和未完成草稿。
+- Quick Setup 现在支持 `wx`、`hx` 与 `mx` 抽卡池。
+
 ## ❓ 这是用来做什么的？
 
 **MudaRemote** 是一个 **Mudae 机器人** —— 一个可以在 Discord 上**自动**帮你玩 Mudae 游戏的程序。
@@ -40,7 +78,7 @@
 - 🎯 **Discord Mudae sniper** — 别人抽到了你想要的角色？脚本会帮你“偷妻”（拦截）。
 - 🤖 **Mudae slash commands bot** — 支持 `/wa` 斜杠指令，额外获得 10% 碎片奖励。
 - 👥 **Mudae multi-account sync** — 多个小号协同作战，自动同步愿望单。
-- 🛡️ **Anti-ban stealth** — 行为模拟真人，躲避 Discord 封号。
+- 🕒 **时间控制** — 延迟、停用时段与频道等待可减少重复时间模式，但不提供安全保证。
 - 🖥️ **简单图形界面** — 无需改代码，点点鼠标即可完成配置。
 
 > **⚠️ 警告:** 这是一个“自用机器人（Self-bot）”。使用 Self-bot **违反 Discord 服务条款**。你的账号**可能会被永久封禁**。本工具仅供**学习研究**使用。使用风险由你承担。
@@ -65,7 +103,7 @@
 
 ### 🎯 自动娶妻 — Mudae Auto Claim
 
-脚本会监控所有的抽卡（包括你自己的和别人的），并帮你抢到最好的角色。
+脚本会监控已配置频道中的适用抽卡，并按照愿望单、系列、价值和所有者规则尝试领取角色。
 
 | 功能 | 描述 |
 | :--- | :--- |
@@ -76,7 +114,7 @@
 | **补刀模式** | 娶妻冷却快结束时，如果没有遇到好的，会自动娶一个价值最低的防止朗费次数。 |
 | **免费活动卡** | 自动抓取圣诞、新年等活动的免费卡片（不扣次数）。 |
 | **自动 $rt** | 自动使用 `$rt` 刷新娶妻次数，确保不漏掉任何好角色。 |
-| **愿望单同步** | 小号检测到大号想要的愿望角色时，会瞬间帮大号抢下来。 |
+| **愿望单同步** | 小号检测到主账号愿望角色时，会按设定规则立即尝试领取。 |
 
 ---
 

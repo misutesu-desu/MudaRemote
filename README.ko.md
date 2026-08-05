@@ -1,19 +1,19 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — 디스코드 최고의 Mudae 자동화 봇</h1>
+  <h1 align="center">⚡ MudaRemote — 디스코드용 고급 Mudae 자동화 도구</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    당신을 대신해서 Mudae(무다에) 게임을 플레이하는 똑똑한 <strong>Mudae 봇</strong>입니다.<br>
-    자동으로 주사위(롤)를 굴리고, 캐릭터를 잡고, 카케라를 클릭합니다.<br>
-    정지(BAN)를 피하기 위해 실제 사람처럼 자연스럽게 행동합니다.
+    롤, 캐릭터 클레임, 카케라 수집, 다중 계정 프리셋을 하나의 앱에서 관리합니다.<br>
+    타이밍 설정은 감지 방지나 계정 안전을 보장하지 않습니다.
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-단일_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -29,6 +29,43 @@
 
 ---
 
+## 💖 MudaRemote 후원하기
+
+MudaRemote는 계속 **무료 오픈 소스**로 제공됩니다. 시간을 절약하거나 컬렉션과 카케라 수집에 도움이 되었다면 지속적인 개발을 자율적으로 후원할 수 있습니다.
+
+여러분은 프로젝트를 함께 사용하고 테스트하며 개선하는 **310명 이상**의 Discord 커뮤니티 구성원입니다.
+
+### 첫 번째 커뮤니티 목표
+
+**목표의 40% 달성 • 초기 커뮤니티 후원으로 $40 / $100 • 2026년 8월 업데이트**
+
+후원은 독립 개발자가 다음 작업에 더 많은 시간을 쓸 수 있게 합니다:
+
+- Discord 또는 Mudae 변경 시 호환성 수정과 회귀 테스트;
+- 검증된 Windows 릴리스, 체크섬, 더 안전한 업데이트;
+- 문서, 번역, 커뮤니티 직접 지원;
+- 밀린 기능 요청과 버그 해결.
+
+금액과 관계없이 도움이 됩니다. 기준이 필요하다면 **$5**, **$15**, **$30 이상** 상당의 암호화폐를 고려해 보세요. 등급이나 최소 금액이 아닌 단순한 제안이며, 본인에게 맞는 금액을 자유롭게 선택하세요.
+
+| 자산 | 네트워크 | 주소 |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> 전송 전에 자산과 네트워크를 모두 확인하세요. 암호화폐 거래는 되돌릴 수 없습니다. 선택 사항인 **Donator** 역할을 받으려면 거래 ID 또는 스크린샷을 개발자에게 Discord DM으로 보내세요. 관련 없는 지갑 정보는 가려도 됩니다. **시드 문구나 개인 키는 절대 공유하지 마세요.** 확인된 모든 후원 금액이 역할 대상입니다.
+
+지금 후원하지 않아도 GitHub 스타, 유용한 버그 제보, 다른 커뮤니티 구성원 돕기로 프로젝트를 지원할 수 있습니다.
+
+## 🆕 최신 릴리스 — v4.7.9
+
+- Chaos 및 Perk 8 카케라 선택이 일반 카케라 설정을 올바르게 상속합니다.
+- Discord 메시지가 갱신된 뒤에도 4버튼 Perk 8 롤을 안정적으로 처리합니다.
+- 빨간 구체 이름 `sp`와 `spR`을 동일한 대상으로 인식합니다.
+- 프리셋 전환이 빨라졌고 선택과 미완성 초안을 그대로 유지합니다.
+- Quick Setup에서 `wx`, `hx`, `mx` 롤 풀을 지원합니다.
+
 ## ❓ 이게 무엇인가요?
 
 **MudaRemote**는 **Mudae 봇**입니다. 디스코드에서 Mudae 게임을 **당신을 대신해서 자동으로** 플레이해주는 프로그램입니다.
@@ -41,7 +78,7 @@
 - 🎯 **Discord Mudae sniper** — 다른 사람이 뽑은 캐릭터를 가로챕니다(스나이핑).
 - 🤖 **Mudae slash commands bot** — 슬래시 명령(`/wa`)을 사용하여 카케라를 10% 더 받습니다.
 - 👥 **Mudae multi-account sync** — 부계정들과 함께 협력해서 플레이할 수 있습니다.
-- 🛡️ **Anti-ban stealth** — 정지당하지 않도록 사람과 똑같이 행동합니다.
+- 🕒 **타이밍 제어** — 지연, 비활성 시간, 채널 대기로 반복적인 동작을 줄이지만 안전을 보장하지 않습니다.
 - 🖥️ **쉬운 GUI** — 코드 수정 없이 버튼 클릭만으로 모든 설정을 마칠 수 있습니다.
 
 > **⚠️ 주의사항:** 이 프로그램은 "셀프 봇"입니다. 셀프 봇 사용은 **디스코드 약관 위반**입니다. 계정이 **영구 정지**될 위험이 있습니다. 이 오픈소스는 **학습용**입니다. 사용 시 발생하는 모든 책임은 **본인**에게 있습니다.
@@ -55,7 +92,7 @@
 | 롤 방식 | 텍스트 전용 (`$wa`) | ✅ 슬래시 (`/wa`) — 카케라 10% 보너스 |
 | 클레임 | 아무나 잡음 | ✅ 당신이 원하는 캐릭터만 잡음 |
 | 타이밍 | 매번 같은 시간 | ✅ 완벽한 타이밍을 기다림 |
-| 안전성 | 쉽게 들킴 | ✅ 실제 사람처럼 자연스럽게 행동 |
+| 타이밍 제어 | 고정된 반복 타이밍 | ✅ 지연, 비활성 시간, 채널 감지 설정 제공; 안전 보장 없음 |
 | 계정 | 한 계정만 | ✅ 여러 계정 동시 실행 가능 |
 | 설정 | 코드 수정 필요 | ✅ 편리한 설정 화면(GUI) 제공 |
 | 업데이트 | 다시 다운로드 | ✅ 자동으로 최신 버전 업데이트 |
@@ -106,7 +143,7 @@
 | 기능 | 설명 |
 | :--- | :--- |
 | **자동 롤** | 자동으로 `$wa`, `$ha`, `$ma` 등을 보냅니다. |
-| **슬래시 명령** | `/wa`를 사용하여 카케라 10% 보너스를 받고 정지 위험을 낮춥니다. |
+| **슬래시 명령** | 지원되는 환경에서 `/wa`를 사용해 관련 카케라 보너스를 받습니다. |
 | **스마트 타이밍** | 캐릭터 잡기 횟수가 충전되는 시간에 맞춰 롤이 끝나도록 시간을 계산합니다. |
 | **예약 반복** | "매일 14:00 와 18:30 에 돌려라"와 같은 설정이 가능합니다. |
 | **자동 $mk** | 카케라 전용 롤($mk)을 사용하고 나타나는 카케라를 누릅니다. |

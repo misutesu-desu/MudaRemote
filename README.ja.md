@@ -1,19 +1,19 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Discordで一番のMudae自動化ボット</h1>
+  <h1 align="center">⚡ MudaRemote — Discord向け高機能Mudae自動化ツール</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    あなたの代わりにMudae（ムダエ）を遊んでくれる賢いボットです。<br>
-    ガチャ（ロール）を回し、キャラを捕まえ、カケラをクリックします。<br>
-    BAN（禁止）されないように、人間と同じように動きます。
+    ロール、キャラ獲得、カケラ回収、複数アカウントのプリセットを1つのアプリで管理できます。<br>
+    タイミング設定は、検出回避やアカウントの安全を保証するものではありません。
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-単体_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -29,6 +29,43 @@
 
 ---
 
+## 💖 MudaRemoteを支援する
+
+MudaRemoteは今後も**無料かつオープンソース**です。時間の節約、コレクション作り、カケラ集めに役立ったと感じた方は、継続的な開発を任意で支援できます。
+
+あなたは、プロジェクトを共に利用・テスト・改善する**310人以上**のDiscordコミュニティの一員です。
+
+### 最初のコミュニティ目標
+
+**目標の40%を達成 • 初期支援者から40ドル / 100ドル • 2026年8月更新**
+
+支援は、個人開発者が次の作業に使える時間を増やします：
+
+- DiscordやMudaeの変更に対応する互換性修正と回帰テスト；
+- 検証済みWindowsリリース、チェックサム、安全性を高めた更新；
+- ドキュメント、翻訳、コミュニティへの直接サポート；
+- 未対応の機能要望や不具合の解消。
+
+金額にかかわらず助けになります。目安が必要な場合は、**5ドル**、**15ドル**、**30ドル以上**相当の暗号資産をご検討ください。これはランクや最低額ではありません。無理のない金額を自由に選んでください。
+
+| 資産 | ネットワーク | アドレス |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> 送金前に資産とネットワークの両方を確認してください。暗号資産の取引は取り消せません。任意の**Donator**ロールを受け取るには、トランザクションIDまたはスクリーンショットを開発者へDiscord DMで送ってください。関係のないウォレット情報は隠して構いません。**シードフレーズや秘密鍵は絶対に共有しないでください。** 確認できた支援は金額を問わず対象です。
+
+寄付以外にも、GitHubでスターを付ける、役立つ不具合報告を送る、コミュニティの利用者を手伝うことでプロジェクトを支援できます。
+
+## 🆕 最新リリース — v4.7.9
+
+- ChaosおよびPerk 8のカケラ選択が、通常のカケラ設定を正しく引き継ぐようになりました。
+- Discordメッセージが更新された後も、4ボタンのPerk 8ロールを安定して処理します。
+- 赤いスフィア名の`sp`と`spR`を同じ対象として認識します。
+- プリセット切り替えが高速化され、選択内容や未完成の下書きを保持します。
+- Quick Setupで`wx`、`hx`、`mx`のロールプールを利用できます。
+
 ## ❓ これは何ができるの？
 
 **MudaRemote** は **Mudae bot（ムダエ・ボット）** です。DiscordでMudaeを **あなたの代わりに自動で** 遊んでくれるプログラムです。
@@ -41,7 +78,7 @@
 - 🎯 **Discord Mudae sniper** — 他の人が出した欲しいキャラを「横取り（スナイプ）」します。
 - 🤖 **Mudae slash commands bot** — `/wa` などのスラッシュコマンドを使ってカケラを10%多くもらえます。
 - 👥 **Mudae multi-account sync** — サブ垢と一緒に協力して動けます。
-- 🛡️ **Anti-ban stealth** — DiscordにBANされないように、人間のような自然な動きをします。
+- 🕒 **タイミング制御** — 遅延、休止時間、チャンネル待機により反復的な動作を減らしますが、安全性は保証されません。
 - 🖥️ **簡単な操作画面** — 難しいコードは不要。ボタンをクリックするだけで設定できます。
 
 > **⚠️ 注意事項:** これは「セルフボット」です。セルフボットは **Discordのルール違反** です。アカウントが **BANされる可能性があります**。このボットは **学習目的** のものです。使う場合は **自己責任** でお願いします。私たちは責任を負いません。
@@ -73,7 +110,7 @@
 | :--- | :--- |
 | **ウィッシュリスト捕獲** | 欲しいキャラをリストにしておけば、出た瞬間に捕まえます。 |
 | **シリーズ捕獲** | 「ナルト」が好きなら、ナルトの全キャラを自動で狙います。 |
-| **高額キャラ狙い** | 高価なキャラ（例：カケラ500以上）を他人から奪います。 |
+| **高額キャラ狙い** | 設定したカケラ基準を超える対象キャラに、条件を確認して獲得を試みます。 |
 | **即時キャッチ** | 自分が回している時、良いのが出たらその瞬間に捕まえます。 |
 | **パニック・キャッチ** | 時間切れになりそうな時、無駄にしないよう何でも捕まえます。 |
 | **無料カード捕獲** | クリスマス等の無料イベントキャラを自動で手に入れます。 |
@@ -108,7 +145,7 @@
 | 機能 | 内容 |
 | :--- | :--- |
 | **自動ロール** | `$wa` などを自動で送信し続けます。 |
-| **スラッシュコマンド** | `/wa` を使い、BAN耐性を上げつつカケラを多く稼ぎます。 |
+| **スラッシュコマンド** | 対応環境では `/wa` を使用し、関連するカケラボーナスを得られます。 |
 | **賢いタイミング** | 自分のキャッチ（結婚）回数がリセットされる「直後」にガチャが終わるように計算します。 |
 | **予約実行** | 「毎日 14:00 と 18:30 に回す」といった設定ができます。 |
 | **自動 $us** | 貯まっているロール（$us）を自動で使い切ります。 |

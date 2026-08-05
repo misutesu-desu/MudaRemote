@@ -1,21 +1,68 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Discord İçin En İyi Mudae Botu</h1>
+  <h1 align="center">⚡ MudaRemote — Discord İçin Gelişmiş Mudae Otomasyonu</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    Sizin yerinize Mudae oynayan akıllı bir <strong>Mudae botu</strong>.<br>
-    Karakter çıkartır, karakterleri yakalar ve kakeraya tıklar. Zamanlama seçenekleri ban veya tespit edilmeme garantisi vermez.
+    Roll, claim, Kakera toplama ve çoklu hesap presetlerini tek bir masaüstü uygulamasından yönetin.<br>
+    Zamanlama seçenekleri ban veya tespit edilmeme garantisi vermez.
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Tek_Dosya_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
+
+<p align="center">
+  <a href="README.md">English</a> •
+  <a href="README.fr.md">Français</a> •
+  <a href="README.ja.md">日本語</a> •
+  <a href="README.ko.md">한국어</a> •
+  <a href="README.zh-CN.md">简体中文</a> •
+  <a href="README.pt-BR.md">Português Brasileiro</a>
+</p>
+
+## 💖 MudaRemote'u Destekle
+
+MudaRemote **ücretsiz ve açık kaynaklı** kalacak. Sana zaman kazandırdıysa, koleksiyonunu oluşturmana yardımcı olduysa veya Kakera farming'i kolaylaştırdıysa geliştirme çalışmalarına gönüllü olarak destek olabilirsin.
+
+Projeyi birlikte kullanan, test eden ve geliştiren **310+ üyelik** büyüyen Discord topluluğunun bir parçasısın.
+
+### İlk topluluk hedefimiz
+
+**Hedefin %40'ı tamamlandı • İlk topluluk destekçileriyle $40 / $100 • Son güncelleme: Ağustos 2026**
+
+Desteğin bağımsız geliştiriciye şu işler için daha fazla zaman sağlar:
+
+- Discord veya Mudae değiştiğinde uyumluluk düzeltmeleri ve regresyon testleri;
+- doğrulanmış Windows sürümleri, checksum'lar ve daha güvenli güncellemeler;
+- dokümantasyon, çeviriler ve doğrudan topluluk desteği;
+- özellik ve hata listesinde bekleyen işlerin tamamlanması.
+
+Her miktar değerlidir. Bir referans istersen **$5**, **$15** veya **$30+** karşılığı kripto düşünebilirsin. Bunlar seviye veya alt sınır değil, yalnızca öneridir; senin için doğru olan miktarı seç.
+
+| Varlık | Ağ | Adres |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> Göndermeden önce varlık ve ağı birlikte doğrula; kripto işlemleri geri alınamaz. İsteğe bağlı **Donator** rolünü almak için işlem kimliğini veya ekran görüntüsünü geliştiriciye Discord DM üzerinden gönder. İlgisiz cüzdan bilgilerini gizleyebilirsin. **Seed phrase veya private key'ini asla paylaşma.** Doğrulanan her bağış miktarı rol için yeterlidir.
+
+Şu anda bağış yapmak istemiyorsan GitHub yıldızı vermek, faydalı bir hata bildirimi göndermek veya topluluktaki başka bir kullanıcıya yardım etmek de projeyi destekler.
+
+## 🆕 Son Sürüm — v4.7.9
+
+- Chaos ve Perk 8 Kakera seçimleri artık normal Kakera tercihlerini doğru biçimde devralıyor.
+- Tekrarlanan dört butonlu Perk 8 roll'ları Discord mesajı yenilense bile güvenilir şekilde eşleştiriliyor.
+- `sp` ve `spR` kırmızı küre adları aynı hedef olarak algılanıyor.
+- Preset geçişleri seçim ve eksik taslakları kaybetmeden çok daha hızlı çalışıyor.
+- Quick Setup artık `wx`, `hx` ve `mx` roll havuzlarını da destekliyor.
 
 ## 🔐 Termux Token Saklama — v4.6.2
 
@@ -36,15 +83,6 @@
 - **Doğru birleşik güç indirimleri:** 10+ key indirimi ile görünen `💎/2` Perk 8 indirimi artık bağımsız şekilde üst üste uygulanır; 7.5% gibi kesirli maliyetler doğru izlenir.
 - **Geliştirilmiş preset editörü ve tanılama:** Preset doğrulama ve kayıt akışları tutarlı hale getirildi; dinamik değerler korunur, alt süreç durumu görünür, log'lar döndürülür ve kritik akışlar otomatik testlerle korunur.
 
-<p align="center">
-  <a href="README.md">English</a> •
-  <a href="README.fr.md">Français</a> •
-  <a href="README.ja.md">日本語</a> •
-  <a href="README.ko.md">한국어</a> •
-  <a href="README.zh-CN.md">简体中文</a> •
-  <a href="README.pt-BR.md">Português Brasileiro</a>
-</p>
-
 ---
 
 ## ❓ Bu Ne İşe Yarar?
@@ -56,10 +94,10 @@ Neler yapabilir:
 - 🎲 **Auto roll Mudae** — Sizin yerinize karakter çıkartma komutlarını (`$wa`, `$ha`, vb.) gönderir.
 - 💍 **Mudae auto claim** — İyi bir karakter mi gördü? Hemen yakalar. Anında.
 - 💎 **Mudae auto kakera** — Size para kazandırmak için çıkartılan karakterlerdeki kakera kristallerine tıklar.
-- 🎯 **Discord Mudae sniper** — Başkası istediğiniz bir karakteri mi çıkarttı? Bot onu çalar.
+- 🎯 **Wishlist takibi** — Ayarladığınız wishlist karakterlerini algılar ve uygun olduğunda hemen claim etmeyi dener.
 - 🤖 **Mudae slash commands bot** — %10 daha fazla kakera bonusu için `/wa` komutlarını kullanabilir.
 - 👥 **Mudae multi-account sync** — Yan hesaplarınız mı var? Birlikte çalışabilirler.
-- 🛡️ **Anti-ban stealth** — Discord sizi banlamasın diye bir insan gibi davranır.
+- 🕒 **Zamanlama kontrolleri** — Tekrarlayan zamanlamayı azaltmak için gecikme, pasif saat ve kanal aktivitesi seçenekleri sunar; güvenlik garantisi vermez.
 - 🖥️ **Kolay Arayüz** — Kod düzenleme yok. Ayarlamak için sadece düğmelere tıklayın.
 
 > **⚠️ UYARI:** Bu bir **self-bot** aracıdır. Self-bot kullanımı **Discord kurallarına aykırıdır**. **Banlanabilirsiniz**. Bu proje sadece **öğrenme amaçlıdır**. Kullanırsanız, bu **sizin tercihiniz ve riskinizdir**. Sorumluluk kabul etmiyoruz.
@@ -91,7 +129,7 @@ Bot çıkartılan her karakteri (sizinkini ve başkalarınınkini) izler ve sizi
 | :--- | :--- |
 | **Wishlist Yakalama** | İstediğiniz karakterlerin listesini yaparsınız. Bot çıktıkları an yakalar. |
 | **Seri Yakalama** | "Naruto"yu mu seviyorsunuz? Bot her Naruto karakterini yakalar. |
-| **Değer Yakalama** | Bot, başkalarından pahalı karakterleri (örneğin: 500+ kakera değerindekiler) çalabilir. |
+| **Değer Yakalama** | Belirlediğiniz Kakera eşiğini aşan uygun karakterleri claim etmeyi deneyebilir. |
 | **Anlık Yakalama** | Bot karakter çıkartırken iyi bir şey çıkarsa, BEKLEMEDEN hemen yakalar. |
 | **Panik Yakalama** | Yakalama süreniz mi bitiyor? Bot hiçbir şeyi boşa harcamamak için HER ŞEYİ yakalar. |
 | **Ücretsiz Kartlar** | Noel veya Yılbaşı etkinlik kartları ücretsizdir. Bot bunları otomatik alır. |
@@ -126,7 +164,7 @@ Bot sizin yerinize ve en akıllı zamanda karakter çıkartır.
 | **Slash Komutları** | %10 daha fazla kakera veren `/wa` komutlarını kullanır. |
 | **Akıllı Zamanlama** | Yakalama hakkınızın yenilendiği an karakter çıkartma işlemini bitirecek şekilde ayarlar. |
 | **Planlanmış Zamanlar** | "Her gün 14:00 ve 18:30'da karakter çıkart" diyebilirsiniz. |
-| **Lurker Modu** | Başkaları karakter çıkartırken bot sessiz kalır (ve yakışıklıları çalar). Son dakikalarda kendi tüm karakterlerini çıkartır. |
+| **Lurker Modu** | Ayarlanan kanalları izler ve kendi roll'larını claim penceresinin sonuna yakın kullanır. |
 
 ---
 

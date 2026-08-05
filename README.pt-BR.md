@@ -1,18 +1,19 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — O Melhor Bot de Mudae para Discord</h1>
+  <h1 align="center">⚡ MudaRemote — Automação avançada de Mudae para Discord</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    Um <strong>bot de Mudae</strong> inteligente que joga para você.<br>
-    Ele gira rolos, resgata personagens, clica em kakera e parece uma pessoa real — para você não ser banido.
+    Gerencie rolls, claims, coleta de Kakera e presets de várias contas em um único aplicativo.<br>
+    Os controles de tempo não garantem que a conta não seja detectada ou punida.
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Aplicativo_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -28,6 +29,43 @@
 
 ---
 
+## 💖 Apoie o MudaRemote
+
+O MudaRemote continuará **gratuito e de código aberto**. Se ele economizou seu tempo, ajudou a montar sua coleção ou facilitou o farm de Kakera, você pode apoiar voluntariamente a continuidade do desenvolvimento.
+
+Você faz parte de uma comunidade crescente no Discord com **mais de 310 membros** que usam, testam e melhoram o projeto juntos.
+
+### Nossa primeira meta comunitária
+
+**40% da meta financiada • US$ 40 de US$ 100 por apoiadores iniciais • Atualizado em agosto de 2026**
+
+Seu apoio dá a um desenvolvedor independente mais tempo para:
+
+- correções de compatibilidade e testes de regressão quando Discord ou Mudae mudarem;
+- versões verificadas para Windows, checksums e atualizações mais seguras;
+- documentação, traduções e suporte direto à comunidade;
+- resolver os recursos e bugs acumulados.
+
+Qualquer valor ajuda. Se quiser uma referência, considere o equivalente em cripto de **US$ 5**, **US$ 15** ou **US$ 30 ou mais**. São apenas sugestões, não níveis nem valores mínimos—escolha somente o que fizer sentido para você.
+
+| Ativo | Rede | Endereço |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> Confira o ativo e a rede antes de enviar; transações em cripto não podem ser revertidas. Para receber o cargo opcional de **Donator**, envie ao desenvolvedor uma DM no Discord com o ID da transação ou uma captura de tela. Você pode ocultar dados não relacionados da carteira. **Nunca compartilhe sua frase-semente ou chave privada.** Qualquer valor confirmado dá direito ao cargo.
+
+Não quer doar agora? Dar uma estrela no GitHub, enviar um bom relatório de bug ou ajudar outro membro da comunidade também apoia o projeto.
+
+## 🆕 Versão mais recente — v4.7.9
+
+- As seleções de Kakera Chaos e Perk 8 agora herdam corretamente as preferências normais de Kakera.
+- Rolls de Perk 8 com quatro botões continuam confiáveis depois que a mensagem do Discord é atualizada.
+- Os nomes de esfera vermelha `sp` e `spR` são reconhecidos como o mesmo alvo.
+- A troca de presets ficou muito mais rápida e mantém seleções e rascunhos incompletos.
+- O Quick Setup agora inclui os pools de roll `wx`, `hx` e `mx`.
+
 ## ❓ O que isso faz?
 
 **MudaRemote** é um **bot de Mudae** — um programa que joga o jogo Mudae no Discord **por você**, automaticamente.
@@ -37,10 +75,10 @@ Aqui está o que ele pode fazer:
 - 🎲 **Auto roll Mudae** — Ele envia comandos de rolo (`$wa`, `$ha`, etc.) para você.
 - 💍 **Mudae auto claim** — Viu um personagem bom? Ele resgata. Na hora.
 - 💎 **Mudae auto kakera** — Ele clica nos cristais de kakera nos rolos para ganhar dinheiro.
-- 🎯 **Discord Mudae sniper** — Alguém girou um personagem que você quer? O bot rouba.
+- 🎯 **Monitoramento da wishlist** — Detecta personagens configurados e tenta um claim imediato quando permitido.
 - 🤖 **Mudae slash commands bot** — Pode usar `/wa` em vez de `$wa` para ganhar 10% a mais de kakera.
 - 👥 **Mudae multi-account sync** — Tem contas secundárias? Elas podem trabalhar juntas.
-- 🛡️ **Anti-ban stealth** — Age como um humano para o Discord não te banir.
+- 🕒 **Controles de tempo** — Atrasos, horários inativos e espera por canal silencioso reduzem padrões repetitivos, sem garantia de segurança.
 - 🖥️ **GUI fácil** — Sem editar código. Basta clicar em botões para configurar tudo.
 
 > **⚠️ AVISO:** Isto é um **self-bot**. Self-bots são **contra as regras do Discord**. Você **pode ser banido**. Isto é apenas para **aprendizado**. Se usar, é **sua escolha e seu risco**. Não somos responsáveis.
@@ -72,7 +110,7 @@ O bot vigia cada rolo (o seu e o de outras pessoas) e resgata os melhores person
 | :--- | :--- |
 | **Resgate da Wishlist** | Você faz uma lista de personagens que quer. O bot resgata na hora que eles aparecem. |
 | **Resgate por Série** | Gosta de "Naruto"? O bot resgata QUALQUER personagem de Naruto. |
-| **Resgate por Valor** | O bot pode roubar personagens caros (exemplo: qualquer um valendo 500+ kakera) de outras pessoas. |
+| **Claim por Valor** | Tenta claims permitidos em personagens acima do limite de Kakera definido por você. |
 | **Auto-Resgate Instantâneo** | Enquanto o bot rola, se algo bom aparecer, ele resgata AGORA — não espera. |
 | **Resgate de Pânico** | Seu tempo de resgate está acabando? O bot resgata QUALQUER COISA para não desperdiçar. |
 | **Cartas de Evento Grátis** | Personagens de Natal ou Ano Novo são grátis. O bot pega automaticamente. |
@@ -115,7 +153,7 @@ O bot envia comandos de rolo para você e faz isso na hora mais inteligente.
 | **Auto $mk** | Usa `$mk` para ganhar rolos extras de kakera e clica na kakera que vier. |
 | **Auto $rolls** | Usa o comando `$rolls` quando seus rolos acabarem. |
 | **Detectar Rolo Bônus** | Às vezes clicar em kakera dá rolos extras. O bot vê e usa na hora. |
-| **Modo Lurker** | O bot fica quieto enquanto os outros rolam (e rouba os bons). No final, ele usa todos os rolos dele. |
+| **Modo Lurker** | Monitora os canais configurados e usa seus próprios rolls perto do fim da janela de claim. |
 | **Farming de Keys** | Mesmo sem resgate, o bot continua rolando para você ganhar keys. |
 
 ---

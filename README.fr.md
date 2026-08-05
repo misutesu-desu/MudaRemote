@@ -1,18 +1,19 @@
 <p align="center">
-  <h1 align="center">⚡ MudaRemote — Le Meilleur Bot Mudae pour Discord</h1>
+  <h1 align="center">⚡ MudaRemote — Automatisation Mudae avancée pour Discord</h1>
   <p align="center">
     <strong>Mudae Auto Claim • Discord Mudae Sniper • Auto Roll Mudae • Mudae Auto Kakera • Mudae Slash Commands Bot</strong>
   </p>
   <p align="center">
-    Un <strong>bot Mudae</strong> intelligent qui joue pour vous.<br>
-    Il fait des tirages, capture des personnages, clique sur le kakera et agit comme une vraie personne — pour ne pas être banni.
+    Gérez les tirages, les captures, la collecte de Kakera et plusieurs profils depuis une seule application.<br>
+    Les options de temporisation ne garantissent ni l'absence de détection ni la sécurité du compte.
   </p>
 </p>
 
 <p align="center">
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Windows-Application_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows EXE"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.8+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.6.8-f97316?style=for-the-badge" alt="Version 4.6.8"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/releases"><img src="https://img.shields.io/badge/Version-4.7.9-f97316?style=for-the-badge" alt="Version 4.7.9"></a>
   <a href="#"><img src="https://img.shields.io/badge/Status-Active_2026-10b981?style=for-the-badge" alt="Active 2026"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Server"></a>
 </p>
@@ -28,6 +29,43 @@
 
 ---
 
+## 💖 Soutenir MudaRemote
+
+MudaRemote restera **gratuit et open source**. S'il vous a fait gagner du temps, aidé à développer votre collection ou facilité la collecte de Kakera, vous pouvez soutenir volontairement son développement.
+
+Vous faites partie d'une communauté Discord grandissante de **plus de 310 membres** qui utilisent, testent et améliorent le projet ensemble.
+
+### Notre premier objectif communautaire
+
+**Objectif financé à 40 % • 40 $ sur 100 $ grâce aux premiers soutiens • Mise à jour : août 2026**
+
+Votre soutien donne à un développeur indépendant plus de temps pour :
+
+- les correctifs de compatibilité et les tests de régression lorsque Discord ou Mudae change ;
+- les versions Windows vérifiées, les sommes de contrôle et les mises à jour plus sûres ;
+- la documentation, les traductions et l'aide directe à la communauté ;
+- la résolution des fonctionnalités et bugs en attente.
+
+Chaque montant compte. Pour vous guider, vous pouvez envisager l'équivalent crypto de **5 $**, **15 $** ou **30 $ et plus**. Ce ne sont ni des niveaux ni des minimums : choisissez uniquement le montant qui vous convient.
+
+| Actif | Réseau | Adresse |
+| :--- | :--- | :--- |
+| **Litecoin (LTC)** | Litecoin | `LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt` |
+| **USDT** | TRON — TRC20 | `TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp` |
+
+> [!IMPORTANT]
+> Vérifiez l'actif et le réseau avant l'envoi : une transaction crypto est irréversible. Pour recevoir le rôle **Donator** facultatif, envoyez au développeur un DM Discord avec l'identifiant de transaction ou une capture d'écran. Vous pouvez masquer les autres informations du portefeuille. **Ne partagez jamais une phrase de récupération ni une clé privée.** Tout montant confirmé donne droit au rôle.
+
+Vous ne souhaitez pas faire de don ? Une étoile GitHub, un rapport de bug utile ou de l'aide apportée à un membre soutient également le projet.
+
+## 🆕 Dernière version — v4.7.9
+
+- Les sélections Kakera Chaos et Perk 8 héritent correctement des préférences Kakera normales.
+- Les tirages Perk 8 à quatre boutons restent fiables après l'actualisation d'un message Discord.
+- Les noms de sphère rouge `sp` et `spR` sont reconnus comme une même cible.
+- Le changement de preset est beaucoup plus rapide et conserve les sélections et brouillons incomplets.
+- Quick Setup prend désormais en charge les pools `wx`, `hx` et `mx`.
+
 ## ❓ C'est quoi ça ?
 
 **MudaRemote** est un **bot Mudae** — un programme qui joue au jeu Mudae sur Discord **pour vous**, automatiquement.
@@ -37,10 +75,10 @@ Voici ce qu'il peut faire :
 - 🎲 **Auto roll Mudae** — Il envoie des commandes de tirage (`$wa`, `$ha`, etc.) pour vous.
 - 💍 **Mudae auto claim** — Il voit un bon personnage ? Il le capture. Tout de suite.
 - 💎 **Mudae auto kakera** — Il clique sur les cristaux de kakera pour vous faire gagner de l'argent.
-- 🎯 **Discord Mudae sniper** — Quelqu'un d'autre tire un personnage que vous voulez ? Le bot le vole.
+- 🎯 **Suivi de wishlist** — Détecte les personnages configurés et tente immédiatement une capture lorsqu'elle est autorisée.
 - 🤖 **Mudae slash commands bot** — Il peut utiliser `/wa` au lieu de `$wa` pour gagner 10% de kakera en plus.
 - 👥 **Mudae multi-account sync** — Vous avez plusieurs comptes ? Ils peuvent travailler ensemble.
-- 🛡️ **Anti-ban stealth** — Il agit comme un humain pour que Discord ne vous bannisse pas.
+- 🕒 **Contrôles de temporisation** — Délais, périodes d'inactivité et attente d'un canal calme réduisent les séquences répétitives, sans garantie de sécurité.
 - 🖥️ **Interface facile** — Pas besoin de coder. Cliquez juste sur des boutons pour tout régler.
 
 > **⚠️ ATTENTION :** Ceci est un **self-bot**. Les self-bots sont **contre les règles de Discord**. Vous **pouvez être banni**. C'est pour **apprendre seulement**. Si vous l'utilisez, c'est **votre choix et votre risque**. Nous ne sommes pas responsables.
@@ -72,7 +110,7 @@ Le bot regarde chaque tirage (les vôtres et ceux des autres) et capture les mei
 | :--- | :--- |
 | **Capture de Wishlist** | Vous faites une liste de personnages. Le bot les capture dès qu'ils apparaissent. |
 | **Capture par Série** | Vous aimez "Naruto" ? Le bot capture TOUS les personnages de Naruto. |
-| **Capture par Valeur** | Le bot peut voler les personnages chers (ex : 500+ kakera) aux autres joueurs. |
+| **Capture par Valeur** | Tente les captures autorisées pour les personnages dépassant votre seuil de Kakera. |
 | **Capture de Soi Instantanée** | Pendant que le bot tire, s'il voit un bon personnage, il le prend TOUT DE SUITE. |
 | **Capture de Panique** | Votre temps de capture est presque fini ? Le bot prend N'IMPORTE QUOI pour ne pas gâcher. |
 | **Cartes d'Événements Gratuites** | Les personnages spéciaux de Noël ou du Nouvel An sont gratuits. Le bot les prend seul. |
@@ -115,7 +153,7 @@ Le bot fait les tirages pour vous au meilleur moment possible.
 | **Auto $mk** | Utilise `$mk` pour avoir plus de kakera et clique sur le bouton qui sort. |
 | **Auto $rolls** | Utilise la commande `$rolls` quand vous n'avez plus de tirages. |
 | **Détection Bonus** | Si vous gagnez des tirages bonus en cliquant sur un kakera, le bot s'en sert. |
-| **Mode Lurker** | Le bot reste discret pendant que les autres tirent (et leur vole des personnages). À la fin, il fait tous ses tirages. |
+| **Mode Lurker** | Surveille les canaux configurés puis utilise vos propres tirages vers la fin de la fenêtre de capture. |
 | **Farming de Clés** | Même sans pouvoir capturer, le bot tire pour vous donner des clés. |
 
 ---
