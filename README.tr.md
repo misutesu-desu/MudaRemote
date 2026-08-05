@@ -56,33 +56,6 @@ Her miktar değerlidir. Bir referans istersen **$5**, **$15** veya **$30+** kar�
 
 Şu anda bağış yapmak istemiyorsan GitHub yıldızı vermek, faydalı bir hata bildirimi göndermek veya topluluktaki başka bir kullanıcıya yardım etmek de projeyi destekler.
 
-## 🆕 Son Sürüm — v4.7.9
-
-- Chaos ve Perk 8 Kakera seçimleri artık normal Kakera tercihlerini doğru biçimde devralıyor.
-- Tekrarlanan dört butonlu Perk 8 roll'ları Discord mesajı yenilense bile güvenilir şekilde eşleştiriliyor.
-- `sp` ve `spR` kırmızı küre adları aynı hedef olarak algılanıyor.
-- Preset geçişleri seçim ve eksik taslakları kaybetmeden çok daha hızlı çalışıyor.
-- Quick Setup artık `wx`, `hx` ve `mx` roll havuzlarını da destekliyor.
-
-## 🔐 Termux Token Saklama — v4.6.2
-
-- **Shell komutu gerektirmez:** Termux kullanıcıları tokenı editöre bir kez girip normal şekilde kaydeder.
-- **Kalıcı özel depolama:** Token, `presets.json` veya paylaşılan depolama yerine Android'in Termux'a özel uygulama dizininde yeniden başlatmalar arasında korunur.
-- **Kısıtlı erişim:** Depolama dizini ve token dosyası yalnızca sahibinin erişebileceği izinlerle (`0700`/`0600`) kilitlenir.
-- **Otomatik taşıma:** `presets.json` içinde kalmış eski tokenlar bir sonraki editör açılışında özel depoya taşınır.
-- **Güvenilir forcedivorce onayı:** Kakera farming artık gerekli `y` onayını aynı aralıklı komut kuyruğundan gönderir.
-- **Gizli `$rt` kullanımı yok:** Forcedivorce tek başına `$rt` açmaz; farm claim'lerinde yalnızca **Auto $rt After Claim** açıksa kullanılır.
-
-## 🚀 Komut Aralığı ve Farming Kontrolleri — v4.6.1
-
-- **Güvenilir claim ve pause:** Claim sonucu canlı Discord kanıtlarıyla doğrulanır, reset zamanları saniye hassasiyetinde korunur ve pause tüm hesaplardaki aktif roll, gecikme, reaction ve buton işlemlerini durdurur.
-- **Çok daha az `$tu`:** Kesin cooldown, tamamlanmış roll döngüsü ve miktarı belli bonus roll mesajları yalnızca ilgili yerel durumu günceller; taze yanıt eşleştirme, sınırlı tekrar ve backoff sorgu spam'ini önler.
-- **Daha güvenli ayarlar ve güncellemeler:** Token'lar Windows DPAPI, sistem keyring'i veya Termux'un uygulamaya özel depolaması ile saklanır; JSON yazımları atomiktir ve modüler updater indirdiği her dosyayı uygulamadan önce doğrular.
-- **Daha dayanıklı otomasyon:** Çoklu hesap claim koordinasyonu, zamanlanmış roll'lar, Kakera maliyetleri, boş embed'ler, sıfır değerli eşikler ve sonsuz tekrar yolları düzeltildi.
-- **Esnek Kakera farming:** Bağımsız roll öncesi ve claim sonrası forcedivorce seçenekleri ayrı ayrı veya birlikte açılabilir; ortak sunucu, solo key farming ve başlangıçta zaten sahip olunan karakter senaryolarını kapsar.
-- **Doğru birleşik güç indirimleri:** 10+ key indirimi ile görünen `💎/2` Perk 8 indirimi artık bağımsız şekilde üst üste uygulanır; 7.5% gibi kesirli maliyetler doğru izlenir.
-- **Geliştirilmiş preset editörü ve tanılama:** Preset doğrulama ve kayıt akışları tutarlı hale getirildi; dinamik değerler korunur, alt süreç durumu görünür, log'lar döndürülür ve kritik akışlar otomatik testlerle korunur.
-
 ---
 
 ## ❓ Bu Ne İşe Yarar?

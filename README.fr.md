@@ -58,14 +58,6 @@ Chaque montant compte. Pour vous guider, vous pouvez envisager l'équivalent cry
 
 Vous ne souhaitez pas faire de don ? Une étoile GitHub, un rapport de bug utile ou de l'aide apportée à un membre soutient également le projet.
 
-## 🆕 Dernière version — v4.7.9
-
-- Les sélections Kakera Chaos et Perk 8 héritent correctement des préférences Kakera normales.
-- Les tirages Perk 8 à quatre boutons restent fiables après l'actualisation d'un message Discord.
-- Les noms de sphère rouge `sp` et `spR` sont reconnus comme une même cible.
-- Le changement de preset est beaucoup plus rapide et conserve les sélections et brouillons incomplets.
-- Quick Setup prend désormais en charge les pools `wx`, `hx` et `mx`.
-
 ## ❓ C'est quoi ça ?
 
 **MudaRemote** est un **bot Mudae** — un programme qui joue au jeu Mudae sur Discord **pour vous**, automatiquement.
