@@ -1,40 +1,34 @@
 {
-  "version": "4.7.9",
+  "version": "4.8.0",
   "changelog": {
     "Bug Fixes": [
-      "Missing Chaos or Ouroperk 8 emoji overrides inherit the regular Kakera selection instead of silently re-enabling every colour.",
-      "Ouroperk 8 uses its configured emoji list on both own and external rolls.",
-      "Repeated four-button Kakera rolls are matched by position and emoji after Discord refreshes the message, avoiding skipped or wrong buttons.",
-      "Red sphere buttons named sp or spR now match the same configured target, including doubled variants.",
-      "An explicitly empty sphere target list remains empty instead of restoring runtime defaults.",
-      "Preset clicks load synchronously, keep their selection when focus moves, and incomplete drafts save before navigation without snapping back to the previous preset.",
-      "Save & Start Bot still requires a runtime-ready token and channel while normal Save Changes supports incomplete drafts."
+      "Cached $tu status now expires before any longer claim or roll wait, preventing stale snapshots from leaving a preset asleep.",
+      "$oc now follows the configured post-red colour priority and uses each colour's board geometry when choosing hidden rewards.",
+      "Missing or unavailable sphere stocks shown as a dash are treated as zero instead of disrupting $oh and $oc automation."
     ],
     "Improvements": [
-      "Quick Setup now offers wx, hx, and mx roll pools.",
-      "The editor clearly labels Chaos and Ouroperk 8 lists as optional overrides that inherit regular Kakera choices when unchecked.",
-      "Preset switching batches chip updates and reuses loaded emoji cards instead of rebuilding every option."
+      "Auto $oh can optionally play every available use on a separate board while retaining multiplier batches as the default."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "d8755224d8a0f950a6b7c65ce956b82425029515fe16e87d75ed0c8dc6e0e26a",
+  "exe_sha256": "5be85ba6172095bc0006213558d58427a663c7a26b3aa63d9c3dc78922bb85f2",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "d362e569728bf001cdc54ec63b08c23c7465d54ef3391b33ce867732ce3b6cd7"
+      "sha256": "3559efa6c318ecab0e9dd5c93387d5da3389516d070bb46fd2d08a340265cb62"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "adece8a8e47316856ff3416cf3fc0cbb392a85318c710c2260744564735e2e06"
+      "sha256": "f5024e6dde28d34a6e4dec93940d2747e990184c5926f49c5704ce056aa2620b"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "e45352ca6e30413d3440a9062a514d215c54292a2e728ac69174a348fc9cd425"
+      "sha256": "194c9fffa04742752dad72fb8abf8f0865b423fda94ea7d868e3c20b8a3c1695"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -69,12 +63,12 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/status.py",
-      "sha256": "ae12251a5cb75a4f470826c547885be159f55a4365e8060ee4bf20cac4a285ce"
+      "sha256": "9221bf2efab2111f07aa6a96842164941b865c5dbc833275415ee5bde3ec5748"
     },
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/spheres.py",
-      "sha256": "1080a6f21eed38e911f71668c4ad9459e5468474da07f57ee015b74bdaadd5dd"
+      "sha256": "0f5b84ab7648a3c465e9da9dce70c8bbab9eba6dee6844ff287abf69b840e519"
     },
     {
       "path": "mudae_core/filters.py",

@@ -553,6 +553,7 @@ DEFAULTS = {
     "start_delay": 0,
     "auto_p_enabled": True,
     "auto_oh_enabled": False,
+    "oh_use_individually": False,
     "auto_oc_enabled": False,
     "roll_speed": 0.4,
     "snipe_delay": 2,
@@ -675,6 +676,7 @@ BOOL_SETTINGS = [
     ("collect_purple_kakera", "Collect Purple Kakera (Disable on extra accounts to avoid reaction races)", True),
     ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
     ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
+    ("oh_use_individually", "$oh: Play Every Available Use Separately (one board per use)", False),
     ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
     ("oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red", True),
     ("wish_starwish_kakera_only", "Only Click Kakera on Wish/Starwish Characters (combines with other filters)", False),
@@ -2303,6 +2305,12 @@ class PresetEditor:
         self.add_checkbox(power_frame.content, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
         self.add_checkbox(power_frame.content, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
         self.add_checkbox(power_frame.content, "auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)")
+        self.add_checkbox(
+            power_frame.content,
+            "oh_use_individually",
+            "$oh: Play Every Available Use Separately",
+            description="Enabled: sends one $oh per stock. Disabled: combines up to 10 uses into one multiplier board.",
+        )
         self.add_checkbox(power_frame.content, "auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)")
         self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         # [NEW] Task 1: Max DK Power setting
@@ -2858,7 +2866,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "auto_oc_enabled", "oc_collect_after_red",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
@@ -3120,7 +3128,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "auto_oc_enabled", "oc_collect_after_red",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "auto_oc_enabled", "oc_collect_after_red",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()

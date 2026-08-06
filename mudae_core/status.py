@@ -11,6 +11,7 @@ import unicodedata
 
 STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
 TU_FAILURE_BACKOFF_SECONDS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
+TU_CACHE_TTL_SECONDS = 30.0 * 60.0
 
 
 @dataclass(frozen=True)
@@ -216,6 +217,18 @@ def clear_status_dirty(client, fields=None) -> None:
 
 def status_refresh_reasons(client):
     return sorted(set(getattr(client, "_status_refresh_reasons", set())))
+
+
+def tu_cache_seconds_remaining(last_query_utc, now_utc=None, ttl_seconds=TU_CACHE_TTL_SECONDS) -> float:
+    """Return the bounded lifetime left for a cached ``$tu`` snapshot."""
+    if last_query_utc is None:
+        return 0.0
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    try:
+        elapsed = max(0.0, (now - last_query_utc).total_seconds())
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, float(ttl_seconds) - elapsed)
 
 
 def consume_tu_urgent_bypass(client) -> bool:

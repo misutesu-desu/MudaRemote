@@ -69,6 +69,7 @@ from .status import (
     status_dirty_fields,
     status_message_addresses_identity,
     status_refresh_reasons,
+    tu_cache_seconds_remaining,
     tu_retry_wait,
 )
 from .updater import UpdateError, apply_update, format_update_changelog
@@ -140,6 +141,7 @@ __all__ = [
     "status_dirty_fields",
     "status_message_addresses_identity",
     "status_refresh_reasons",
+    "tu_cache_seconds_remaining",
     "tu_retry_wait",
     "validate_preset",
     "wait_until_resumed",

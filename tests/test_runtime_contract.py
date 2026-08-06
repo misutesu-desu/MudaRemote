@@ -243,7 +243,26 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("collecting bonus spheres", board_source)
         self.assertIn('status.available_for("oc")', available_source)
         self.assertIn("split_command_batches(available, 10)", available_source)
+        self.assertIn("client.oh_use_individually", available_source)
+        self.assertIn("[1] * available", available_source)
         self.assertIn("remaining -= batch_size", available_source)
+
+    def test_cached_status_sleep_is_capped_by_cache_expiry(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        wait_source = ast.get_source_segment(
+            self.source,
+            functions["humanized_wait_and_proceed"],
+        )
+        self.assertIn("tu_cache_seconds_remaining(", status_source)
+        self.assertIn('"cached status refresh"', status_source)
+        self.assertIn("is_cache_refresh", wait_source)
+        self.assertIn("0 if is_cache_refresh", wait_source)
+        self.assertIn("and not is_cache_refresh", wait_source)
 
     def test_localized_sphere_boards_do_not_require_english_text(self):
         functions = {

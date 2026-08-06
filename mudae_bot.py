@@ -76,7 +76,7 @@ try:
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
         normalize_character_sphere_emoji, parse_kakera_result_amount, sphere_target_matches,
@@ -106,7 +106,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
         normalize_character_sphere_emoji, parse_kakera_result_amount, sphere_target_matches,
@@ -127,7 +127,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.7.9"
+CURRENT_VERSION = "4.8.0"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -710,7 +710,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             webhook_log_types_preset=None,
             debug_log_categories_preset=None,
             auto_free_claim_preset=True,
-            collect_purple_kakera_preset=True):
+            collect_purple_kakera_preset=True,
+            oh_use_individually_preset=False):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -836,6 +837,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.collect_purple_kakera = bool(collect_purple_kakera_preset)
     client.auto_oh_enabled = bool(auto_oh_enabled_preset)
     client.auto_oc_enabled = bool(auto_oc_enabled_preset)
+    client.oh_use_individually = bool(oh_use_individually_preset)
     client.oh_priority_order = [
         str(item).strip() for item in (oh_priority_order_preset or []) if str(item).strip()
     ]
@@ -1635,7 +1637,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 continue
             remaining = available
             completed_all = True
-            for batch_size in split_command_batches(available, 10):
+            batch_sizes = (
+                [1] * available
+                if kind == "oh" and client.oh_use_individually
+                else split_command_batches(available, 10)
+            )
+            if kind == "oh" and client.oh_use_individually and available > 1:
+                BotLogger.log(
+                    f"OH: Individual-use mode will play {available} separate board(s).",
+                    preset_name,
+                    "INFO",
+                )
+            for batch_size in batch_sizes:
                 if not await run_sphere_game(channel, kind, batch_size):
                     completed_all = False
                     break
@@ -2259,9 +2272,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
             can_bypass = False
+            cache_seconds_remaining = 0.0
             if client.last_tu_query_utc is not None and not status_dirty_fields(client) and not client.scheduled_roll_due:
-                elapsed = (now_utc - client.last_tu_query_utc).total_seconds()
-                if elapsed < 1800:
+                cache_seconds_remaining = tu_cache_seconds_remaining(
+                    client.last_tu_query_utc,
+                    now_utc,
+                )
+                if cache_seconds_remaining > 0:
                     is_before_claim = client.next_claim_reset_at_utc is None or now_utc < client.next_claim_reset_at_utc
                     is_before_roll = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
                     if is_before_claim and is_before_roll and client.rolls_left <= 0:
@@ -2315,7 +2332,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 roll_reset_m = max(0.0, (client.roll_reset_at_utc - now_utc).total_seconds() / 60.0) if client.roll_reset_at_utc else 0.0
                 wait_time = claim_reset_m if not client.claim_right_available else 0
                 if client.rolling_enabled and proceed_to_rolls:
-                    choices = []
+                    # A cached snapshot must never schedule a sleep beyond its
+                    # own lifetime. Otherwise a stale hourly boundary can keep
+                    # getting trusted long after a fresh $tu was due.
+                    choices = [(
+                        max(0.05, cache_seconds_remaining / 60.0),
+                        "cached status refresh",
+                    )]
                     if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
                     if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_m > 60: choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
                     if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
@@ -4207,9 +4230,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset"):
         min_wait = max(0.0, base_reset_minutes * 60)
         if min_wait <= 0: min_wait = max(client.delay_seconds + 60, 240)
-        precision_wait = "claim reset" in reason.lower() or "timing threshold" in reason.lower()
+        is_cache_refresh = "cached status refresh" in reason.lower()
+        precision_wait = (
+            "claim reset" in reason.lower()
+            or "timing threshold" in reason.lower()
+            or is_cache_refresh
+        )
         human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not precision_wait else 0
-        wait_seconds = min_wait + human_jitter + getattr(client, 'persistent_stagger_seconds', 0)
+        persistent_stagger = 0 if is_cache_refresh else getattr(client, 'persistent_stagger_seconds', 0)
+        wait_seconds = min_wait + human_jitter + persistent_stagger
 
         BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         await _interruptible_sleep(wait_seconds)
@@ -4223,7 +4252,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.is_paused:
                 return
 
-        if client.humanization_enabled:
+        if client.humanization_enabled and not is_cache_refresh:
             while True:
                 try:
                     last_msg = None
@@ -4732,6 +4761,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("debug_log_categories", None),
                 preset_data.get("auto_free_claim", True),
                 preset_data.get("collect_purple_kakera", True),
+                preset_data.get("oh_use_individually", False),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

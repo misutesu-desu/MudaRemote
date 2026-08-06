@@ -58,6 +58,16 @@ class SphereStatusTests(unittest.TestCase):
         self.assertEqual(status.available_for("oh"), 8)
         self.assertEqual(status.available_for("oc"), 7)
 
+    def test_dash_stock_values_are_treated_as_zero(self):
+        status = parse_sphere_game_status(
+            "**-** $oh left for today, **-** $oc (+**-** stored), "
+            "**-** $oq and **-** $ot."
+        )
+
+        self.assertIsNotNone(status)
+        self.assertEqual((status.oh, status.oc, status.oq, status.ot), (0, 0, 0, 0))
+        self.assertEqual(status.available_for("oc"), 0)
+
 
 class SphereBoardTests(unittest.TestCase):
     def test_chest_solver_finds_red_on_supplied_board_within_five_clicks(self):
@@ -126,6 +136,28 @@ class SphereBoardTests(unittest.TestCase):
             ),
             2,
         )
+
+    def test_orange_first_chest_priority_searches_next_to_red(self):
+        board = ["spU"] * 25
+        red_position = 7
+        board[red_position] = "sp"
+        disabled = [False] * 25
+        disabled[red_position] = True
+
+        chosen = choose_chest_reward_position(
+            board,
+            disabled,
+            red_position,
+            priority_order=["spO", "spY"],
+        )
+
+        red_row, red_column = divmod(red_position, 5)
+        chosen_row, chosen_column = divmod(chosen, 5)
+        self.assertEqual(
+            max(abs(chosen_row - red_row), abs(chosen_column - red_column)),
+            1,
+        )
+        self.assertNotEqual(chosen, 0)
 
     def test_harvest_prefers_high_value_revealed_sphere(self):
         board = ["spU"] * 25

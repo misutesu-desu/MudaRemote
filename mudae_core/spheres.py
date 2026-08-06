@@ -38,18 +38,28 @@ def parse_sphere_game_status(text: str) -> Optional[SphereGameStatus]:
     normalized = str(text or "").replace("**", "")
     counts = {}
     stored_counts = {}
+
+    def parse_count(value: Optional[str]) -> int:
+        token = str(value or "0").strip()
+        if token in {"-", "–", "—"}:
+            return 0
+        try:
+            return max(0, int(token.replace(",", "")))
+        except ValueError:
+            return 0
+
     for game in ("oh", "oc", "oq", "ot"):
         match = re.search(
-            r"([\d,]+)\s+\$" + game + r"\b"
+            r"([-–—]|-?[\d,]+)\s+\$" + game + r"\b"
             # Mudae localizes the label after the bonus count (for example,
             # "stored" and "armazenados"), while the (+N ...) shape is stable.
-            r"(?:[^,$\r\n]*?\(\s*\+\s*([\d,]+)(?:\s+[^)]*)?\))?",
+            r"(?:[^,$\r\n]*?\(\s*\+\s*([-–—]|-?[\d,]+)(?:\s+[^)]*)?\))?",
             normalized,
             re.IGNORECASE,
         )
         if match:
-            counts[game] = int(match.group(1).replace(",", ""))
-            stored_counts[game] = int((match.group(2) or "0").replace(",", ""))
+            counts[game] = parse_count(match.group(1))
+            stored_counts[game] = parse_count(match.group(2))
 
     if not counts:
         return None
@@ -235,6 +245,62 @@ def _chest_unknown_value(board: Sequence[str], red_position: int, position: int)
     return base_value
 
 
+def _chest_unknown_priority_probability(
+    board: Sequence[str],
+    red_position: int,
+    position: int,
+    target: str,
+) -> float:
+    """Estimate whether a hidden cell matches one configured $oc reward."""
+    if board[position] != UNKNOWN_SPHERE:
+        return 1.0 if board[position] == target else 0.0
+
+    red_row, red_column = _coordinates(red_position)
+
+    def relation(index: int):
+        row, column = _coordinates(index)
+        row_delta = abs(row - red_row)
+        column_delta = abs(column - red_column)
+        adjacent = max(row_delta, column_delta) == 1
+        diagonal = row_delta == column_delta and row_delta > 0
+        aligned = row_delta == 0 or column_delta == 0
+        return adjacent, diagonal, aligned
+
+    adjacent, diagonal, aligned = relation(position)
+    eligibility = {
+        "spO": adjacent,
+        "spY": diagonal,
+        "spG": aligned,
+        "spT": aligned or diagonal,
+        "spB": not aligned and not diagonal,
+    }
+    if not eligibility.get(target, False):
+        return 0.0
+
+    fixed_quotas = {"spO": 2, "spY": 3, "spG": 4}
+    if target in fixed_quotas:
+        remaining = max(0, fixed_quotas[target] - sum(name == target for name in board))
+        eligible_unknown = sum(
+            name == UNKNOWN_SPHERE
+            and {
+                "spO": relation(index)[0],
+                "spY": relation(index)[1],
+                "spG": relation(index)[2],
+            }[target]
+            for index, name in enumerate(board)
+            if index != red_position
+        )
+        return min(1.0, remaining / max(1, eligible_unknown))
+
+    # Blue is the only possible colour outside the red's row, column and
+    # diagonals. Teal is restricted to those relations, but has no fixed quota.
+    if target == "spB":
+        return 1.0
+    if target == "spT":
+        return 0.5
+    return 0.0
+
+
 def choose_chest_reward_position(
     emojis: Sequence[str],
     disabled: Sequence[bool],
@@ -251,18 +317,33 @@ def choose_chest_reward_position(
     if not enabled:
         return None
 
-    configured_priority = {
-        normalize_sphere_emoji(name): len(priority_order or ()) - index
-        for index, name in enumerate(priority_order or ())
-    }
+    configured_order = tuple(
+        normalize_sphere_emoji(name)
+        for name in priority_order or ()
+        if str(name or "").strip()
+    )
 
     def expected_value(position: int):
         name = board[position]
-        if configured_priority:
-            # Listed revealed rewards are deterministic; unknown cells remain
-            # available after every configured visible reward.
-            configured = configured_priority.get(name, 0)
-            return configured, name != UNKNOWN_SPHERE, -position
+        if configured_order:
+            # Revealed configured rewards are deterministic. For still-hidden
+            # cells, use the chest's published geometry so an orange-first
+            # preset searches next to red instead of falling back to top-left.
+            probabilities = tuple(
+                _chest_unknown_priority_probability(
+                    board,
+                    red_position,
+                    position,
+                    target,
+                )
+                for target in configured_order
+            )
+            fallback_value = (
+                _chest_unknown_value(board, red_position, position)
+                if name == UNKNOWN_SPHERE
+                else _SPHERE_VALUES.get(name, 0.0)
+            )
+            return probabilities + (name != UNKNOWN_SPHERE, fallback_value, -position)
         value = (
             _chest_unknown_value(board, red_position, position)
             if name == UNKNOWN_SPHERE

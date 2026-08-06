@@ -17,6 +17,7 @@ from mudae_core.status import (
     status_dirty_fields,
     status_message_addresses_identity,
     status_refresh_reasons,
+    tu_cache_seconds_remaining,
     tu_retry_wait,
 )
 
@@ -103,6 +104,16 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertFalse(consume_tu_urgent_bypass(self.client))
         mark_status_dirty(self.client, {"claim"}, reason="claim-reset", urgent=True)
         self.assertTrue(consume_tu_urgent_bypass(self.client))
+
+    def test_cached_tu_lifetime_is_bounded(self):
+        queried = datetime.datetime(2026, 8, 5, 10, 7, tzinfo=datetime.timezone.utc)
+        now = queried + datetime.timedelta(minutes=6)
+        self.assertEqual(tu_cache_seconds_remaining(queried, now), 24 * 60)
+        self.assertEqual(
+            tu_cache_seconds_remaining(queried, queried + datetime.timedelta(minutes=30)),
+            0,
+        )
+        self.assertEqual(tu_cache_seconds_remaining(None, now), 0)
 
     def test_full_tu_snapshot_is_not_confused_with_claim_rejection(self):
         snapshot = (

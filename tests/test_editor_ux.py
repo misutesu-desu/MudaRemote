@@ -142,6 +142,11 @@ class EditorUxContractTests(unittest.TestCase):
         self.assertIn("unchecked inherits Kakera Emojis", self.editor)
         self.assertIn('data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)', self.editor)
 
+    def test_oh_individual_use_mode_is_configurable(self):
+        self.assertIn('"oh_use_individually": False', self.editor)
+        self.assertIn('"oh_use_individually"', self.editor)
+        self.assertIn("one board per use", self.editor)
+
     def test_sidebar_rebuild_preserves_the_current_visible_preset(self):
         class FakeListbox:
             def __init__(self):
