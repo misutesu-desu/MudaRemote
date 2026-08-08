@@ -10,7 +10,7 @@ from .claiming import (
     has_free_claim_button,
     is_claim_announcement_for_character,
 )
-from .coordinator import ClaimCoordinator
+from .coordinator import ClaimCoordinator, GlobalIntervalCoordinator
 from .kakera import (
     calculate_kakera_power_cost,
     find_refreshed_component_button,
@@ -78,6 +78,7 @@ from .webhooks import WebhookDispatcher
 
 __all__ = [
     "ClaimCoordinator",
+    "GlobalIntervalCoordinator",
     "ClaimEvidence",
     "ClaimOutcome",
     "CommandPacer",

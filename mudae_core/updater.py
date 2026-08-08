@@ -19,6 +19,13 @@ class UpdateError(RuntimeError):
 # and read-idle limits, including redirected GitHub release downloads.
 UPDATE_DOWNLOAD_TIMEOUT = (5.0, 20.0)
 PROTECTED_UPDATE_PATHS = {"presets.json"}
+REQUIRED_SOURCE_PATHS = {
+    "mudae_bot.py", "mudae_preset_editor.py", "mudae_core/__init__.py",
+    "mudae_core/claiming.py", "mudae_core/config.py", "mudae_core/coordinator.py",
+    "mudae_core/kakera.py", "mudae_core/runtime.py", "mudae_core/secrets.py",
+    "mudae_core/status.py", "mudae_core/spheres.py", "mudae_core/filters.py",
+    "mudae_core/webhooks.py", "mudae_core/updater.py", "mudae_core/versioning.py",
+}
 
 
 def format_update_changelog(manifest):
@@ -106,8 +113,7 @@ def _stage_source_manifest(session, manifest, stage_dir):
             handle.write(content)
         staged_paths.append(relative_path)
 
-    required = {"mudae_bot.py", "mudae_preset_editor.py", os.path.join("mudae_core", "__init__.py")}
-    if not required.issubset(set(staged_paths)):
+    if not REQUIRED_SOURCE_PATHS.issubset({path.replace("\\", "/") for path in staged_paths}):
         raise UpdateError("The source manifest is incomplete; update was not applied.")
 
     for relative_path in staged_paths:

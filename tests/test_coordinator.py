@@ -1,10 +1,17 @@
 import threading
 import unittest
 
-from mudae_core.coordinator import ClaimCoordinator
+from mudae_core.coordinator import ClaimCoordinator, GlobalIntervalCoordinator
 
 
 class CoordinatorTests(unittest.TestCase):
+    def test_global_interval_reservations_are_spaced_per_key(self):
+        coordinator = GlobalIntervalCoordinator()
+        self.assertEqual(coordinator.reserve(10, 20, now_monotonic=100), 0)
+        self.assertEqual(coordinator.reserve(10, 20, now_monotonic=100), 20)
+        self.assertEqual(coordinator.reserve(10, 20, now_monotonic=105), 35)
+        self.assertEqual(coordinator.reserve(11, 20, now_monotonic=105), 0)
+
     def test_restore_to_claim_transition_and_cleanup(self):
         coordinator = ClaimCoordinator()
         self.assertTrue(coordinator.reserve_restore(10))

@@ -121,7 +121,7 @@ def _matches_red_relation(clue: str, clue_position: int, red_position: int) -> b
     same_diagonal = row_delta == column_delta and row_delta > 0
 
     if clue == "spO":
-        return max(row_delta, column_delta) == 1
+        return (row_delta + column_delta) == 1
     if clue == "spY":
         return same_diagonal
     if clue == "spG":
@@ -198,7 +198,7 @@ def _chest_unknown_value(board: Sequence[str], red_position: int, position: int)
     row, column = _coordinates(position)
     row_delta = abs(row - red_row)
     column_delta = abs(column - red_column)
-    adjacent = max(row_delta, column_delta) == 1
+    adjacent = (row_delta + column_delta) == 1
     diagonal = row_delta == column_delta and row_delta > 0
     row_or_column = row_delta == 0 or column_delta == 0
 
@@ -261,7 +261,7 @@ def _chest_unknown_priority_probability(
         row, column = _coordinates(index)
         row_delta = abs(row - red_row)
         column_delta = abs(column - red_column)
-        adjacent = max(row_delta, column_delta) == 1
+        adjacent = (row_delta + column_delta) == 1
         diagonal = row_delta == column_delta and row_delta > 0
         aligned = row_delta == 0 or column_delta == 0
         return adjacent, diagonal, aligned

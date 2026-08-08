@@ -2,6 +2,24 @@
 
 from collections import OrderedDict
 import threading
+import time
+
+
+class GlobalIntervalCoordinator:
+    """Reserve process-wide command slots across clients and event loops."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._next_slots = {}
+
+    def reserve(self, key, interval_seconds, now_monotonic=None):
+        """Return the wait for this reservation and advance the key's next slot."""
+        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        interval = max(0.0, float(interval_seconds))
+        with self._lock:
+            slot = max(now, self._next_slots.get(key, now))
+            self._next_slots[key] = slot + interval
+            return max(0.0, slot - now)
 
 
 class ClaimCoordinator:

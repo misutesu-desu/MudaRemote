@@ -94,6 +94,26 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(iterator.func.id, "range")
         self.assertEqual(iterator.args[0].value, 2)
 
+    def test_tu_commands_use_process_wide_twenty_second_pacing(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["send_tu_command"])
+        self.assertIn("_tu_interval_coordinator.reserve", source)
+        self.assertIn("TU_GLOBAL_INTERVAL_SECONDS", source)
+        self.assertIn("await active_delay(global_wait)", source)
+
+    def test_auto_us_cycle_failure_flag_is_initialized(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["run_bot"])
+        self.assertIn("client.us_failed_this_cycle = False", source)
+
     def test_authoritative_cooldown_refreshes_claim_and_rt_before_retry(self):
         functions = {
             node.name: node
@@ -569,14 +589,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
-        helper_source = ast.get_source_segment(self.source, functions["has_collectible_kakera_button"])
+        helper_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
 
         self.assertIn("client.collect_purple_kakera", claim_source)
         self.assertIn("client.collect_purple_kakera", handler_source)
         self.assertIn('if clean == "kakeraP":', helper_source)
-        self.assertIn("if client.collect_purple_kakera:", helper_source)
+        self.assertIn("return client.collect_purple_kakera", helper_source)
         self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
-        self.assertIn("name_clean == 'kakeraP' and not client.collect_purple_kakera", claim_source)
+        self.assertIn('if clean == "kakeraP":', helper_source)
+        self.assertIn("return client.collect_purple_kakera", helper_source)
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
 
     def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
@@ -587,10 +608,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
         sphere_source = ast.get_source_segment(self.source, functions["has_targeted_sphere_button"])
+        eligibility_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
 
         self.assertIn("has_targeted_sphere = has_targeted_sphere_button", claim_source)
         self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
-        self.assertIn("filter_reason is None and regular_match", claim_source)
+        self.assertIn("return filter_reason is None", eligibility_source)
         self.assertIn("client.sphere_click_targets", sphere_source)
         self.assertIn("sphere_target_matches", sphere_source)
 

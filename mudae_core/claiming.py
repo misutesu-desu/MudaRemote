@@ -37,6 +37,8 @@ def has_free_claim_button(components: object, claim_emojis: Iterable[object]) ->
     allowed = {str(emoji) for emoji in claim_emojis}
     for component in components or ():
         for button in getattr(component, "children", ()) or ():
+            if getattr(button, "disabled", False):
+                continue
             emoji = getattr(getattr(button, "emoji", None), "name", None)
             if emoji is not None and str(emoji) in allowed and _is_success_button_style(button):
                 return True

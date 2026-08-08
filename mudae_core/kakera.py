@@ -45,6 +45,8 @@ def has_purple_kakera_button(components: object) -> bool:
     """Return whether a Mudae message contains a free purple Kakera button."""
     for component in components or ():
         for button in getattr(component, "children", ()) or ():
+            if getattr(button, "disabled", False):
+                continue
             name = getattr(getattr(button, "emoji", None), "name", None)
             if str(name or "").rstrip("2") == "kakeraP":
                 return True

@@ -28,16 +28,13 @@ def _bootstrap_modular_core():
         timeout=15,
     )
     manifest_response.raise_for_status()
-    entries = [
-        entry for entry in manifest_response.json().get("source_files", [])
-        if str(entry.get("path", "")).replace("\\", "/").startswith("mudae_core/")
-    ]
+    entries = list(manifest_response.json().get("source_files", []))
     required = {
-        "mudae_core/__init__.py", "mudae_core/claiming.py", "mudae_core/config.py",
-        "mudae_core/coordinator.py", "mudae_core/runtime.py", "mudae_core/secrets.py",
-        "mudae_core/status.py", "mudae_core/kakera.py", "mudae_core/spheres.py",
-        "mudae_core/updater.py", "mudae_core/versioning.py", "mudae_core/filters.py",
-        "mudae_core/webhooks.py",
+        "mudae_bot.py", "mudae_preset_editor.py", "mudae_core/__init__.py",
+        "mudae_core/claiming.py", "mudae_core/config.py", "mudae_core/coordinator.py",
+        "mudae_core/kakera.py", "mudae_core/runtime.py", "mudae_core/secrets.py",
+        "mudae_core/status.py", "mudae_core/spheres.py", "mudae_core/filters.py",
+        "mudae_core/webhooks.py", "mudae_core/updater.py", "mudae_core/versioning.py",
     }
     if not required.issubset({entry.get("path") for entry in entries}):
         raise RuntimeError("The modular core manifest is incomplete.")
@@ -46,8 +43,8 @@ def _bootstrap_modular_core():
     try:
         for entry in entries:
             relative_path = os.path.normpath(str(entry["path"]).replace("/", os.sep))
-            if not relative_path.startswith("mudae_core" + os.sep) or os.pardir in relative_path.split(os.sep):
-                raise RuntimeError("Unsafe modular core path in update manifest.")
+            if os.path.isabs(relative_path) or os.pardir in relative_path.split(os.sep):
+                raise RuntimeError("Unsafe source path in update manifest.")
             content_response = requests.get(entry["url"], timeout=30)
             content_response.raise_for_status()
             content = content_response.content
@@ -57,18 +54,37 @@ def _bootstrap_modular_core():
             os.makedirs(os.path.dirname(staged_path), exist_ok=True)
             with open(staged_path, "wb") as handle:
                 handle.write(content)
-        for entry in entries:
-            relative_path = os.path.normpath(str(entry["path"]).replace("/", os.sep))
-            destination = os.path.join(base_path, relative_path)
-            os.makedirs(os.path.dirname(destination), exist_ok=True)
-            os.replace(os.path.join(stage_dir, relative_path), destination)
+        backup_dir = tempfile.mkdtemp(prefix="mudae-bootstrap-backup-", dir=base_path)
+        replaced = []
+        try:
+            for entry in entries:
+                relative_path = os.path.normpath(str(entry["path"]).replace("/", os.sep))
+                destination = os.path.join(base_path, relative_path)
+                backup = os.path.join(backup_dir, relative_path)
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                if os.path.exists(destination):
+                    os.makedirs(os.path.dirname(backup), exist_ok=True)
+                    shutil.copy2(destination, backup)
+                os.replace(os.path.join(stage_dir, relative_path), destination)
+                replaced.append(relative_path)
+        except Exception:
+            for relative_path in reversed(replaced):
+                destination = os.path.join(base_path, relative_path)
+                backup = os.path.join(backup_dir, relative_path)
+                if os.path.exists(backup):
+                    os.replace(backup, destination)
+                elif os.path.exists(destination):
+                    os.remove(destination)
+            raise
+        finally:
+            shutil.rmtree(backup_dir, ignore_errors=True)
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)
 
 
 try:
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
@@ -98,7 +114,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         if loaded_module == "mudae_core" or loaded_module.startswith("mudae_core."):
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
@@ -127,7 +143,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.0"
+CURRENT_VERSION = "4.8.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -140,6 +156,8 @@ _original_terminal_settings = None
 
 _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
+_tu_interval_coordinator = GlobalIntervalCoordinator()
+TU_GLOBAL_INTERVAL_SECONDS = 20.0
 
 
 def _apply_shared_reset_snapshot(client, snapshot):
@@ -156,10 +174,11 @@ def _apply_shared_reset_snapshot(client, snapshot):
         return
     client._shared_reset_observed_at_utc = observed_at
 
-    if roll_deadline is not None:
+    observed_fields = getattr(snapshot, "observed_fields", frozenset())
+    if "rolls" in observed_fields and roll_deadline is not None:
         client.roll_reset_at_utc = roll_deadline
 
-    if claim_deadline is None or getattr(client, "pending_claim", None) is not None:
+    if "claim" not in observed_fields or claim_deadline is None or getattr(client, "pending_claim", None) is not None:
         return
 
     current_deadline = getattr(client, "next_claim_reset_at_utc", None)
@@ -189,11 +208,7 @@ def _apply_shared_reset_snapshot(client, snapshot):
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         if current is None or abs((current - claim_deadline).total_seconds()) > 1.0 or now_utc < current:
             return
-        client.claim_right_available = True
-        client.last_successfully_claimed_character = None
-        client.claim_cooldown_until_utc = None
-        client._claim_reset_refresh_requested = False
-        clear_status_dirty(client, {"claim"})
+        mark_status_dirty(client, {"claim"}, reason="shared-claim-boundary", urgent=True)
         event = getattr(client, "_immediate_check_event", None)
         if event is not None:
             event.set()
@@ -571,20 +586,23 @@ async def detect_roll_owner(client, message) -> tuple:
     Returns a tuple of (user_id, username_lowercase).
     """
     # 1. If it was rolled via a Slash Command (Interaction)
-    if hasattr(message, 'interaction') and message.interaction:
-        user = message.interaction.user
-        return user.id, user.name.lower()
+    interaction = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
+    user = getattr(interaction, "user", None)
+    if user is not None:
+        return user.id, str(user.name).casefold()
 
     # 2. Fallback for text commands: scan channel history right before this message
     # We look for: $w, $h, $m, $wx, $mx, $hx, $wa, $ha, $ma, $mg, $hg, $wg
-    valid_commands = ["w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma", "mg", "hg", "wg"]
-    roll_prefixes = [f"{client.mudae_prefix}{cmd}" for cmd in valid_commands]
+    commands = {"w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma", "mg", "hg", "wg", str(client.roll_command or "").strip().lower()}
+    commands.discard("")
+    pattern = re.compile(r"^\s*" + re.escape(client.mudae_prefix) + r"(?:" + "|".join(map(re.escape, sorted(commands, key=len, reverse=True))) + r")\s*$", re.IGNORECASE)
 
     try:
-        async for msg in message.channel.history(limit=5, before=message):
-            content = (msg.content or "").strip().lower()
-            if content and any(content.startswith(p) for p in roll_prefixes):
-                return msg.author.id, msg.author.name.lower()
+        async for msg in message.channel.history(limit=8, before=message):
+            if message.created_at and msg.created_at and (message.created_at - msg.created_at).total_seconds() > 10:
+                break
+            if pattern.fullmatch((msg.content or "").strip()):
+                return msg.author.id, msg.author.name.casefold()
     except Exception:
         pass
 
@@ -595,7 +613,7 @@ async def detect_roll_owner(client, message) -> tuple:
         if embed.footer and embed.footer.text:
             m = re.search(REGEX_PATTERNS["OWNER"], embed.footer.text)
             if m:
-                owner_username = m.group(1).strip().lower()
+                owner_username = m.group(1).strip().casefold()
 
     return None, owner_username
 
@@ -613,7 +631,7 @@ def is_free_event(embed):
 
 def has_claim_option(message, embed, claim_emojis):
     if not message.components: return not get_character_owner(embed)
-    return any(hasattr(btn.emoji, 'name') and btn.emoji and btn.emoji.name in claim_emojis for comp in message.components for btn in comp.children)
+    return any(not getattr(btn, "disabled", False) and getattr(getattr(btn, "emoji", None), "name", None) in claim_emojis for comp in message.components for btn in comp.children)
 
 def count_chaos_keys(embed):
     if not embed or not embed.description: return 0
@@ -777,7 +795,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_reaction_snipe_targets = set([t.lower() for t in kakera_reaction_snipe_targets])
     client.character_snipe_targets = set([t.lower().strip() for t in (character_snipe_targets or []) if t.strip()])
     client.kakera_reaction_sniped_messages = set()
-    client.kakera_react_available = True
+    client.kakera_react_available = None
     client.kakera_react_cooldown_until_utc = None
 
     client.humanization_enabled = humanization_enabled
@@ -896,7 +914,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.snipe_watch_expiry_seconds = 180
     client.snipe_globally_disabled_until = None
 
-    client.current_dk_power = 100
+    client.current_dk_power = None
+    client._us_lock = None
+    client._us_in_flight = False
+    client._us_pending_amount = 0
+    client._us_retry_after = 0.0
+    client.us_failed_this_cycle = False
     client.dk_consumption = 35
     client.kakera_reacted_messages = set()
     client.processed_claim_messages = set()
@@ -951,6 +974,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client.last_tu_query_utc = None
     initialize_status_tracking(client)
+    client.last_tu_snapshot_complete = False
     client._tu_response_future = None
     client._tu_response_channel_id = None
     client._tu_request_started_at = None
@@ -1688,7 +1712,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     BotLogger.log("Predicted claim reset reached. Verifying with $tu before claiming.", preset_name, "CHECK")
 
         rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
-        return client.claim_right_available or rt_usable or client.key_mode
+        return client.claim_right_available or rt_usable
 
     def is_key_mode_kakera_only() -> bool:
         return client.key_mode and not client.claim_right_available and not client.rt_available
@@ -1702,8 +1726,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return True
         return False
 
-    def get_current_dk_power() -> float:
+    def get_current_dk_power():
         p = client.current_dk_power
+        if p is None:
+            return None
         if not hasattr(client, 'last_dk_power_update_utc'): return p
         now = datetime.datetime.now(datetime.timezone.utc)
         el = int((now - client.last_dk_power_update_utc).total_seconds() / 180)
@@ -1964,23 +1990,43 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def send_tu_command(channel):
         if client.is_paused or is_maintenance_active(): return False
+        async def wait_for_global_tu_slot():
+            guild_id = getattr(getattr(channel, "guild", None), "id", None)
+            pacing_key = guild_id if guild_id is not None else getattr(channel, "id", None)
+            global_wait = _tu_interval_coordinator.reserve(pacing_key, TU_GLOBAL_INTERVAL_SECONDS)
+            if global_wait <= 0:
+                return True
+            BotLogger.log(f"Global $tu pacing: waiting {global_wait:.1f}s for this account's slot.", preset_name, "INFO")
+            return await active_delay(global_wait)
+
         if client.use_slash_rolls and not client.slash_fallback_active:
             for attempt in range(1, 4):
+                if not await wait_for_global_tu_slot(): return False
                 if await _trigger_mudae_slash(channel, "tu"): return True
                 if client.slash_fallback_active: break
                 if attempt < 3 and not await active_delay(5.0): return False
             if not client.slash_fallback_active:
                 client.slash_fallback_active = True
                 BotLogger.log("/tu failed after 3 attempts. Switching to text $tu so status tracking can continue.", preset_name, "WARN")
+        if not await wait_for_global_tu_slot(): return False
         return await guarded_send(channel, f"{client.mudae_prefix}tu")
 
     def _get_command_channel():
+        configured = getattr(client, "command_channel", None)
+        main = getattr(client, "_main_channel", None)
+        if configured is not None and (main is None or same_guild(configured, main)):
+            return configured
         try:
             if client.command_channel_id_preset:
                 c = client.get_channel(int(client.command_channel_id_preset))
-                if c: return c
+                if c and (main is None or same_guild(c, main)):
+                    client.command_channel = c
+                    return c
         except Exception: pass
-        return getattr(client, '_main_channel', None)
+        return main
+
+    def same_guild(a, b):
+        return a is not None and b is not None and getattr(getattr(a, "guild", None), "id", None) == getattr(getattr(b, "guild", None), "id", None)
 
     def _get_forcedivorce_channel(fallback_channel=None):
         configured = getattr(client, "forcedivorce_channel", None)
@@ -2228,12 +2274,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def _interruptible_sleep(seconds):
         evt = client._immediate_check_event
-        if evt:
-            evt.clear()
-            try: await asyncio.wait_for(evt.wait(), timeout=seconds)
-            except asyncio.TimeoutError: pass
-        else:
+        if evt is None:
             await pause_interruptible_sleep(client, seconds)
+            return
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=max(0.0, seconds))
+            evt.clear()
+        except asyncio.TimeoutError:
+            pass
+
+    def pending_roll_work(proceed_to_rolls=True):
+        if not client.rolling_enabled or not proceed_to_rolls:
+            return False, False, False
+        pending_rolls = False
+        if client.auto_rolls_enabled:
+            limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
+            claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
+            used, reset = client.rolls_used_this_interval_utc, client.roll_reset_at_utc
+            if used and reset and used != reset:
+                used = None
+            hour_ok = not client.auto_rolls_only_claim_hour or bool(client.next_claim_reset_at_utc and reset and client.next_claim_reset_at_utc <= reset)
+            pending_rolls = limit_ok and used is None and claim_ok and hour_ok
+        power = get_current_dk_power()
+        pending_us = (client.auto_us_enabled and not client._us_in_flight
+                      and time.monotonic() >= client._us_retry_after
+                      and not (client.auto_us_stop_on_claim and not client.claim_right_available)
+                      and not (client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit)
+                      and not client.us_failed_this_cycle)
+        pending_mk = (client.auto_mk_enabled and client.mk_rolls_left > 0 and power is not None and
+                      (client.mk_bypass_power_check or (power >= client.max_dk_power if client.auto_mk_full_power_only else power >= client.dk_consumption)))
+        return pending_rolls, pending_us, pending_mk
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, current_cycle_id=None):
         if client.is_paused or is_maintenance_active(): return
@@ -2273,7 +2343,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             can_bypass = False
             cache_seconds_remaining = 0.0
-            if client.last_tu_query_utc is not None and not status_dirty_fields(client) and not client.scheduled_roll_due:
+            if client.last_tu_snapshot_complete and client.last_tu_query_utc is not None and not status_dirty_fields(client) and not client.scheduled_roll_due:
                 cache_seconds_remaining = tu_cache_seconds_remaining(
                     client.last_tu_query_utc,
                     now_utc,
@@ -2283,32 +2353,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_before_roll = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
                     if is_before_claim and is_before_roll and client.rolls_left <= 0:
                         can_bypass = True
-                        if client.rolling_enabled:
-                            pending_rolls = pending_us = pending_mk = False
-                            if client.auto_rolls_enabled:
-                                lim_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
-                                reset_utc = getattr(client, 'roll_reset_at_utc', None)
-                                used_utc = getattr(client, 'rolls_used_this_interval_utc', None)
-                                if used_utc and reset_utc and used_utc != reset_utc: used_utc = None
-                                claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
-                                if lim_ok and used_utc is None and claim_ok:
-                                    ch_hour = True
-                                    if client.auto_rolls_only_claim_hour:
-                                        ch_hour = bool(client.next_claim_reset_at_utc and reset_utc and client.next_claim_reset_at_utc <= reset_utc)
-                                    if ch_hour: pending_rolls = True
-                            if client.auto_us_enabled:
-                                stop_c = client.auto_us_stop_on_claim and not client.claim_right_available
-                                limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
-                                if not stop_c and not limit and not getattr(client, 'us_failed_this_cycle', False):
-                                    pending_us = True
-                            if client.auto_mk_enabled and client.mk_rolls_left > 0:
-                                if (
-                                    get_current_dk_power() >= client.dk_consumption
-                                    or client.mk_bypass_power_check
-                                    or client.auto_mk_full_power_only
-                                ):
-                                    pending_mk = True
-                            if pending_rolls or pending_us or pending_mk: can_bypass = False
+                        pending_rolls, pending_us, pending_mk = pending_roll_work(proceed_to_rolls)
+                        if pending_rolls or pending_us or pending_mk:
+                            can_bypass = False
                         sphere_retry_due = any(
                             enabled
                             and client.sphere_game_counts.get(kind, 0) > 0
@@ -2586,8 +2633,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await resolve_pending_claim_from_status(claim_available=None, channel=channel)
 
             if client.pending_claim:
-                client.last_tu_query_utc = datetime.datetime.now(timezone.utc)
-                clear_status_dirty(client)
                 mark_status_dirty(client, {"claim"}, reason="pending-claim-unresolved", urgent=True)
                 defer_tu_queries(client, 45.0)
                 return
@@ -2603,8 +2648,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if k_cooldown is not None:
                     client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=k_cooldown)
 
-            client.last_tu_query_utc = datetime.datetime.now(timezone.utc)
-            clear_status_dirty(client)
+            fresh_fields = set()
+            if claim_ready or claim_reset_minutes is not None:
+                fresh_fields.add("claim")
+            if re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_lower, re.DOTALL) and roll_reset_minutes is not None:
+                fresh_fields.add("rolls")
+            if rt_ready or rt_reset_minutes is not None:
+                fresh_fields.add("rt")
+            if power_match:
+                fresh_fields.add("power")
+            if dk_stock_match or re.search(REGEX_PATTERNS["DK_READY"], c_lower) or re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower):
+                fresh_fields.add("dk")
+            if "$p" in c_lower or "$daily" in c_lower:
+                fresh_fields.add("points")
+            clear_status_dirty(client, fresh_fields)
+            core_complete = {"claim", "rolls", "rt"}.issubset(fresh_fields)
+            client.last_tu_snapshot_complete = core_complete
+            client.last_tu_query_utc = datetime.datetime.now(timezone.utc) if core_complete else None
+            if not core_complete:
+                mark_status_dirty(client, {"claim", "rolls", "rt"} - fresh_fields, reason="partial-tu-response")
+                defer_tu_queries(client, 30.0)
             if client.key_limit_hit:
                 BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
                 client.key_limit_hit = False
@@ -2628,16 +2691,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
 
             if client.rolling_enabled and proceed_to_rolls and not immediate_roll:
-                if client.auto_mk_enabled and client.mk_rolls_left > 0 and (
-                    get_current_dk_power() >= client.dk_consumption
-                    or client.mk_bypass_power_check
-                    or client.auto_mk_full_power_only
-                ):
+                if pending_roll_work(proceed_to_rolls)[2]:
                     await process_mk_rolls(client, channel, current_cycle_id)
                     if not await active_delay(2): return
                     return
 
-            if immediate_roll:
+            pending_rolls, pending_us, _ = pending_roll_work(proceed_to_rolls)
+            should_evaluate_roll_state = immediate_roll or pending_rolls or pending_us
+            if should_evaluate_roll_state:
                 scheduled_trigger = client.scheduled_roll_due
                 client.scheduled_roll_due = False
                 if scheduled_trigger:
@@ -2666,6 +2727,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         finally:
             client.is_processing_cycle = False
 
+    async def send_auto_us(amount, fallback_channel):
+        if client._us_lock is None:
+            client._us_lock = asyncio.Lock()
+        async with client._us_lock:
+            if client._us_in_flight:
+                return False
+            cmd_channel = _get_command_channel() or fallback_channel
+            if not await guarded_send(cmd_channel, f"{client.mudae_prefix}us {amount}"):
+                client._us_retry_after = time.monotonic() + 30
+                return False
+            client._us_in_flight = True
+            client._us_pending_amount = amount
+            BotLogger.log(f"Auto $us: requested {amount} saved roll(s); awaiting $tu confirmation.", preset_name, "INFO")
+            await active_delay(1.5)
+            request_status_refresh({"rolls"}, reason="auto-us-sent", urgent=True)
+            return True
+
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                   tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
         content_lower = tu_message_content_for_rolls.lower()
@@ -2693,6 +2771,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             total_rolls = rolls_left + us_rolls_left
             client.rolls_left = total_rolls
+            if client._us_in_flight:
+                requested = client._us_pending_amount
+                if us_rolls_left > 0:
+                    client.us_pulled_this_cycle += requested
+                    client._us_in_flight = False
+                    client._us_pending_amount = 0
+                elif total_rolls == 0:
+                    client._us_in_flight = False
+                    client._us_pending_amount = 0
+                    client._us_retry_after = time.monotonic() + 30
 
             if total_rolls == 0:
                 if is_inactive_hour():
@@ -2724,77 +2812,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 return
                             return
 
-                if not rolls_did_execute and client.auto_us_enabled:
-                    stop_c = client.auto_us_stop_on_claim and not client.claim_right_available
-                    limit = client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit
-                    if not stop_c and not limit and not getattr(client, 'us_failed_this_cycle', False):
-                        last_att = getattr(client, 'last_us_attempt_utc', None)
-                        if last_att and (now_utc - last_att).total_seconds() < 15:
-                            client.us_failed_this_cycle = True
-                            BotLogger.log("Auto $us failed repeatedly. Halting $us.", preset_name, "WARN")
-                            if rolls_left > 0:
-                                await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                return
-                        else:
-                            amt = max(0, client.auto_us_limit - client.us_pulled_this_cycle if client.auto_us_limit > 0 else 20)
-                            if amt > 0:
-                                if client.bulk_us_enabled:
-                                    chunks = [20] * (amt // 20) + ([amt % 20] if amt % 20 > 0 else [])
-                                    pulled = 0
-                                    for chk in chunks:
-                                        if not await guarded_send(channel, f"{client.mudae_prefix}us {chk}"):
-                                            return
-                                        client.last_us_attempt_utc = datetime.datetime.now(timezone.utc)
-                                        if not await active_delay(random.uniform(1.5, 2.5)):
-                                            return
-                                        failed = False
-                                        async for msg in channel.history(limit=5):
-                                            if msg.author.id == TARGET_BOT_ID and not msg.embeds:
-                                                c_lower = msg.content.lower()
-                                                if "kakera" in c_lower and ("enough" in c_lower or "pas assez" in c_lower or "insuficiente" in c_lower):
-                                                    failed = True
-                                                    break
-                                        if failed:
-                                            client.us_failed_this_cycle = True
-                                            break
-                                        else:
-                                            pulled += chk
-                                            client.us_pulled_this_cycle += chk
-                                    if pulled > 0:
-                                        client.rolls_left = pulled
-                                        mark_status_dirty(client, {"rolls"}, reason="auto-us-pull")
-                                        await start_roll_commands(client, channel, pulled, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull=True)
-                                        return
-                                    elif rolls_left > 0:
-                                        await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                        return
-                                else:
-                                    step = min(20, amt)
-                                    if not await guarded_send(channel, f"{client.mudae_prefix}us {step}"):
-                                        return
-                                    client.last_us_attempt_utc = datetime.datetime.now(timezone.utc)
-                                    BotLogger.log(f"Auto $us: Pulled batch of {step} rolls...", preset_name, "INFO")
-                                    if not await active_delay(random.uniform(1.5, 2.5)):
-                                        return
-                                    failed = False
-                                    async for msg in channel.history(limit=5):
-                                        if msg.author.id == TARGET_BOT_ID and not msg.embeds:
-                                            c_lower = msg.content.lower()
-                                            if "kakera" in c_lower and ("enough" in c_lower or "pas assez" in c_lower or "insuficiente" in c_lower):
-                                                failed = True
-                                                break
-                                    if failed:
-                                        client.us_failed_this_cycle = True
-                                        if rolls_left > 0:
-                                            await start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
-                                            return
-                                    else:
-                                        client.us_pulled_this_cycle += step
-                                        client.rolls_left = step
-                                        mark_status_dirty(client, {"rolls"}, reason="auto-us-pull")
-                                        await start_roll_commands(client, channel, step, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull=True)
-                                        if client._immediate_check_event: client._immediate_check_event.set()
-                                        return
+                if not rolls_did_execute and pending_roll_work()[1]:
+                    amount = min(20, client.auto_us_limit - client.us_pulled_this_cycle if client.auto_us_limit > 0 else 20)
+                    if await send_auto_us(amount, channel):
+                        return
 
                 sleep_candidates = [(float(reset_time_r or 60), "rolls reset")]
                 m_c = re.search(REGEX_PATTERNS["CLAIM_RESET"], content_lower)
@@ -2829,6 +2850,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.is_paused or not getattr(client, 'auto_mk_enabled', True) or client.mk_rolls_left <= 0: return
 
         current_power = get_current_dk_power()
+        if current_power is None:
+            request_status_refresh({"power"}, reason="mk-power-unknown", urgent=True)
+            return
         if client.auto_mk_full_power_only and current_power < client.max_dk_power:
             missing_power = client.max_dk_power - current_power
             full_power_delay = max(60.0, missing_power * 180.0 + 5.0)
@@ -3171,8 +3195,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.collected_kakera_rolls.clear()
 
         if is_timing_mode_active:
-            client.claim_right_available = True
-            BotLogger.log("Reset passed. Claim is now available.", preset_name, "CLAIM")
+            request_status_refresh({"claim"}, reason="timing-reset-boundary", urgent=True)
+            BotLogger.log("Reset passed. Verifying claim status with $tu.", preset_name, "CHECK")
 
         in_panic_hour = False
         if client.next_claim_reset_at_utc:
@@ -3268,6 +3292,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         event = getattr(client, '_claim_evidence_event', None)
         if event is not None:
             event.clear()
+
+    def release_failed_claim(message_id, pending=None):
+        clear_pending_claim(pending)
+        client.processed_claim_messages.discard(message_id)
+        _claim_coordinator.release_all(message_id)
 
     async def finalize_successful_claim(pending, channel, verification_source):
         if pending.get("finalized"):
@@ -3506,7 +3535,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # claims keep the longer confirmation period because their cached
         # state is not independently retryable.
         verification_seconds = (
-            1.5
+            3.5
             if pending.get("consumes_claim")
             and pending.get("claim_was_available")
             and client.claim_right_available
@@ -3789,23 +3818,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         allowed = set(allowed_emojis or ())
         for component in components or ():
             for button in getattr(component, "children", ()) or ():
-                name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
-                clean = name.rstrip("2")
-                if is_character_sphere_emoji(name):
-                    if sphere_target_matches(name, client.sphere_click_targets):
-                        return True
-                    continue
-                if clean == "kakeraP":
-                    if client.collect_purple_kakera:
-                        return True
-                    continue
-                if (
-                    name in allowed
-                    or clean in allowed
-                    or ("kakera" in name.lower() and check_is_green(button))
-                ):
+                if kakera_button_is_eligible(button, allowed, None):
                     return True
         return False
+
+    def kakera_button_is_eligible(button, target_list, filter_reason):
+        if getattr(button, "disabled", False):
+            return False
+        name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
+        clean = name.rstrip("2")
+        if is_character_sphere_emoji(name):
+            return sphere_target_matches(name, client.sphere_click_targets)
+        if clean == "kakeraP":
+            return client.collect_purple_kakera
+        allowed = {str(item) for item in target_list or ()}
+        return filter_reason is None and (name in allowed or clean in allowed)
 
     async def send_claim_click(button, timeout=2.0):
         """Start a claim immediately without treating a missing Discord ACK as a failed send."""
@@ -3965,11 +3992,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 cooldown_active = not is_kakera_reaction_allowed()
                 has_free_button = msg.components and any(
-                    hasattr(b.emoji, 'name') and (
-                        (client.collect_purple_kakera and b.emoji.name.rstrip('2') == 'kakeraP')
-                        or is_character_sphere_emoji(b.emoji.name)
-                        or (b.emoji.name.rstrip('2') != 'kakeraP' and check_is_green(b))
-                    ) for c in msg.components for b in c.children
+                    kakera_button_is_eligible(b, target_list, filter_reason)
+                    and (str(getattr(getattr(b, "emoji", None), "name", "")).rstrip("2") == "kakeraP"
+                         or is_character_sphere_emoji(getattr(getattr(b, "emoji", None), "name", ""))
+                         or check_is_green(b))
+                    for c in msg.components for b in c.children
                 )
                 # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
                 if cooldown_active and not has_free_button and (chaos_count == 0 or is_snipe) and not has_sp_perk:
@@ -3992,30 +4019,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if hasattr(btn.emoji, 'name') and btn.emoji.name:
                                 name = btn.emoji.name
                                 name_clean = name.rstrip('2')
-                                if name_clean == 'kakeraP' and not client.collect_purple_kakera:
-                                    continue
-                                is_sphere = is_character_sphere_emoji(name)
-                                if is_sphere:
-                                    if sphere_target_matches(name, client.sphere_click_targets):
-                                        all_btns_tracked.append({
-                                            'btn': btn,
-                                            'custom_id': btn.custom_id,
-                                            'pos': (row_idx, child_idx),
-                                            'emoji_name': name
-                                        })
-                                else:
-                                    regular_match = (name in target_list or name_clean in target_list) or ("kakera" in name.lower() and check_is_green(btn))
-                                    if name_clean == 'kakeraP' or (filter_reason is None and regular_match):
-                                        all_btns_tracked.append({
-                                            'btn': btn,
-                                            'custom_id': btn.custom_id,
-                                            'pos': (row_idx, child_idx),
-                                            'emoji_name': name
-                                        })
+                                if kakera_button_is_eligible(btn, target_list, filter_reason):
+                                    all_btns_tracked.append({
+                                        'btn': btn, 'custom_id': btn.custom_id,
+                                        'pos': (row_idx, child_idx), 'emoji_name': name
+                                    })
 
                     prio_map = {k.strip(): (idx + 1) * 10 for idx, k in enumerate(reversed(client.kakera_priority_order))}
                     for s in client.sphere_emojis: prio_map[s] = 999
-                    prio_map['kakeraP'] = 999
+                    if client.collect_purple_kakera:
+                        prio_map['kakeraP'] = 999
 
                     all_btns_tracked.sort(key=lambda item: prio_map.get(item['emoji_name'].rstrip('2'), 0), reverse=True)
 
@@ -4074,6 +4087,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         async with get_kakera_action_lock():
                             current_pow = get_current_dk_power()
 
+                            if cost > 0 and current_pow is None:
+                                request_status_refresh({"power"}, reason="power-unknown", urgent=True)
+                                continue
                             if current_pow < cost:
                                 if client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0:
                                     log_name = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
@@ -4197,7 +4213,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 clicked_claim = True
                                 await verify_snipe_outcome(client, channel, msg, pending)
                                 return True
-                            clear_pending_claim(pending)
+                            release_failed_claim(getattr(msg, "id", None), pending)
 
             if not clicked_claim and has_claim_option(msg, embed, client.claim_emojis):
                 try:
@@ -4211,13 +4227,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         consumes_claim=not is_free_claim, is_rt_claim=is_rt_claim,
                     )
                     if not await guarded_reaction(msg, reaction_emoji):
-                        clear_pending_claim(pending)
+                        release_failed_claim(getattr(msg, "id", None), pending)
                         return False
                     BotLogger.log(f"Claiming {char_name}{kakera_str} (Reaction: {reaction_emoji})", preset_name, "CLAIM")
                     await verify_snipe_outcome(client, channel, msg, pending)
                     return True
                 except Exception as e:
-                    clear_pending_claim(locals().get('pending'))
+                    release_failed_claim(getattr(msg, "id", None), locals().get('pending'))
                     BotLogger.log(f"Reaction fallback FAILED: {e}", preset_name, "ERROR")
                     return False
             return False
@@ -4344,8 +4360,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if is_maintenance_active(): return
         if client.is_paused:
-            if client.rolling_enabled and client.is_actively_rolling and message.embeds and is_character_embed(message.embeds[0]):
-                client._rolls_received += 1
             return
 
         if getattr(client, '_post_maintenance_inactivity_needed', False):
@@ -4444,7 +4458,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if await claim_character(client, message.channel, message, is_free_claim=True):
                     return
 
-        if client.rolling_enabled and client.is_actively_rolling:
+        owner_id, owner_name = await detect_roll_owner(client, message)
+        self_names = {
+            str(getattr(client.user, "name", "") or "").casefold(),
+            str(getattr(client.user, "display_name", "") or "").casefold(),
+        }
+        is_self_roll = owner_id == client.user.id or bool(owner_name and owner_name in self_names)
+        if client.rolling_enabled and client.is_actively_rolling and is_self_roll:
             client._rolls_received += 1
             desc = embed.description or ""
             if any(limit in desc for limit in ["limit of 1,000 keys", "limite de 1.000 chaves", "límite de 1.000 llaves"]):
@@ -4518,11 +4538,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
                                     client.interrupt_rolling = True
                                     if not await active_delay(t_to_r + 0.2): return
-                                    client.claim_right_available = True
-                                    client.last_successfully_claimed_character = None
-                                    delta = datetime.timedelta(minutes=client.claim_interval)
-                                    while client.next_claim_reset_at_utc <= datetime.datetime.now(timezone.utc):
-                                        client.next_claim_reset_at_utc += delta
+                                    request_status_refresh({"claim"}, reason="near-claim-reset-boundary", urgent=True)
+                                    return
 
                             client.interrupt_rolling = True
                             BotLogger.log(f"Real-time Claim: Halting rolls for claim attempt on {c_name}", preset_name, "CLAIM")
@@ -4545,8 +4562,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             process = True
 
             # Determine roll owner
-            owner_id, owner_name = await detect_roll_owner(client, message)
-
             client_names = {
                 str(getattr(client.user, 'name', '') or '').lower(),
                 str(getattr(client.user, 'display_name', '') or '').lower(),

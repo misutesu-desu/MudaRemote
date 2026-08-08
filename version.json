@@ -1,24 +1,27 @@
 {
-  "version": "4.8.0",
+  "version": "4.8.1",
   "changelog": {
     "Bug Fixes": [
+      "v4.8.1 is a stability and state-synchronization release: $tu caching, shared reset boundaries, roll ownership, Auto $us, and Kakera eligibility now rely on authoritative server evidence.",
       "Cached $tu status now expires before any longer claim or roll wait, preventing stale snapshots from leaving a preset asleep.",
       "$oc now follows the configured post-red colour priority and uses each colour's board geometry when choosing hidden rewards.",
-      "Missing or unavailable sphere stocks shown as a dash are treated as zero instead of disrupting $oh and $oc automation."
+      "Missing or unavailable sphere stocks shown as a dash are treated as zero instead of disrupting $oh and $oc automation.",
+      "Auto $us no longer stops the main loop when its cycle state is initialized for the first time."
     ],
     "Improvements": [
-      "Auto $oh can optionally play every available use on a separate board while retaining multiplier batches as the default."
+      "Auto $oh can optionally play every available use on a separate board while retaining multiplier batches as the default.",
+      "$tu commands are now spaced by at least 20 seconds across accounts on the same server, preventing synchronized status spam after startup."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "5be85ba6172095bc0006213558d58427a663c7a26b3aa63d9c3dc78922bb85f2",
+  "exe_sha256": "5344941715308c30459f346c8b0fb9b17ffdd9c4263902c9eb40a962496108ed",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "3559efa6c318ecab0e9dd5c93387d5da3389516d070bb46fd2d08a340265cb62"
+      "sha256": "3b6914573d5b478a8dbf5b32503357d9308f2474a4620b0198e53e178d3f49b8"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -28,12 +31,12 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "194c9fffa04742752dad72fb8abf8f0865b423fda94ea7d868e3c20b8a3c1695"
+      "sha256": "da0e6beca1682188410ecb24ebe33385f415f5af8df23919355429e1be5e0a5a"
     },
     {
       "path": "mudae_core/claiming.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/claiming.py",
-      "sha256": "eb42d750c4a78dd4070d448999d9326a2b97c11d540775fac208b81085615060"
+      "sha256": "48a6a7d2fa596401d837c67e6e679a5a9c3d56ed3b559e8d923ba4075e3f8c68"
     },
     {
       "path": "mudae_core/config.py",
@@ -43,12 +46,12 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "aefdbaf4726d8d05e58cc7a4f184e398e921999d7c03a2b44fc7092ad8779802"
+      "sha256": "9f48016d91d762af88d2f9f903e90bb1249a928215b8a2b081cbc7c5f8438682"
     },
     {
       "path": "mudae_core/coordinator.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/coordinator.py",
-      "sha256": "eb9abb633baeaedcb4ff34fadb8da222a0c190c0e2bec0eebf8b321e0983b168"
+      "sha256": "69561d2374e54fb88170998ad9ec11fbdf463109c70778e807ace865b26070c1"
     },
     {
       "path": "mudae_core/runtime.py",
@@ -63,12 +66,12 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/status.py",
-      "sha256": "9221bf2efab2111f07aa6a96842164941b865c5dbc833275415ee5bde3ec5748"
+      "sha256": "34c6d5bf44ce3c4404bdb2760b457c00db6778dcbe3b936ea89685db321b55ab"
     },
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/spheres.py",
-      "sha256": "0f5b84ab7648a3c465e9da9dce70c8bbab9eba6dee6844ff287abf69b840e519"
+      "sha256": "a7e0a466fb726b0ab0dc1b9c32c6a1cac1d5ae71cf3be9d24d842bbeea840e49"
     },
     {
       "path": "mudae_core/filters.py",
@@ -83,7 +86,7 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/updater.py",
-      "sha256": "28e8410aeef6e51942f8b823469e1cb63961820b4d8fc042a4ce301575afc861"
+      "sha256": "21e23b0557def0fe59bc0aff3fb9096a9508c063f4b2b20dcda93fd05b20a7d3"
     },
     {
       "path": "mudae_core/versioning.py",

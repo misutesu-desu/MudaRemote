@@ -20,6 +20,7 @@ class ServerResetSnapshot:
     observed_at_utc: datetime.datetime
     claim_reset_at_utc: datetime.datetime = None
     roll_reset_at_utc: datetime.datetime = None
+    observed_fields: frozenset = frozenset()
 
 
 class ServerResetCoordinator:
@@ -52,6 +53,12 @@ class ServerResetCoordinator:
                 self._seen_messages.popitem(last=False)
 
             previous = self._snapshots.get(server_id)
+            observed_fields = frozenset(
+                field for field, value in (
+                    ("claim", claim_reset_at_utc),
+                    ("rolls", roll_reset_at_utc),
+                ) if value is not None
+            )
             snapshot = ServerResetSnapshot(
                 server_id=int(server_id),
                 observed_at_utc=observed_at_utc,
@@ -65,6 +72,7 @@ class ServerResetCoordinator:
                     if roll_reset_at_utc is not None
                     else getattr(previous, "roll_reset_at_utc", None)
                 ),
+                observed_fields=observed_fields,
             )
             self._snapshots[server_id] = snapshot
             return snapshot, True

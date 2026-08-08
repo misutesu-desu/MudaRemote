@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from mudae_core.updater import UpdateError, apply_update, format_update_changelog
+from mudae_core.updater import REQUIRED_SOURCE_PATHS, UpdateError, apply_update, format_update_changelog
 
 
 class _Response:
@@ -64,23 +64,22 @@ class UpdaterTests(unittest.TestCase):
 
     def test_manifest_updates_all_modules_as_one_verified_set(self):
         files = {
-            "bot": b"VALUE = 'new'\n",
-            "editor": b"VALUE = 'new'\n",
-            "core": b"VALUE = 'new'\n",
+            "file-{}".format(index): b"# generated test source\n"
+            for index, _ in enumerate(sorted(REQUIRED_SOURCE_PATHS))
         }
         manifest = {
             "version": "4.10.0",
             "source_files": [
-                _entry("mudae_bot.py", "bot", files["bot"]),
-                _entry("mudae_preset_editor.py", "editor", files["editor"]),
-                _entry("mudae_core/__init__.py", "core", files["core"]),
+                _entry(path, key, files[key])
+                for key, path in zip(files, sorted(REQUIRED_SOURCE_PATHS))
             ],
         }
         with tempfile.TemporaryDirectory() as directory:
             result = apply_update(_Session(files), manifest, "4.9.9", directory)
             self.assertEqual(result, "source")
             with open(os.path.join(directory, "mudae_core", "__init__.py"), "rb") as handle:
-                self.assertEqual(handle.read(), files["core"])
+                entry = next(item for item in manifest["source_files"] if item["path"] == "mudae_core/__init__.py")
+                self.assertEqual(handle.read(), files[entry["url"]])
 
     def test_bad_checksum_does_not_replace_existing_files(self):
         files = {"bot": b"VALUE = 'new'\n", "editor": b"X=1\n", "core": b"X=1\n"}
