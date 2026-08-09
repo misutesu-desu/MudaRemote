@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.5-beta.3"
+CURRENT_VERSION = "4.8.5"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -1885,7 +1885,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def is_key_mode_kakera_only() -> bool:
         return client.key_mode and not client.claim_right_available and not client.rt_available
 
-    def is_kakera_reaction_allowed() -> bool:
+    def is_kakera_reaction_allowed(*, is_free_purple=False) -> bool:
+        if is_free_purple and client.collect_purple_kakera:
+            return True
         now = datetime.datetime.now(datetime.timezone.utc)
         if client.kakera_react_available: return True
         if client.kakera_react_cooldown_until_utc and now >= client.kakera_react_cooldown_until_utc:
@@ -2161,8 +2163,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         }
         try:
             if client.is_paused or is_maintenance_active(): return False
+
+            async def post_interaction():
+                # Discord may successfully accept an interaction while returning
+                # an empty payload. The command was sent as long as this request
+                # completed without raising; do not treat that payload as False.
+                await client.http.request(Route("POST", "/interactions"), json=payload)
+                return True
+
             if not await paced_mudae_action(
-                lambda: client.http.request(Route("POST", "/interactions"), json=payload)
+                post_interaction
             ):
                 return False
             client.slash_fail_streak = 0
@@ -3440,7 +3450,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 async with get_kakera_action_lock():
-                    if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
+                    is_free_purple = name.rstrip('2') == 'kakeraP'
+                    if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass:
                         BotLogger.log(
                             f"Kakera skipped for {char_name}: reaction is on cooldown before queued {name} click.",
                             preset_name,
@@ -4348,7 +4359,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
                 has_reaction_cooldown_bypass = (chaos_count > 0 and not is_snipe) or has_sp_perk
-                if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
+                if not is_kakera_reaction_allowed(is_free_purple=has_purple_kakera) and not has_reaction_cooldown_bypass:
                     BotLogger.log(
                         f"Kakera skipped for {char_name}: reaction is on cooldown and no valid discount bypass applies.",
                         preset_name,
@@ -4436,7 +4447,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         async with get_kakera_action_lock():
                             # Recheck after serializing clicks: another account may
                             # have just received a $ku rejection for this preset.
-                            if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
+                            is_free_purple = name_clean == 'kakeraP'
+                            if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass:
                                 BotLogger.log(
                                     f"Kakera skipped for {char_name}: reaction became unavailable before {name} could be clicked.",
                                     preset_name,

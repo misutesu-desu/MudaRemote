@@ -1,9 +1,11 @@
 {
-  "version": "4.8.5-beta.3",
+  "version": "4.8.5",
   "changelog": {
     "Bug Fixes": [
-      "Kakera reactions now respect each account's $ku cooldown even when the roll also contains a free Purple or sphere button.",
-      "Immediate Mudae $ku responses now block already queued Kakera clicks for that account instead of allowing reaction spam.",
+      "Successful slash $tu requests are no longer retried or replaced with a duplicate text command when Discord returns an empty response.",
+      "Free Purple Kakera is always attempted when collection is enabled, even before the account has checked $tu.",
+      "Immediate Mudae $ku responses now block already queued regular Kakera clicks for that account instead of allowing reaction spam.",
+      "KakeraC bonus rolls are credited only to the account whose collection Mudae confirmed.",
       "Reactive rolling now resumes its locally tracked remaining rolls immediately after a claim instead of waiting behind a new global $tu cycle.",
       "Losing cross-account Kakera clicks now release their temporary power reservations without triggering a $tu request on every side account.",
       "Purple Kakera clicks now recognize Mudae's (Free) result format, require the account-specific confirmation, and retry when it is missing."
@@ -15,12 +17,12 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "3f71d5c63298f55a475e97e941eef66648958745f237a3d22aeb39535361004a",
+  "exe_sha256": "4da09f6514ddd82189296ebfcaf8f1f72217217767372e462ed905093f6ae917",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "d430d7632a68bfe91feda34d8e1c771c3408ce9ddccaaabae5b0278e9b6733b1"
+      "sha256": "9787231f8b4815162d27b33de12ca5d21df6feaf5cd897ff52d976c07498bf68"
     },
     {
       "path": "mudae_preset_editor.py",

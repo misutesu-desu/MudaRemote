@@ -120,6 +120,29 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("TU_GLOBAL_INTERVAL_SECONDS", source)
         self.assertIn("await active_delay(global_wait)", source)
 
+    def test_slash_interaction_success_does_not_depend_on_response_payload(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        trigger_source = ast.get_source_segment(
+            self.source,
+            functions["_trigger_mudae_slash"],
+        )
+        post_source = ast.get_source_segment(
+            self.source,
+            functions["post_interaction"],
+        )
+
+        self.assertIn('await client.http.request(Route("POST", "/interactions")', post_source)
+        self.assertIn("return True", post_source)
+        self.assertIn("paced_mudae_action(\n                post_interaction", trigger_source)
+        self.assertNotIn(
+            'lambda: client.http.request(Route("POST", "/interactions")',
+            trigger_source,
+        )
+
     def test_auto_us_cycle_failure_flag_is_initialized(self):
         functions = {
             node.name: node
@@ -835,6 +858,31 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("return client.collect_purple_kakera", helper_source)
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
         self.assertIn("Purple Kakera skipped: Collect Purple Kakera is disabled", handler_source)
+
+    def test_enabled_purple_kakera_bypasses_tu_and_reaction_status(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        allowed_source = ast.get_source_segment(
+            self.source,
+            functions["is_kakera_reaction_allowed"],
+        )
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("is_free_purple=False", allowed_source)
+        self.assertIn(
+            "if is_free_purple and client.collect_purple_kakera:",
+            allowed_source,
+        )
+        self.assertIn(
+            "is_kakera_reaction_allowed(is_free_purple=has_purple_kakera)",
+            claim_source,
+        )
+        self.assertIn("is_free_purple = name_clean == 'kakeraP'", claim_source)
+        self.assertIn("is_free_purple = name.rstrip('2') == 'kakeraP'", roll_source)
 
     def test_kakera_cooldown_blocks_free_buttons_and_learns_from_ku(self):
         functions = {
