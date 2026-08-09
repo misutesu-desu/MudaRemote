@@ -724,6 +724,26 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertGreaterEqual(rt_send_count, 5)
 
+    def test_kakera_bonus_rolls_require_this_accounts_confirmed_kakera_c(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("client._confirmed_kakera_c_bonus_until = 0.0", run_source)
+        self.assertIn(
+            'kakera_result.emoji_name.rstrip("2").casefold() == "kakerac"',
+            message_source,
+        )
+        self.assertIn("confirmed_cost is not None", message_source)
+        self.assertIn("bonus_from_confirmed_kakera_c", message_source)
+        self.assertIn("m_bonus and bonus_from_confirmed_kakera_c", message_source)
+        self.assertIn("client._confirmed_kakera_c_bonus_until = 0.0", message_source)
+        self.assertNotIn("bonus_addresses_self", message_source)
+
     def test_kakera_snipe_channels_do_not_require_character_sniping(self):
         functions = {
             node.name: node
@@ -772,6 +792,31 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("return client.collect_purple_kakera", helper_source)
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
         self.assertIn("Purple Kakera skipped: Collect Purple Kakera is disabled", handler_source)
+
+    def test_successful_claim_refreshes_the_roll_for_late_purple_kakera(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        refresh_source = ast.get_source_segment(
+            self.source,
+            functions["collect_refreshed_purple_after_claim"],
+        )
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+
+        self.assertIn("await channel.fetch_message(msg.id)", refresh_source)
+        self.assertIn("has_purple_kakera_button(refreshed.components)", refresh_source)
+        self.assertIn("is_kakera=True", refresh_source)
+        self.assertIn("is_snipe=is_snipe", refresh_source)
+        self.assertGreaterEqual(
+            claim_source.count("await collect_refreshed_purple_after_claim"),
+            2,
+        )
+        self.assertGreaterEqual(
+            claim_source.count("claim_outcome == ClaimOutcome.SUCCESS"),
+            2,
+        )
 
     def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
         functions = {

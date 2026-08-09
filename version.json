@@ -1,25 +1,23 @@
 {
-  "version": "4.8.4",
+  "version": "4.8.5-beta.1",
   "changelog": {
     "Bug Fixes": [
-      "Auto $dk no longer fires from power estimates distorted by unconfirmed or losing Kakera clicks.",
-      "Kakera power is committed only after Mudae posts the matching account-specific $k result.",
-      "$rolls and $rt now wait for Mudae's checkmark reaction instead of assuming success after a fixed delay."
+      "KakeraC bonus rolls are now credited only to the account whose collection result Mudae confirmed.",
+      "Successfully claimed rolls are refreshed so Purple Kakera that appears afterward can be collected."
     ],
     "Improvements": [
-      "Pending Kakera clicks reserve estimated power safely and fall back to a status reconciliation only when confirmation is missing.",
-      "Successful $rt acknowledgements restore the local claim state immediately so rolling can continue without a redundant status wait."
+      "Post-claim Purple Kakera checks now retry briefly to accommodate delayed component updates from Mudae."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "f8c567a8559c5d30b28fe97a803857826f30290f077c451f6abc7ec2ea8b4a9e",
+  "exe_sha256": "3b08d54438c4c390a23741439c9af34b17b82f17484f4cf9d7ab363f211da876",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "bb02396ec2db63c4c712462c00b35d69dca630a5e1c8ca2f422a1a40b29055d6"
+      "sha256": "c878a80aca2fddeb141d220bdd359dae6541ca53d618731cde030c7fb40bc67f"
     },
     {
       "path": "mudae_preset_editor.py",

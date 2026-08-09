@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.4"
+CURRENT_VERSION = "4.8.5-beta.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -887,6 +887,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._mudae_command_ack_waiters = {}
     client._recent_mudae_command_acks = {}
     client._rolls_ack_retry_after = 0.0
+    client._confirmed_kakera_c_bonus_until = 0.0
     client.collected_kakera_rolls = []
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
@@ -3999,6 +4000,39 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             task.add_done_callback(consume_late_result)
             return True, False
 
+    async def collect_refreshed_purple_after_claim(channel, msg, is_snipe=False):
+        """Collect a purple button that appears only after Mudae updates a claimed roll."""
+        if not client.collect_purple_kakera or client.is_paused:
+            return False
+        refreshed = None
+        for attempt in range(3):
+            try:
+                refreshed = await channel.fetch_message(msg.id)
+            except Exception:
+                refreshed = None
+            if refreshed is not None and has_purple_kakera_button(refreshed.components):
+                BotLogger.log(
+                    "Post-claim Purple Kakera detected on the refreshed roll.",
+                    preset_name,
+                    "KAKERA",
+                )
+                return await claim_character(
+                    client,
+                    channel,
+                    refreshed,
+                    is_kakera=True,
+                    is_snipe=is_snipe,
+                )
+            if attempt < 2 and not await active_delay(0.25):
+                return False
+        BotLogger.log(
+            "Post-claim Purple Kakera not present after refreshing the roll.",
+            preset_name,
+            "DEBUG",
+            client,
+        )
+        return False
+
     async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False):
         if client.is_paused or not msg or not msg.embeds: return False
         if not is_kakera and getattr(client, 'is_claiming', False): return False
@@ -4363,7 +4397,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if claim_success:
                                 BotLogger.log(f"Claiming {char_name}{kakera_str}", preset_name, "CLAIM" if not is_free_claim else "INFO")
                                 clicked_claim = True
-                                await verify_snipe_outcome(client, channel, msg, pending)
+                                claim_outcome = await verify_snipe_outcome(client, channel, msg, pending)
+                                if claim_outcome == ClaimOutcome.SUCCESS:
+                                    await collect_refreshed_purple_after_claim(channel, msg, is_snipe=is_snipe)
                                 return True
                             release_failed_claim(getattr(msg, "id", None), pending)
 
@@ -4382,7 +4418,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         release_failed_claim(getattr(msg, "id", None), pending)
                         return False
                     BotLogger.log(f"Claiming {char_name}{kakera_str} (Reaction: {reaction_emoji})", preset_name, "CLAIM")
-                    await verify_snipe_outcome(client, channel, msg, pending)
+                    claim_outcome = await verify_snipe_outcome(client, channel, msg, pending)
+                    if claim_outcome == ClaimOutcome.SUCCESS:
+                        await collect_refreshed_purple_after_claim(channel, msg, is_snipe=is_snipe)
                     return True
                 except Exception as e:
                     release_failed_claim(getattr(msg, "id", None), locals().get('pending'))
@@ -4507,6 +4545,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if kakera_result is not None:
             confirmed_cost = confirm_kakera_power_click(kakera_result.emoji_name)
             if confirmed_cost is not None:
+                if kakera_result.emoji_name.rstrip("2").casefold() == "kakerac":
+                    client._confirmed_kakera_c_bonus_until = time.monotonic() + 10.0
                 remaining = get_current_dk_power()
                 BotLogger.log(
                     f"Kakera result confirmed (+{kakera_result.amount}); "
@@ -4593,8 +4633,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if message.content and not message.embeds and client.rolling_enabled:
             m_bonus = re.search(REGEX_PATTERNS["EXTRA_ROLLS"], message.content)
-            if m_bonus and (time.time() - getattr(client, '_last_kakera_click_ts', 0)) <= 10:
+            bonus_from_confirmed_kakera_c = (
+                time.monotonic() <= client._confirmed_kakera_c_bonus_until
+            )
+            if (m_bonus and bonus_from_confirmed_kakera_c
+                    and (time.time() - getattr(client, '_last_kakera_click_ts', 0)) <= 10):
                 bonus_amt = int(m_bonus.group(1))
+                client._confirmed_kakera_c_bonus_until = 0.0
                 client.rolls_left += bonus_amt
                 client._local_extra_rolls_pending += bonus_amt
                 BotLogger.log(f"Gained +{bonus_amt} extra rolls from Kakera! rolls_left is now {client.rolls_left}.", preset_name, "KAKERA")
