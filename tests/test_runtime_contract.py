@@ -608,11 +608,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
             ordered_actions = (
                 "current_pow = get_current_dk_power()",
                 "threshold = first_configured",
+                "power_token = reserve_kakera_power_click",
                 "await guarded_click(btn)",
-                "client.current_dk_power = max(0, get_current_dk_power() - cost)",
             )
             positions = [block_source.index(action) for action in ordered_actions]
             self.assertEqual(positions, sorted(positions), function_name)
+            self.assertNotIn(
+                "client.current_dk_power = max(0, get_current_dk_power() - cost)",
+                block_source,
+            )
 
     def test_external_kakera_clicks_reconcile_estimated_power(self):
         functions = {
@@ -624,12 +628,101 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source,
             functions["schedule_external_kakera_power_reconcile"],
         )
+        reserve_source = ast.get_source_segment(
+            self.source,
+            functions["reserve_kakera_power_click"],
+        )
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
 
         self.assertIn('reason="external-kakera-result-reconcile"', reconcile_source)
         self.assertIn("client.loop.call_later(5.0, reconcile)", reconcile_source)
-        self.assertIn("if is_snipe:\n                                    schedule_external_kakera_power_reconcile()", claim_source)
+        self.assertIn("schedule_external_kakera_power_reconcile()", reserve_source)
+        self.assertIn("reserve_kakera_power_click(name, cost)", claim_source)
+        self.assertIn("parse_kakera_result(", message_source)
+        self.assertIn("confirm_kakera_power_click(kakera_result.emoji_name)", message_source)
         self.assertIn("Estimated Pw", claim_source)
+
+    def test_dynamic_dk_uses_estimated_power_but_waits_for_click_confirmation(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        refill_source = ast.get_source_segment(
+            self.source,
+            functions["should_auto_refill_dk"],
+        )
+        reserve_source = ast.get_source_segment(
+            self.source,
+            functions["reserve_kakera_power_click"],
+        )
+        confirm_source = ast.get_source_segment(
+            self.source,
+            functions["confirm_kakera_power_click"],
+        )
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("client.kakera_power_ledger = KakeraPowerLedger()", run_source)
+        self.assertIn("client.dk_power_revision = 0", run_source)
+        self.assertIn(
+            "power_is_confirmed=not client.kakera_power_ledger.has_pending",
+            refill_source,
+        )
+        self.assertIn("client.kakera_power_ledger.reserve", reserve_source)
+        self.assertIn("client.kakera_power_ledger.confirm", confirm_source)
+        self.assertIn("client.current_dk_power = max(0, base_power - cost)", confirm_source)
+        self.assertIn(
+            "tu_power_revision == client.dk_power_revision",
+            status_source,
+        )
+        self.assertIn("or tu_may_reconcile_pending_power", status_source)
+        self.assertIn(
+            "if power_snapshot_is_authoritative:",
+            status_source,
+        )
+        self.assertIn("and power_snapshot_is_authoritative", status_source)
+        for action_source in (claim_source, roll_source):
+            self.assertIn("reserve_kakera_power_click(name, cost)", action_source)
+            self.assertIn("cancel_kakera_power_click(power_token)", action_source)
+            self.assertNotIn(
+                "client.current_dk_power = max(0, get_current_dk_power() - cost)",
+                action_source,
+            )
+
+    def test_rolls_and_rt_wait_for_mudae_reaction_ack(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        ack_source = ast.get_source_segment(
+            self.source,
+            functions["send_mudae_reaction_command"],
+        )
+        reaction_source = ast.get_source_segment(
+            self.source,
+            functions["on_raw_reaction_add"],
+        )
+        roll_status_source = ast.get_source_segment(
+            self.source,
+            functions["check_rolls_left_tu"],
+        )
+
+        self.assertIn("client._mudae_command_ack_waiters = {}", run_source)
+        self.assertIn("await guarded_send(channel, content)", ack_source)
+        self.assertIn("asyncio.wait_for", ack_source)
+        self.assertIn("mudae_command_ack_matches", reaction_source)
+        self.assertIn("send_mudae_reaction_command", roll_status_source)
+
+        rt_send_count = self.source.count(
+            'send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"'
+        )
+        self.assertGreaterEqual(rt_send_count, 5)
 
     def test_kakera_snipe_channels_do_not_require_character_sniping(self):
         functions = {

@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from mudae_core.kakera import (
+    KakeraPowerLedger,
     calculate_kakera_power_cost,
     find_refreshed_component_button,
     get_kakera_emoji_targets,
@@ -12,12 +13,104 @@ from mudae_core.kakera import (
     is_character_sphere_emoji,
     kakera_embed_text,
     normalize_character_sphere_emoji,
+    parse_kakera_result,
     parse_kakera_result_amount,
+    should_refill_kakera_power,
     sphere_target_matches,
 )
 
 
 class KakeraPowerTests(unittest.TestCase):
+    def test_paid_click_cost_is_reserved_until_matching_result(self):
+        ledger = KakeraPowerLedger()
+        token = ledger.reserve("kakeraL2", 40)
+
+        self.assertEqual(ledger.available_power(100), 60)
+        self.assertEqual(ledger.pending_count, 1)
+        self.assertEqual(ledger.confirm("kakeraL"), 40)
+        self.assertEqual(ledger.pending_count, 0)
+        self.assertFalse(ledger.cancel(token))
+
+    def test_lost_click_can_be_cancelled_without_spending_power(self):
+        ledger = KakeraPowerLedger()
+        token = ledger.reserve("kakeraC2", 40)
+
+        self.assertTrue(ledger.cancel(token))
+        self.assertEqual(ledger.available_power(100), 100)
+        self.assertEqual(ledger.pending_count, 0)
+
+    def test_result_only_confirms_matching_emoji_and_oldest_attempt(self):
+        ledger = KakeraPowerLedger()
+        first = ledger.reserve("kakeraL", 40)
+        second = ledger.reserve("kakeraL2", 20)
+        ledger.reserve("kakeraC", 40)
+
+        self.assertIsNone(ledger.confirm("kakeraY"))
+        self.assertEqual(ledger.confirm("kakeraL2"), 40)
+        self.assertFalse(ledger.cancel(first))
+        self.assertTrue(ledger.cancel(second))
+        self.assertEqual(ledger.pending_count, 1)
+
+    def test_status_snapshot_clears_unresolved_power_reservations(self):
+        ledger = KakeraPowerLedger()
+        ledger.reserve("kakeraL", 40)
+        ledger.reserve("kakeraC", 20)
+
+        ledger.clear()
+
+        self.assertEqual(ledger.available_power(100), 100)
+        self.assertFalse(ledger.has_pending)
+
+    def test_kakera_result_exposes_emoji_for_power_confirmation(self):
+        content = "<:kakeraY:605112931168026629>**karapisicik +421** ($k)"
+
+        result = parse_kakera_result(content, ["karapisicik"])
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.amount, 421)
+        self.assertEqual(result.emoji_name, "kakeraY")
+
+    def test_dynamic_dk_refill_requires_authoritative_power(self):
+        self.assertFalse(
+            should_refill_kakera_power(
+                20,
+                40,
+                power_is_confirmed=False,
+            )
+        )
+        self.assertTrue(
+            should_refill_kakera_power(
+                20,
+                40,
+                power_is_confirmed=True,
+            )
+        )
+        self.assertFalse(
+            should_refill_kakera_power(
+                100,
+                40,
+                power_is_confirmed=True,
+            )
+        )
+
+    def test_dynamic_dk_refill_honors_custom_threshold_only_when_authoritative(self):
+        self.assertTrue(
+            should_refill_kakera_power(
+                59,
+                40,
+                power_is_confirmed=True,
+                configured_trigger=60,
+            )
+        )
+        self.assertFalse(
+            should_refill_kakera_power(
+                59,
+                40,
+                power_is_confirmed=False,
+                configured_trigger=60,
+            )
+        )
+
     def test_kakera_result_matches_own_username(self):
         content = "<:kakeraY:605112931168026629>**karapisicik +552** ($k)"
         self.assertEqual(parse_kakera_result_amount(content, ["karapisicik"]), 552)

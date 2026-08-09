@@ -7,6 +7,7 @@ from mudae_core.runtime import (
     CommandPacer,
     active_stagger_seconds,
     humanized_claim_refresh_deadline,
+    mudae_command_ack_matches,
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
@@ -36,6 +37,19 @@ class _Event:
 
 
 class RuntimeStaggerTests(unittest.TestCase):
+    def test_mudae_command_ack_requires_matching_message_bot_and_checkmark(self):
+        payload = SimpleNamespace(
+            message_id=123,
+            user_id=456,
+            emoji=SimpleNamespace(name="✅"),
+        )
+
+        self.assertTrue(mudae_command_ack_matches(payload, 123, 456))
+        self.assertFalse(mudae_command_ack_matches(payload, 999, 456))
+        self.assertFalse(mudae_command_ack_matches(payload, 123, 999))
+        payload.emoji.name = "❌"
+        self.assertFalse(mudae_command_ack_matches(payload, 123, 456))
+
     def test_snipe_claim_refresh_uses_one_delay_inside_humanization_window(self):
         reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)
         deadline = humanized_claim_refresh_deadline(
@@ -224,6 +238,19 @@ class RuntimeAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await pacer.run(lambda: action("first"), wait))
         self.assertFalse(await pacer.run(lambda: action("second"), wait))
         self.assertEqual(actions, ["first"])
+
+    async def test_command_pacer_returns_nonempty_action_result(self):
+        async def wait(_delay):
+            return True
+
+        expected = object()
+
+        async def action():
+            return expected
+
+        pacer = CommandPacer(0, 0)
+
+        self.assertIs(await pacer.run(action, wait), expected)
 
 
 if __name__ == "__main__":

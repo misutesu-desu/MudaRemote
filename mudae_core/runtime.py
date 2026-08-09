@@ -11,6 +11,15 @@ from .status import STATUS_FIELDS, mark_status_dirty
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
 
 
+def mudae_command_ack_matches(payload, message_id, target_bot_id) -> bool:
+    """Match Mudae's checkmark reaction acknowledgement for one command."""
+    return (
+        getattr(payload, "message_id", None) == message_id
+        and getattr(payload, "user_id", None) == target_bot_id
+        and str(getattr(getattr(payload, "emoji", None), "name", "") or "") == "✅"
+    )
+
+
 def humanized_claim_refresh_deadline(
     reset_at_utc,
     humanization_enabled=False,
@@ -112,12 +121,12 @@ class CommandPacer:
             if not allowed():
                 return False
 
-            await action()
+            result = await action()
             self._next_command_at = self._clock() + self._jitter(
                 self.minimum_delay,
                 self.maximum_delay,
             )
-            return True
+            return True if result is None else result
 
 
 def _wake_runtime_events(client) -> None:

@@ -1,6 +1,8 @@
 """Pure helpers for Mudae Kakera reaction discounts."""
 
+from dataclasses import dataclass
 import re
+from typing import NamedTuple
 
 
 _CHARACTER_SPHERE_EMOJIS = frozenset({
@@ -10,7 +12,7 @@ _CHARACTER_SPHERE_EMOJIS = frozenset({
 
 
 _KAKERA_RESULT_RE = re.compile(
-    r"<a?:kakera[A-Za-z0-9_]*:\d+>\s*"
+    r"<a?:(?P<emoji>kakera[A-Za-z0-9_]*):\d+>\s*"
     r"\*{0,2}\s*(?P<user>[^*\r\n+]+?)\s*"
     r"\+\s*(?P<amount>[\d,\.\s]+)\s*\*{0,2}\s*"
     r"\(\s*\$k\s*\)",
@@ -18,8 +20,75 @@ _KAKERA_RESULT_RE = re.compile(
 )
 
 
-def parse_kakera_result_amount(content: object, identities: object):
-    """Return the earned Kakera amount for one of our identities, if present."""
+class KakeraResult(NamedTuple):
+    amount: int
+    emoji_name: str
+
+
+@dataclass(frozen=True)
+class _PendingPowerClick:
+    token: int
+    emoji_name: str
+    cost: float
+
+
+def _normalize_kakera_emoji(value: object) -> str:
+    return str(value or "").strip().rstrip("2").casefold()
+
+
+class KakeraPowerLedger:
+    """Reserve paid clicks and commit their cost only after Mudae confirms them."""
+
+    def __init__(self):
+        self._next_token = 1
+        self._pending = []
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._pending)
+
+    @property
+    def has_pending(self) -> bool:
+        return bool(self._pending)
+
+    def reserve(self, emoji_name: object, cost: object) -> int:
+        numeric_cost = max(0.0, float(cost or 0))
+        token = self._next_token
+        self._next_token += 1
+        self._pending.append(_PendingPowerClick(
+            token=token,
+            emoji_name=_normalize_kakera_emoji(emoji_name),
+            cost=numeric_cost,
+        ))
+        return token
+
+    def cancel(self, token: object) -> bool:
+        for index, pending in enumerate(self._pending):
+            if pending.token == token:
+                self._pending.pop(index)
+                return True
+        return False
+
+    def confirm(self, emoji_name: object):
+        normalized = _normalize_kakera_emoji(emoji_name)
+        for index, pending in enumerate(self._pending):
+            if pending.emoji_name == normalized:
+                return self._pending.pop(index).cost
+        return None
+
+    def available_power(self, confirmed_power: object):
+        if confirmed_power is None:
+            return None
+        reserved = sum(pending.cost for pending in self._pending)
+        available = max(0.0, float(confirmed_power) - reserved)
+        return int(available) if available.is_integer() else available
+
+    def clear(self):
+        self._pending.clear()
+
+
+def parse_kakera_result(content: object, identities: object):
+    """Return the amount and emoji from Mudae's confirmation for this account."""
     known_identities = {
         str(identity).strip().casefold()
         for identity in identities or ()
@@ -32,8 +101,32 @@ def parse_kakera_result_amount(content: object, identities: object):
             continue
         digits = re.sub(r"\D", "", match.group("amount"))
         if digits:
-            return int(digits)
+            return KakeraResult(int(digits), match.group("emoji"))
     return None
+
+
+def parse_kakera_result_amount(content: object, identities: object):
+    """Return the earned Kakera amount for one of our identities, if present."""
+    result = parse_kakera_result(content, identities)
+    return result.amount if result is not None else None
+
+
+def should_refill_kakera_power(
+    current_power: object,
+    required_power: object,
+    *,
+    power_is_confirmed: bool,
+    configured_trigger: object = 0,
+) -> bool:
+    """Allow automatic DK refill from confirmed or deterministically estimated power.
+
+    A paid component click is unconfirmed until Mudae posts the account-specific
+    Kakera result. Callers pass ``False`` while such a reservation is pending.
+    """
+    if current_power is None or not power_is_confirmed:
+        return False
+    trigger = float(configured_trigger or required_power or 0)
+    return float(current_power) < trigger
 
 
 def has_op_perk_five_marker(description: object) -> bool:

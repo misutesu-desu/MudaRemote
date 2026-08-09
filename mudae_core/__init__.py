@@ -12,6 +12,7 @@ from .claiming import (
 )
 from .coordinator import ClaimCoordinator, GlobalIntervalCoordinator
 from .kakera import (
+    KakeraPowerLedger,
     calculate_kakera_power_cost,
     find_refreshed_component_button,
     get_kakera_emoji_targets,
@@ -22,7 +23,9 @@ from .kakera import (
     is_character_sphere_emoji,
     kakera_embed_text,
     normalize_character_sphere_emoji,
+    parse_kakera_result,
     parse_kakera_result_amount,
+    should_refill_kakera_power,
     sphere_target_matches,
 )
 from .filters import (
@@ -35,6 +38,7 @@ from .runtime import (
     CommandPacer,
     active_stagger_seconds,
     humanized_claim_refresh_deadline,
+    mudae_command_ack_matches,
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
@@ -78,6 +82,7 @@ from .webhooks import WebhookDispatcher
 
 __all__ = [
     "ClaimCoordinator",
+    "KakeraPowerLedger",
     "GlobalIntervalCoordinator",
     "ClaimEvidence",
     "ClaimOutcome",
@@ -94,6 +99,7 @@ __all__ = [
     "format_update_changelog",
     "active_stagger_seconds",
     "humanized_claim_refresh_deadline",
+    "mudae_command_ack_matches",
     "atomic_write_json",
     "calculate_kakera_power_cost",
     "find_refreshed_component_button",
@@ -123,7 +129,9 @@ __all__ = [
     "is_character_sphere_emoji",
     "kakera_embed_text",
     "normalize_character_sphere_emoji",
+    "parse_kakera_result",
     "parse_kakera_result_amount",
+    "should_refill_kakera_power",
     "sphere_target_matches",
     "load_json",
     "looks_like_tu_status_snapshot",

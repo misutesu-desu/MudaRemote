@@ -95,7 +95,8 @@ try:
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
-        normalize_character_sphere_emoji, parse_kakera_result_amount, sphere_target_matches,
+        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result,
+        should_refill_kakera_power, sphere_target_matches,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -125,7 +126,8 @@ except (ModuleNotFoundError, ImportError) as core_error:
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
-        normalize_character_sphere_emoji, parse_kakera_result_amount, sphere_target_matches,
+        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result,
+        should_refill_kakera_power, sphere_target_matches,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -143,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.3"
+CURRENT_VERSION = "4.8.4"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -881,6 +883,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._sphere_game_retry_after = {"oh": 0.0, "oc": 0.0}
     client._sphere_board_update_events = {}
     client._kakera_power_reconcile_handle = None
+    client.kakera_power_ledger = KakeraPowerLedger()
+    client._mudae_command_ack_waiters = {}
+    client._recent_mudae_command_acks = {}
+    client._rolls_ack_retry_after = 0.0
     client.collected_kakera_rolls = []
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
@@ -918,6 +924,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.snipe_globally_disabled_until = None
 
     client.current_dk_power = None
+    client.dk_power_revision = 0
     client._us_lock = None
     client._us_in_flight = False
     client._us_pending_amount = 0
@@ -1129,11 +1136,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             wake_status_loop()
         return deadline
 
-    def claim_identities():
+    def claim_identities(guild=None):
         user = getattr(client, 'user', None)
         if user is None:
             return []
-        return [getattr(user, 'name', ''), getattr(user, 'display_name', '')]
+        identities = [getattr(user, 'name', ''), getattr(user, 'display_name', '')]
+        user_id = getattr(user, 'id', None)
+        member = guild.get_member(user_id) if guild is not None and user_id is not None else None
+        member_display_name = getattr(member, 'display_name', '')
+        if member_display_name:
+            identities.append(member_display_name)
+        return identities
 
     def message_addresses_self(message):
         """Match the addressed account exactly instead of by unsafe substring."""
@@ -1141,12 +1154,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if user is None:
             return False
         user_id = getattr(user, 'id', None)
-        identities = list(claim_identities())
         guild = getattr(message, 'guild', None)
-        member = guild.get_member(user_id) if guild is not None and user_id is not None else None
-        member_display_name = getattr(member, 'display_name', '')
-        if member_display_name:
-            identities.append(member_display_name)
+        identities = claim_identities(guild)
         return status_message_addresses_identity(
             getattr(message, 'content', ''),
             identities,
@@ -1420,6 +1429,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def guarded_send(channel, content):
         return await paced_mudae_action(lambda: channel.send(content))
+
+    async def send_mudae_reaction_command(channel, content, timeout=6.0):
+        """Send a command whose successful execution is acknowledged with ✅."""
+        sent = await guarded_send(channel, content)
+        message_id = getattr(sent, 'id', None)
+        if not sent or message_id is None:
+            return False
+
+        loop = asyncio.get_running_loop()
+        waiter = loop.create_future()
+        client._mudae_command_ack_waiters[message_id] = waiter
+        if message_id in client._recent_mudae_command_acks and not waiter.done():
+            waiter.set_result(True)
+        try:
+            await asyncio.wait_for(asyncio.shield(waiter), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            BotLogger.log(
+                f"No Mudae ✅ acknowledgement for {content}; leaving cached state unchanged.",
+                preset_name,
+                "WARN",
+            )
+            return False
+        finally:
+            client._mudae_command_ack_waiters.pop(message_id, None)
+            client._recent_mudae_command_acks.pop(message_id, None)
+            if not waiter.done():
+                waiter.cancel()
+
+    def apply_rt_acknowledgement():
+        """A ✅ on $rt proves it was consumed and a temporary claim was restored."""
+        client.rt_available = False
+        client.claim_right_available = True
+        client.claim_cooldown_until_utc = None
+        client.last_successfully_claimed_character = None
+        clear_status_dirty(client, {"claim", "rt"})
 
     async def guarded_click(target):
         if client.is_paused or is_maintenance_active():
@@ -1729,7 +1774,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return True
         return False
 
-    def get_current_dk_power():
+    def mark_dk_power_changed():
+        client.dk_power_revision += 1
+
+    def get_regenerated_dk_power():
         p = client.current_dk_power
         if p is None:
             return None
@@ -1739,14 +1787,46 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if el > 0:
             p = min(client.max_dk_power, p + el)
             client.current_dk_power = p
+            mark_dk_power_changed()
             client.last_dk_power_update_utc += datetime.timedelta(minutes=3 * el)
         return p
 
-    def should_auto_refill_dk(current_power, required_power):
-        if current_power is None:
+    def get_current_dk_power():
+        return client.kakera_power_ledger.available_power(get_regenerated_dk_power())
+
+    def reserve_kakera_power_click(emoji_name, cost):
+        token = client.kakera_power_ledger.reserve(emoji_name, cost)
+        mark_dk_power_changed()
+        schedule_external_kakera_power_reconcile()
+        return token
+
+    def cancel_kakera_power_click(token):
+        if token is None or not client.kakera_power_ledger.cancel(token):
             return False
-        trigger_power = client.auto_dk_min_power or required_power
-        return current_power < trigger_power
+        mark_dk_power_changed()
+        if not client.kakera_power_ledger.has_pending:
+            cancel_external_kakera_power_reconcile()
+        return True
+
+    def confirm_kakera_power_click(emoji_name):
+        cost = client.kakera_power_ledger.confirm(emoji_name)
+        if cost is None:
+            return None
+        base_power = get_regenerated_dk_power()
+        if base_power is not None:
+            client.current_dk_power = max(0, base_power - cost)
+        mark_dk_power_changed()
+        if not client.kakera_power_ledger.has_pending:
+            cancel_external_kakera_power_reconcile()
+        return cost
+
+    def should_auto_refill_dk(current_power, required_power):
+        return should_refill_kakera_power(
+            current_power,
+            required_power,
+            power_is_confirmed=not client.kakera_power_ledger.has_pending,
+            configured_trigger=client.auto_dk_min_power,
+        )
 
     def get_kakera_action_lock():
         if client._kakera_action_lock is None:
@@ -2212,7 +2292,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return
                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
                 client.current_dk_power = client.max_dk_power
+                client.kakera_power_ledger.clear()
+                mark_dk_power_changed()
                 client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
+                request_status_refresh({"power"}, reason="auto-dk-used")
         except Exception as e:
             BotLogger.log(f"DK logic error: {e}", preset_name, "ERROR")
 
@@ -2304,7 +2387,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if used and reset and used != reset:
                 used = None
             hour_ok = not client.auto_rolls_only_claim_hour or bool(client.next_claim_reset_at_utc and reset and client.next_claim_reset_at_utc <= reset)
-            pending_rolls = limit_ok and used is None and claim_ok and hour_ok
+            ack_retry_ready = time.monotonic() >= client._rolls_ack_retry_after
+            pending_rolls = limit_ok and used is None and claim_ok and hour_ok and ack_retry_ready
         power = get_current_dk_power()
         pending_us = (client.auto_us_enabled and not client._us_in_flight
                       and time.monotonic() >= client._us_retry_after
@@ -2422,8 +2506,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await _interruptible_sleep(client.delay_seconds)
             reasons = status_refresh_reasons(client)
             reason_text = ", ".join(reasons) if reasons else ("scheduled-roll" if client.scheduled_roll_due else "status-boundary")
+            tu_may_reconcile_pending_power = any(
+                reason == "external-kakera-result-reconcile"
+                for reason in reasons
+            )
             BotLogger.log(f"Checking $tu... (reason: {reason_text})", preset_name, "CHECK")
             tu_content = None
+            tu_power_revision = None
             if client.tu_lock is None: client.tu_lock = asyncio.Lock()
             if client.tu_lock.locked(): return
 
@@ -2437,6 +2526,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     for attempt in range(2):
                         if not await send_tu_command(cmd_channel):
                             return
+                        if tu_power_revision is None:
+                            # A later local click makes this response unsafe for
+                            # automatic DK decisions, even if the response
+                            # arrives after that click.
+                            tu_power_revision = client.dk_power_revision
                         client.tu_query_count += 1
                         timeout = 5.5 if attempt == 0 else 8.0
                         try:
@@ -2498,11 +2592,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower)):
                 BotLogger.log("Your $tu response is missing the 'dk' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
+            power_snapshot_is_authoritative = False
             try:
                 power_match = re.search(REGEX_PATTERNS["DK_POWER"], c_lower)
                 if power_match:
-                    client.current_dk_power = int(power_match.group(1))
-                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                    power_snapshot_is_authoritative = (
+                        tu_power_revision is not None
+                        and tu_power_revision == client.dk_power_revision
+                        and (
+                            not client.kakera_power_ledger.has_pending
+                            or tu_may_reconcile_pending_power
+                        )
+                    )
+                    if power_snapshot_is_authoritative:
+                        client.current_dk_power = int(power_match.group(1))
+                        client.kakera_power_ledger.clear()
+                        cancel_external_kakera_power_reconcile()
+                        client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                    else:
+                        request_status_refresh(
+                            {"power"},
+                            reason="power-changed-during-tu",
+                        )
+                        BotLogger.log(
+                            "Ignoring $tu power for automatic DK: a paid Kakera click is still awaiting its result "
+                            "or power changed while the query was in flight.",
+                            preset_name,
+                            "DEBUG",
+                            client,
+                        )
                 consumption_match = re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)
                 if consumption_match:
                     client.dk_consumption = int(consumption_match.group(1))
@@ -2513,7 +2631,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception as e:
                 BotLogger.log(f"Error parsing Power/DK state: {e}", preset_name, "WARN")
 
-            if client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled:
+            if (client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled
+                    and power_snapshot_is_authoritative):
                 await handle_dk_power_management(client, cmd_channel, tu_content)
 
             if client.rolling_enabled:
@@ -2665,7 +2784,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 fresh_fields.add("rolls")
             if rt_ready or rt_reset_minutes is not None:
                 fresh_fields.add("rt")
-            if power_match:
+            if power_match and power_snapshot_is_authoritative:
                 fresh_fields.add("power")
             if dk_stock_match or re.search(REGEX_PATTERNS["DK_READY"], c_lower) or re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower):
                 fresh_fields.add("dk")
@@ -2819,22 +2938,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     lim_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
                     if client.rolls_used_this_interval_utc != client.roll_reset_at_utc: client.rolls_used_this_interval_utc = None
                     claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
-                    if lim_ok and client.rolls_used_this_interval_utc is None and claim_ok:
+                    ack_retry_ready = time.monotonic() >= client._rolls_ack_retry_after
+                    if lim_ok and client.rolls_used_this_interval_utc is None and claim_ok and ack_retry_ready:
                         ch_hour = True
                         if client.auto_rolls_only_claim_hour:
                             ch_hour = bool(client.next_claim_reset_at_utc and client.roll_reset_at_utc and client.next_claim_reset_at_utc <= client.roll_reset_at_utc)
 
                         if ch_hour:
-                            rolls_did_execute = True
                             BotLogger.log("Auto $rolls triggered.", preset_name, "INFO")
                             rolls_cmd_ch = _get_command_channel() or channel
-                            if not await guarded_send(rolls_cmd_ch, f"{client.mudae_prefix}rolls"):
+                            if not await send_mudae_reaction_command(rolls_cmd_ch, f"{client.mudae_prefix}rolls"):
+                                client._rolls_ack_retry_after = time.monotonic() + 30.0
                                 return
+                            rolls_did_execute = True
+                            client._rolls_ack_retry_after = 0.0
                             client.rolls_item_used_count += 1
                             client.rolls_used_this_interval_utc = client.roll_reset_at_utc
-                            mark_status_dirty(client, {"rolls"}, reason="auto-rolls-command")
-                            if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
-                                return
+                            request_status_refresh({"rolls"}, reason="auto-rolls-command-acknowledged")
                             return
 
                 if not rolls_did_execute and pending_roll_work()[1]:
@@ -3177,7 +3297,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     return
                                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
                                 client.current_dk_power = client.max_dk_power
+                                client.kakera_power_ledger.clear()
+                                mark_dk_power_changed()
                                 client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                                request_status_refresh({"power"}, reason="dynamic-dk-used")
                                 if not await active_delay(1.2 + random.uniform(0.1, 0.4)):
                                     return
                                 current_pow = get_current_dk_power()
@@ -3204,20 +3327,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
                         BotLogger.log(f"Kakera Click: custom_id={getattr(btn, 'custom_id', 'N/A')} | name={name} | session_id={sid}", preset_name, "DEBUG", client)
 
+                    power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                     try:
                         if not await guarded_click(btn):
+                            cancel_kakera_power_click(power_token)
                             return
-                        if cost > 0:
-                            client.current_dk_power = max(0, get_current_dk_power() - cost)
                         client.kakera_reacted_messages.add(msg_id)
-                        power_text = f"{client.current_dk_power}%" if client.current_dk_power is not None else "unknown"
+                        estimated_power = get_current_dk_power()
+                        power_text = f"{estimated_power}%" if estimated_power is not None else "unknown"
                         BotLogger.log(f"Kakera click sent: {char_name} [{name}] (Estimated Pw: {power_text})", preset_name, "KAKERA")
                         client._last_kakera_click_ts = time.time()
                         if not await active_delay(0.6):
                             return
                     except discord.HTTPException as e:
+                        cancel_kakera_power_click(power_token)
                         BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                     except Exception as e:
+                        cancel_kakera_power_click(power_token)
                         BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
 
             client.collected_kakera_rolls.clear()
@@ -3405,7 +3531,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     BotLogger.log(f"Auto-Divorce: {char_name} qualifies ({reason}).", preset_name, "INFO")
                     await execute_auto_divorce(client, channel, char_name)
 
-        if consumes_claim and client.auto_rt_after_claim and not client.is_paused and not farm_character_claimed:
+        if (consumes_claim and client.auto_rt_after_claim and client.rt_available
+                and not client.is_paused and not farm_character_claimed):
             mins_to_reset = ((client.next_claim_reset_at_utc - now).total_seconds() / 60.0) if client.next_claim_reset_at_utc else None
             if mins_to_reset is not None and mins_to_reset < 60:
                 BotLogger.log(f"Auto $rt: SKIPPED — resets soon ({mins_to_reset:.0f}m).", preset_name, "INFO")
@@ -3414,28 +3541,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             else:
                 BotLogger.log(f"Auto $rt: Sending $rt after claiming {char_name}.", preset_name, "CLAIM")
                 try:
-                    if await guarded_send(channel, f"{client.mudae_prefix}rt"):
-                        client.rt_available = False
-                        request_status_refresh({"claim", "rt"}, reason="auto-rt-used", urgent=True)
+                    if await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
+                        apply_rt_acknowledgement()
                 except Exception as e:
                     BotLogger.log(f"Auto $rt failed: {e}", preset_name, "ERROR")
 
         if farm_character_claimed and consumes_claim and client.auto_rt_after_claim and client.rt_available:
             if post_claim_farm_mode:
-                if farm_release_sent and await guarded_send(channel, f"{client.mudae_prefix}rt"):
-                    client.rt_available = False
+                if farm_release_sent and await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
+                    apply_rt_acknowledgement()
                     BotLogger.log(f"Kakera Farm: $rt restored after releasing {char_name}.", preset_name, "CLAIM")
-                    request_status_refresh({"claim", "rt"}, reason="farm-rt-used", urgent=True)
-            elif await guarded_send(channel, f"{client.mudae_prefix}rt"):
-                client.rt_available = False
-                if await active_delay(1.5):
-                    await execute_farm_forcedivorce(
-                        client,
-                        channel,
-                        char_name,
-                        "after $rt (solo/key mode)",
-                    )
-                request_status_refresh({"claim", "rt"}, reason="farm-rt-used", urgent=True)
+            elif await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
+                apply_rt_acknowledgement()
+                await execute_farm_forcedivorce(
+                    client,
+                    channel,
+                    char_name,
+                    "after $rt (solo/key mode)",
+                )
 
         if is_snipe_action and client.enable_snipe_chat_reactions and client.snipe_chat_messages:
             try:
@@ -3797,15 +3920,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 BotLogger.log(f"Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
-                rt_sent_successfully = False
                 try:
-                    if not await guarded_send(channel, f"{client.mudae_prefix}rt"):
+                    if not await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
                         break
-                    client.rt_available = False
+                    apply_rt_acknowledgement()
                     attempted.add(n_rt)
-                    if not await active_delay(0.7):
-                        break
-                    rt_sent_successfully = True
                     await claim_character(client, channel, msg_rt, is_rt_claim=True, kakera_value=v_rt)
                     break
                 except Exception:
@@ -3964,11 +4083,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     BotLogger.log(f"Using RT for {char_name}", preset_name, "CLAIM")
                     try:
-                        if not await guarded_send(channel, f"{client.mudae_prefix}rt"):
+                        if not await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
                             return False
-                        client.rt_available = False
-                        if not await active_delay(random.uniform(0.6, 1.0)):
-                            return False
+                        apply_rt_acknowledgement()
                     except Exception as e:
                         BotLogger.log(f"RT Failed: {e}", preset_name, "ERROR")
                         return False
@@ -4129,7 +4246,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                             return clicked
                                         client.dk_stock_count = max(0, client.dk_stock_count - 1)
                                         client.current_dk_power = client.max_dk_power
+                                        client.kakera_power_ledger.clear()
+                                        mark_dk_power_changed()
                                         client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                                        request_status_refresh({"power"}, reason="dynamic-dk-used")
                                         if not await active_delay(1.2 + random.uniform(0.1, 0.4)):
                                             return clicked
                                         current_pow = get_current_dk_power()
@@ -4157,24 +4277,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
                                 BotLogger.log(f"Kakera Click: custom_id={getattr(btn, 'custom_id', 'N/A')} | name={name} | session_id={sid}", preset_name, "DEBUG", client)
 
+                            power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                             try:
                                 if not await guarded_click(btn):
+                                    cancel_kakera_power_click(power_token)
                                     return clicked
-                                if cost > 0:
-                                    client.current_dk_power = max(0, get_current_dk_power() - cost)
                                 client.kakera_reacted_messages.add(msg.id)
-                                power_text = f"{client.current_dk_power}%" if client.current_dk_power is not None else "unknown"
+                                estimated_power = get_current_dk_power()
+                                power_text = f"{estimated_power}%" if estimated_power is not None else "unknown"
                                 BotLogger.log(f"Kakera click sent: {char_name} [{name}] (Estimated Pw: {power_text})", preset_name, "KAKERA")
                                 clicked = True
                                 clicked_count += 1
                                 client._last_kakera_click_ts = time.time()
-                                if is_snipe:
-                                    schedule_external_kakera_power_reconcile()
                                 if not await active_delay(0.6):
                                     return clicked
                             except discord.HTTPException as e:
+                                cancel_kakera_power_click(power_token)
                                 BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                             except Exception as e:
+                                cancel_kakera_power_click(power_token)
                                 BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
                 if (
                     clicked
@@ -4334,6 +4455,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             update_event.set()
 
     @client.event
+    async def on_raw_reaction_add(payload):
+        message_id = getattr(payload, 'message_id', None)
+        if not mudae_command_ack_matches(payload, message_id, TARGET_BOT_ID):
+            return
+        client._recent_mudae_command_acks[message_id] = time.monotonic()
+        while len(client._recent_mudae_command_acks) > 500:
+            client._recent_mudae_command_acks.pop(next(iter(client._recent_mudae_command_acks)))
+        waiter = client._mudae_command_ack_waiters.get(message_id)
+        if waiter is not None and not waiter.done():
+            waiter.set_result(True)
+
+    @client.event
     async def on_raw_message_edit(payload):
         update_event = client._sphere_board_update_events.get(getattr(payload, 'message_id', None))
         if update_event is not None:
@@ -4367,13 +4500,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         process_claim_cooldown_message(message)
         schedule_mudae_emoji_asset_cache(client, message)
 
-        kakera_result = parse_kakera_result_amount(message.content, claim_identities())
-        if kakera_result is not None and cancel_external_kakera_power_reconcile():
-            BotLogger.log(
-                f"Kakera result confirmed (+{kakera_result}); skipped fallback $tu refresh.",
-                preset_name,
-                "KAKERA",
-            )
+        kakera_result = parse_kakera_result(
+            message.content,
+            claim_identities(getattr(message, 'guild', None)),
+        )
+        if kakera_result is not None:
+            confirmed_cost = confirm_kakera_power_click(kakera_result.emoji_name)
+            if confirmed_cost is not None:
+                remaining = get_current_dk_power()
+                BotLogger.log(
+                    f"Kakera result confirmed (+{kakera_result.amount}); "
+                    f"committed {confirmed_cost}% power (Estimated Pw: {remaining}%).",
+                    preset_name,
+                    "KAKERA",
+                )
 
         if message.content and "under maintenance" in message.content.lower():
             m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content, re.IGNORECASE)
