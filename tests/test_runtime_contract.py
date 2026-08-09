@@ -836,6 +836,28 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
         self.assertIn("Purple Kakera skipped: Collect Purple Kakera is disabled", handler_source)
 
+    def test_kakera_cooldown_blocks_free_buttons_and_learns_from_ku(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        cooldown_source = ast.get_source_segment(
+            self.source,
+            functions["process_kakera_reaction_cooldown_message"],
+        )
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertNotIn("has_free_button", claim_source)
+        self.assertIn("has_reaction_cooldown_bypass", claim_source)
+        self.assertIn("reaction became unavailable before", claim_source)
+        self.assertIn("reaction is on cooldown before queued", roll_source)
+        self.assertIn("can't react to kakera", cooldown_source)
+        self.assertIn("client.kakera_react_available = False", cooldown_source)
+        self.assertIn("process_kakera_reaction_cooldown_message(message)", handler_source)
+
     def test_successful_claim_refreshes_the_roll_for_late_purple_kakera(self):
         functions = {
             node.name: node

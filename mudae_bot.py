@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.5-beta.2"
+CURRENT_VERSION = "4.8.5-beta.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -1429,6 +1429,33 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # only repeat the same cooldown and can fan out across many alts.
             clear_status_dirty(client, {"claim"})
             wake_status_loop()
+        return True
+
+    def process_kakera_reaction_cooldown_message(message):
+        """Record Mudae's immediate $ku rejection before another click is sent."""
+        if not getattr(message, 'content', None) or getattr(message, 'embeds', None):
+            return False
+        if not message_addresses_self(message):
+            return False
+        c_low = message.content.lower()
+        if not any(phrase in c_low for phrase in ("can't react to kakera", "nÃ£o pode reagir", "no puedes reaccionar")):
+            return False
+
+        cooldown_minutes = parse_timer_minutes("KAKERA_COOLDOWN", c_low)
+        client.kakera_react_available = False
+        if cooldown_minutes is not None:
+            client.kakera_react_cooldown_until_utc = (
+                datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(minutes=cooldown_minutes)
+            )
+        else:
+            client.kakera_react_cooldown_until_utc = None
+        remaining = f" ({cooldown_minutes}m left)" if cooldown_minutes is not None else ""
+        BotLogger.log(
+            f"Detected Kakera reaction cooldown from Mudae{remaining}. Blocking further Kakera clicks.",
+            preset_name,
+            "WARN",
+        )
         return True
 
     async def paced_mudae_action(action):
@@ -3368,6 +3395,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'is_sphere': is_sphere,
                                     'is_free': is_free,
                                     'chaos_count': chaos_count,
+                                    'has_reaction_cooldown_bypass': (
+                                        chaos_count > 0 or has_sp_perk
+                                    ),
                                     'cost': calculate_kakera_power_cost(
                                         client.dk_consumption,
                                         has_chaos_discount=chaos_count > 0,
@@ -3388,6 +3418,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 is_free = item['is_free']
                 cost = item['cost']
                 chaos_count = item['chaos_count']
+                has_reaction_cooldown_bypass = item['has_reaction_cooldown_bypass']
                 char_name = item['char_name']
 
                 msg_id = msg.id
@@ -3409,6 +3440,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 async with get_kakera_action_lock():
+                    if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
+                        BotLogger.log(
+                            f"Kakera skipped for {char_name}: reaction is on cooldown before queued {name} click.",
+                            preset_name,
+                            "DEBUG",
+                            client,
+                        )
+                        continue
                     current_pow = get_current_dk_power()
                     if cost > 0 and current_pow is None:
                         request_status_refresh({"power"}, reason="power-unknown", urgent=True)
@@ -4307,18 +4346,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_external_roll=is_snipe,
                 )
 
-                cooldown_active = not is_kakera_reaction_allowed()
-                has_free_button = msg.components and any(
-                    kakera_button_is_eligible(b, target_list, filter_reason)
-                    and (str(getattr(getattr(b, "emoji", None), "name", "")).rstrip("2") == "kakeraP"
-                         or is_character_sphere_emoji(getattr(getattr(b, "emoji", None), "name", ""))
-                         or check_is_green(b))
-                    for c in msg.components for b in c.children
-                )
                 # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
-                if cooldown_active and not has_free_button and (chaos_count == 0 or is_snipe) and not has_sp_perk:
+                has_reaction_cooldown_bypass = (chaos_count > 0 and not is_snipe) or has_sp_perk
+                if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
                     BotLogger.log(
-                        f"Kakera skipped for {char_name}: reaction power is on cooldown and no free/discount bypass applies.",
+                        f"Kakera skipped for {char_name}: reaction is on cooldown and no valid discount bypass applies.",
                         preset_name,
                         "DEBUG",
                         client,
@@ -4402,6 +4434,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             is_free=is_free,
                         )
                         async with get_kakera_action_lock():
+                            # Recheck after serializing clicks: another account may
+                            # have just received a $ku rejection for this preset.
+                            if not is_kakera_reaction_allowed() and not has_reaction_cooldown_bypass:
+                                BotLogger.log(
+                                    f"Kakera skipped for {char_name}: reaction became unavailable before {name} could be clicked.",
+                                    preset_name,
+                                    "DEBUG",
+                                    client,
+                                )
+                                continue
                             current_pow = get_current_dk_power()
 
                             if cost > 0 and current_pow is None:
@@ -4686,6 +4728,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         record_claim_text_evidence(message)
         process_claim_cooldown_message(message)
+        process_kakera_reaction_cooldown_message(message)
         schedule_mudae_emoji_asset_cache(client, message)
 
         kakera_result = parse_kakera_result(

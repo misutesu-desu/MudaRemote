@@ -1,7 +1,9 @@
 {
-  "version": "4.8.5-beta.2",
+  "version": "4.8.5-beta.3",
   "changelog": {
     "Bug Fixes": [
+      "Kakera reactions now respect each account's $ku cooldown even when the roll also contains a free Purple or sphere button.",
+      "Immediate Mudae $ku responses now block already queued Kakera clicks for that account instead of allowing reaction spam.",
       "Reactive rolling now resumes its locally tracked remaining rolls immediately after a claim instead of waiting behind a new global $tu cycle.",
       "Losing cross-account Kakera clicks now release their temporary power reservations without triggering a $tu request on every side account.",
       "Purple Kakera clicks now recognize Mudae's (Free) result format, require the account-specific confirmation, and retry when it is missing."
@@ -13,12 +15,12 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "a7112be3b7978884bac8afb12678bb5bd423d4902f3a8c9e4c58d500add7d1ac",
+  "exe_sha256": "3f71d5c63298f55a475e97e941eef66648958745f237a3d22aeb39535361004a",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "c84893b9b1187efa17dd138531198297a763ca79a07869afc53f902f943a9122"
+      "sha256": "d430d7632a68bfe91feda34d8e1c771c3408ce9ddccaaabae5b0278e9b6733b1"
     },
     {
       "path": "mudae_preset_editor.py",
