@@ -114,6 +114,62 @@ class RuntimeSourceContractTests(unittest.TestCase):
         source = ast.get_source_segment(self.source, functions["run_bot"])
         self.assertIn("client.us_failed_this_cycle = False", source)
 
+    def test_roll_command_is_bound_before_message_owner_detection(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        owner_source = ast.get_source_segment(self.source, functions["detect_roll_owner"])
+        self.assertIn("client.roll_command =", run_source)
+        self.assertIn('getattr(client, "roll_command", "")', owner_source)
+
+    def test_bulk_us_requests_the_full_remaining_limit(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+        send_source = ast.get_source_segment(self.source, functions["send_auto_us"])
+        self.assertIn("amount = remaining if client.bulk_us_enabled else min(20, remaining)", status_source)
+        self.assertIn("chunks = [20] * (amount // 20)", send_source)
+        self.assertIn("client._us_pending_amount = sent", send_source)
+
+    def test_mk_interrupts_do_not_dirty_status_or_repeat_tu(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
+        self.assertNotIn('reason="mk-interrupted"', source)
+        self.assertNotIn('reason="mk-delay-interrupted"', source)
+        self.assertNotIn('reason="mk-post-send-interrupted"', source)
+
+    def test_free_kakera_does_not_require_known_power(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        self.assertIn("if cost > 0 and current_pow is None", claim_source)
+        self.assertIn("if cost > 0 and current_pow < cost", claim_source)
+        self.assertIn('else "unknown"', claim_source)
+
+    def test_auto_dk_supports_a_custom_trigger_power(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        dk_source = ast.get_source_segment(self.source, functions["handle_dk_power_management"])
+        self.assertIn("client.auto_dk_min_power", run_source)
+        self.assertIn("client.auto_dk_min_power or cost", dk_source)
+
     def test_authoritative_cooldown_refreshes_claim_and_rt_before_retry(self):
         functions = {
             node.name: node

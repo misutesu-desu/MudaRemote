@@ -201,7 +201,7 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
         "humanization_window_minutes", "humanization_inactivity_seconds", "reactive_snipe_delay",
         "auto_us_limit", "auto_rolls_limit", "panic_roll_minutes", "auto_divorce_max_kakera",
         "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
-        "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
+        "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "auto_dk_min_power",
     ]
     for key in non_negative:
         if key in data and data[key] is not None:
@@ -217,6 +217,12 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
                 errors.append("{} must be greater than zero.".format(key))
         except (TypeError, ValueError):
             errors.append("{} must be numeric.".format(key))
+
+    try:
+        if float(data.get("auto_dk_min_power", 0) or 0) > float(data.get("max_dk_power", 100)):
+            errors.append("auto_dk_min_power cannot exceed max_dk_power.")
+    except (TypeError, ValueError):
+        pass
 
     if data.get("only_chaos", False) and data.get("chaos_emojis") == []:
         errors.append("Chaos Kakera Only cannot be used with an explicitly empty Chaos Emojis list.")

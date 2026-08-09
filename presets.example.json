@@ -23,6 +23,7 @@
     "kakera_reaction_snipe_mode": false,
     "auto_mk_enabled": true,
     "auto_dk_enabled": true,
+    "auto_dk_min_power": 0,
     "auto_p_enabled": true,
     "immediate_kakera_click": true,
     "collect_purple_kakera": true,

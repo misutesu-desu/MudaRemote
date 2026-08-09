@@ -582,6 +582,7 @@ DEFAULTS = {
     "lurker_mode": False,
     "auto_rt_after_claim": False,
     "auto_dk_enabled": True,
+    "auto_dk_min_power": 0,
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
     "main_account_id": "",
@@ -2313,6 +2314,12 @@ class PresetEditor:
         )
         self.add_checkbox(power_frame.content, "auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)")
         self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
+        self.add_number_field(
+            power_frame.content,
+            "auto_dk_min_power",
+            "Auto $dk Trigger Below Power % (0 = match next Kakera cost)",
+            0,
+        )
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame.content, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
         self.add_checkbox(power_frame.content, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
@@ -2836,7 +2843,7 @@ class PresetEditor:
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "main_account_id", "webhook_url", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks"]:
@@ -3082,7 +3089,7 @@ class PresetEditor:
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
-                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                     "oh_unknown_explore_clicks"]
@@ -3095,7 +3102,7 @@ class PresetEditor:
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit",
-                                   "auto_rolls_limit", "panic_roll_minutes", "max_dk_power",
+                                   "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                                    "oh_unknown_explore_clicks"]:

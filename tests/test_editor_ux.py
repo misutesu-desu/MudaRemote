@@ -58,6 +58,17 @@ class EditorUxContractTests(unittest.TestCase):
         first["wishlist"].append("Example")
         self.assertEqual(second["wishlist"], [])
 
+    def test_auto_dk_trigger_power_is_editable_and_validated(self):
+        preset = build_recommended_preset()
+        self.assertEqual(preset["auto_dk_min_power"], 0)
+        self.assertIn('"auto_dk_min_power"', self.editor)
+        preset["channel_id"] = 123456789
+        preset["auto_dk_min_power"] = preset["max_dk_power"] + 1
+        self.assertIn(
+            "auto_dk_min_power cannot exceed max_dk_power.",
+            validate_preset(preset, resolved_token=["token"]),
+        )
+
     def test_quick_setup_separates_own_rolls_from_external_actions(self):
         self.assertIn("Kakera on your own automated rolls is collected automatically.", self.editor)
         self.assertIn("Collect Kakera from other players", self.editor)
