@@ -123,6 +123,12 @@ class KakeraPowerTests(unittest.TestCase):
         content = "<a:kakeraP:605112931168026629>**KARAPISICIK +1,234** ($k)"
         self.assertEqual(parse_kakera_result_amount(content, ["karapisicik"]), 1234)
 
+    def test_free_purple_result_accepts_mudaes_free_marker(self):
+        content = "<:kakeraP:609264156347990016>(Free) **karapisicik +114** ($k)"
+        result = parse_kakera_result(content, ["karapisicik"])
+        self.assertEqual(result.amount, 114)
+        self.assertEqual(result.emoji_name, "kakeraP")
+
     def test_kakera_result_requires_the_kakera_confirmation_suffix(self):
         content = "<:kakeraY:605112931168026629>**karapisicik +552**"
         self.assertIsNone(parse_kakera_result_amount(content, ["karapisicik"]))

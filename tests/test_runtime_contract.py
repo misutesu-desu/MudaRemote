@@ -57,6 +57,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
             ]
             self.assertTrue(pause_checks, function_name)
 
+    def test_claim_interrupt_resumes_known_rolls_without_tu_refresh(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn('client._roll_interrupt_reason = "claim-attempt"', message_source)
+        self.assertIn('interrupt_reason == "claim-attempt"', roll_source)
+        self.assertIn("can_resume_claim_interrupted_rolls(client)", roll_source)
+        self.assertIn("without $tu", roll_source)
+        self.assertIn('reason="rolling-interrupted"', roll_source)
+
     def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
         functions = {
             node.name: node
@@ -618,7 +633,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
                 block_source,
             )
 
-    def test_external_kakera_clicks_reconcile_estimated_power(self):
+    def test_external_kakera_click_timeouts_release_power_without_tu(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -635,13 +650,41 @@ class RuntimeSourceContractTests(unittest.TestCase):
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
         message_source = ast.get_source_segment(self.source, functions["on_message"])
 
-        self.assertIn('reason="external-kakera-result-reconcile"', reconcile_source)
-        self.assertIn("client.loop.call_later(5.0, reconcile)", reconcile_source)
+        self.assertIn("client.kakera_power_ledger.clear()", reconcile_source)
+        self.assertIn("released reserved power without $tu", reconcile_source)
+        self.assertIn("client.loop.call_later(8.0, reconcile)", reconcile_source)
+        self.assertNotIn("request_status_refresh", reconcile_source)
         self.assertIn("schedule_external_kakera_power_reconcile()", reserve_source)
         self.assertIn("reserve_kakera_power_click(name, cost)", claim_source)
         self.assertIn("parse_kakera_result(", message_source)
         self.assertIn("confirm_kakera_power_click(kakera_result.emoji_name)", message_source)
         self.assertIn("Estimated Pw", claim_source)
+
+    def test_purple_kakera_waits_for_account_result_and_retries(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        click_source = ast.get_source_segment(
+            self.source,
+            functions["click_purple_kakera_with_confirmation"],
+        )
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        refresh_source = ast.get_source_segment(
+            self.source,
+            functions["collect_refreshed_purple_after_claim"],
+        )
+
+        self.assertIn("register_kakera_result_waiter(emoji_name)", click_source)
+        self.assertIn("for attempt in range(3)", click_source)
+        self.assertIn("await channel.fetch_message(msg.id)", click_source)
+        self.assertIn("Purple Kakera confirmed", click_source)
+        self.assertIn(
+            "resolve_kakera_result_waiters(kakera_result.emoji_name, kakera_result.amount)",
+            message_source,
+        )
+        self.assertIn("for attempt in range(8)", refresh_source)
 
     def test_dynamic_dk_uses_estimated_power_but_waits_for_click_confirmation(self):
         functions = {

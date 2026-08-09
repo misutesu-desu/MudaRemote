@@ -6,6 +6,7 @@ import unittest
 from mudae_core.runtime import (
     CommandPacer,
     active_stagger_seconds,
+    can_resume_claim_interrupted_rolls,
     humanized_claim_refresh_deadline,
     mudae_command_ack_matches,
     pause_interruptible_sleep,
@@ -125,6 +126,47 @@ class RuntimeStaggerTests(unittest.TestCase):
 
 
 class RuntimeStateTests(unittest.TestCase):
+    def test_key_mode_resumes_locally_known_rolls_after_claim_interrupt(self):
+        client = SimpleNamespace(
+            rolling_enabled=True,
+            is_paused=False,
+            key_limit_hit=False,
+            pending_claim=None,
+            rolls_left=7,
+            key_mode=True,
+            claim_right_available=False,
+            rt_available=False,
+        )
+        self.assertTrue(can_resume_claim_interrupted_rolls(client))
+
+    def test_unresolved_claim_does_not_resume_locally_known_rolls(self):
+        client = SimpleNamespace(
+            rolling_enabled=True,
+            is_paused=False,
+            key_limit_hit=False,
+            pending_claim={"message_id": 1},
+            rolls_left=7,
+            key_mode=True,
+            claim_right_available=False,
+            rt_available=False,
+        )
+        self.assertFalse(can_resume_claim_interrupted_rolls(client))
+
+    def test_non_key_mode_requires_an_available_claim_path_to_resume(self):
+        client = SimpleNamespace(
+            rolling_enabled=True,
+            is_paused=False,
+            key_limit_hit=False,
+            pending_claim=None,
+            rolls_left=7,
+            key_mode=False,
+            claim_right_available=False,
+            rt_available=False,
+        )
+        self.assertFalse(can_resume_claim_interrupted_rolls(client))
+        client.claim_right_available = True
+        self.assertTrue(can_resume_claim_interrupted_rolls(client))
+
     def test_idle_pause_is_propagated_without_forcing_status_refresh(self):
         state_event = _Event()
         immediate_event = _Event()

@@ -56,6 +56,22 @@ def active_stagger_seconds(active_index, interval=AUTOMATED_STAGGER_INTERVAL_SEC
     return max(0, int(active_index or 0)) * max(0.0, float(interval or 0.0))
 
 
+def can_resume_claim_interrupted_rolls(client) -> bool:
+    """Return whether a deliberate claim pause can keep using its known rolls."""
+    return bool(
+        getattr(client, "rolling_enabled", False)
+        and not getattr(client, "is_paused", False)
+        and not getattr(client, "key_limit_hit", False)
+        and getattr(client, "pending_claim", None) is None
+        and int(getattr(client, "rolls_left", 0) or 0) > 0
+        and (
+            getattr(client, "key_mode", False)
+            or getattr(client, "claim_right_available", False)
+            or getattr(client, "rt_available", False)
+        )
+    )
+
+
 def prepare_active_presets(preset_names, preset_mapping, start_index=0):
     """Expand preset accounts and assign compact stagger offsets in launch order."""
     prepared = []

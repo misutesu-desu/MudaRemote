@@ -1,23 +1,24 @@
 {
-  "version": "4.8.5-beta.1",
+  "version": "4.8.5-beta.2",
   "changelog": {
     "Bug Fixes": [
-      "KakeraC bonus rolls are now credited only to the account whose collection result Mudae confirmed.",
-      "Successfully claimed rolls are refreshed so Purple Kakera that appears afterward can be collected."
+      "Reactive rolling now resumes its locally tracked remaining rolls immediately after a claim instead of waiting behind a new global $tu cycle.",
+      "Losing cross-account Kakera clicks now release their temporary power reservations without triggering a $tu request on every side account.",
+      "Purple Kakera clicks now recognize Mudae's (Free) result format, require the account-specific confirmation, and retry when it is missing."
     ],
     "Improvements": [
-      "Post-claim Purple Kakera checks now retry briefly to accommodate delayed component updates from Mudae."
+      "Post-claim Purple Kakera discovery now watches delayed component updates for a longer window."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "3b08d54438c4c390a23741439c9af34b17b82f17484f4cf9d7ab363f211da876",
+  "exe_sha256": "a7112be3b7978884bac8afb12678bb5bd423d4902f3a8c9e4c58d500add7d1ac",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "c878a80aca2fddeb141d220bdd359dae6541ca53d618731cde030c7fb40bc67f"
+      "sha256": "c84893b9b1187efa17dd138531198297a763ca79a07869afc53f902f943a9122"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -27,7 +28,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "bc678df625cccc47a0e3fa1557bdf98c487615beb5522aa72388a4d999b91f05"
+      "sha256": "05c716c8cdeb51f9cf05fa884f4ec1afa27c4e59361969708c7e4f7f84f4d612"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -42,7 +43,7 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/kakera.py",
-      "sha256": "24ea036e60dcafcc85c7ceee8dc57b0ddcee89e4ffd25906732d16b29b8b00d8"
+      "sha256": "a7c8d7989d65f8b01f395a5fef4b31b254acba7b234ace196e56810e19d9ebcf"
     },
     {
       "path": "mudae_core/coordinator.py",
@@ -52,7 +53,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/runtime.py",
-      "sha256": "fa1f35c0a37a84f64bd9570d04434eb1fc41f8dbb234be679a3e909512b68a67"
+      "sha256": "93dfeff25332346172008c0c23e61d5530cffd0b8fdf5cab948b994a426dc1aa"
     },
     {
       "path": "mudae_core/secrets.py",

@@ -13,6 +13,7 @@ _CHARACTER_SPHERE_EMOJIS = frozenset({
 
 _KAKERA_RESULT_RE = re.compile(
     r"<a?:(?P<emoji>kakera[A-Za-z0-9_]*):\d+>\s*"
+    r"(?:\(\s*Free\s*\)\s*)?"
     r"\*{0,2}\s*(?P<user>[^*\r\n+]+?)\s*"
     r"\+\s*(?P<amount>[\d,\.\s]+)\s*\*{0,2}\s*"
     r"\(\s*\$k\s*\)",
