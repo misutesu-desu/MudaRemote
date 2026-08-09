@@ -1,25 +1,24 @@
 {
-  "version": "4.8.2",
+  "version": "4.8.3",
   "changelog": {
     "Bug Fixes": [
-      "Wishlist claims and snipe-only processing no longer stop with a missing roll_command error after startup.",
-      "Free purple Kakera can now be collected before the first $tu power snapshot.",
-      "Bulk $us now pulls the configured saved-roll allowance instead of stopping after one batch of 20.",
-      "Interrupted $mk processing no longer causes repeated $tu refreshes."
+      "Snipe-only accounts now finish startup immediately when the claim right is already available.",
+      "Snipe-only status checks no longer require the unused rolls category, preventing unnecessary partial-status retries.",
+      "Bulk $us now counts only the saved rolls confirmed by Mudae when a multi-command pull is partially accepted."
     ],
     "Improvements": [
-      "Smart Power Refill now has an optional Auto $dk trigger percentage; leave it at 0 to retain cost-based behavior."
+      "Expert logs now explain when purple Kakera is skipped because Collect Purple Kakera is disabled for that preset."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "7f7f211557791f0f086bdb956afd0ccc6e5ec390ecbc503019d4e288ee5315d5",
+  "exe_sha256": "062f535cf541703f69393cc575193ea403f90fd4cd0a3176ea97b11e614a02e7",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "b724a93e3927fc45521339c03307910121e678e8e8cdd027be5c2907ac1b7703"
+      "sha256": "9e5362afaf7494a6e39553ea8b07934811673e5fe18c5520d0b931ffd0b520a3"
     },
     {
       "path": "mudae_preset_editor.py",

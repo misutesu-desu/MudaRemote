@@ -143,7 +143,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.2"
+CURRENT_VERSION = "4.8.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -2228,7 +2228,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 continue
             try:
                 await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
-                if client.next_claim_reset_at_utc:
+                if client.claim_right_available or client.next_claim_reset_at_utc:
                     handshake = True
                     break
                 await _interruptible_sleep(30)
@@ -2672,11 +2672,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if "$p" in c_lower or "$daily" in c_lower:
                 fresh_fields.add("points")
             clear_status_dirty(client, fresh_fields)
-            core_complete = {"claim", "rolls", "rt"}.issubset(fresh_fields)
+            required_fields = {"claim", "rolls", "rt"} if proceed_to_rolls else {"claim", "rt"}
+            core_complete = required_fields.issubset(fresh_fields)
             client.last_tu_snapshot_complete = core_complete
             client.last_tu_query_utc = datetime.datetime.now(timezone.utc) if core_complete else None
             if not core_complete:
-                mark_status_dirty(client, {"claim", "rolls", "rt"} - fresh_fields, reason="partial-tu-response")
+                mark_status_dirty(client, required_fields - fresh_fields, reason="partial-tu-response")
                 defer_tu_queries(client, 30.0)
             if client.key_limit_hit:
                 BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
@@ -2798,7 +2799,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client._us_in_flight:
                 requested = client._us_pending_amount
                 if us_rolls_left > 0:
-                    client.us_pulled_this_cycle += requested
+                    client.us_pulled_this_cycle += min(requested, us_rolls_left)
                     client._us_in_flight = False
                     client._us_pending_amount = 0
                 elif total_rolls == 0:
@@ -4461,6 +4462,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if not message.embeds: return
         embed = message.embeds[0]
+
+        if (
+            message.components
+            and has_purple_kakera_button(message.components)
+            and not client.collect_purple_kakera
+        ):
+            BotLogger.log(
+                "Purple Kakera skipped: Collect Purple Kakera is disabled for this preset.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
 
         if not is_character_embed(embed):
             if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:

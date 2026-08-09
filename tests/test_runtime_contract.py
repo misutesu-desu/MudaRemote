@@ -136,6 +136,29 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("amount = remaining if client.bulk_us_enabled else min(20, remaining)", status_source)
         self.assertIn("chunks = [20] * (amount // 20)", send_source)
         self.assertIn("client._us_pending_amount = sent", send_source)
+        self.assertIn("min(requested, us_rolls_left)", status_source)
+
+    def test_snipe_only_ready_claim_completes_initial_handshake(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["snipe_only_status_loop"])
+        self.assertIn("client.claim_right_available or client.next_claim_reset_at_utc", source)
+
+    def test_snipe_only_status_does_not_require_unused_roll_category(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn(
+            'required_fields = {"claim", "rolls", "rt"} if proceed_to_rolls else {"claim", "rt"}',
+            source,
+        )
+        self.assertIn("required_fields - fresh_fields", source)
 
     def test_mk_interrupts_do_not_dirty_status_or_repeat_tu(self):
         functions = {
@@ -655,6 +678,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('if clean == "kakeraP":', helper_source)
         self.assertIn("return client.collect_purple_kakera", helper_source)
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
+        self.assertIn("Purple Kakera skipped: Collect Purple Kakera is disabled", handler_source)
 
     def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
         functions = {
