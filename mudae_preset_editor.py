@@ -607,6 +607,7 @@ DEFAULTS = {
     "auto_divorce_blacklist_series": [],
     "mk_bypass_power_check": False,
     "snipe_channels": [],
+    "kakera_snipe_channels": [],
     "max_claim_rank": 0,
     "max_like_rank": 0,
     "enable_hybrid_panic_claim": False,
@@ -731,7 +732,8 @@ TEXT_SETTINGS = [
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
     ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
-    ("snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)", [], True),
+    ("snipe_channels", "Character Snipe Channels (Comma-separated IDs of external channels to monitor for character sniping)", [], True),
+    ("kakera_snipe_channels", "Kakera Snipe Channels (Comma-separated IDs of channels to monitor for Kakera)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spM, spU, spG)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
 ]
@@ -2072,7 +2074,7 @@ class PresetEditor:
         snipe_sub = self.create_subframe(char_snipe_frame.content, snipe_mode_var, "snipe_mode")
         self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
         self.add_checkbox(snipe_sub, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
-        self.add_list_field(snipe_sub, "snipe_channels", "Target Snipe Channels (Comma-separated IDs of external channels to monitor for sniping)")
+        self.add_list_field(snipe_sub, "snipe_channels", "Character Snipe Channels (Comma-separated IDs of external channels to monitor for character sniping)")
 
         reactive_snipe_var = self.add_checkbox(char_snipe_frame.content, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
         reactive_sub = self.create_subframe(char_snipe_frame.content, reactive_snipe_var, "reactive_snipe_on_own_rolls")
@@ -2126,6 +2128,7 @@ class PresetEditor:
         kakera_react_snipe_var = self.add_checkbox(kakera_react_frame.content, "kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)")
         kakera_react_sub = self.create_subframe(kakera_react_frame.content, kakera_react_snipe_var, "kakera_reaction_snipe_mode")
         self.add_number_field(kakera_react_sub, "kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75)
+        self.add_list_field(kakera_react_sub, "kakera_snipe_channels", "Kakera Snipe Channels (Leave empty to reuse Character Snipe Channels)")
         self.add_list_field(kakera_react_sub, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
 
         self.add_checkbox(kakera_react_frame.content, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
@@ -2470,7 +2473,7 @@ class PresetEditor:
         # Track unsaved edits
         entry.bind("<Key>", lambda e: self.mark_dirty())
 
-        if key == "token":
+        if key in {"token", "additional_tokens"}:
             # Add dynamic token visibility toggle button
             def toggle_token_visibility():
                 if entry.cget("show") == "*":
@@ -2495,7 +2498,7 @@ class PresetEditor:
         self._register_settings_widget(parent, container, label + " " + (description or ""), key)
         self._bind_focus_highlight(entry)
 
-        if key == "token":
+        if key in {"token", "additional_tokens"}:
             tooltip_msg = "Safety: Your token is kept outside presets.json using Windows DPAPI, the system keyring, or Termux private app storage. Never share it with anyone."
             Tooltip(lbl, tooltip_msg)
             Tooltip(entry, tooltip_msg)
@@ -2888,7 +2891,7 @@ class PresetEditor:
                     "randomized_claim_reactions", "kakera_priority_order",
                     "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
                     "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
-                    "snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
+                    "snipe_channels", "kakera_snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
                     "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
             if key in self.widgets:
                 widget = self.widgets[key]
@@ -3146,7 +3149,7 @@ class PresetEditor:
                     "randomized_claim_reactions", "kakera_priority_order",
                     "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
                     "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
-                    "snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
+                    "snipe_channels", "kakera_snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
                     "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()

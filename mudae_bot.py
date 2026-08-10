@@ -732,7 +732,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_free_claim_preset=True,
             collect_purple_kakera_preset=True,
             oh_use_individually_preset=False,
-            auto_dk_min_power_preset=0):
+            auto_dk_min_power_preset=0,
+            kakera_snipe_channels_preset=None):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -760,10 +761,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.avoid_list = set([a.lower() for a in (avoid_list or [])])
 
     client.snipe_channels = set()
-    if snipe_channels_preset:
-        for ch in snipe_channels_preset:
-            try: client.snipe_channels.add(int(ch))
-            except ValueError: pass
+    for ch in snipe_channels_preset or []:
+        try: client.snipe_channels.add(int(ch))
+        except (TypeError, ValueError): pass
+    client.kakera_snipe_channels = set()
+    configured_kakera_snipe_channels = kakera_snipe_channels_preset or snipe_channels_preset or []
+    for ch in configured_kakera_snipe_channels:
+        try: client.kakera_snipe_channels.add(int(ch))
+        except (TypeError, ValueError): pass
 
     client.max_claim_rank = int(max_claim_rank_preset or 0)
     client.max_like_rank = int(max_like_rank_preset or 0)
@@ -936,6 +941,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.kakera_reacted_messages = set()
     client._kakera_result_waiters = {}
     client.processed_claim_messages = set()
+    client._rt_failed_message_ids = set()
     client.claim_retry_counts = {}
     client.last_successfully_claimed_character = None
     client._has_initialized = False
@@ -1091,6 +1097,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def request_status_refresh(fields=None, reason="state-change", urgent=False):
         mark_status_dirty(client, fields=fields, reason=reason, urgent=urgent)
         wake_status_loop()
+
+    def invalidate_rt_after_failed_attempt(message_id=None, reason="rt-attempt-inconclusive"):
+        """Stop reusing a stale RT snapshot after Mudae gives no usable result."""
+        client.rt_available = False
+        if message_id is not None:
+            failed_ids = getattr(client, "_rt_failed_message_ids", set())
+            failed_ids.add(message_id)
+            if len(failed_ids) > 1000:
+                failed_ids.clear()
+        request_status_refresh({"claim", "rt"}, reason=reason, urgent=True)
 
     def schedule_external_kakera_power_reconcile():
         """Release losing external-click reservations without starting a global $tu wave."""
@@ -4209,8 +4225,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.rt_available and not is_key_mode_kakera_only():
             rt_targets = []
+            failed_rt_messages = getattr(client, "_rt_failed_message_ids", set())
             for msg, n, v, s in (wl_claims + char_claims):
-                if msg.id == msg_claimed_id or msg.id in client.processed_claim_messages or n == getattr(client, 'last_successfully_claimed_character', ''):
+                if (msg.id == msg_claimed_id
+                        or msg.id in client.processed_claim_messages
+                        or msg.id in failed_rt_messages
+                        or n == getattr(client, 'last_successfully_claimed_character', '')):
                     continue
                 claims_r, likes_r = parse_mudae_ranks(msg.embeds[0].description or "")
                 is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
@@ -4265,12 +4285,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 if already_claimed:
                     BotLogger.log(f"Aborting RT attempt: {n_rt} has already been claimed/interacted with.", preset_name, "WARN")
+                    invalidate_rt_after_failed_attempt(msg_rt.id, reason="rt-target-stale")
                     _claim_coordinator.release_restore(msg_rt.id)
                     continue
 
                 BotLogger.log(f"Attempting RT on {n_rt} ({v_rt})", preset_name, "CLAIM")
                 try:
                     if not await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
+                        invalidate_rt_after_failed_attempt(msg_rt.id)
                         break
                     apply_rt_acknowledgement()
                     attempted.add(n_rt)
@@ -4461,15 +4483,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     if already_claimed:
                         BotLogger.log(f"Aborting $rt command: {char_name} has already been claimed/interacted with.", preset_name, "WARN")
+                        invalidate_rt_after_failed_attempt(msg.id, reason="rt-target-stale")
                         return False
 
                     BotLogger.log(f"Using RT for {char_name}", preset_name, "CLAIM")
                     try:
                         if not await send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"):
+                            invalidate_rt_after_failed_attempt(msg.id)
                             return False
                         apply_rt_acknowledgement()
                     except Exception as e:
                         BotLogger.log(f"RT Failed: {e}", preset_name, "ERROR")
+                        invalidate_rt_after_failed_attempt(msg.id)
                         return False
 
                     # Transition to claim lock
@@ -4890,7 +4915,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (
             client.kakera_reaction_snipe_mode_active
-            and message.channel.id in client.snipe_channels
+            and message.channel.id in client.kakera_snipe_channels
         )
 
         if message.author.id != TARGET_BOT_ID or not (is_roll or is_snipe or is_kakera_snipe_channel):
@@ -5379,6 +5404,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("collect_purple_kakera", True),
                 preset_data.get("oh_use_individually", False),
                 preset_data.get("auto_dk_min_power", 0),
+                preset_data.get("kakera_snipe_channels", None),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

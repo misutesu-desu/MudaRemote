@@ -163,12 +163,13 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
     ]
     if invalid_debug_categories:
         errors.append("Unknown Expert Log category/categories: {}.".format(", ".join(map(str, invalid_debug_categories))))
-    for channel in data.get("snipe_channels", []) or []:
-        try:
-            if int(channel) <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors.append("Snipe Channel ID {!r} must be a positive number.".format(channel))
+    for key, label in (("snipe_channels", "Snipe"), ("kakera_snipe_channels", "Kakera snipe")):
+        for channel in data.get(key, []) or []:
+            try:
+                if int(channel) <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append("{} Channel ID {!r} must be a positive number.".format(label, channel))
 
     farm_enabled = bool(data.get("farm_character_enabled", False))
     farm_characters = [

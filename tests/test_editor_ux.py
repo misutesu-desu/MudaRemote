@@ -78,6 +78,11 @@ class EditorUxContractTests(unittest.TestCase):
         quick_block = self.editor[self.editor.index("def build_quick_setup"):self.editor.index("def show_editor_mode")]
         self.assertNotIn('_quick_entry(inner, "additional_tokens"', quick_block)
 
+    def test_additional_tokens_have_a_visibility_toggle(self):
+        self.assertIn('if key in {"token", "additional_tokens"}', self.editor)
+        self.assertIn('"Additional Tokens (Optional, comma-separated; securely encrypted)"', self.editor)
+        self.assertIn('"Show Token"', self.editor)
+
     def test_quick_setup_includes_every_supported_x_roll_pool(self):
         self.assertIn(
             '("wa", "ha", "ma", "wx", "hx", "mx", "wg", "hg", "mg")',

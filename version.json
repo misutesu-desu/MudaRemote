@@ -8,23 +8,25 @@
       "Missing optional RT information no longer blocks the rest of the status update after the bot has warned you."
     ],
     "Improvements": [
-      "After a $rolls confirmation, the bot continues with the remaining normal rolls immediately instead of starting another status cycle."
+      "After a $rolls confirmation, the bot continues with the remaining normal rolls immediately instead of starting another status cycle.",
+      "Additional Tokens now include a Show Token control in the preset editor.",
+      "Kakera reaction sniping can monitor channels separately from character sniping channels."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "0c16742cf0ece88e4600e91e80126e64e8d6e669ec558d5a89348138c1ea9353",
+  "exe_sha256": "cebe0c30fd805619d3b4a9c07cef6dadfaee6871b53800fa791603d83a307f35",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "11198e1e1b7ca88e1c4157cf6c81d94ccbb68871f6f1fb0d4e6bdcbcdfcb2cdb"
+      "sha256": "bfc1f7aaf0073c90ac289dd6194c1c36fe8f75c5ed12e2904d1ff3a6561491ec"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
-      "sha256": "26fb0d60dafd30d58c4545854f906a3788802e089b376149cf42fef9f3ffd420"
+      "sha256": "97bdea558772872bf22cdd98476515c162cfa75b49c6f52d8b419339e83734da"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -39,7 +41,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/config.py",
-      "sha256": "4e45a6d9e474a9711283b3e44be24721f38a053d2d25108214a120f6ad795461"
+      "sha256": "a6205e24eebc18eeaa7c99587db559dabd9d049139195c86e12c9c7c39d65c4e"
     },
     {
       "path": "mudae_core/kakera.py",

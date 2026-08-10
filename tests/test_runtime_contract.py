@@ -846,6 +846,28 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertGreaterEqual(rt_send_count, 5)
 
+    def test_failed_rt_invalidates_cached_state_and_refreshes_claim_status(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        message_source = ast.get_source_segment(self.source, functions["handle_mudae_messages"])
+
+        self.assertIn("client._rt_failed_message_ids = set()", run_source)
+        self.assertIn("def invalidate_rt_after_failed_attempt", self.source)
+        self.assertIn("client.rt_available = False", self.source)
+        self.assertIn(
+            'request_status_refresh({"claim", "rt"}, reason=reason, urgent=True)',
+            self.source,
+        )
+        self.assertIn("invalidate_rt_after_failed_attempt(msg.id)", claim_source)
+        self.assertIn('reason="rt-target-stale"', claim_source)
+        self.assertIn("msg.id in failed_rt_messages", message_source)
+        self.assertIn("invalidate_rt_after_failed_attempt(msg_rt.id)", message_source)
+
     def test_kakera_bonus_rolls_require_this_accounts_confirmed_kakera_c(self):
         functions = {
             node.name: node
@@ -878,6 +900,23 @@ class RuntimeSourceContractTests(unittest.TestCase):
             "not (is_roll or is_snipe or is_kakera_snipe_channel)",
             handler_source,
         )
+
+    def test_kakera_snipe_channels_are_separate_with_legacy_fallback(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("kakera_snipe_channels_preset=None", run_source)
+        self.assertIn(
+            "configured_kakera_snipe_channels = kakera_snipe_channels_preset or snipe_channels_preset or []",
+            run_source,
+        )
+        self.assertIn("message.channel.id in client.snipe_channels", handler_source)
+        self.assertIn("message.channel.id in client.kakera_snipe_channels", handler_source)
 
     def test_op5_filter_requires_the_authoritative_sp_marker(self):
         functions = {
