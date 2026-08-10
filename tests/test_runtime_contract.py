@@ -270,6 +270,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("if cost > 0 and current_pow < cost", claim_source)
         self.assertIn('else "unknown"', claim_source)
 
+    def test_hybrid_panic_handles_kakera_before_deferred_claim_processing(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(self.source, functions["on_message"])
+        deferred_source = ast.get_source_segment(self.source, functions["handle_mudae_messages"])
+        self.assertIn("# Hybrid panic still needs real-time Kakera handling.", source)
+        self.assertGreaterEqual(
+            source.count("await claim_character(client, message.channel, message, is_kakera=True)"),
+            2,
+        )
+        self.assertNotIn("k_claims", deferred_source)
+
     def test_auto_dk_supports_a_custom_trigger_power(self):
         functions = {
             node.name: node

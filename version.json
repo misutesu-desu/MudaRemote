@@ -1,27 +1,22 @@
 {
-  "version": "4.8.6",
+  "version": "4.8.7",
   "changelog": {
     "Bug Fixes": [
-      "The bot keeps rolling after a claim reset without losing the roll that arrived at the boundary.",
-      "Automatic rolls no longer get stuck or repeat status checks when Mudae recalculates the remaining reset time.",
-      "$tu checks now wait for the configured active hours and a quiet channel before sending.",
-      "Missing optional RT information no longer blocks the rest of the status update after the bot has warned you."
+      "Hybrid Panic Claim no longer pauses rolling while it processes old Kakera buttons from a completed roll batch."
     ],
     "Improvements": [
-      "After a $rolls confirmation, the bot continues with the remaining normal rolls immediately instead of starting another status cycle.",
-      "Additional Tokens now include a Show Token control in the preset editor.",
-      "Kakera reaction sniping can monitor channels separately from character sniping channels."
+      "Kakera is now handled as each roll arrives during Hybrid Panic Claim, keeping the bot responsive through large batches."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "cebe0c30fd805619d3b4a9c07cef6dadfaee6871b53800fa791603d83a307f35",
+  "exe_sha256": "e74644c3331d5a8364ffbc220406ed546f2cffa298d32ea4b7f195064b48602e",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "bfc1f7aaf0073c90ac289dd6194c1c36fe8f75c5ed12e2904d1ff3a6561491ec"
+      "sha256": "67d9a2bbd90af0306063ed008d86822457d8f72bae768dfef31728cbdb7e2703"
     },
     {
       "path": "mudae_preset_editor.py",

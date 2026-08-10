@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.6"
+CURRENT_VERSION = "4.8.7"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -4145,7 +4145,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return ClaimOutcome.INCONCLUSIVE
 
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
-        k_claims = []
         char_claims = []
         wl_claims = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
@@ -4159,7 +4158,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
             is_k = has_collectible_kakera_button(msg.components, all_k)
             if is_k:
-                k_claims.append(msg)
+                # This is a deferred character-claim backlog. Kakera must be
+                # handled when a roll arrives; retrying stale Purple buttons
+                # here serially can hold the whole rolling loop for minutes.
+                continue
             else:
                 if is_free_event(embed) or has_claim_option(msg, embed, client.claim_emojis):
                     c_name = embed.author.name.lower()
@@ -4186,10 +4188,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # Filter claims to exclude messages already claimed/in progress globally
         wl_claims = _claim_coordinator.filter_available(wl_claims)
         char_claims = _claim_coordinator.filter_available(char_claims)
-
-        for msg_k in k_claims:
-            await claim_character(client, channel, msg_k, is_kakera=True)
-            if not await active_delay(0.3): return
 
         msg_claimed_id = -1
         if key_mode_only_kakera_param or is_key_mode_kakera_only():
@@ -5143,6 +5141,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             process = False
                 elif k_val >= client.current_min_kakera_for_roll_claim and not is_avoided:
                     client.collected_rolls.append(message)
+
+                # Hybrid panic still needs real-time Kakera handling. The
+                # post-roll backlog above is only for character claims.
+                all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
+                has_btn = has_collectible_kakera_button(message.components, all_k)
+                if has_btn:
+                    if getattr(client, 'immediate_kakera_click', True):
+                        d_min, d_max = client.reactive_kakera_delay_range
+                        if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
+                        await claim_character(client, message.channel, message, is_kakera=True)
+                    else:
+                        client.collected_kakera_rolls.append(message)
             else:
                 if not getattr(client, 'enable_reactive_self_snipe', True):
                     client.collected_rolls.append(message)
