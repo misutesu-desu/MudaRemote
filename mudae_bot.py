@@ -91,7 +91,7 @@ try:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -122,7 +122,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.5"
+CURRENT_VERSION = "4.8.6"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -947,6 +947,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._claim_evidence_event = None
     client._claim_text_evidence = None
     client._claim_reset_refresh_requested = False
+    client._status_cycle_not_before_monotonic = 0.0
     client._shared_reset_observed_at_utc = None
     client._shared_claim_reset_handle = None
     client._snipe_claim_refresh_reset_at_utc = None
@@ -993,6 +994,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._tu_request_started_at = None
     client._local_extra_rolls_pending = 0
     client.rolls_left = 0
+    client._last_normal_roll_count = 0
+    client._claim_reset_rolls_pending = False
     client._rolls_sent = 0
     client._rolls_received = 0
     client.collected_rolls = []
@@ -2207,6 +2210,72 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Do not return here if fallback is not yet active. Let it fall through to text commands.
         return await guarded_send(channel, f"{client.mudae_prefix}{cmd}")
 
+    async def wait_for_tu_inactivity(channel):
+        """Wait until both the configured active period and channel quiet window allow $tu."""
+        waited = False
+        while True:
+            if client.is_paused or is_maintenance_active():
+                return False, waited
+
+            if is_inactive_hour():
+                wait_seconds = max(1.0, seconds_until_active())
+                if client.humanization_enabled and client.humanization_window_minutes > 0:
+                    wait_seconds += random.uniform(0, client.humanization_window_minutes * 60)
+                BotLogger.log(
+                    f"$tu deferred by inactive hours for {wait_seconds / 60:.1f}m.",
+                    preset_name,
+                    "RESET",
+                )
+                waited = True
+                if not await active_delay(wait_seconds):
+                    return False, waited
+                continue
+
+            quiet_seconds = (
+                max(0.0, float(client.humanization_inactivity_seconds))
+                if client.humanization_enabled
+                else 0.0
+            )
+            if quiet_seconds <= 0:
+                return True, waited
+
+            try:
+                last_message = None
+                async for recent_message in channel.history(limit=1):
+                    last_message = recent_message
+                    break
+                if last_message is None:
+                    return True, waited
+
+                created_at = getattr(last_message, "created_at", None)
+                if created_at is None:
+                    return True, waited
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                quiet_for = max(
+                    0.0,
+                    (datetime.datetime.now(timezone.utc) - created_at).total_seconds(),
+                )
+                remaining = quiet_seconds - quiet_for
+                if remaining <= 0:
+                    return True, waited
+
+                BotLogger.log(
+                    f"$tu inactivity check: waiting {remaining:.1f}s for a quiet channel.",
+                    preset_name,
+                    "INFO",
+                )
+                waited = True
+                if not await active_delay(remaining + 0.5):
+                    return False, waited
+            except Exception as exc:
+                BotLogger.log(
+                    f"$tu inactivity check unavailable ({type(exc).__name__}); continuing.",
+                    preset_name,
+                    "DEBUG",
+                )
+                return True, waited
+
     async def send_tu_command(channel):
         if client.is_paused or is_maintenance_active(): return False
         async def wait_for_global_tu_slot():
@@ -2218,16 +2287,32 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             BotLogger.log(f"Global $tu pacing: waiting {global_wait:.1f}s for this account's slot.", preset_name, "INFO")
             return await active_delay(global_wait)
 
+        async def wait_for_tu_send_window():
+            ready, _ = await wait_for_tu_inactivity(channel)
+            if not ready:
+                return False
+            while True:
+                if not await wait_for_global_tu_slot():
+                    return False
+                ready, inactivity_delayed = await wait_for_tu_inactivity(channel)
+                if not ready:
+                    return False
+                if not inactivity_delayed:
+                    return True
+                # The reserved global slot expired while channel activity was
+                # settling. Reserve a new slot so another account cannot send
+                # $tu too close to this one.
+
         if client.use_slash_rolls and not client.slash_fallback_active:
             for attempt in range(1, 4):
-                if not await wait_for_global_tu_slot(): return False
+                if not await wait_for_tu_send_window(): return False
                 if await _trigger_mudae_slash(channel, "tu"): return True
                 if client.slash_fallback_active: break
                 if attempt < 3 and not await active_delay(5.0): return False
             if not client.slash_fallback_active:
                 client.slash_fallback_active = True
                 BotLogger.log("/tu failed after 3 attempts. Switching to text $tu so status tracking can continue.", preset_name, "WARN")
-        if not await wait_for_global_tu_slot(): return False
+        if not await wait_for_tu_send_window(): return False
         return await guarded_send(channel, f"{client.mudae_prefix}tu")
 
     def _get_command_channel():
@@ -2513,9 +2598,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.auto_rolls_enabled:
             limit_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
             claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
+            if not rolls_usage_is_active(client.rolls_used_this_interval_utc):
+                client.rolls_used_this_interval_utc = None
             used, reset = client.rolls_used_this_interval_utc, client.roll_reset_at_utc
-            if used and reset and used != reset:
-                used = None
             hour_ok = not client.auto_rolls_only_claim_hour or bool(client.next_claim_reset_at_utc and reset and client.next_claim_reset_at_utc <= reset)
             ack_retry_ready = time.monotonic() >= client._rolls_ack_retry_after
             pending_rolls = limit_ok and used is None and claim_ok and hour_ok and ack_retry_ready
@@ -2533,6 +2618,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.is_paused or is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
+        if (
+            float(getattr(client, '_status_cycle_not_before_monotonic', 0.0) or 0.0) > time.monotonic()
+            and not status_dirty_fields(client)
+            and not client.scheduled_roll_due
+            and not getattr(client, '_local_extra_rolls_pending', 0)
+            and not getattr(client, '_claim_reset_rolls_pending', False)
+        ):
+            return
+        client._status_cycle_not_before_monotonic = 0.0
         client.is_processing_cycle = True
 
         can_claim = False
@@ -2615,8 +2709,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
                     if choices:
                         choices.sort(key=lambda x: x[0])
-                        await humanized_wait_and_proceed(client, channel, max(0.05, choices[0][0]), choices[0][1])
+                        selected_wait_minutes, selected_reason = choices[0]
+                        client._status_cycle_not_before_monotonic = time.monotonic() + max(
+                            3.0,
+                            selected_wait_minutes * 60.0,
+                        )
+                        await humanized_wait_and_proceed(
+                            client,
+                            channel,
+                            max(0.05, selected_wait_minutes),
+                            selected_reason,
+                        )
                     else:
+                        client._status_cycle_not_before_monotonic = time.monotonic() + max(
+                            3.0,
+                            float(client.roll_interval) * 60.0,
+                        )
                         await humanized_wait_and_proceed(client, channel, client.roll_interval, "configured roll interval")
                 return
 
@@ -2628,7 +2736,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 now_mono = time.monotonic()
                 if now_mono - getattr(client, '_tu_last_defer_log_monotonic', 0.0) >= 15.0:
                     dirty = ", ".join(sorted(status_dirty_fields(client))) or "scheduled status"
-                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after an unanswered query ({dirty}).", preset_name, "INFO")
+                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after an incomplete status update ({dirty}).", preset_name, "INFO")
                     client._tu_last_defer_log_monotonic = now_mono
                 return
 
@@ -2709,8 +2817,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             v_rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"])
             v_rt_reset = parse_timer_minutes("RT_RESET", c_lower)
-            if not (v_rt_ready or v_rt_reset is not None or "$rt" in c_lower or re.search(r'\brt\b', c_lower)):
-                BotLogger.log("Your $tu response is missing the 'rt' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+            v_rt_present = bool(v_rt_ready or v_rt_reset is not None or "$rt" in c_lower or re.search(r'\brt\b', c_lower))
+            missing_tu_categories = getattr(client, "_tu_missing_categories", set())
+            missing_tu_category_warnings = getattr(client, "_tu_missing_category_warnings", set())
+            if v_rt_present:
+                missing_tu_categories.discard("rt")
+                missing_tu_category_warnings.discard("rt")
+            else:
+                missing_tu_categories.add("rt")
+                if "rt" not in missing_tu_category_warnings:
+                    BotLogger.log("Your $tu response is missing the 'rt' category. Run '$tuarrange' in Discord to include it. RT automation will stay disabled until it appears.", preset_name, "WARN")
+                    missing_tu_category_warnings.add("rt")
+                # Repeating the same $tu query cannot make an unconfigured
+                # optional category authoritative; clear stale RT dirtiness.
+                clear_status_dirty(client, {"rt"})
 
             if not (re.search(REGEX_PATTERNS["DK_POWER"], c_lower) or
                     re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)):
@@ -2873,6 +2993,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.next_claim_reset_at_utc = cooldown_deadline(now_utc, claim_reset_minutes) if claim_reset_minutes is not None else None
                 can_claim = True
                 await resolve_pending_claim_from_status(claim_available=True, channel=channel)
+                if getattr(client, '_claim_reset_rolls_pending', False) and client.collected_rolls:
+                    deferred_rolls = list(client.collected_rolls)
+                    client.collected_rolls.clear()
+                    client._claim_reset_rolls_pending = False
+                    BotLogger.log(
+                        f"Processing {len(deferred_rolls)} roll(s) saved at the claim reset boundary.",
+                        preset_name,
+                        "CLAIM",
+                    )
+                    await handle_mudae_messages(
+                        client,
+                        channel,
+                        deferred_rolls,
+                        client.current_min_kakera_for_roll_claim == 0,
+                        client.key_mode and not client.rt_available and not client.claim_right_available,
+                    )
             elif claim_reset_minutes is not None:
                 client.current_min_kakera_for_roll_claim = client.min_kakera
                 BotLogger.log(f"Claim: Cooldown ({int(claim_reset_minutes/60)}h {claim_reset_minutes%60}m)", preset_name, "INFO")
@@ -2921,7 +3057,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if "$p" in c_lower or "$daily" in c_lower:
                 fresh_fields.add("points")
             clear_status_dirty(client, fresh_fields)
-            required_fields = {"claim", "rolls", "rt"} if proceed_to_rolls else {"claim", "rt"}
+            required_fields = {"claim", "rolls"} if proceed_to_rolls else {"claim"}
+            if "rt" not in getattr(client, "_tu_missing_categories", set()):
+                required_fields.add("rt")
             core_complete = required_fields.issubset(fresh_fields)
             client.last_tu_snapshot_complete = core_complete
             client.last_tu_query_utc = datetime.datetime.now(timezone.utc) if core_complete else None
@@ -3027,6 +3165,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         main_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], content_lower, re.DOTALL)
         if main_match:
             rolls_left = int(re.sub(r"[^\d]", "", main_match.group(1)))
+            if rolls_left > 0:
+                # Keep the normal roll count separate from any ``(+N $us)``
+                # bonus.  A successful ``$rolls`` acknowledgement can then
+                # resume the same normal-roll batch without another ``$tu``.
+                client._last_normal_roll_count = rolls_left
             for bonus_match in re.finditer(REGEX_PATTERNS["BONUS_ROLLS"], main_match.group(2)):
                 amt = int(re.sub(r"[^\d]", "", bonus_match.group(1)))
                 if bonus_match.group(2).lower() == "us": us_rolls_left += amt
@@ -3066,7 +3209,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 rolls_did_execute = False
                 if getattr(client, 'auto_rolls_enabled', False):
                     lim_ok = client.auto_rolls_limit == 0 or client.rolls_item_used_count < client.auto_rolls_limit
-                    if client.rolls_used_this_interval_utc != client.roll_reset_at_utc: client.rolls_used_this_interval_utc = None
+                    if not rolls_usage_is_active(client.rolls_used_this_interval_utc, now_utc):
+                        client.rolls_used_this_interval_utc = None
                     claim_ok = client.claim_right_available or (client.key_mode and client.auto_rolls_in_key_mode)
                     ack_retry_ready = time.monotonic() >= client._rolls_ack_retry_after
                     if lim_ok and client.rolls_used_this_interval_utc is None and claim_ok and ack_retry_ready:
@@ -3084,7 +3228,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             client._rolls_ack_retry_after = 0.0
                             client.rolls_item_used_count += 1
                             client.rolls_used_this_interval_utc = client.roll_reset_at_utc
-                            request_status_refresh({"rolls"}, reason="auto-rolls-command-acknowledged")
+                            normal_roll_count = int(getattr(client, "_last_normal_roll_count", 0) or 0)
+                            if normal_roll_count > 0:
+                                BotLogger.log(
+                                    f"$rolls acknowledged; continuing with {normal_roll_count} normal roll(s) without another $tu.",
+                                    preset_name,
+                                    "INFO",
+                                )
+                                await start_roll_commands(
+                                    client,
+                                    channel,
+                                    normal_roll_count,
+                                    ignore_limit_for_post_roll,
+                                    key_mode_only_kakera_for_post_roll,
+                                    current_cycle_id,
+                                )
+                            else:
+                                request_status_refresh({"rolls"}, reason="auto-rolls-command-acknowledged")
                             return
 
                 if not rolls_did_execute and pending_roll_work()[1]:
@@ -4643,7 +4803,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         is_cache_refresh = "cached status refresh" in reason.lower()
         precision_wait = (
             "claim reset" in reason.lower()
-            or "timing threshold" in reason.lower()
             or is_cache_refresh
         )
         human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not precision_wait else 0
@@ -4973,6 +5132,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 t_to_r = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds()
                                 if 0 < t_to_r <= 15:
                                     BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
+                                    if message.id not in {getattr(item, "id", None) for item in client.collected_rolls}:
+                                        client.collected_rolls.append(message)
+                                    client._claim_reset_rolls_pending = True
                                     client.interrupt_rolling = True
                                     client._roll_interrupt_reason = "claim-reset-boundary"
                                     if not await active_delay(t_to_r + 0.2): return

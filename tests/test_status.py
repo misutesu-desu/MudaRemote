@@ -14,6 +14,7 @@ from mudae_core.status import (
     parse_claim_denied_cooldown,
     record_tu_failure,
     record_tu_success,
+    rolls_usage_is_active,
     status_dirty_fields,
     status_message_addresses_identity,
     status_refresh_reasons,
@@ -94,6 +95,15 @@ class StatusFreshnessTests(unittest.TestCase):
         defer_tu_queries(self.client, 45.0, now_monotonic=10.0)
         defer_tu_queries(self.client, 5.0, now_monotonic=20.0)
         self.assertEqual(tu_retry_wait(self.client, now_monotonic=20.0), 35.0)
+
+    def test_rolls_usage_marker_survives_recalculated_reset_deadlines(self):
+        used_until = datetime.datetime(2026, 8, 10, 1, 0, tzinfo=datetime.timezone.utc)
+        recalculated_reset = datetime.datetime(2026, 8, 10, 1, 1, tzinfo=datetime.timezone.utc)
+        now = datetime.datetime(2026, 8, 10, 0, 30, tzinfo=datetime.timezone.utc)
+
+        self.assertTrue(rolls_usage_is_active(used_until, now))
+        self.assertTrue(rolls_usage_is_active(used_until, recalculated_reset - datetime.timedelta(minutes=2)))
+        self.assertFalse(rolls_usage_is_active(used_until, used_until))
 
     def test_new_urgent_reason_bypasses_backoff_only_once(self):
         record_tu_failure(self.client, now_monotonic=100.0)

@@ -120,6 +120,55 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("TU_GLOBAL_INTERVAL_SECONDS", source)
         self.assertIn("await active_delay(global_wait)", source)
 
+    def test_every_tu_send_waits_for_inactive_hours_and_channel_quiet(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        inactivity_source = ast.get_source_segment(
+            self.source,
+            functions["wait_for_tu_inactivity"],
+        )
+        send_source = ast.get_source_segment(self.source, functions["send_tu_command"])
+
+        self.assertIn("is_inactive_hour()", inactivity_source)
+        self.assertIn("seconds_until_active()", inactivity_source)
+        self.assertIn("client.humanization_inactivity_seconds", inactivity_source)
+        self.assertIn("channel.history(limit=1)", inactivity_source)
+        self.assertIn("wait_for_tu_send_window()", send_source)
+        self.assertEqual(send_source.count("await wait_for_tu_send_window()"), 2)
+        self.assertNotIn("await wait_for_global_tu_slot(): return False", send_source)
+
+    def test_claim_reset_boundary_preserves_roll_for_fresh_claim_state(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("_claim_reset_rolls_pending", status_source)
+        self.assertIn("Processing {len(deferred_rolls)} roll(s) saved at the claim reset boundary.", status_source)
+        self.assertIn("await handle_mudae_messages(", status_source)
+        self.assertIn("client.collected_rolls.append(message)", message_source)
+        self.assertIn('request_status_refresh({"claim"}, reason="near-claim-reset-boundary", urgent=True)', message_source)
+
+    def test_cached_status_wait_cannot_start_duplicate_cycles(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+
+        self.assertIn("_status_cycle_not_before_monotonic", run_source)
+        self.assertIn("_status_cycle_not_before_monotonic", status_source)
+        self.assertIn("not status_dirty_fields(client)", status_source)
+        self.assertIn('"Skipping $tu (using cached status)."', status_source)
+
     def test_slash_interaction_success_does_not_depend_on_response_payload(self):
         functions = {
             node.name: node
@@ -185,7 +234,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         source = ast.get_source_segment(self.source, functions["snipe_only_status_loop"])
         self.assertIn("client.claim_right_available or client.next_claim_reset_at_utc", source)
 
-    def test_snipe_only_status_does_not_require_unused_roll_category(self):
+    def test_status_treats_missing_rt_as_optional_after_warning(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -193,9 +242,10 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         source = ast.get_source_segment(self.source, functions["check_status"])
         self.assertIn(
-            'required_fields = {"claim", "rolls", "rt"} if proceed_to_rolls else {"claim", "rt"}',
+            'required_fields = {"claim", "rolls"} if proceed_to_rolls else {"claim"}',
             source,
         )
+        self.assertIn('"rt" not in getattr(client, "_tu_missing_categories", set())', source)
         self.assertIn("required_fields - fresh_fields", source)
 
     def test_mk_interrupts_do_not_dirty_status_or_repeat_tu(self):
@@ -400,6 +450,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("is_cache_refresh", wait_source)
         self.assertIn("0 if is_cache_refresh", wait_source)
         self.assertIn("and not is_cache_refresh", wait_source)
+        self.assertNotIn('"timing threshold" in reason.lower()', wait_source)
 
     def test_localized_sphere_boards_do_not_require_english_text(self):
         functions = {
@@ -784,6 +835,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("asyncio.wait_for", ack_source)
         self.assertIn("mudae_command_ack_matches", reaction_source)
         self.assertIn("send_mudae_reaction_command", roll_status_source)
+        self.assertIn("rolls_usage_is_active", roll_status_source)
+        self.assertNotIn("rolls_used_this_interval_utc != client.roll_reset_at_utc", roll_status_source)
+        self.assertIn("_last_normal_roll_count", roll_status_source)
+        self.assertIn("$rolls acknowledged; continuing with", roll_status_source)
+        self.assertIn("await start_roll_commands(", roll_status_source)
 
         rt_send_count = self.source.count(
             'send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"'

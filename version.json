@@ -1,28 +1,25 @@
 {
-  "version": "4.8.5",
+  "version": "4.8.6",
   "changelog": {
     "Bug Fixes": [
-      "Successful slash $tu requests are no longer retried or replaced with a duplicate text command when Discord returns an empty response.",
-      "Free Purple Kakera is always attempted when collection is enabled, even before the account has checked $tu.",
-      "Immediate Mudae $ku responses now block already queued regular Kakera clicks for that account instead of allowing reaction spam.",
-      "KakeraC bonus rolls are credited only to the account whose collection Mudae confirmed.",
-      "Reactive rolling now resumes its locally tracked remaining rolls immediately after a claim instead of waiting behind a new global $tu cycle.",
-      "Losing cross-account Kakera clicks now release their temporary power reservations without triggering a $tu request on every side account.",
-      "Purple Kakera clicks now recognize Mudae's (Free) result format, require the account-specific confirmation, and retry when it is missing."
+      "The bot keeps rolling after a claim reset without losing the roll that arrived at the boundary.",
+      "Automatic rolls no longer get stuck or repeat status checks when Mudae recalculates the remaining reset time.",
+      "$tu checks now wait for the configured active hours and a quiet channel before sending.",
+      "Missing optional RT information no longer blocks the rest of the status update after the bot has warned you."
     ],
     "Improvements": [
-      "Post-claim Purple Kakera discovery now watches delayed component updates for a longer window."
+      "After a $rolls confirmation, the bot continues with the remaining normal rolls immediately instead of starting another status cycle."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "4da09f6514ddd82189296ebfcaf8f1f72217217767372e462ed905093f6ae917",
+  "exe_sha256": "0c16742cf0ece88e4600e91e80126e64e8d6e669ec558d5a89348138c1ea9353",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "9787231f8b4815162d27b33de12ca5d21df6feaf5cd897ff52d976c07498bf68"
+      "sha256": "11198e1e1b7ca88e1c4157cf6c81d94ccbb68871f6f1fb0d4e6bdcbcdfcb2cdb"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -32,7 +29,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/__init__.py",
-      "sha256": "05c716c8cdeb51f9cf05fa884f4ec1afa27c4e59361969708c7e4f7f84f4d612"
+      "sha256": "49f74c56dc28f39fdd78488d598314cdeddbad50aba804c75fd73c9add08230a"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -67,7 +64,7 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_core/status.py",
-      "sha256": "34c6d5bf44ce3c4404bdb2760b457c00db6778dcbe3b936ea89685db321b55ab"
+      "sha256": "0c240cdb5ff2abd6821f8c9b16eb1983d3f884f7c15c28eb7521336f603fa3e8"
     },
     {
       "path": "mudae_core/spheres.py",

@@ -177,6 +177,8 @@ def initialize_status_tracking(client) -> None:
     client._tu_failure_streak = 0
     client._tu_next_allowed_monotonic = 0.0
     client._tu_last_defer_log_monotonic = 0.0
+    client._tu_missing_categories = set()
+    client._tu_missing_category_warnings = set()
     client.tu_query_count = 0
 
 
@@ -261,6 +263,23 @@ def defer_tu_queries(client, seconds, now_monotonic=None) -> float:
 def tu_retry_wait(client, now_monotonic=None) -> float:
     now = time.monotonic() if now_monotonic is None else float(now_monotonic)
     return max(0.0, float(getattr(client, "_tu_next_allowed_monotonic", 0.0)) - now)
+
+
+def rolls_usage_is_active(used_until_utc, now_utc=None) -> bool:
+    """Return whether the hourly ``$rolls`` usage marker is still active.
+
+    The marker is intentionally compared only with the current clock.  The
+    reset deadline reported by ``$tu`` is recalculated from a rounded number
+    of remaining minutes on every response, so it is not a stable identity for
+    the current hourly interval.
+    """
+    if used_until_utc is None:
+        return False
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    try:
+        return now < used_until_utc
+    except (TypeError, ValueError):
+        return False
 
 
 def record_tu_failure(client, now_monotonic=None) -> float:
