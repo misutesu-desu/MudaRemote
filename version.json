@@ -1,22 +1,24 @@
 {
-  "version": "4.8.7",
+  "version": "4.8.8",
   "changelog": {
     "Bug Fixes": [
-      "Hybrid Panic Claim no longer pauses rolling while it processes old Kakera buttons from a completed roll batch."
+      "Roll refreshes correctly when another account reaches a new roll hour, so exhausted accounts do not stay stuck on zero rolls.",
+      "Snipe-only claim resets now keep your configured humanized timing instead of sending $tu exactly at the reset.",
+      "Roll messages are reliably recognized when a saved channel ID is stored as text."
     ],
     "Improvements": [
-      "Kakera is now handled as each roll arrives during Hybrid Panic Claim, keeping the bot responsive through large batches."
+      "Shared reset information now refreshes only the account data that needs it, keeping coordinated accounts responsive without unnecessary status checks."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "e74644c3331d5a8364ffbc220406ed546f2cffa298d32ea4b7f195064b48602e",
+  "exe_sha256": "04ed4191b1c779c00df8fd8f8fa56af0d7d9d8a171c5faad8d1de79f3089bb26",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "67d9a2bbd90af0306063ed008d86822457d8f72bae768dfef31728cbdb7e2703"
+      "sha256": "ed12bfab35fcec630cc30c031c8f7f2987fd2ac04a7b9ddb070e3f6ebd8feb2b"
     },
     {
       "path": "mudae_preset_editor.py",

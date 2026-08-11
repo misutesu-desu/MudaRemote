@@ -32,6 +32,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
             cls.source = handle.read()
             cls.tree = ast.parse(cls.source, filename=path)
 
+    def test_target_channel_id_is_normalized_for_message_routing(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_bot_source = ast.get_source_segment(self.source, functions["run_bot"])
+        self.assertIn("client.target_channel_id = int(target_channel_id)", run_bot_source)
+
     def test_external_automation_actions_use_pause_guards(self):
         visitor = _AutomationCallVisitor()
         visitor.visit(self.tree)
@@ -82,6 +91,13 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("humanized_claim_refresh_deadline(", loop_source)
         self.assertIn("cached_reset != reset_at", loop_source)
         self.assertIn('reason="snipe-claim-reset"', loop_source)
+
+    def test_shared_claim_boundary_does_not_interrupt_humanized_refresh(self):
+        start = self.source.index("    def unlock_at_shared_boundary():")
+        end = self.source.index("\n    loop = getattr(client, \"loop\", None)", start)
+        boundary_source = self.source[start:end]
+        self.assertIn('reason="shared-claim-boundary"', boundary_source)
+        self.assertNotIn("event.set()", boundary_source)
 
     def test_tu_response_retry_budget_is_two_commands(self):
         functions = {
@@ -466,6 +482,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("0 if is_cache_refresh", wait_source)
         self.assertIn("and not is_cache_refresh", wait_source)
         self.assertNotIn('"timing threshold" in reason.lower()', wait_source)
+
+    def test_shared_roll_reset_dirties_exhausted_local_roll_cache(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        shared_reset_source = ast.get_source_segment(
+            self.source,
+            functions["_apply_shared_reset_snapshot"],
+        )
+        self.assertIn("previous_roll_deadline <= observed_at", shared_reset_source)
+        self.assertIn('mark_status_dirty(client, {"rolls"}', shared_reset_source)
+        self.assertIn('reason="shared-roll-boundary"', shared_reset_source)
+        self.assertIn("_immediate_check_event", shared_reset_source)
 
     def test_localized_sphere_boards_do_not_require_english_text(self):
         functions = {

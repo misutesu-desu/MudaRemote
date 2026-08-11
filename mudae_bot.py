@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.7"
+CURRENT_VERSION = "4.8.8"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -177,8 +177,23 @@ def _apply_shared_reset_snapshot(client, snapshot):
     client._shared_reset_observed_at_utc = observed_at
 
     observed_fields = getattr(snapshot, "observed_fields", frozenset())
+    previous_roll_deadline = getattr(client, "roll_reset_at_utc", None)
     if "rolls" in observed_fields and roll_deadline is not None:
         client.roll_reset_at_utc = roll_deadline
+        # A server peer can tell us that a new roll hour has started, but it
+        # cannot tell us this account's private roll count.  If this account
+        # had already exhausted its rolls at the old boundary, its cached zero
+        # must not be carried into the newly announced hour.
+        if (
+            previous_roll_deadline is not None
+            and previous_roll_deadline <= observed_at
+            and roll_deadline > observed_at
+            and int(getattr(client, "rolls_left", 0) or 0) <= 0
+        ):
+            mark_status_dirty(client, {"rolls"}, reason="shared-roll-boundary", urgent=True)
+            event = getattr(client, "_immediate_check_event", None)
+            if event is not None:
+                event.set()
 
     if "claim" not in observed_fields or claim_deadline is None or getattr(client, "pending_claim", None) is not None:
         return
@@ -211,9 +226,11 @@ def _apply_shared_reset_snapshot(client, snapshot):
         if current is None or abs((current - claim_deadline).total_seconds()) > 1.0 or now_utc < current:
             return
         mark_status_dirty(client, {"claim"}, reason="shared-claim-boundary", urgent=True)
-        event = getattr(client, "_immediate_check_event", None)
-        if event is not None:
-            event.set()
+        # A shared reset tells us only that the server boundary has passed.
+        # Do not wake a sleeping status loop here: in snipe-only mode that
+        # would cut short the configured post-reset humanization delay and
+        # send $tu at the exact reset.  The already scheduled local refresh
+        # will consume this dirty state at its intended time.
 
     loop = getattr(client, "loop", None)
     if loop is not None and loop.is_running():
@@ -774,7 +791,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.max_like_rank = int(max_like_rank_preset or 0)
     client.muda_name = BOT_NAME
     client.claim_right_available = False
-    client.target_channel_id = target_channel_id
+    # Presets may store Discord snowflakes as strings, while Discord exposes
+    # message.channel.id as an int. Keep the runtime value normalized so
+    # own-roll messages are recognized by on_message.
+    try:
+        client.target_channel_id = int(target_channel_id)
+    except (TypeError, ValueError):
+        client.target_channel_id = target_channel_id
     client.roll_command = str(roll_command or "wa").strip().lstrip("/") or "wa"
     client.command_channel_id_preset = str(command_channel_id_preset or "").strip()
     client.forcedivorce_channel_id_preset = str(forcedivorce_channel_id_preset or "").strip()
