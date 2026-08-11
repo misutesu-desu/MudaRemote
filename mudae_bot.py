@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.8"
+CURRENT_VERSION = "4.8.9"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -3536,6 +3536,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if client.rolls_left <= 0 and client._rolls_received >= client._rolls_sent:
             clear_status_dirty(client, {"rolls"})
+            # The locally tracked batch is complete, but the cached $tu still
+            # describes the rolls that were just sent.  When Auto $us is
+            # enabled, refresh now so check_rolls_left_tu can see zero normal
+            # rolls and immediately pull the configured saved rolls instead
+            # of sleeping until the cache expires.
+            if pending_roll_work()[1]:
+                request_status_refresh(
+                    {"rolls"},
+                    reason="normal-rolls-complete-auto-us",
+                    urgent=True,
+                )
 
         if not getattr(client, 'immediate_kakera_click', True) and getattr(client, 'collected_kakera_rolls', []):
             BotLogger.log("Processing collected rolls for Kakera priority collection...", preset_name, "INFO")

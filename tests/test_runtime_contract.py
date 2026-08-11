@@ -81,6 +81,18 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("without $tu", roll_source)
         self.assertIn('reason="rolling-interrupted"', roll_source)
 
+    def test_completed_normal_rolls_refresh_status_for_auto_us(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("if pending_roll_work()[1]:", roll_source)
+        self.assertIn('reason="normal-rolls-complete-auto-us"', roll_source)
+        self.assertIn('request_status_refresh(\n                    {"rolls"}', roll_source)
+
     def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
         functions = {
             node.name: node

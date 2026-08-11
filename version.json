@@ -1,24 +1,19 @@
 {
-  "version": "4.8.8",
+  "version": "4.8.9",
   "changelog": {
     "Bug Fixes": [
-      "Roll refreshes correctly when another account reaches a new roll hour, so exhausted accounts do not stay stuck on zero rolls.",
-      "Snipe-only claim resets now keep your configured humanized timing instead of sending $tu exactly at the reset.",
-      "Roll messages are reliably recognized when a saved channel ID is stored as text."
-    ],
-    "Improvements": [
-      "Shared reset information now refreshes only the account data that needs it, keeping coordinated accounts responsive without unnecessary status checks."
+      "Automatically Use Saved Rolls now checks immediately after normal rolls finish, so saved rolls are not left waiting for the next status refresh."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
-  "exe_sha256": "04ed4191b1c779c00df8fd8f8fa56af0d7d9d8a171c5faad8d1de79f3089bb26",
+  "exe_sha256": "58f9a1893af653079991ceb325a8fba06b3ccf77782c9a9829c749ee61fd2043",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/main/mudae_bot.py",
-      "sha256": "ed12bfab35fcec630cc30c031c8f7f2987fd2ac04a7b9ddb070e3f6ebd8feb2b"
+      "sha256": "c9aa4fce58ff4a568f52eb2736e5acdd5b02f4dd874e573a3a83ea06ca885352"
     },
     {
       "path": "mudae_preset_editor.py",
