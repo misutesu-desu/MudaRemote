@@ -652,7 +652,7 @@ BOOL_SETTINGS = [
     ("rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)", False),
     ("rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)", False),
     ("auto_us_enabled", "Automatically Use Saved Rolls ($us)", False),
-    ("auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)", True),
+    ("auto_us_stop_on_claim", "Save Rolls While Claim Is Unavailable (Do not use $us without a claim)", True),
     ("bulk_us_enabled", "Bulk US Mode (Pull all saved rolls at once instead of in batches of 20)", False),
     ("auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)", False),
     ("auto_rolls_only_claim_hour", "Only Use Daily Rolls in Claim Hour (Only use $rolls during the hour claim resets)", False),
@@ -2005,7 +2005,7 @@ class PresetEditor:
         us_sub = self.create_subframe(us_frame.content, us_enabled_var, "auto_us_enabled")
 
         self.add_checkbox(us_sub, "bulk_us_enabled", "Bulk US Mode (Pull all rolls at once instead of in batches of 20)")
-        self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls (Stop using $us after claim)")
+        self.add_checkbox(us_sub, "auto_us_stop_on_claim", "Save Rolls While Claim Is Unavailable (Do not use $us without a claim)")
         self.add_number_field(us_sub, "auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0)
         self.add_checkbox(us_frame.content, "auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)")
         self.add_checkbox(us_frame.content, "auto_mk_full_power_only", "Use $mk Only at Full Power")

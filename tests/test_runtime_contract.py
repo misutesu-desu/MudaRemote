@@ -92,6 +92,17 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("if pending_roll_work()[1]:", roll_source)
         self.assertIn('reason="normal-rolls-complete-auto-us"', roll_source)
         self.assertIn('request_status_refresh(\n                    {"rolls"}', roll_source)
+        self.assertIn('reason="normal-roll-responses-missing"', roll_source)
+
+    def test_snipe_only_clients_ignore_shared_roll_boundaries(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(self.source, functions["_apply_shared_reset_snapshot"])
+        self.assertIn('getattr(client, "rolling_enabled", False)', source)
+        self.assertIn('reason="shared-roll-boundary"', source)
 
     def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
         functions = {
@@ -448,6 +459,20 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(len(capture_calls), 1)
         self.assertLess(capture_calls[0].lineno, min(node.lineno for node in returns))
 
+    def test_edited_sphere_bonus_is_counted_once(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        capture_source = ast.get_source_segment(self.source, functions["capture_sphere_game_bonus"])
+        edit_source = ast.get_source_segment(self.source, functions["on_message_edit"])
+        board_source = ast.get_source_segment(self.source, functions["play_sphere_game"])
+        self.assertIn("getattr(embed, 'fields'", capture_source)
+        self.assertIn("_sphere_game_bonus_counts", capture_source)
+        self.assertIn("capture_sphere_game_bonus(after)", edit_source)
+        self.assertIn("timeout=5.0", board_source)
+
     def test_sphere_game_automation_uses_tu_counts_and_guarded_actions(self):
         functions = {
             node.name: node
@@ -550,6 +575,16 @@ class RuntimeSourceContractTests(unittest.TestCase):
             2,
         )
 
+    def test_portuguese_daily_ready_text_is_supported(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn('"$daily está pronto"', status_source)
+        self.assertIn('"$daily esta pronto"', status_source)
+
     def test_series_claims_can_be_limited_to_self_owned_rolls(self):
         functions = {
             node.name: node
@@ -561,6 +596,33 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.series_snipe_only_self_rolls", matcher_source)
         self.assertIn("await detect_roll_owner", matcher_source)
         self.assertIn("known_self_roll=is_manual_self_roll", handler_source)
+
+    def test_known_claim_and_rt_deadlines_enable_targets_during_long_rolls(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        refresh_source = ast.get_source_segment(
+            self.source,
+            functions["refresh_predicted_claim_and_rt"],
+        )
+        allowed_source = ast.get_source_segment(
+            self.source,
+            functions["is_character_snipe_allowed"],
+        )
+        key_source = ast.get_source_segment(
+            self.source,
+            functions["is_key_mode_kakera_only"],
+        )
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn("client.claim_right_available = True", refresh_source)
+        self.assertIn("client.rt_available = True", refresh_source)
+        self.assertIn('reason="predicted-claim-reset"', refresh_source)
+        self.assertIn('reason="predicted-rt-reset"', refresh_source)
+        self.assertIn("refresh_predicted_claim_and_rt()", allowed_source)
+        self.assertIn("refresh_predicted_claim_and_rt()", key_source)
+        self.assertIn("client.rt_available_at_utc = cooldown_deadline", status_source)
 
     def test_unknown_control_commands_are_ignored_without_tracebacks(self):
         functions = {
@@ -674,6 +736,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.farm_forcedivorce_after_other_claim", handler_source)
         self.assertIn("is_claim_announcement_for_character", handler_source)
         self.assertIn("farm_claim_evidence.outcome != ClaimOutcome.SUCCESS", handler_source)
+        self.assertIn("is_roll or is_snipe or is_kakera_snipe_channel", handler_source)
 
     def test_initial_status_check_includes_automated_account_stagger(self):
         functions = {
@@ -756,7 +819,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
                 "current_pow = get_current_dk_power()",
                 "threshold = first_configured",
                 "power_token = reserve_kakera_power_click",
-                "await guarded_click(btn)",
+                "await click_kakera_with_confirmation(",
             )
             positions = [block_source.index(action) for action in ordered_actions]
             self.assertEqual(positions, sorted(positions), function_name)
@@ -792,7 +855,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("confirm_kakera_power_click(kakera_result.emoji_name)", message_source)
         self.assertIn("Estimated Pw", claim_source)
 
-    def test_purple_kakera_waits_for_account_result_and_retries(self):
+    def test_kakera_clicks_wait_for_account_result_and_retry(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -800,7 +863,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         click_source = ast.get_source_segment(
             self.source,
-            functions["click_purple_kakera_with_confirmation"],
+            functions["click_kakera_with_confirmation"],
         )
         message_source = ast.get_source_segment(self.source, functions["on_message"])
         refresh_source = ast.get_source_segment(
@@ -809,9 +872,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
 
         self.assertIn("register_kakera_result_waiter(emoji_name)", click_source)
-        self.assertIn("for attempt in range(3)", click_source)
+        self.assertIn("attempt_limit = 3 if is_purple else 2", click_source)
+        self.assertIn("for attempt in range(attempt_limit)", click_source)
         self.assertIn("await channel.fetch_message(msg.id)", click_source)
-        self.assertIn("Purple Kakera confirmed", click_source)
+        self.assertIn('label = "Purple Kakera" if is_purple', click_source)
+        self.assertIn('f"{label} confirmed', click_source)
+        self.assertGreaterEqual(
+            self.source.count("await click_kakera_with_confirmation("),
+            2,
+        )
         self.assertIn(
             "resolve_kakera_result_waiters(kakera_result.emoji_name, kakera_result.amount)",
             message_source,
@@ -1330,6 +1399,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         helper_source = ast.get_source_segment(self.source, helper)
         self.assertIn("channel = _get_forcedivorce_channel(channel)", helper_source)
+        self.assertIn("str(reason or \"\").strip().casefold()", helper_source)
         self.assertLess(
             helper_source.index('f"{client.mudae_prefix}forcedivorce {char_name}"'),
             helper_source.index('guarded_send(channel, "y")'),

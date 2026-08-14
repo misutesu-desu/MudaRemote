@@ -29,3 +29,6 @@ venv/
 # Personal project context
 /PROJECT_FULL_CONTEXT.md
 /generate_context.py
+
+# Unreleased Android application
+/android/

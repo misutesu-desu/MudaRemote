@@ -23,6 +23,13 @@ class SphereStatusTests(unittest.TestCase):
         self.assertEqual(count_harvest_bonus_clicks(result), 1)
         self.assertEqual(count_harvest_bonus_clicks("<:spD:2> +110"), 0)
 
+    def test_counts_every_dark_to_purple_bonus_in_one_update(self):
+        result = (
+            "<:spD:1> turns into <:spP:2> (Free) +56\n"
+            "<:spD:3> turns into <:spP:4> (Free) +176"
+        )
+        self.assertEqual(count_harvest_bonus_clicks(result), 2)
+
     def test_parses_supplied_tu_stock_and_refill(self):
         status = parse_sphere_game_status(
             "**0** $oh left for today, **1** $oc, **0** $oq and **0** $ot.\n"

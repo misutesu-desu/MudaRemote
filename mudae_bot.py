@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.9"
+CURRENT_VERSION = "4.8.10-beta.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -160,7 +160,6 @@ _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
 TU_GLOBAL_INTERVAL_SECONDS = 20.0
-
 
 def _apply_shared_reset_snapshot(client, snapshot):
     """Apply only server-wide reset boundaries, never another user's private state."""
@@ -185,6 +184,8 @@ def _apply_shared_reset_snapshot(client, snapshot):
         # had already exhausted its rolls at the old boundary, its cached zero
         # must not be carried into the newly announced hour.
         if (
+            getattr(client, "rolling_enabled", False)
+            and
             previous_roll_deadline is not None
             and previous_roll_deadline <= observed_at
             and roll_deadline > observed_at
@@ -823,6 +824,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.reactive_snipe_delay = reactive_snipe_delay
     client.rolling_enabled = rolling_enabled
     client.rt_available = False
+    client.rt_available_at_utc = None
     client.kakera_reaction_snipe_mode_active = kakera_reaction_snipe_mode_preset
     client.kakera_reaction_snipe_delay_value = kakera_reaction_snipe_delay_preset
     client.kakera_reaction_snipe_targets = set([t.lower() for t in kakera_reaction_snipe_targets])
@@ -909,6 +911,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._sphere_game_response_kind = None
     client._sphere_game_bonus_clicks = 0
     client._sphere_game_bonus_event = None
+    client._sphere_game_bonus_counts = {}
     client._sphere_game_retry_after = {"oh": 0.0, "oc": 0.0}
     client._sphere_board_update_events = {}
     client._kakera_power_reconcile_handle = None
@@ -1124,6 +1127,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def invalidate_rt_after_failed_attempt(message_id=None, reason="rt-attempt-inconclusive"):
         """Stop reusing a stale RT snapshot after Mudae gives no usable result."""
         client.rt_available = False
+        client.rt_available_at_utc = None
         if message_id is not None:
             failed_ids = getattr(client, "_rt_failed_message_ids", set())
             failed_ids.add(message_id)
@@ -1400,9 +1404,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         expected_channel_id = getattr(client, '_sphere_game_response_channel_id', None)
         if expected_channel_id is not None and getattr(message.channel, 'id', None) != expected_channel_id:
             return False
-        bonus_clicks = count_harvest_bonus_clicks(getattr(message, 'content', ''))
+        bonus_text = [str(getattr(message, 'content', '') or '')]
+        for embed in getattr(message, 'embeds', ()) or ():
+            bonus_text.append(str(getattr(embed, 'description', '') or ''))
+            for field in getattr(embed, 'fields', ()) or ():
+                bonus_text.append(str(getattr(field, 'name', '') or ''))
+                bonus_text.append(str(getattr(field, 'value', '') or ''))
+        total_bonus_clicks = count_harvest_bonus_clicks("\n".join(bonus_text))
+        message_id = getattr(message, 'id', None)
+        previous_bonus_clicks = client._sphere_game_bonus_counts.get(message_id, 0)
+        bonus_clicks = max(0, total_bonus_clicks - previous_bonus_clicks)
         if bonus_clicks <= 0:
             return False
+        client._sphere_game_bonus_counts[message_id] = total_bonus_clicks
         client._sphere_game_bonus_clicks += bonus_clicks
         bonus_event = getattr(client, '_sphere_game_bonus_event', None)
         if bonus_event is not None:
@@ -1541,6 +1555,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def apply_rt_acknowledgement():
         """A ✅ on $rt proves it was consumed and a temporary claim was restored."""
         client.rt_available = False
+        client.rt_available_at_utc = None
         client.claim_right_available = True
         client.claim_cooldown_until_utc = None
         client.last_successfully_claimed_character = None
@@ -1576,7 +1591,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 waiter.set_result(amount)
         return bool(waiters)
 
-    async def click_purple_kakera_with_confirmation(
+    async def click_kakera_with_confirmation(
         channel,
         msg,
         button,
@@ -1586,9 +1601,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         emoji_name,
         character_name,
     ):
-        """Retry Purple only while Mudae has not confirmed it for this account."""
+        """Retry an enabled Kakera button only while this account has no result."""
+        is_purple = str(emoji_name or "").rstrip("2").casefold() == "kakerap"
+        attempt_limit = 3 if is_purple else 2
+        label = "Purple Kakera" if is_purple else str(emoji_name or "Kakera")
         current_button = button
-        for attempt in range(3):
+        for attempt in range(attempt_limit):
             waiter_key, waiter = register_kakera_result_waiter(emoji_name)
             try:
                 if not await guarded_click(current_button):
@@ -1596,7 +1614,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 try:
                     amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
                     BotLogger.log(
-                        f"Purple Kakera confirmed for {character_name} (+{amount}).",
+                        f"{label} confirmed for {character_name} (+{amount}).",
                         preset_name,
                         "KAKERA",
                     )
@@ -1606,7 +1624,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             finally:
                 discard_kakera_result_waiter(waiter_key, waiter)
 
-            if attempt >= 2 or not await active_delay(0.35):
+            if attempt >= attempt_limit - 1 or not await active_delay(0.35):
                 break
             try:
                 msg = await channel.fetch_message(msg.id)
@@ -1621,14 +1639,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if current_button is None or getattr(current_button, "disabled", False):
                 break
             BotLogger.log(
-                f"Purple Kakera was not confirmed for {character_name}; retrying "
-                f"({attempt + 2}/3).",
+                f"{label} was not confirmed for {character_name}; retrying "
+                f"({attempt + 2}/{attempt_limit}).",
                 preset_name,
                 "WARN",
             )
 
         BotLogger.log(
-            f"Purple Kakera was not confirmed for {character_name} after 3 attempts.",
+            f"{label} was not confirmed for {character_name} after {attempt_limit} attempts.",
             preset_name,
             "WARN",
         )
@@ -1761,7 +1779,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if kind == "oh" and revealed == "spD" and bonus_event is not None:
                 if int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0) == bonus_before_click:
                     try:
-                        await asyncio.wait_for(bonus_event.wait(), timeout=2.0)
+                        await asyncio.wait_for(bonus_event.wait(), timeout=5.0)
                     except asyncio.TimeoutError:
                         pass
             paid_limit = 5 + int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0)
@@ -1818,6 +1836,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client._sphere_game_response_kind = kind
             client._sphere_game_bonus_clicks = 0
             client._sphere_game_bonus_event = asyncio.Event()
+            client._sphere_game_bonus_counts = {}
             try:
                 BotLogger.log(f"{kind.upper()}: Starting with {uses} available use(s).", preset_name, "INFO")
                 if not await guarded_send(channel, f"{client.mudae_prefix}{kind} {uses}"):
@@ -1839,6 +1858,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client._sphere_game_response_kind = None
                     client._sphere_game_bonus_clicks = 0
                     client._sphere_game_bonus_event = None
+                    client._sphere_game_bonus_counts = {}
                 if not response_future.done():
                     response_future.cancel()
 
@@ -1913,18 +1933,46 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return owner_id == client.user.id or bool(owner_name and owner_name in client_names)
 
     def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
-        if client.next_claim_reset_at_utc:
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            if not client.claim_right_available and now_utc >= client.next_claim_reset_at_utc:
-                request_status_refresh({"claim"}, reason="predicted-claim-reset", urgent=True)
-                if not client._claim_reset_refresh_requested:
-                    client._claim_reset_refresh_requested = True
-                    BotLogger.log("Predicted claim reset reached. Verifying with $tu before claiming.", preset_name, "CHECK")
+        refresh_predicted_claim_and_rt()
 
         rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
         return client.claim_right_available or rt_usable
 
+    def refresh_predicted_claim_and_rt():
+        """Use known cooldown deadlines during long rolls without waiting for another $tu."""
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if (
+            not client.claim_right_available
+            and client.next_claim_reset_at_utc
+            and now_utc >= client.next_claim_reset_at_utc
+        ):
+            client.claim_right_available = True
+            client.claim_cooldown_until_utc = None
+            client.last_successfully_claimed_character = None
+            client._claim_reset_refresh_requested = True
+            mark_status_dirty(client, {"claim"}, reason="predicted-claim-reset")
+            BotLogger.log(
+                "Predicted claim reset reached. Claims are enabled while status refreshes in the background.",
+                preset_name,
+                "CHECK",
+            )
+
+        if (
+            not client.rt_available
+            and client.rt_available_at_utc
+            and now_utc >= client.rt_available_at_utc
+        ):
+            client.rt_available = True
+            client.rt_available_at_utc = None
+            mark_status_dirty(client, {"rt"}, reason="predicted-rt-reset")
+            BotLogger.log(
+                "Predicted $rt reset reached. RT is available for new claim targets.",
+                preset_name,
+                "CHECK",
+            )
+
     def is_key_mode_kakera_only() -> bool:
+        refresh_predicted_claim_and_rt()
         return client.key_mode and not client.claim_right_available and not client.rt_available
 
     def is_kakera_reaction_allowed(*, is_free_purple=False) -> bool:
@@ -2925,7 +2973,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await handle_dk_power_management(client, cmd_channel, tu_content)
 
             if client.rolling_enabled:
-                if any(x in c_lower for x in ["$daily is available", "$daily está disponível", "$daily está disponible", "$daily est disponible"]):
+                if any(x in c_lower for x in [
+                    "$daily is available",
+                    "$daily está disponível",
+                    "$daily está pronto",
+                    "$daily esta pronto",
+                    "$daily está disponible",
+                    "$daily est disponible",
+                ]):
                     BotLogger.log("$daily is available! Sending command...", preset_name, "INFO")
                     if not await guarded_send(cmd_channel, f"{client.mudae_prefix}daily"):
                         return
@@ -2993,12 +3048,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             rt_reset_minutes = parse_timer_minutes("RT_RESET", c_lower)
             if rt_reset_minutes is not None:
                 client.rt_available = False
+                client.rt_available_at_utc = cooldown_deadline(now_utc, rt_reset_minutes)
                 BotLogger.log(f"RT: Cooldown ({int(rt_reset_minutes/60)}h {rt_reset_minutes%60}m)", preset_name, "INFO")
             elif rt_ready:
                 client.rt_available = True
+                client.rt_available_at_utc = None
                 BotLogger.log("RT: Ready", preset_name, "INFO")
             else:
                 client.rt_available = False
+                client.rt_available_at_utc = None
             wait_time = 0
             can_claim = False
             claim_ready = bool(
@@ -3387,7 +3445,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if channel is None:
             BotLogger.log("Kakera Farm: No channel is available for forcedivorce.", preset_name, "WARN")
             return False
-        release_key = str(char_name or "").strip().casefold()
+        # Each configured phase is independent. A before-roll cleanup attempt
+        # must not suppress the post-claim release of the same character.
+        release_key = (
+            str(char_name or "").strip().casefold(),
+            str(reason or "").strip().casefold(),
+        )
         now_monotonic = time.monotonic()
         last_release = client._farm_release_recent.get(release_key, 0.0)
         if release_key and now_monotonic - last_release < 15.0:
@@ -3547,6 +3610,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     reason="normal-rolls-complete-auto-us",
                     urgent=True,
                 )
+        elif client.rolls_left <= 0:
+            # Discord can drop one or more roll embeds even though every local
+            # roll command was sent. Never trust the pre-roll cache in that
+            # state: it can sleep past the reset and skip Auto $us entirely.
+            request_status_refresh(
+                {"rolls"},
+                reason="normal-roll-responses-missing",
+                urgent=True,
+            )
 
         if not getattr(client, 'immediate_kakera_click', True) and getattr(client, 'collected_kakera_rolls', []):
             BotLogger.log("Processing collected rolls for Kakera priority collection...", preset_name, "INFO")
@@ -3716,18 +3788,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                     try:
-                        if name.rstrip('2') == 'kakeraP':
-                            click_ok = await click_purple_kakera_with_confirmation(
-                                channel,
-                                msg,
-                                btn,
-                                custom_id=custom_id,
-                                position=pos,
-                                emoji_name=name,
-                                character_name=char_name,
-                            )
-                        else:
-                            click_ok = await guarded_click(btn)
+                        click_ok = await click_kakera_with_confirmation(
+                            channel,
+                            msg,
+                            btn,
+                            custom_id=custom_id,
+                            position=pos,
+                            emoji_name=name,
+                            character_name=char_name,
+                        )
                         if not click_ok:
                             cancel_kakera_power_click(power_token)
                             continue
@@ -4722,18 +4791,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                             power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                             try:
-                                if name_clean == 'kakeraP':
-                                    click_ok = await click_purple_kakera_with_confirmation(
-                                        channel,
-                                        msg,
-                                        btn,
-                                        custom_id=custom_id,
-                                        position=pos,
-                                        emoji_name=name,
-                                        character_name=char_name,
-                                    )
-                                else:
-                                    click_ok = await guarded_click(btn)
+                                click_ok = await click_kakera_with_confirmation(
+                                    channel,
+                                    msg,
+                                    btn,
+                                    custom_id=custom_id,
+                                    position=pos,
+                                    emoji_name=name,
+                                    character_name=char_name,
+                                )
                                 if not click_ok:
                                     cancel_kakera_power_click(power_token)
                                     continue
@@ -4911,6 +4977,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
         if update_event is not None:
             update_event.set()
+        capture_sphere_game_bonus(after)
 
     @client.event
     async def on_raw_reaction_add(payload):
@@ -5017,7 +5084,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if is_inactive_hour(): return
 
         if (
-            is_roll
+            (is_roll or is_snipe or is_kakera_snipe_channel)
             and client.farm_character_enabled
             and client.farm_characters
             and client.farm_forcedivorce_after_other_claim
