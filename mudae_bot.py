@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10-beta.1"
+CURRENT_VERSION = "4.8.10-beta.2"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -3291,10 +3291,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client.us_pulled_this_cycle += min(requested, us_rolls_left)
                     client._us_in_flight = False
                     client._us_pending_amount = 0
-                elif total_rolls == 0:
+                else:
+                    # A $tu response can race the saved-roll command and still
+                    # report normal rolls, or the command can be rejected while
+                    # those rolls remain.  Either way this request is no longer
+                    # in flight.  Keeping the flag set here permanently disables
+                    # Auto $us until the process is restarted.
                     client._us_in_flight = False
                     client._us_pending_amount = 0
-                    client._us_retry_after = time.monotonic() + 30
+                    client._us_retry_after = (
+                        0.0 if total_rolls > 0 else time.monotonic() + 30
+                    )
+                    if total_rolls > 0:
+                        BotLogger.log(
+                            "Auto $us was not acknowledged while normal rolls remain; "
+                            "it will retry after they finish.",
+                            preset_name,
+                            "INFO",
+                        )
 
             if total_rolls == 0:
                 if is_inactive_hour():

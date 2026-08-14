@@ -264,6 +264,19 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client._us_pending_amount = sent", send_source)
         self.assertIn("min(requested, us_rolls_left)", status_source)
 
+    def test_auto_us_in_flight_is_released_when_normal_rolls_remain(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+        self.assertIn("0.0 if total_rolls > 0 else time.monotonic() + 30", status_source)
+        self.assertIn(
+            "Auto $us was not acknowledged while normal rolls remain",
+            status_source,
+        )
+
     def test_snipe_only_ready_claim_completes_initial_handshake(self):
         functions = {
             node.name: node
