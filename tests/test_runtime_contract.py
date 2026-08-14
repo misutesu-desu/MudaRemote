@@ -103,6 +103,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         source = ast.get_source_segment(self.source, functions["_apply_shared_reset_snapshot"])
         self.assertIn('getattr(client, "rolling_enabled", False)', source)
         self.assertIn('reason="shared-roll-boundary"', source)
+        self.assertIn("client.us_pulled_this_cycle = 0", source)
+        self.assertIn("client.us_failed_this_cycle = False", source)
 
     def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
         functions = {
@@ -743,13 +745,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
-            if isinstance(node, ast.AsyncFunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        handler_source = ast.get_source_segment(
+            self.source,
+            functions["schedule_farm_release_after_other_claim"],
+        )
+        edit_source = ast.get_source_segment(self.source, functions["on_message_edit"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
         self.assertIn("client.farm_forcedivorce_after_other_claim", handler_source)
         self.assertIn("is_claim_announcement_for_character", handler_source)
         self.assertIn("farm_claim_evidence.outcome != ClaimOutcome.SUCCESS", handler_source)
-        self.assertIn("is_roll or is_snipe or is_kakera_snipe_channel", handler_source)
+        self.assertIn("classify_claim_owner", handler_source)
+        self.assertIn("owner != previous_owner", handler_source)
+        self.assertIn("schedule_farm_release_after_other_claim(after", edit_source)
+        self.assertIn("schedule_farm_release_after_other_claim(message)", message_source)
 
     def test_initial_status_check_includes_automated_account_stagger(self):
         functions = {

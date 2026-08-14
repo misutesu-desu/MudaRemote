@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10-beta.2"
+CURRENT_VERSION = "4.8.10-beta.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -179,6 +179,20 @@ def _apply_shared_reset_snapshot(client, snapshot):
     previous_roll_deadline = getattr(client, "roll_reset_at_utc", None)
     if "rolls" in observed_fields and roll_deadline is not None:
         client.roll_reset_at_utc = roll_deadline
+        roll_boundary_advanced = bool(
+            previous_roll_deadline is not None
+            and previous_roll_deadline <= observed_at
+            and roll_deadline > observed_at
+        )
+        if roll_boundary_advanced:
+            # Saved-roll limits are private account state, but their cycle is
+            # the shared server roll hour. A peer may advance this deadline
+            # before this account's own $tu arrives, so reset the local usage
+            # counters at the observed boundary instead of waiting for a later
+            # deadline comparison that will now look unchanged.
+            client.us_pulled_this_cycle = 0
+            client.us_failed_this_cycle = False
+            client._us_retry_after = 0.0
         # A server peer can tell us that a new roll hour has started, but it
         # cannot tell us this account's private roll count.  If this account
         # had already exhausted its rolls at the old boundary, its cached zero
@@ -186,9 +200,7 @@ def _apply_shared_reset_snapshot(client, snapshot):
         if (
             getattr(client, "rolling_enabled", False)
             and
-            previous_roll_deadline is not None
-            and previous_roll_deadline <= observed_at
-            and roll_deadline > observed_at
+            roll_boundary_advanced
             and int(getattr(client, "rolls_left", 0) or 0) <= 0
         ):
             mark_status_dirty(client, {"rolls"}, reason="shared-roll-boundary", urgent=True)
@@ -4986,12 +4998,81 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         except Exception: pass
                         return
 
+    def schedule_farm_release_after_other_claim(message, previous_message=None):
+        """Release farm targets claimed by a peer, including owner-only embed edits."""
+        if (
+            client.is_paused
+            or is_maintenance_active()
+            or is_inactive_hour()
+            or getattr(getattr(message, "author", None), "id", None) != TARGET_BOT_ID
+            or not client.farm_character_enabled
+            or not client.farm_characters
+            or not client.farm_forcedivorce_after_other_claim
+        ):
+            return False
+
+        channel_id = getattr(getattr(message, "channel", None), "id", None)
+        watched_channel = (
+            channel_id == client.target_channel_id
+            or (client.snipe_mode and channel_id in client.snipe_channels)
+            or (
+                client.kakera_reaction_snipe_mode_active
+                and channel_id in client.kakera_snipe_channels
+            )
+        )
+        if not watched_channel:
+            return False
+
+        if getattr(message, "embeds", None):
+            embed = message.embeds[0]
+            char_name = getattr(getattr(embed, "author", None), "name", "")
+            if is_farm_character_name(char_name):
+                owner = get_character_owner(embed)
+                previous_owner = None
+                if previous_message is not None and getattr(previous_message, "embeds", None):
+                    previous_owner = get_character_owner(previous_message.embeds[0])
+                if owner and owner != previous_owner:
+                    owner_evidence = classify_claim_owner(
+                        owner,
+                        claim_identities(getattr(message, "guild", None)),
+                        user_id=getattr(getattr(client, "user", None), "id", None),
+                    )
+                    if owner_evidence.outcome == ClaimOutcome.FAILURE:
+                        client.loop.create_task(execute_farm_forcedivorce(
+                            client,
+                            message.channel,
+                            char_name,
+                            "after another account claimed it (configured timing)",
+                        ))
+                        return True
+
+        for farm_name in client.farm_characters:
+            if not is_claim_announcement_for_character(getattr(message, "content", ""), farm_name):
+                continue
+            farm_claim_evidence = classify_claim_text(
+                message.content,
+                farm_name,
+                claim_identities(getattr(message, "guild", None)),
+                user_id=getattr(getattr(client, "user", None), "id", None),
+            )
+            if farm_claim_evidence.outcome != ClaimOutcome.SUCCESS:
+                client.loop.create_task(execute_farm_forcedivorce(
+                    client,
+                    message.channel,
+                    farm_name,
+                    "after another account claimed it (configured timing)",
+                ))
+                return True
+            break
+        return False
+
     @client.event
     async def on_message_edit(before, after):
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
         if update_event is not None:
             update_event.set()
         capture_sphere_game_bonus(after)
+        schedule_farm_release_after_other_claim(after, previous_message=before)
 
     @client.event
     async def on_raw_reaction_add(payload):
@@ -5097,29 +5178,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if is_inactive_hour(): return
 
-        if (
-            (is_roll or is_snipe or is_kakera_snipe_channel)
-            and client.farm_character_enabled
-            and client.farm_characters
-            and client.farm_forcedivorce_after_other_claim
-        ):
-            for farm_name in client.farm_characters:
-                if not is_claim_announcement_for_character(message.content, farm_name):
-                    continue
-                farm_claim_evidence = classify_claim_text(
-                    message.content,
-                    farm_name,
-                    claim_identities(),
-                    user_id=getattr(getattr(client, "user", None), "id", None),
-                )
-                if farm_claim_evidence.outcome != ClaimOutcome.SUCCESS:
-                    client.loop.create_task(execute_farm_forcedivorce(
-                        client,
-                        message.channel,
-                        farm_name,
-                        "after another account claimed it (configured timing)",
-                    ))
-                break
+        schedule_farm_release_after_other_claim(message)
 
         if client.main_account_id:
             try: main_id = int(client.main_account_id)
