@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10-beta.3"
+CURRENT_VERSION = "4.8.10-beta.4"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -956,6 +956,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.farm_forcedivorce_after_other_claim = bool(farm_forcedivorce_after_other_claim_preset)
     client.forcedivorce_channel = None
     client._farm_release_recent = {}
+    client._farm_release_lock = None
     client.op_perk_5_only = op_perk_5_only_preset
     client.auto_divorce_protect_wishes = bool(auto_divorce_protect_wishes_preset)
     client.wish_starwish_kakera_only = bool(wish_starwish_kakera_only_preset)
@@ -3484,21 +3485,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return True
         if release_key:
             client._farm_release_recent[release_key] = now_monotonic
-        BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
-        if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
-            client._farm_release_recent.pop(release_key, None)
-            BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
-            return False
-        if not await guarded_send(channel, "y"):
-            client._farm_release_recent.pop(release_key, None)
-            BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
-            return False
-        BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
-        if str(getattr(client, 'last_successfully_claimed_character', '') or '').casefold() == str(char_name or '').casefold():
-            # The duplicate-claim guard is no longer valid once Mudae confirms
-            # that the farm character was released.
-            client.last_successfully_claimed_character = None
-        return await active_delay(1.0 + random.uniform(0.1, 0.4))
+        if client._farm_release_lock is None:
+            client._farm_release_lock = asyncio.Lock()
+        # Mudae accepts only one interactive harem command per account. Keep
+        # the command, its confirmation, and the short processing grace period
+        # atomic when several edited farm claims arrive almost simultaneously.
+        async with client._farm_release_lock:
+            BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
+            if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
+                client._farm_release_recent.pop(release_key, None)
+                BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
+                return False
+            if not await guarded_send(channel, "y"):
+                client._farm_release_recent.pop(release_key, None)
+                BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
+                return False
+            BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
+            if str(getattr(client, 'last_successfully_claimed_character', '') or '').casefold() == str(char_name or '').casefold():
+                # The duplicate-claim guard is no longer valid once Mudae confirms
+                # that the farm character was released.
+                client.last_successfully_claimed_character = None
+            return await active_delay(1.0 + random.uniform(0.1, 0.4))
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
         if client.is_paused or is_maintenance_active(): return

@@ -15,12 +15,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'MudaRemote'),
          StringStruct('FileDescription', 'MudaRemote - Mudae Bot Manager'),
-         StringStruct('FileVersion', '4.8.10-beta.3.0'),
+         StringStruct('FileVersion', '4.8.10-beta.4.0'),
          StringStruct('InternalName', 'MudaRemote'),
          StringStruct('LegalCopyright', 'Copyright (c) MudaRemote contributors'),
          StringStruct('OriginalFilename', 'MudaRemote.exe'),
          StringStruct('ProductName', 'MudaRemote'),
-         StringStruct('ProductVersion', '4.8.10-beta.3')]
+         StringStruct('ProductVersion', '4.8.10-beta.4')]
       )
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

@@ -1423,6 +1423,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         helper_source = ast.get_source_segment(self.source, helper)
         self.assertIn("channel = _get_forcedivorce_channel(channel)", helper_source)
         self.assertIn("str(reason or \"\").strip().casefold()", helper_source)
+        self.assertIn("async with client._farm_release_lock", helper_source)
         self.assertLess(
             helper_source.index('f"{client.mudae_prefix}forcedivorce {char_name}"'),
             helper_source.index('guarded_send(channel, "y")'),

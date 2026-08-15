@@ -1,24 +1,24 @@
 {
-  "version": "4.8.10-beta.3",
+  "version": "4.8.10-beta.4",
   "changelog": {
     "Bug Fixes": [
       "Automatically Use Saved Rolls refreshes status after complete or partially observed roll batches instead of sleeping on stale data, and recovers when an early $us acknowledgement still reports normal rolls.",
       "Snipe-only accounts ignore unrelated shared roll resets while known claim and RT deadlines remain usable during long roll batches.",
       "Saved-roll usage limits reset when a shared server boundary advances the local roll hour.",
-      "Forcedivorce farming observes configured snipe channels, keeps timing phases independent, and detects farm targets claimed through edited character cards.",
+      "Forcedivorce farming observes configured snipe channels, keeps timing phases independent, detects farm targets claimed through edited character cards, and serializes overlapping confirmations.",
       "Kakera clicks retry once when no account result arrives, and $oh preserves multiple late dark-to-purple bonus clicks.",
       "Portuguese $daily ready messages are recognized."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.8.10-beta.3/MudaRemote.exe",
-  "exe_sha256": "7ad009299648f3f70c468a1e495ca66f150971da5c9f4e3b3a1413d023f02767",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.8.10-beta.4/MudaRemote.exe",
+  "exe_sha256": "91482d3a3480a0dd3cdf40ccba6d7272d8c59e0ab7738549f1c4eccedf448dbd",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "0313e710036e507aefb4c865343cdb47d2b46bf13a2104840b6ab644bae0fd04"
+      "sha256": "53c97c8cde8e09cbb582ae1c7ee83d21788b24fcc083d3761d3b322b31e10a52"
     },
     {
       "path": "mudae_preset_editor.py",
