@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10-beta.4"
+CURRENT_VERSION = "4.8.10-beta.5"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -2761,14 +2761,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             can_bypass = False
             cache_seconds_remaining = 0.0
+            known_idle_boundary = False
             if client.last_tu_snapshot_complete and client.last_tu_query_utc is not None and not status_dirty_fields(client) and not client.scheduled_roll_due:
                 cache_seconds_remaining = tu_cache_seconds_remaining(
                     client.last_tu_query_utc,
                     now_utc,
                 )
-                if cache_seconds_remaining > 0:
-                    is_before_claim = client.next_claim_reset_at_utc is None or now_utc < client.next_claim_reset_at_utc
-                    is_before_roll = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
+                is_before_claim = client.next_claim_reset_at_utc is None or now_utc < client.next_claim_reset_at_utc
+                is_before_roll = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
+                known_idle_boundary = bool(
+                    (client.next_claim_reset_at_utc and is_before_claim)
+                    or (client.roll_reset_at_utc and is_before_roll)
+                )
+                # When the account has no rolls or pending work, the reset
+                # deadlines are the next moments its state can become useful.
+                # Trust those explicit boundaries beyond the generic cache TTL
+                # instead of issuing an otherwise identical $tu every 30m.
+                if cache_seconds_remaining > 0 or known_idle_boundary:
                     if is_before_claim and is_before_roll and client.rolls_left <= 0:
                         can_bypass = True
                         pending_rolls, pending_us, pending_mk = pending_roll_work(proceed_to_rolls)
@@ -2797,13 +2806,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 roll_reset_m = max(0.0, (client.roll_reset_at_utc - now_utc).total_seconds() / 60.0) if client.roll_reset_at_utc else 0.0
                 wait_time = claim_reset_m if not client.claim_right_available else 0
                 if client.rolling_enabled and proceed_to_rolls:
-                    # A cached snapshot must never schedule a sleep beyond its
-                    # own lifetime. Otherwise a stale hourly boundary can keep
-                    # getting trusted long after a fresh $tu was due.
-                    choices = [(
-                        max(0.05, cache_seconds_remaining / 60.0),
-                        "cached status refresh",
-                    )]
+                    choices = []
+                    if not known_idle_boundary:
+                        choices.append((
+                            max(0.05, cache_seconds_remaining / 60.0),
+                            "cached status refresh",
+                        ))
                     if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
                     if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_m > 60: choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
                     if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))

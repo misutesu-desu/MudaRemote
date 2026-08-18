@@ -535,6 +535,17 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("and not is_cache_refresh", wait_source)
         self.assertNotIn('"timing threshold" in reason.lower()', wait_source)
 
+    def test_idle_status_wait_uses_known_reset_instead_of_thirty_minute_refresh(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn("known_idle_boundary = bool(", status_source)
+        self.assertIn("cache_seconds_remaining > 0 or known_idle_boundary", status_source)
+        self.assertIn("if not known_idle_boundary:", status_source)
+
     def test_shared_roll_reset_dirties_exhausted_local_roll_cache(self):
         functions = {
             node.name: node

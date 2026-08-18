@@ -1,7 +1,8 @@
 {
-  "version": "4.8.10-beta.4",
+  "version": "4.8.10-beta.5",
   "changelog": {
     "Bug Fixes": [
+      "Idle accounts trust known claim and roll reset times instead of sending an unchanged status request every 30 minutes.",
       "Automatically Use Saved Rolls refreshes status after complete or partially observed roll batches instead of sleeping on stale data, and recovers when an early $us acknowledgement still reports normal rolls.",
       "Snipe-only accounts ignore unrelated shared roll resets while known claim and RT deadlines remain usable during long roll batches.",
       "Saved-roll usage limits reset when a shared server boundary advances the local roll hour.",
@@ -12,13 +13,13 @@
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.8.10-beta.4/MudaRemote.exe",
-  "exe_sha256": "91482d3a3480a0dd3cdf40ccba6d7272d8c59e0ab7738549f1c4eccedf448dbd",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.8.10-beta.5/MudaRemote.exe",
+  "exe_sha256": "82dab8d486024abea32156975aebbda7fa9bbf99821690e46636dd6cbeb7169d",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "53c97c8cde8e09cbb582ae1c7ee83d21788b24fcc083d3761d3b322b31e10a52"
+      "sha256": "4a0548fa63758010712cbb334992b32b4f8109853f4955fe3873a2eb7cb40119"
     },
     {
       "path": "mudae_preset_editor.py",
