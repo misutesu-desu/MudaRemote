@@ -30,5 +30,8 @@ venv/
 /PROJECT_FULL_CONTEXT.md
 /generate_context.py
 
+# Documentation and web portal
+/docs/
+
 # Unreleased Android application
 /android/
