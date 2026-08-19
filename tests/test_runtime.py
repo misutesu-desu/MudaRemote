@@ -167,6 +167,20 @@ class RuntimeStateTests(unittest.TestCase):
         client.claim_right_available = True
         self.assertTrue(can_resume_claim_interrupted_rolls(client))
 
+    def test_timing_mode_allows_resuming_rolls_before_claim_reset(self):
+        client = SimpleNamespace(
+            rolling_enabled=True,
+            is_paused=False,
+            key_limit_hit=False,
+            pending_claim=None,
+            rolls_left=10,
+            key_mode=False,
+            claim_right_available=False,
+            rt_available=False,
+            is_timing_mode_active=True,
+        )
+        self.assertTrue(can_resume_claim_interrupted_rolls(client))
+
     def test_idle_pause_is_propagated_without_forcing_status_refresh(self):
         state_event = _Event()
         immediate_event = _Event()

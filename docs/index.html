@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>misutesu-desu/MudaRemote: Next-Gen Mudae Automation for Discord</title>
+  <meta name="description" content="MudaRemote is an advanced, automated Discord tool for Mudae. Featuring wishlist sniping, intelligent Kakera collection, sphere mini-game solvers, and multi-account sync.">
+  <meta name="keywords" content="Mudae bot, Mudae auto claim, Mudae kakera sniper, Mudae self bot, Mudae discord automation, Mudae preset editor">
+  
+  <!-- OpenGraph / Social Meta Tags -->
+  <meta property="og:title" content="misutesu-desu/MudaRemote">
+  <meta property="og:description" content="A desktop & mobile automation powerhouse for rolls, character snipes, Kakera collection, and multi-account presets.">
+  <meta property="og:image" content="assets/icon.png">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#161b22">
+  
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- GitHub Global Header -->
+  <header class="gh-header">
+    <div class="container gh-header-inner">
+      <a href="https://github.com/misutesu-desu/MudaRemote" target="_blank" rel="noopener" class="gh-brand">
+        <svg class="gh-octocat" viewBox="0 0 16 16" version="1.1" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+        <span>MudaRemote</span>
+      </a>
+
+      <div class="gh-search-mock">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg>
+        <span>Type <kbd class="gh-search-kbd">/</kbd> to search docs</span>
+      </div>
+
+      <div class="gh-header-actions">
+        <!-- Language Selector -->
+        <div class="lang-dropdown-wrap">
+          <button class="gh-btn" id="langBtn">
+            🌐 <span id="currentLangLabel">EN</span> ▾
+          </button>
+          <div class="lang-dropdown-menu" id="langDropdown">
+            <div class="lang-dropdown-item active" data-lang="en">🇺🇸 English</div>
+            <div class="lang-dropdown-item" data-lang="tr">🇹🇷 Türkçe</div>
+            <div class="lang-dropdown-item" data-lang="fr">🇫🇷 Français</div>
+            <div class="lang-dropdown-item" data-lang="ja">🇯🇵 日本語</div>
+            <div class="lang-dropdown-item" data-lang="ko">🇰🇷 한국어</div>
+            <div class="lang-dropdown-item" data-lang="zh">🇨🇳 简体中文</div>
+            <div class="lang-dropdown-item" data-lang="pt">🇧🇷 Português</div>
+          </div>
+        </div>
+
+        <a href="https://discord.gg/4WHXkDzuZx" target="_blank" rel="noopener" class="gh-btn gh-btn-discord">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028z"/></svg>
+          <span>Discord (310+)</span>
+        </a>
+
+        <a href="https://github.com/misutesu-desu/MudaRemote" target="_blank" rel="noopener" class="gh-btn-group">
+          <button class="gh-btn">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"></path></svg>
+            <span>Star</span>
+          </button>
+          <span class="gh-btn-count">310</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Repo Title & Tabs Bar -->
+  <section class="repo-header-bar">
+    <div class="container">
+      
+      <div class="repo-title-row">
+        <div class="repo-breadcrumbs">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="color: var(--gh-text-muted);"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"></path></svg>
+          <a href="https://github.com/misutesu-desu" class="repo-owner">misutesu-desu</a>
+          <span style="color: var(--gh-text-muted);">/</span>
+          <a href="https://github.com/misutesu-desu/MudaRemote" class="repo-name">MudaRemote</a>
+          <span class="repo-badge-public">Public</span>
+        </div>
+
+        <div class="repo-header-actions">
+          <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest" class="gh-btn gh-btn-primary">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"></path><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"></path></svg>
+            <span data-i18n="downloadExe">Download MudaRemote.exe</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="repo-tabs-nav">
+        <a class="repo-tab active" data-tab="tab-code">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.72 3.22a.75.75 0 0 1 1.06 1.06L2.06 8l3.72 3.72a.75.75 0 1 1-1.06 1.06L.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25Zm6.56 0a.75.75 0 1 1 1.06 1.06L8.62 8l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25Z"></path></svg>
+          <span>Overview</span>
+        </a>
+        <a class="repo-tab" data-tab="tab-wiki">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.244a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.244a2.25 2.25 0 0 0-1.748.832l-.248.31a.75.75 0 0 1-1.16 0l-.249-.31A2.25 2.25 0 0 0 5.004 13H.75a.75.75 0 0 1-.75-.75ZM1.5 2.5v9h3.504a3.743 3.743 0 0 1 2.246.746V3.5a2.25 2.25 0 0 0-2.25-2.25H1.5Zm13 9v-9h-3.494a2.25 2.25 0 0 0-2.256 2.25v8.746a3.743 3.743 0 0 1 2.246-.746h3.504Z"></path></svg>
+          <span>Configuration Wiki</span>
+        </a>
+        <a class="repo-tab" data-tab="tab-releases">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"></path></svg>
+          <span>Releases</span>
+          <span class="repo-tab-count">v4.8.10</span>
+        </a>
+        <a class="repo-tab" data-tab="tab-setup">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg>
+          <span>Setup & Mobile</span>
+        </a>
+        <a class="repo-tab" data-tab="tab-faq">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6.92 6.085c.081-.16.19-.299.34-.398.145-.097.371-.187.74-.187.28 0 .514.075.672.185.163.114.248.286.248.515 0 .28-.152.483-.34.646-.22.189-.523.364-.784.582-.245.204-.446.47-.446.822a.75.75 0 0 0 1.5 0c0-.1.05-.18.172-.28.204-.171.503-.342.766-.569.294-.253.632-.657.632-1.201 0-.61-.266-1.124-.698-1.436C9.288 4.526 8.683 4 8 4c-.732 0-1.348.243-1.764.606-.41.358-.65.856-.69 1.408a.75.75 0 0 0 1.49.112c.01-.137.036-.26.084-.361Z"></path></svg>
+          <span>Support Desk FAQ</span>
+        </a>
+        <a class="repo-tab" data-tab="tab-sponsor">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="color: #bf3989;"><path d="m8 14.25.345.666a.75.75 0 0 1-.69 0l-.008-.004-.018-.01a7.152 7.152 0 0 1-.31-.17 22.055 22.055 0 0 1-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.75 1a4.945 4.945 0 0 1 3.25 1.258A4.945 4.945 0 0 1 11.25 1C13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.066 22.066 0 0 1-3.434 2.414 7.152 7.152 0 0 1-.31.17l-.018.01-.008.004Zm0-11.25a3.445 3.445 0 0 0-2.5 1.078.75.75 0 0 1-1.08-.02C3.81 3.434 2.928 2.5 1.5 2.5 1.5 2.5 0 3.75 0 5.5c0 2.128 1.62 4.148 3.328 5.617A20.575 20.575 0 0 0 8 13.064a20.575 20.575 0 0 0 4.672-1.947C14.38 9.648 16 7.628 16 5.5c0-1.75-1.5-3-1.5-3a3.445 3.445 0 0 0-2.92 1.558.75.75 0 0 1-1.08.02A3.445 3.445 0 0 0 8 3Z"></path></svg>
+          <span>Sponsor</span>
+        </a>
+      </nav>
+
+    </div>
+  </section>
+
+  <!-- Main Content Layout Grid -->
+  <main class="container repo-main-layout">
+    
+    <!-- Left Column: Tab Panels -->
+    <div class="repo-content-col">
+      
+      <!-- Tab 1: Code / Overview (Default) -->
+      <div class="tab-panel active" id="tab-code">
+        
+        <!-- Latest Release Banner Box -->
+        <div class="release-banner-card">
+          <div class="release-banner-info">
+            <span class="release-tag-badge">v4.8.10</span>
+            <div>
+              <div class="release-banner-title">⚡ MudaRemote: Mudae Automation for Discord</div>
+              <div class="release-banner-desc">Standalone Windows .exe, Tkinter Preset GUI & Multi-Account Coordinator</div>
+            </div>
+          </div>
+          <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest" class="gh-btn gh-btn-primary">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"></path><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"></path></svg>
+            <span>Download .exe (22.7 MB)</span>
+          </a>
+        </div>
+
+        <!-- Markdown Box: README.md Container -->
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25ZM4.5 4.75a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75Z"></path></svg>
+              <span>README.md</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--gh-text-muted);">
+              <span>283 lines (218 sloc) • 15.1 KB</span>
+            </div>
+          </div>
+
+          <div class="markdown-body">
+            
+            <p align="center">
+              <img src="assets/icon.png" alt="MudaRemote Logo" width="96" style="border-radius: 12px; margin-bottom: 0.5rem;">
+            </p>
+            <h1 align="center" style="border: none; margin-bottom: 0.25rem;">⚡ MudaRemote: Mudae Automation for Discord</h1>
+            <p align="center" style="color: var(--gh-text-secondary); margin-bottom: 1.5rem;">
+              <strong>A desktop tool for automating rolls, claims, Kakera collection, and multi-account presets.</strong>
+            </p>
+
+            <div class="gh-alert gh-alert-warning">
+              <div class="gh-alert-title">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>
+                <span>Disclaimer & Safety Notice</span>
+              </div>
+              <p style="margin: 0; font-size: 0.88rem;">
+                This is a self-bot tool. Self-bots violate Discord's Terms of Service. Using this software carries ban risk. Provided for educational purposes only.
+              </p>
+            </div>
+
+            <h2>🚀 Core Capabilities</h2>
+            <p>
+              MudaRemote handles repetitive Mudae bot mechanics with sophisticated regex matching, priority crystal collection, and cross-account concurrency control.
+            </p>
+
+            <div class="gh-cards-grid">
+              <div class="gh-card">
+                <div class="gh-card-title">🎯 Wishlist & Series Sniping</div>
+                <div class="gh-card-desc">
+                  Automated matching on wished characters, favorite series, or value thresholds ($500+). Includes instant self-claim and panic claiming before reset.
+                </div>
+              </div>
+              <div class="gh-card">
+                <div class="gh-card-title">💎 Kakera Power Management</div>
+                <div class="gh-card-desc">
+                  Clicks crystals according to customizable priority hierarchy (Light &gt; Yellow &gt; Orange &gt; Red &gt; Rainbow) while strictly preserving minimum power.
+                </div>
+              </div>
+              <div class="gh-card">
+                <div class="gh-card-title">🔮 Heuristic Sphere Solver</div>
+                <div class="gh-card-desc">
+                  Solves <code>$oh</code> (Sphere Harvest) and <code>$oc</code> (Red Sphere Clue Board) mini-games automatically using constraint elimination algorithms.
+                </div>
+              </div>
+              <div class="gh-card">
+                <div class="gh-card-title">👥 Multi-Account Concurrency</div>
+                <div class="gh-card-desc">
+                  <code>ClaimCoordinator</code> synchronizes claim reservations across multiple tokens/presets, preventing double snipes and shared reset desyncs.
+                </div>
+              </div>
+            </div>
+
+            <h2>🏆 Feature Comparison</h2>
+            <table class="gh-table">
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>Basic Scripts</th>
+                  <th><strong>MudaRemote</strong></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Setup</strong></td>
+                  <td>Python scripts & manual JSON editing</td>
+                  <td><strong>Windows Standalone .exe with Tkinter GUI & Android App</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Rolling</strong></td>
+                  <td>Text commands only</td>
+                  <td><strong>Text ($wa, $ha, $wg) & Slash (/wa) with Kakera Bonus</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Claiming</strong></td>
+                  <td>Basic name checks</td>
+                  <td><strong>Wishlist, Series, Value, Rank, Panic Claim & Auto-$rt</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Kakera</strong></td>
+                  <td>Blind click until 0 power</td>
+                  <td><strong>Power tracking, color thresholds, Chaos Mode & Auto-$dk</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Multi-Account</strong></td>
+                  <td>Isolated single process</td>
+                  <td><strong>Shared ClaimCoordinator lock with cross-account cache</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Security</strong></td>
+                  <td>Plaintext tokens in files</td>
+                  <td><strong>Windows DPAPI, System Keyring & Android Keystore AES-GCM</strong></td>
+                </tr>
+              </tbody>
+            </table>
+
+          </div>
+        </article>
+
+      </div>
+
+      <!-- Tab 2: Wiki & Configuration Guide (All 10 Categories from wiki.txt) -->
+      <div class="tab-panel" id="tab-wiki">
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.244a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.244a2.25 2.25 0 0 0-1.748.832l-.248.31a.75.75 0 0 1-1.16 0l-.249-.31A2.25 2.25 0 0 0 5.004 13H.75a.75.75 0 0 1-.75-.75ZM1.5 2.5v9h3.504a3.743 3.743 0 0 1 2.246.746V3.5a2.25 2.25 0 0 0-2.25-2.25H1.5Zm13 9v-9h-3.494a2.25 2.25 0 0 0-2.256 2.25v8.746a3.743 3.743 0 0 1 2.246-.746h3.504Z"></path></svg>
+              <span>Configuration-Guide.md (Official 10-Section Wiki Reference)</span>
+            </div>
+          </div>
+          <div class="markdown-body">
+            
+            <h2>🟢 1. Connection (Connecting to Discord)</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Discord Account Token</strong></td><td><code>token</code></td><td>Your secret Discord user account password token (NEVER share this). Stored in secure system vault.</td></tr>
+                <tr><td><strong>Discord Channel ID</strong></td><td><code>channel_id</code></td><td>The ID of the Discord channel where the bot performs its rolls.</td></tr>
+                <tr><td><strong>Command Channel ID</strong></td><td><code>command_channel_id</code></td><td>Optional separate channel for status/daily commands (<code>$tu</code>, <code>$dk</code>, <code>$daily</code>) to keep main chat clean.</td></tr>
+                <tr><td><strong>Self-Bot Prefix</strong></td><td><code>prefix</code></td><td>The command prefix to control this bot instance (e.g. <code>!</code> or <code>/</code>).</td></tr>
+                <tr><td><strong>Mudae Game Prefix</strong></td><td><code>mudae_prefix</code></td><td>The prefix Mudae uses in your target server (usually <code>$</code>).</td></tr>
+                <tr><td><strong>Roll Type</strong></td><td><code>roll_command</code></td><td>The rolling command roulette (<code>wa</code>, <code>ha</code>, <code>ma</code>, <code>wg</code>, <code>hg</code>).</td></tr>
+                <tr><td><strong>Wait Time Before Checking</strong></td><td><code>delay_seconds</code></td><td>Additional resting time in seconds before processing incoming messages.</td></tr>
+                <tr><td><strong>Wait Before Starting</strong></td><td><code>start_delay</code></td><td>Seconds to wait at startup so multiple bot instances don't send commands simultaneously.</td></tr>
+                <tr><td><strong>Start with Windows</strong></td><td><code>autostart</code></td><td>Makes the bot launch automatically in the background when your computer powers on.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>🎲 2. Rolling (Rolling Controls)</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Rolling Enabled</strong></td><td><code>rolling</code></td><td>Master switch. <code>true</code> = executes rolls, <code>false</code> = silently watches chat and snipes.</td></tr>
+                <tr><td><strong>Use /slash commands</strong></td><td><code>use_slash_rolls</code></td><td>Sends slash commands (<code>/wa</code>, <code>/mk</code>) instead of text (<code>$wa</code>) for associated Kakera bonuses.</td></tr>
+                <tr><td><strong>Rolling Speed</strong></td><td><code>roll_speed</code></td><td>How many seconds to wait between each roll (recommend &ge;2.0s for slash commands).</td></tr>
+                <tr><td><strong>Roll Timer</strong></td><td><code>roll_interval</code></td><td>How often Mudae rolls reset (usually 60 minutes).</td></tr>
+                <tr><td><strong>Smart Timing</strong></td><td><code>time_rolls_to_claim_reset</code></td><td>Waits and finishes rolls right when your claim right resets for maximum snipe safety.</td></tr>
+                <tr><td><strong>Scheduled Roll Times</strong></td><td><code>scheduled_roll_times</code></td><td>Makes the bot roll at exact timestamps (e.g. <code>["14:00", "18:30"]</code>) instead of every hour.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>🔀 3. Stacked Rolls ($us) & Extra Rolls ($mk)</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Auto Use Saved Rolls ($us)</strong></td><td><code>auto_us_enabled</code></td><td>Automatically spends your saved rolls (<code>$us</code>).</td></tr>
+                <tr><td><strong>Stop $us After Claim</strong></td><td><code>auto_us_stop_on_claim</code></td><td>Stops spending <code>$us</code> rolls immediately after successfully claiming a character.</td></tr>
+                <tr><td><strong>Max Saved Rolls per Hour</strong></td><td><code>auto_us_limit</code></td><td>Maximum <code>$us</code> rolls allowed to use at once (0 = use all available).</td></tr>
+                <tr><td><strong>Bulk US Mode</strong></td><td><code>bulk_us_enabled</code></td><td>Pulls all saved rolls at once in batch instead of waiting for single steps.</td></tr>
+                <tr><td><strong>Auto Extra Kakera Rolls ($mk)</strong></td><td><code>auto_mk_enabled</code></td><td>Automatically rolls <code>/mk</code> when slash commands are enabled, with safe <code>$mk</code> fallback.</td></tr>
+                <tr><td><strong>Force $mk Rolls</strong></td><td><code>mk_bypass_power_check</code></td><td>Uses <code>$mk</code> rolls even if your reaction power is low.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>📅 4. Daily Rolls ($rolls)</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Auto Use Daily Rolls ($rolls)</strong></td><td><code>auto_rolls_enabled</code></td><td>Automatically uses <code>$rolls</code> when your normal hourly rolls run out.</td></tr>
+                <tr><td><strong>Max Times to Use Daily Rolls</strong></td><td><code>auto_rolls_limit</code></td><td>Maximum daily roll uses per hour (0 = unlimited).</td></tr>
+                <tr><td><strong>Only Use Daily Rolls in Claim Hour</strong></td><td><code>auto_rolls_only_claim_hour</code></td><td>Only uses <code>$rolls</code> when there is less than 1 hour remaining until claim reset.</td></tr>
+                <tr><td><strong>Use Daily Rolls for Keys</strong></td><td><code>auto_rolls_in_key_mode</code></td><td>Uses <code>$rolls</code> in key farming mode even if you cannot claim.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>💖 5. Claiming Rules & Limits</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Minimum Value to Claim</strong></td><td><code>min_kakera</code></td><td>Minimum value to claim a character on own rolls (0 = claims everything).</td></tr>
+                <tr><td><strong>Claim Timer</strong></td><td><code>claim_interval</code></td><td>How often claim rights refresh (usually 180 minutes).</td></tr>
+                <tr><td><strong>Max Claims Rank Limit</strong></td><td><code>max_claim_rank</code></td><td>Claims any character with a claim rank better than this limit (0 = disabled).</td></tr>
+                <tr><td><strong>Max Likes Rank Limit</strong></td><td><code>max_like_rank</code></td><td>Claims any character with a like rank better than this limit (0 = disabled).</td></tr>
+                <tr><td><strong>Key Farming Mode</strong></td><td><code>key_mode</code></td><td>Keeps rolling for keys/crystals even when you cannot claim anyone.</td></tr>
+                <tr><td><strong>Lurker Strategy</strong></td><td><code>lurker_mode</code></td><td>Waits silently for other players to roll first, then does own rolls at the end.</td></tr>
+                <tr><td><strong>Panic Roll Start</strong></td><td><code>panic_roll_minutes</code></td><td>Minutes left before reset to dump your rolls in Lurker Mode.</td></tr>
+                <tr><td><strong>Hybrid Smart Panic Claim</strong></td><td><code>enable_hybrid_panic_claim</code></td><td>If a high-value character appears in the last claim hour, stops rolling and claims immediately.</td></tr>
+                <tr><td><strong>Hybrid Instant Claim Min Kakera</strong></td><td><code>hybrid_panic_instant_claim_min_kakera</code></td><td>Min value needed to claim instantly during panic hour.</td></tr>
+                <tr><td><strong>Hybrid Instant Claim Max Rank</strong></td><td><code>hybrid_panic_instant_claim_max_rank</code></td><td>Max rank needed to claim instantly during panic hour.</td></tr>
+                <tr><td><strong>Dynamic Cooldown Rounds</strong></td><td><code>claim_rounds_thresholds</code></td><td>Hourly custom overrides for claiming limits across multiple reset rounds.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>🎯 6. Sniping & Stealing Controls</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Snipe Characters</strong></td><td><code>snipe_mode</code></td><td>Steals wishlist characters rolled by other players.</td></tr>
+                <tr><td><strong>Snipe Wait Time</strong></td><td><code>snipe_delay</code></td><td>Seconds to wait before stealing someone else's roll.</td></tr>
+                <tr><td><strong>Panic Claim</strong></td><td><code>snipe_ignore_min_kakera_reset</code></td><td>During the last hour before reset, ignores <code>min_kakera</code> to claim the best available character.</td></tr>
+                <tr><td><strong>Target Snipe Channels</strong></td><td><code>snipe_channels</code></td><td>Specific channel IDs to monitor for sniping.</td></tr>
+                <tr><td><strong>Instant Self-Claim</strong></td><td><code>reactive_snipe_on_own_rolls</code></td><td>Instantly claims desired characters from your own rolls mid-roll.</td></tr>
+                <tr><td><strong>Self-Claim Delay</strong></td><td><code>reactive_snipe_delay</code></td><td>Delay in seconds before claiming your own rolls.</td></tr>
+                <tr><td><strong>Series Sniping</strong></td><td><code>series_snipe_mode</code></td><td>Steals characters belonging to specific shows on your Series Wishlist.</td></tr>
+                <tr><td><strong>Series Snipe Wait Time</strong></td><td><code>series_snipe_delay</code></td><td>Seconds to wait before series sniping.</td></tr>
+                <tr><td><strong>Value Sniping</strong></td><td><code>kakera_snipe_mode</code></td><td>Steals characters from others simply because they are expensive.</td></tr>
+                <tr><td><strong>Minimum Value to Steal</strong></td><td><code>kakera_snipe_threshold</code></td><td>Minimum value needed to steal a character from others.</td></tr>
+                <tr><td><strong>Auto-Collect Kakera</strong></td><td><code>kakera_reaction_snipe_mode</code></td><td>Automatically clicks crystals on other players' rolls.</td></tr>
+                <tr><td><strong>Kakera Collection Delay</strong></td><td><code>kakera_reaction_snipe_delay</code></td><td>Delay in seconds before clicking others' crystals.</td></tr>
+                <tr><td><strong>Chaos Kakera Only</strong></td><td><code>only_chaos</code></td><td>Only clicks crystals that cost half-power (characters with 10+ keys).</td></tr>
+                <tr><td><strong>MK Kakera Only</strong></td><td><code>mk_only</code></td><td>Only clicks crystals spawned by your own <code>$mk</code> rolls.</td></tr>
+                <tr><td><strong>Immediate Kakera Click</strong></td><td><code>immediate_kakera_click</code></td><td>Clicks crystals instantly during rolls instead of waiting for batch completion.</td></tr>
+                <tr><td><strong>Private Restore</strong></td><td><code>rt_only_self_rolls</code></td><td>Saves your <code>$rt</code> command to only reset claims on your own rolls.</td></tr>
+                <tr><td><strong>Restore for Wishlist</strong></td><td><code>rt_ignore_min_kakera_for_wishlist</code></td><td>Uses <code>$rt</code> for wishlist characters even if their value is low.</td></tr>
+                <tr><td><strong>Auto $rt After Claim</strong></td><td><code>auto_rt_after_claim</code></td><td>Instantly types <code>$rt</code> to reset your claim right after a successful claim.</td></tr>
+                <tr><td><strong>Main Account ID</strong></td><td><code>main_account_id</code></td><td>Instantly claims wanted rolls made by your Main Account ID (for alts).</td></tr>
+              </tbody>
+            </table>
+
+            <h2>📋 7. Wishlists & Filters</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Character Wishlist</strong></td><td><code>wishlist</code></td><td>Names of characters to auto-claim (comma-separated).</td></tr>
+                <tr><td><strong>Series Wishlist</strong></td><td><code>series_wishlist</code></td><td>Names of anime/games to auto-claim (comma-separated).</td></tr>
+                <tr><td><strong>Blacklisted Characters</strong></td><td><code>avoid_list</code></td><td>Characters the bot will NEVER claim.</td></tr>
+                <tr><td><strong>Target User IDs</strong></td><td><code>kakera_reaction_snipe_targets</code></td><td>Only steals crystals from these specific user IDs (leave blank for all).</td></tr>
+                <tr><td><strong>Kakera Farming Loop</strong></td><td><code>farm_character_enabled</code></td><td>Enables the end-game loop to endlessly divorce and claim a character (Emerald IV).</td></tr>
+                <tr><td><strong>Farm Character Name</strong></td><td><code>farm_character</code></td><td>The character name for the farming loop.</td></tr>
+                <tr><td><strong>Forcedivorce Before Rolling</strong></td><td><code>farm_forcedivorce_before_roll</code></td><td>Releases the farm character before this account starts a roll cycle.</td></tr>
+                <tr><td><strong>Forcedivorce After Claim</strong></td><td><code>farm_forcedivorce_after_claim</code></td><td>Releases the farm character after this account verifies its own claim.</td></tr>
+                <tr><td><strong>Auto-Divorce</strong></td><td><code>auto_divorce_enabled</code></td><td>Divorces low-value or blacklisted series characters right after claim.</td></tr>
+                <tr><td><strong>Auto-Divorce Kakera Threshold</strong></td><td><code>auto_divorce_max_kakera</code></td><td>Divorce threshold value (anything higher is kept).</td></tr>
+                <tr><td><strong>Auto-Divorce Series</strong></td><td><code>auto_divorce_series</code></td><td>Specific shows where characters are divorced immediately.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>😀 8. Emojis & Customizations</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Claim Emojis</strong></td><td><code>claim_emojis</code></td><td>Heart emoji names to click for claims (e.g. <code>💖</code>, <code>💗</code>, <code>💘</code>, <code>❤️</code>).</td></tr>
+                <tr><td><strong>Kakera Emojis</strong></td><td><code>kakera_emojis</code></td><td>Normal crystal emoji names to click (<code>kakeraP</code>, <code>kakeraY</code>, <code>kakeraO</code>, <code>kakeraR</code>, <code>kakeraW</code>, <code>kakeraL</code>).</td></tr>
+                <tr><td><strong>Chaos Emojis</strong></td><td><code>chaos_emojis</code></td><td>Crystal emoji names to click on 10+ key cards.</td></tr>
+                <tr><td><strong>Ouroperk 8 Emojis</strong></td><td><code>sphere_perk_emojis</code></td><td>Kakera emoji names to click on the first daily half-power Ouroperk 8 roll.</td></tr>
+                <tr><td><strong>Claim Reaction Emojis</strong></td><td><code>randomized_claim_reactions</code></td><td>Custom emojis to react with for claims when buttons are missing.</td></tr>
+                <tr><td><strong>Kakera Priority Order</strong></td><td><code>kakera_priority_order</code></td><td>Priority list of crystal colors (clicks high priority colors first).</td></tr>
+                <tr><td><strong>Target Sphere Emojis</strong></td><td><code>sphere_click_targets</code></td><td>Ouroperk 9 and sphere-game emoji names allowed to click (<code>spM</code>, <code>spG</code>, <code>spY</code>, etc.).</td></tr>
+              </tbody>
+            </table>
+
+            <h2>🛡️ 9. Anti-Detection (Stealth)</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Timing Variation</strong></td><td><code>humanization_enabled</code></td><td>Randomizes action delays with micro-jitter.</td></tr>
+                <tr><td><strong>Random Wait Time</strong></td><td><code>humanization_window_minutes</code></td><td>Waits a random amount of minutes after hourly reset before rolling.</td></tr>
+                <tr><td><strong>Patience Inactivity</strong></td><td><code>humanization_inactivity_seconds</code></td><td>Waits for channel chat silence before starting rolls.</td></tr>
+                <tr><td><strong>Bot Sleep Schedule</strong></td><td><code>inactive_hours</code></td><td>Hours when the bot sleeps and does nothing (e.g. <code>[[1, 7]]</code> to sleep 1am - 7am).</td></tr>
+                <tr><td><strong>Self-Roll Kakera Delay</strong></td><td><code>reactive_kakera_delay_range</code></td><td>Random delay range before clicking crystals on your own rolls (e.g. <code>[0.3, 0.8]</code>).</td></tr>
+                <tr><td><strong>Snipe Chat Reactions</strong></td><td><code>enable_snipe_chat_reactions</code></td><td>Types a message in chat after successfully stealing a character.</td></tr>
+                <tr><td><strong>Snipe Chat Messages</strong></td><td><code>snipe_chat_messages</code></td><td>List of messages to randomly pick from when chatting after a steal.</td></tr>
+                <tr><td><strong>Automated Staggering</strong></td><td><code>persistent_stagger_seconds</code></td><td>Automated offset delay between multiple accounts to prevent simultaneous actions.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>⚙️ 10. Advanced & Refills</h2>
+            <table class="gh-table">
+              <thead><tr><th>Setting Name</th><th>JSON Key</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Auto $dk</strong></td><td><code>auto_dk_enabled</code></td><td>Automatically types <code>$dk</code> when ready.</td></tr>
+                <tr><td><strong>Smart Power Refill</strong></td><td><code>dk_power_management</code></td><td>Types <code>$dk</code> when your reaction power drops below click costs (Gold IV).</td></tr>
+                <tr><td><strong>Auto $p</strong></td><td><code>auto_p_enabled</code></td><td>Automatically claims free pokemon from <code>$p</code>.</td></tr>
+                <tr><td><strong>Maximum DK Power %</strong></td><td><code>max_dk_power</code></td><td>Your upgraded maximum reaction power limit (default is 100, up to 500%+).</td></tr>
+                <tr><td><strong>Fast Start</strong></td><td><code>skip_initial_commands</code></td><td>Skips sending <code>$limroul</code> and initial calibration commands on startup.</td></tr>
+                <tr><td><strong>Only Click on $op (Perk 5)</strong></td><td><code>op_perk_5_only</code></td><td>Only clicks crystals on characters with Perk 5 active.</td></tr>
+                <tr><td><strong>Min Power per Kakera</strong></td><td><code>kakera_power_thresholds</code></td><td>Power requirements before clicking specific colors (e.g. <code>{"kakeraY": 80}</code>).</td></tr>
+                <tr><td><strong>Expert Logs</strong></td><td><code>debug_mode</code></td><td>Activates deep technical console logging for troubleshooting.</td></tr>
+              </tbody>
+            </table>
+
+          </div>
+        </article>
+      </div>
+
+      <!-- Tab 3: Releases -->
+      <div class="tab-panel" id="tab-releases">
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"></path></svg>
+              <span>Releases & Binaries</span>
+            </div>
+          </div>
+          <div class="markdown-body">
+            <h2>🏷️ MudaRemote v4.8.10 (Latest Release)</h2>
+            <p>
+              Verified Windows standalone build, atomic updater manifest, and stability enhancements.
+            </p>
+
+            <table class="gh-table">
+              <thead>
+                <tr>
+                  <th>Platform / Artifact</th>
+                  <th>Type</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>MudaRemote.exe</strong></td>
+                  <td>Windows Standalone (PyInstaller 6.16)</td>
+                  <td><a href="https://github.com/misutesu-desu/MudaRemote/releases/download/v4.8.10/MudaRemote.exe" class="gh-btn gh-btn-primary">Download (22.7 MB)</a></td>
+                </tr>
+                <tr>
+                  <td><strong>Android Client (app-debug.apk)</strong></td>
+                  <td>Android APK (Kotlin + Chaquopy)</td>
+                  <td><a href="https://github.com/misutesu-desu/MudaRemote/releases" class="gh-btn">View Releases</a></td>
+                </tr>
+                <tr>
+                  <td><strong>Source Code (zip / tar.gz)</strong></td>
+                  <td>Cross-Platform Python 3.8+</td>
+                  <td><a href="https://github.com/misutesu-desu/MudaRemote/archive/refs/heads/main.zip" class="gh-btn">Source Code (.zip)</a></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>SHA-256 Checksum</h3>
+            <div class="code-snippet-box">
+              <code>82dab8d486024abea32156975aebbda7fa9bbf99821690e46636dd6cbeb7169d  MudaRemote.exe</code>
+              <button class="gh-btn" data-copy="82dab8d486024abea32156975aebbda7fa9bbf99821690e46636dd6cbeb7169d">Copy</button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Tab 4: Setup & Mobile (Windows, CLI, Android APK, Termux from support desk) -->
+      <div class="tab-panel" id="tab-setup">
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg>
+              <span>Deployment & Mobile Setup Guide</span>
+            </div>
+          </div>
+          <div class="markdown-body">
+            <h2>🖥️ Windows Standalone Setup</h2>
+            <ol>
+              <li>Download <code>MudaRemote.exe</code> from the <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest" target="_blank">Releases</a> tab.</li>
+              <li>Double-click to launch the <strong>Preset Editor</strong>.</li>
+              <li>Enter your Channel ID, select your roll command (<code>$wa</code>, <code>/wa</code>), and customize your Kakera thresholds.</li>
+              <li>Click <strong>Save & Start Bot</strong>.</li>
+            </ol>
+
+            <h2>🐍 Python / Source Setup (Cross-Platform)</h2>
+            <div class="code-snippet-box">
+              <code>git clone https://github.com/misutesu-desu/MudaRemote.git<br>cd MudaRemote<br>pip install -r requirements.txt</code>
+              <button class="gh-btn" data-copy="git clone https://github.com/misutesu-desu/MudaRemote.git && cd MudaRemote && pip install -r requirements.txt">Copy</button>
+            </div>
+            <p>To run the GUI editor:</p>
+            <div class="code-snippet-box">
+              <code>python mudae_preset_editor.py</code>
+              <button class="gh-btn" data-copy="python mudae_preset_editor.py">Copy</button>
+            </div>
+            <p>To run headlessly / CLI (supports single or all presets):</p>
+            <div class="code-snippet-box">
+              <code>python mudae_bot.py --all</code>
+              <button class="gh-btn" data-copy="python mudae_bot.py --all">Copy</button>
+            </div>
+
+            <h2>📱 Android Setup (APK or Termux)</h2>
+            <h3>Method A: Native APK (Recommended)</h3>
+            <ol>
+              <li>Download and install <code>app-debug.apk</code> from Releases.</li>
+              <li>Configure profiles and start the foreground service for 24/7 background execution.</li>
+            </ol>
+
+            <h3>Method B: Termux Mobile Setup (Community Guide)</h3>
+            <div class="code-snippet-box">
+              <code>pkg update && pkg upgrade -y && pkg install python python-tkinter git -y<br>git clone https://github.com/misutesu-desu/MudaRemote.git && cd MudaRemote<br>pip install discord.py-self inquirer requests</code>
+              <button class="gh-btn" data-copy="pkg update && pkg upgrade -y && pkg install python python-tkinter git -y && git clone https://github.com/misutesu-desu/MudaRemote.git && cd MudaRemote && pip install discord.py-self inquirer requests">Copy</button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Tab 5: FAQ & Support Desk Solutions -->
+      <div class="tab-panel" id="tab-faq">
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6.92 6.085c.081-.16.19-.299.34-.398.145-.097.371-.187.74-.187.28 0 .514.075.672.185.163.114.248.286.248.515 0 .28-.152.483-.34.646-.22.189-.523.364-.784.582-.245.204-.446.47-.446.822a.75.75 0 0 0 1.5 0c0-.1.05-.18.172-.28.204-.171.503-.342.766-.569.294-.253.632-.657.632-1.201 0-.61-.266-1.124-.698-1.436C9.288 4.526 8.683 4 8 4c-.732 0-1.348.243-1.764.606-.41.358-.65.856-.69 1.408a.75.75 0 0 0 1.49.112c.01-.137.036-.26.084-.361Z"></path></svg>
+              <span>Support Desk Knowledge Base & Solutions</span>
+            </div>
+          </div>
+          <div class="markdown-body">
+            <h2>❓ Frequently Asked Questions & Troubleshooting</h2>
+            <p>
+              Compiled directly from real support tickets, community solutions, and the developer's guide.
+            </p>
+            
+            <div class="gh-faq-list">
+              
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Why is the bot claiming random characters not on my wishlist or below minimum Kakera?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  This is almost always caused by one of three settings:
+                  <ul style="margin: 0.5rem 0 0 1.25rem;">
+                    <li><strong>Panic Claim (<code>snipe_ignore_min_kakera_reset</code>):</strong> When enabled, if your claim resets within 60 minutes, the bot will claim the highest-value available character regardless of <code>min_kakera</code> to avoid wasting a claim right ("use it or lose it"). Disable this toggle if you strictly want only wishlist/high-value claims.</li>
+                    <li><strong>Own Rolls vs Other Players:</strong> <code>min_kakera</code> applies to your <em>own</em> rolls. If you want a threshold for stealing from <em>other players</em>, configure <strong>Value Sniping Threshold</strong> (<code>kakera_snipe_threshold</code>).</li>
+                    <li><strong>Rank Limits:</strong> Check if <code>max_claim_rank</code> or <code>max_like_rank</code> is enabled in your claim rules.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Why is the bot skipping Kakera crystals even though I have 100% power?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  Check the following common causes:
+                  <ul style="margin: 0.5rem 0 0 1.25rem;">
+                    <li><strong>Chaos Mode (<code>only_chaos</code>):</strong> When enabled, the bot <em>only</em> clicks crystals on characters with 10+ keys (chaos keys with 50% power discount). It deliberately ignores normal rolls.</li>
+                    <li><strong>Custom Kakera Emojis list:</strong> Check <strong>Kakera Emojis</strong> under Advanced Settings. If a color (e.g. <code>kakeraP</code>, <code>kakeraY</code>, <code>kakeraO</code>) was deleted from the list, the bot will ignore it.</li>
+                    <li><strong>Power Thresholds (<code>kakera_power_thresholds</code>):</strong> If you set a minimum power requirement for a specific color (e.g. Yellow: 200%), the bot will skip it when power is below that number.</li>
+                    <li><strong>$mk Only Mode (<code>mk_only</code>):</strong> If turned on, the bot restricts clicks exclusively to crystals that drop from <code>$mk</code> rolls.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How does Smart Timing (<code>time_rolls_to_claim_reset</code>) work?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  If your claim right is already available, the bot rolls immediately. If your claim is on cooldown but will reset within 60 minutes, the bot calculates your total roll duration and starts rolling at the exact minute needed so that your last roll finishes right after your claim resets. This ensures you can claim any high-value card rolled with your fresh claim right.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How do I prevent the bot from sending <code>$limroul</code> on startup?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  In the Preset Editor under <strong>Power & Expert / Misc</strong>, turn on <strong>Fast Start</strong> (<code>skip_initial_commands: true</code>). This skips sending <code>$limroul</code>, <code>$dk</code>, and startup calibration commands on bot launch.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How do I configure multiple accounts (alts) without collisions?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  Create a separate preset for each account with its own Discord Token and Channel ID. Set a staggered <strong>Wait Before Starting</strong> (<code>start_delay</code>, e.g. Account 1: 0s, Account 2: 15s, Account 3: 30s). The built-in <code>ClaimCoordinator</code> lock coordinates claim reservations across all accounts so they never double-claim or race for the same character.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Why does the bot send <code>$tu</code> and can it be stopped?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  <code>$tu</code> is mandatory on initial startup and after hourly resets because it provides the authoritative state: claim timer, roll reset, available rolls, $rt cooldown, Kakera power %, and $dk stock. In version 4.6+, the bot uses an intelligent status freshness ledger and will <strong>never</strong> repeat <code>$tu</code> unnecessarily during normal rolling. You can also specify a <strong>Command Channel ID</strong> (<code>command_channel_id</code>) to keep your main rolling channel clean.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How does Smart Power Refill (<code>$dk</code>) work?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  To use Smart Refill, enable both <strong>Auto $dk</strong> (<code>auto_dk_enabled</code>) and <strong>Smart Power Refill</strong> (<code>dk_power_management</code>). Instead of spamming $dk the second it is off cooldown, the bot checks your current power and click costs. When your power drops below the threshold needed for a crystal click, it automatically sends $dk to restore power (requires Gold IV badge in Mudae).
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>What is the difference between <code>snipe_mode</code> and <code>reactive_snipe_on_own_rolls</code>?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  <ul style="margin: 0.25rem 0 0 1.25rem;">
+                    <li><code>snipe_mode</code>: Monitors messages from <strong>other users</strong> in configured channels and steals matching wishlist or high-value characters they roll.</li>
+                    <li><code>reactive_snipe_on_own_rolls</code>: Monitors your <strong>own rolls in real time</strong>. When a wishlist hit appears, it clicks the claim button instantly without waiting for your entire roll batch to complete.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How does the Heuristic Sphere Game Solver work ($oh & $oc)?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  For <code>$oh</code> (Sphere Harvest), MudaRemote prioritizes free purple clicks and valuable revealed spheres according to your preference order. For <code>$oc</code> (Red Sphere Clue Board), it analyzes revealed clue numbers and eliminates candidate tiles to pinpoint the red sphere safely within 5 clicks.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>How does the Kakera Forcedivorce Farm Loop work?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  If you have server admin/mod permissions, the bot forcedivorces your chosen high-value character (Emerald IV gives you 100% of their kakera value upon claiming them again while keeping all their keys). The bot can release the farm character before starting a roll cycle or immediately after a verified claim.
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Error: <code>BotBase.__init__() missing 1 required keyword-only argument: 'intents'</code></span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  This error occurs if standard <code>discord.py</code> is installed instead of the self-bot fork. Fix it by running:
+                  <div class="code-snippet-box" style="margin: 0.5rem 0;">
+                    <code>pip uninstall discord.py<br>pip install discord.py-self</code>
+                    <button class="gh-btn" data-copy="pip uninstall discord.py -y && pip install discord.py-self">Copy</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Error: <code>404 Not Found (error code: 10003): Unknown Channel</code></span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  The Discord Channel ID or Command Channel ID entered in your preset editor does not exist, or the Discord account token you provided does not have permissions to read/send messages in that channel. Double-check your channel IDs (Right click channel in Discord &rarr; Copy Channel ID with Developer Mode on).
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Does my PC have to stay on, and can I turn off my monitor?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  Yes, your PC must remain powered on with sleep/hibernate disabled in Windows power settings. You can safely turn off your physical monitor or run headlessly on a VPS / Android device (via the APK or Termux).
+                </div>
+              </div>
+
+              <div class="gh-faq-item">
+                <div class="gh-faq-question">
+                  <span>Why should I use Slash Commands (<code>/wa</code>) and what roll speed should I use?</span>
+                  <span class="gh-faq-chevron">▼</span>
+                </div>
+                <div class="gh-faq-answer">
+                  Mudae awards extra Kakera bonuses and increased wish spawn rates when using slash commands (<code>/wa</code>, <code>/ha</code>, <code>/mk</code>). When using slash commands, set <strong>Rolling Speed</strong> to at least <strong>2.0 seconds</strong> in the editor to avoid Discord interaction rate limits.
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Tab 6: Sponsor -->
+      <div class="tab-panel" id="tab-sponsor">
+        <article class="markdown-file-box">
+          <div class="markdown-file-header">
+            <div class="markdown-file-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="color: #bf3989;"><path d="m8 14.25.345.666a.75.75 0 0 1-.69 0l-.008-.004-.018-.01a7.152 7.152 0 0 1-.31-.17 22.055 22.055 0 0 1-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.75 1a4.945 4.945 0 0 1 3.25 1.258A4.945 4.945 0 0 1 11.25 1C13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.066 22.066 0 0 1-3.434 2.414 7.152 7.152 0 0 1-.31.17l-.018.01-.008.004Zm0-11.25a3.445 3.445 0 0 0-2.5 1.078.75.75 0 0 1-1.08-.02C3.81 3.434 2.928 2.5 1.5 2.5 1.5 2.5 0 3.75 0 5.5c0 2.128 1.62 4.148 3.328 5.617A20.575 20.575 0 0 0 8 13.064a20.575 20.575 0 0 0 4.672-1.947C14.38 9.648 16 7.628 16 5.5c0-1.75-1.5-3-1.5-3a3.445 3.445 0 0 0-2.92 1.558.75.75 0 0 1-1.08.02A3.445 3.445 0 0 0 8 3Z"></path></svg>
+              <span>Sponsor & Community Support</span>
+            </div>
+          </div>
+          <div class="markdown-body">
+            <h2>💖 Support MudaRemote Development</h2>
+            <p>
+              MudaRemote is free and open source. Donations help cover regression tests, Windows packaging checksums, update testing, and community support.
+            </p>
+
+            <div class="gh-alert gh-alert-important">
+              <div class="gh-alert-title">
+                <span>Milestone: 40% Funded ($40 / $100 Raised)</span>
+              </div>
+              <p style="margin: 0; font-size: 0.88rem;">
+                Every contribution helps maintain Discord & Mudae compatibility updates!
+              </p>
+            </div>
+
+            <table class="gh-table">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Network</th>
+                  <th>Deposit Address</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Litecoin (LTC)</strong></td>
+                  <td>Litecoin</td>
+                  <td><code>LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt</code></td>
+                  <td><button class="gh-btn" data-copy="LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt">Copy LTC</button></td>
+                </tr>
+                <tr>
+                  <td><strong>Tether (USDT)</strong></td>
+                  <td>TRON (TRC20)</td>
+                  <td><code>TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp</code></td>
+                  <td><button class="gh-btn" data-copy="TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp">Copy USDT</button></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p style="font-size: 0.85rem; color: var(--gh-text-secondary);">
+              🎁 <strong>Donator Discord Role:</strong> DM your transaction ID to the developer on Discord to receive the exclusive Donator role!
+            </p>
+          </div>
+        </article>
+      </div>
+
+    </div>
+
+    <!-- Right Column: GitHub Repository Sidebar -->
+    <aside class="repo-sidebar">
+      
+      <!-- About Block -->
+      <div>
+        <div class="sidebar-block-title">About</div>
+        <p class="sidebar-desc" data-i18n="heroDesc">
+          ⚡ Advanced desktop & mobile Discord self-bot for Mudae. Sniping, intelligent Kakera collection, heuristic sphere solvers, and multi-account sync.
+        </p>
+
+        <ul class="sidebar-meta-list">
+          <li class="sidebar-meta-item">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"></path></svg>
+            <a href="https://discord.gg/4WHXkDzuZx" target="_blank" rel="noopener">discord.gg/4WHXkDzuZx</a>
+          </li>
+          <li class="sidebar-meta-item">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75.75V2h.985c.304 0 .603.08.867.231l1.29.736c.438.25.962.25 1.4 0l1.29-.736A1.748 1.748 0 0 1 15.45 2H16v1.25a.75.75 0 0 1-1.5 0V3.25h-.55a.249.249 0 0 0-.124.033l-1.29.736c-.874.5-1.926.5-2.8 0l-1.29-.736A.249.249 0 0 0 9.735 3H8.75v10.5h1.235c.304 0 .603.08.867.231l1.29.736c.438.25.962.25 1.4 0l1.29-.736c.264-.15.563-.231.867-.231h.55V12.75a.75.75 0 0 1 1.5 0V14h-.55a1.748 1.748 0 0 1-.867-.231l-1.29-.736a2.748 2.748 0 0 0-1.4 0l-1.29.736a1.748 1.748 0 0 1-.867.231H8.75V15.25a.75.75 0 0 1-1.5 0V14H6.015a1.748 1.748 0 0 1-.867-.231l-1.29-.736a2.748 2.748 0 0 0-1.4 0l-1.29.736A1.748 1.748 0 0 1 .3 14H0v-1.25a.75.75 0 0 1 1.5 0v.5h.55c.046 0 .09-.012.124-.033l1.29-.736c.874-.5 1.926-.5 2.8 0l1.29.736c.033.02.078.033.124.033H7.25V3H6.015c-.304 0-.603-.08-.867-.231l-1.29-.736c-.438-.25-.962-.25-1.4 0l-1.29.736A1.748 1.748 0 0 1 .3 2H0V.75A.75.75 0 0 1 1.5.75V2h.55c.046 0 .09.012.124.033l1.29.736c.874.5 1.926.5 2.8 0l1.29-.736A.249.249 0 0 0 6.015 2H7.25V.75a.75.75 0 0 1 1.5 0Z"></path></svg>
+            <span>MIT License</span>
+          </li>
+          <li class="sidebar-meta-item">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"></path></svg>
+            <span><strong>310</strong> stars</span>
+          </li>
+          <li class="sidebar-meta-item">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"></path></svg>
+            <span><strong>12</strong> forks</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Releases Block -->
+      <div>
+        <div class="sidebar-block-title">
+          <span>Releases</span>
+          <span class="sidebar-badge-latest">18 tags</span>
+        </div>
+        <div class="sidebar-release-item">
+          <div class="sidebar-release-tag">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="color: var(--gh-accent-green-text);"><path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"></path></svg>
+            <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest">v4.8.10</a>
+            <span class="sidebar-badge-latest">Latest</span>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--gh-text-muted);">Updated August 2026</span>
+        </div>
+      </div>
+
+      <!-- Sponsor Sidebar Box -->
+      <div>
+        <div class="sidebar-block-title">
+          <span>Sponsor this project</span>
+        </div>
+        <div class="sidebar-sponsor-box">
+          <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600;">
+            <span data-i18n="goalText">Goal: $40 of $100</span>
+            <span style="color: var(--gh-accent-green-text);">40%</span>
+          </div>
+          <div class="sponsor-progress-bar">
+            <div class="sponsor-progress-fill"></div>
+          </div>
+          <div class="crypto-row">
+            <span>LTC</span>
+            <button class="gh-btn" style="padding: 0.15rem 0.45rem; font-size: 0.75rem;" data-copy="LM16i4Sf34zmnGU35AuCmtyMSL3M4Nfutt">Copy</button>
+          </div>
+          <div class="crypto-row">
+            <span>USDT (TRC20)</span>
+            <button class="gh-btn" style="padding: 0.15rem 0.45rem; font-size: 0.75rem;" data-copy="TQWeEprEbJyk1EcSHDk1pnn7rkgcsTBazp">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Languages Block -->
+      <div>
+        <div class="sidebar-block-title">Languages</div>
+        <div class="gh-lang-bar">
+          <span class="gh-lang-python"></span>
+          <span class="gh-lang-kotlin"></span>
+          <span class="gh-lang-other"></span>
+        </div>
+        <div class="gh-lang-legend">
+          <span><span class="gh-lang-dot" style="background: #3572A5;"></span>Python <strong>88.4%</strong></span>
+          <span><span class="gh-lang-dot" style="background: #A97BFF;"></span>Kotlin <strong>9.2%</strong></span>
+          <span><span class="gh-lang-dot" style="background: #ededed;"></span>Other <strong>2.4%</strong></span>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- GitHub Footer -->
+  <footer class="gh-footer">
+    <div class="container gh-footer-inner">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <svg class="gh-octocat" style="width: 24px; height: 24px; fill: var(--gh-text-muted);" viewBox="0 0 16 16" version="1.1" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+        <span>© 2026 MudaRemote Contributors. Open source under MIT License.</span>
+      </div>
+
+      <ul class="gh-footer-links">
+        <li><a href="https://github.com/misutesu-desu/MudaRemote" target="_blank">GitHub</a></li>
+        <li><a href="https://discord.gg/4WHXkDzuZx" target="_blank">Discord</a></li>
+        <li><a href="https://github.com/misutesu-desu/MudaRemote/releases" target="_blank">Releases</a></li>
+        <li><a href="https://github.com/misutesu-desu/MudaRemote/issues" target="_blank">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/app.js"></script>
+</body>
+</html>

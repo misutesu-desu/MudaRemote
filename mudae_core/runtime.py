@@ -68,6 +68,7 @@ def can_resume_claim_interrupted_rolls(client) -> bool:
             getattr(client, "key_mode", False)
             or getattr(client, "claim_right_available", False)
             or getattr(client, "rt_available", False)
+            or getattr(client, "is_timing_mode_active", False)
         )
     )
 

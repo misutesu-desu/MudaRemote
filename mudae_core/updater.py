@@ -193,6 +193,7 @@ def apply_update(session, manifest, current_version, base_path, frozen=False, ex
     if os.path.isdir(os.path.join(base_path, ".git")):
         return "git"
 
+    os.makedirs(base_path, exist_ok=True)
     stage_dir = tempfile.mkdtemp(prefix="mudae-update-", dir=base_path)
     try:
         relative_paths = _stage_source_manifest(session, manifest, stage_dir)

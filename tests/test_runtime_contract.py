@@ -1453,6 +1453,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         ]
         self.assertEqual(direct_sends, [])
 
+    def test_smart_timing_contract(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("client.is_timing_mode_active = is_timing_mode_active", roll_source)
+        self.assertIn("Smart Timing: Processing {len(client.collected_rolls)} collected roll(s) at claim reset.", roll_source)
+        self.assertIn("client.is_timing_mode_active = False", roll_source)
+        self.assertIn("getattr(client, 'is_timing_mode_active', False)", message_source)
+        self.assertIn("Smart Timing: Saved {c_name} for claim at reset.", message_source)
+
 
 if __name__ == "__main__":
     unittest.main()

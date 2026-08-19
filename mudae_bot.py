@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10-beta.5"
+CURRENT_VERSION = "4.8.10"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -533,7 +533,8 @@ def check_for_updates(confirm_update=None):
     if not UPDATE_URL:
         return "disabled"
     is_frozen = getattr(sys, 'frozen', False)
-    print_system_log(f"Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'EXE' if is_frozen else 'Script'})", "RESET")
+    is_android = os.environ.get("TERMUX_VERSION") == "MudaRemote-Android" or bool(os.environ.get("MUDAREMOTE_RUNTIME_HOME"))
+    print_system_log(f"Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
     try:
         response = requests.get(f"{UPDATE_URL}version.json", timeout=(3.05, 8.0))
         response.raise_for_status()
@@ -545,16 +546,35 @@ def check_for_updates(confirm_update=None):
 
         changelog = format_update_changelog(data)
         base_path = get_base_path()
-        if not is_frozen and os.path.isdir(os.path.join(base_path, ".git")):
+        if not is_frozen and not is_android and os.path.isdir(os.path.join(base_path, ".git")):
             print(f"\nChangelog for v{latest_version}:\n{changelog}\n")
             print_system_log(f"v{latest_version} is available. This is a Git checkout; run 'git pull' so local changes are never overwritten.", "WARN")
             return "git"
 
-        confirmation = confirm_update or _confirm_update_in_console
+        confirmation = confirm_update or (
+            (lambda v, c: True) if is_android else _confirm_update_in_console
+        )
         print_system_log(f"v{latest_version} is available. Waiting for update confirmation.", "RESET")
         if not confirmation(latest_version, changelog):
             print_system_log(f"Update to v{latest_version} was skipped. Your current files and presets were not changed.", "INFO")
             return "skipped"
+
+        if is_android:
+            runtime_home = os.environ.get("MUDAREMOTE_RUNTIME_HOME") or os.environ.get("HOME") or base_path
+            target_path = os.path.join(runtime_home, "python_code")
+            os.makedirs(target_path, exist_ok=True)
+            result = apply_update(
+                requests,
+                data,
+                CURRENT_VERSION,
+                target_path,
+                frozen=False,
+                executable=sys.executable,
+            )
+            with open(os.path.join(target_path, ".version"), "w", encoding="utf-8") as vh:
+                vh.write(str(latest_version))
+            print_system_log(f"Verified Python source update v{latest_version} applied to Android storage. Will be used on next start.", "INFO")
+            return "source"
 
         result = apply_update(
             requests,
@@ -1029,6 +1049,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.next_p_claim_at_utc = None
     client.key_limit_hit = False
     client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
+    client.is_timing_mode_active = False
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
 
     client.last_tu_query_utc = None
@@ -3543,7 +3564,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if 0 < diff <= 3600: reset_soon = True
 
         is_timing_mode_active = False
-        if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and (reset_soon or (not client.rt_available and not client.key_mode)):
+        if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and reset_soon:
             now_utc = datetime.datetime.now(timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
                 actual_speed = (max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed) + random.uniform(0.05, 0.25)
@@ -3560,7 +3581,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if not await active_delay(wait_s):
                         mark_status_dirty(client, {"rolls"}, reason="timed-roll-wait-interrupted")
                         return
-                    is_timing_mode_active = True
+                is_timing_mode_active = True
+        client.is_timing_mode_active = is_timing_mode_active
 
         BotLogger.log(f"Rolling {rolls_left} times" + (" (Reactive)" if client.enable_reactive_self_snipe else ""), preset_name, "INFO")
         client.is_actively_rolling = True
@@ -3858,28 +3880,50 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.collected_kakera_rolls.clear()
 
         if is_timing_mode_active:
+            now_utc = datetime.datetime.now(timezone.utc)
+            if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
+                remaining_s = (client.next_claim_reset_at_utc - now_utc).total_seconds()
+                if 0 < remaining_s <= 30:
+                    BotLogger.log(f"Waiting {remaining_s:.1f}s for claim reset boundary...", preset_name, "RESET")
+                    await active_delay(remaining_s + 0.5)
+            refresh_predicted_claim_and_rt()
+            if client.collected_rolls:
+                BotLogger.log(f"Smart Timing: Processing {len(client.collected_rolls)} collected roll(s) at claim reset.", preset_name, "CLAIM")
+                try:
+                    await handle_mudae_messages(
+                        client,
+                        channel,
+                        client.collected_rolls,
+                        ignore_limit_for_post_roll,
+                        False,
+                    )
+                except Exception as e:
+                    BotLogger.log(f"Smart Timing post-roll processing error: {e}", preset_name, "ERROR")
+                client.collected_rolls.clear()
             request_status_refresh({"claim"}, reason="timing-reset-boundary", urgent=True)
             BotLogger.log("Reset passed. Verifying claim status with $tu.", preset_name, "CHECK")
+        else:
+            in_panic_hour = False
+            if client.next_claim_reset_at_utc:
+                now_utc = datetime.datetime.now(timezone.utc)
+                claim_reset_mins = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+                if claim_reset_mins <= getattr(client, 'panic_roll_minutes', 5) or claim_reset_mins <= 60:
+                    in_panic_hour = True
 
-        in_panic_hour = False
-        if client.next_claim_reset_at_utc:
-            now_utc = datetime.datetime.now(timezone.utc)
-            claim_reset_mins = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
-            if claim_reset_mins <= getattr(client, 'panic_roll_minutes', 5) or claim_reset_mins <= 60:
-                in_panic_hour = True
+            should_process_collected = False
+            if not getattr(client, 'enable_reactive_self_snipe', True):
+                should_process_collected = True
+            elif getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour:
+                should_process_collected = True
 
-        should_process_collected = False
-        if not getattr(client, 'enable_reactive_self_snipe', True):
-            should_process_collected = True
-        elif getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour:
-            should_process_collected = True
-
-        if should_process_collected and client.collected_rolls:
-            BotLogger.log(f"Processing {len(client.collected_rolls)} collected rolls immediately.", preset_name, "INFO")
-            try:
-                await handle_mudae_messages(client, channel, client.collected_rolls, ignore_limit_for_post_roll, False if is_timing_mode_active else key_mode_only_kakera_for_post_roll)
-            except Exception as e:
-                BotLogger.log(f"Defer-roll processing error: {e}", preset_name, "ERROR")
+            if should_process_collected and client.collected_rolls:
+                BotLogger.log(f"Processing {len(client.collected_rolls)} collected rolls immediately.", preset_name, "INFO")
+                try:
+                    await handle_mudae_messages(client, channel, client.collected_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll)
+                except Exception as e:
+                    BotLogger.log(f"Defer-roll processing error: {e}", preset_name, "ERROR")
+                client.collected_rolls.clear()
+        client.is_timing_mode_active = False
         await active_delay(1.0 + random.uniform(0.1, 0.5))
 
     async def execute_auto_divorce(client, channel, char_name):
@@ -5343,7 +5387,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     else:
                         client.collected_kakera_rolls.append(message)
             else:
-                if not getattr(client, 'enable_reactive_self_snipe', True):
+                refresh_predicted_claim_and_rt()
+                if not client.claim_right_available and not client.rt_available:
+                    is_val = k_val >= client.current_min_kakera_for_roll_claim
+                    if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis):
+                        if getattr(client, 'is_timing_mode_active', False):
+                            if message.id not in {getattr(item, "id", None) for item in client.collected_rolls}:
+                                client.collected_rolls.append(message)
+                            BotLogger.log(f"Smart Timing: Saved {c_name} for claim at reset.", preset_name, "CLAIM")
+                        else:
+                            t_to_r = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds() if client.next_claim_reset_at_utc else 999
+                            if 0 < t_to_r <= 15:
+                                BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
+                                if message.id not in {getattr(item, "id", None) for item in client.collected_rolls}:
+                                    client.collected_rolls.append(message)
+                                client._claim_reset_rolls_pending = True
+                                client.interrupt_rolling = True
+                                client._roll_interrupt_reason = "claim-reset-boundary"
+                                if not await active_delay(t_to_r + 0.2): return
+                                request_status_refresh({"claim"}, reason="near-claim-reset-boundary", urgent=True)
+                                return
+                elif not getattr(client, 'enable_reactive_self_snipe', True):
                     client.collected_rolls.append(message)
                 else:
                     is_val = k_val >= client.current_min_kakera_for_roll_claim
@@ -5352,19 +5416,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if is_key_mode_kakera_only():
                             pass
                         else:
-                            if not client.claim_right_available and not client.rt_available and client.next_claim_reset_at_utc:
-                                t_to_r = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds()
-                                if 0 < t_to_r <= 15:
-                                    BotLogger.log(f"Claim reset is in {t_to_r:.1f}s. Waiting for reset...", preset_name, "INFO")
-                                    if message.id not in {getattr(item, "id", None) for item in client.collected_rolls}:
-                                        client.collected_rolls.append(message)
-                                    client._claim_reset_rolls_pending = True
-                                    client.interrupt_rolling = True
-                                    client._roll_interrupt_reason = "claim-reset-boundary"
-                                    if not await active_delay(t_to_r + 0.2): return
-                                    request_status_refresh({"claim"}, reason="near-claim-reset-boundary", urgent=True)
-                                    return
-
                             client.interrupt_rolling = True
                             client._roll_interrupt_reason = "claim-attempt"
                             BotLogger.log(f"Real-time Claim: Halting rolls for claim attempt on {c_name}", preset_name, "CLAIM")
@@ -5706,18 +5757,35 @@ def main_menu():
     if threads:
         print(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m")
 
-def parse_args():
+def shutdown_mobile_runtime():
+    """Authoritatively close all active Discord clients for the Android foreground service."""
+    with _active_clients_lock:
+        clients = list(_active_clients)
+    for client in clients:
+        loop = getattr(client, "loop", None)
+        if loop and loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(client.close(), loop)
+            except Exception:
+                pass
+
+def reset_mobile_runtime():
+    """Reset active mobile runtime state before starting a new run."""
+    with _active_clients_lock:
+        _active_clients.clear()
+
+def parse_args(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="Mudae Bot Helper")
     parser.add_argument("--preset", type=str, help="Name of the preset to run")
     parser.add_argument("--all", action="store_true", help="Run all presets")
     parser.add_argument("--stagger-index", type=int, default=0, help="Active preset position for automated staggering")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
-if __name__ == "__main__":
+def run_cli(argv=None):
     cleanup_after_update()
     check_for_updates()
-    args = parse_args()
+    args = parse_args(argv)
     if args.preset:
         if args.preset in presets:
             prepared = prepare_active_presets([args.preset], presets, start_index=args.stagger_index)
@@ -5746,3 +5814,6 @@ if __name__ == "__main__":
             while True: time.sleep(1)
         except KeyboardInterrupt:
             print("\n[MudaRemote] Shutting down...")
+
+if __name__ == "__main__":
+    run_cli()
