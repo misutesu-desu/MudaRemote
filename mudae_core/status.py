@@ -259,6 +259,17 @@ def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_dead
     return proposed_deadline, boundary_advanced
 
 
+def reconcile_shared_claim_deadline(previous_deadline, observed_at, proposed_deadline, claim_available=False):
+    """Do not skip an unverified local claim boundary with a peer's next cycle."""
+    if proposed_deadline is None:
+        return previous_deadline, False
+    if previous_deadline is None or observed_at is None or claim_available:
+        return proposed_deadline, False
+    if proposed_deadline > previous_deadline:
+        return previous_deadline, previous_deadline <= observed_at
+    return proposed_deadline, False
+
+
 def consume_tu_urgent_bypass(client) -> bool:
     """Allow one urgent state change to bypass an existing failure backoff."""
     if not bool(getattr(client, "_status_refresh_urgent", False)):

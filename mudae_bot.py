@@ -91,7 +91,7 @@ try:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -122,7 +122,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -220,6 +220,15 @@ def _apply_shared_reset_snapshot(client, snapshot):
         # This account claimed after the shared snapshot was produced. Its
         # later local deadline must not be moved backwards by stale evidence.
         return
+
+    claim_deadline, claim_boundary_elapsed = reconcile_shared_claim_deadline(
+        current_deadline,
+        observed_at,
+        claim_deadline,
+        getattr(client, "claim_right_available", False),
+    )
+    if claim_boundary_elapsed:
+        mark_status_dirty(client, {"claim"}, reason="shared-claim-boundary", urgent=True)
 
     client.next_claim_reset_at_utc = claim_deadline
     if not getattr(client, "claim_right_available", False):

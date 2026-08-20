@@ -118,11 +118,21 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('reason="snipe-claim-reset"', loop_source)
 
     def test_shared_claim_boundary_does_not_interrupt_humanized_refresh(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
         start = self.source.index("    def unlock_at_shared_boundary():")
         end = self.source.index("\n    loop = getattr(client, \"loop\", None)", start)
         boundary_source = self.source[start:end]
         self.assertIn('reason="shared-claim-boundary"', boundary_source)
         self.assertNotIn("event.set()", boundary_source)
+        shared_reset_source = ast.get_source_segment(
+            self.source,
+            functions["_apply_shared_reset_snapshot"],
+        )
+        self.assertIn("reconcile_shared_claim_deadline(", shared_reset_source)
 
     def test_tu_response_retry_budget_is_two_commands(self):
         functions = {

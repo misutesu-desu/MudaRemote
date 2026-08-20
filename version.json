@@ -3,6 +3,7 @@
   "changelog": {
     "Bug Fixes": [
       "Multi-account rolling keeps the current local roll boundary when a peer status response reports the next hour slightly early, preventing replenished rolls from being skipped.",
+      "Snipe-only accounts keep their own pending claim reset until it is verified, preventing another preset's next cycle from causing an unnecessary $rt.",
       "Smart Timing waits through the exact claim reset boundary and keeps deferred claim candidates until a claim succeeds.",
       "Deferred roll processing ignores stale Kakera-only cards so claim handling cannot be delayed by expired buttons."
     ]
@@ -15,7 +16,7 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "564a7d9582b6c116ea216873d1aa5c238be285b18e98304d75fdbff2a08c4758"
+      "sha256": "17a0e4ed491a080e50ca6fbe1c88e99f9623edd4d1d1539438e8a23ce1b5740a"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -25,7 +26,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/__init__.py",
-      "sha256": "5520f80b06a237d3d568e9d712c99b42a66b64adf0ab870c3e0fb5f758658cc2"
+      "sha256": "7d3eadb3cf3f6aadf4f9185dd82f15eea164bbd9cc79c52b9ea79d1902fe4af5"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -60,7 +61,7 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/status.py",
-      "sha256": "bcc8091c57d8047e637e2c2b319c0206e49da1dc9f3223978f19a28c38005bc9"
+      "sha256": "3750bb87a747c4005bdc646f1dce4487124fd191e07d0e744cecaf5cb7f2deae"
     },
     {
       "path": "mudae_core/spheres.py",
