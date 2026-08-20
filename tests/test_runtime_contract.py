@@ -556,7 +556,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source,
             functions["_apply_shared_reset_snapshot"],
         )
-        self.assertIn("previous_roll_deadline <= observed_at", shared_reset_source)
+        self.assertIn("reconcile_shared_roll_deadline(", shared_reset_source)
         self.assertIn('mark_status_dirty(client, {"rolls"}', shared_reset_source)
         self.assertIn('reason="shared-roll-boundary"', shared_reset_source)
         self.assertIn("_immediate_check_event", shared_reset_source)
@@ -1464,6 +1464,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
         self.assertIn("client.is_timing_mode_active = is_timing_mode_active", roll_source)
         self.assertIn("Smart Timing: Processing {len(client.collected_rolls)} collected roll(s) at claim reset.", roll_source)
+        self.assertIn("client.claim_right_available = True", roll_source)
+        self.assertIn("client._claim_reset_rolls_pending = True", roll_source)
         self.assertIn("client.is_timing_mode_active = False", roll_source)
         self.assertIn("getattr(client, 'is_timing_mode_active', False)", message_source)
         self.assertIn("Smart Timing: Saved {c_name} for claim at reset.", message_source)

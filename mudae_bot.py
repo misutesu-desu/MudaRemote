@@ -91,7 +91,7 @@ try:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -122,7 +122,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.8.10"
+CURRENT_VERSION = "4.9.0-beta.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -178,11 +178,10 @@ def _apply_shared_reset_snapshot(client, snapshot):
     observed_fields = getattr(snapshot, "observed_fields", frozenset())
     previous_roll_deadline = getattr(client, "roll_reset_at_utc", None)
     if "rolls" in observed_fields and roll_deadline is not None:
-        client.roll_reset_at_utc = roll_deadline
-        roll_boundary_advanced = bool(
-            previous_roll_deadline is not None
-            and previous_roll_deadline <= observed_at
-            and roll_deadline > observed_at
+        client.roll_reset_at_utc, roll_boundary_advanced = reconcile_shared_roll_deadline(
+            previous_roll_deadline,
+            observed_at,
+            roll_deadline,
         )
         if roll_boundary_advanced:
             # Saved-roll limits are private account state, but their cycle is
@@ -1978,7 +1977,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if (
             not client.claim_right_available
             and client.next_claim_reset_at_utc
-            and now_utc >= client.next_claim_reset_at_utc
+            and now_utc >= client.next_claim_reset_at_utc - datetime.timedelta(seconds=0.5)
         ):
             client.claim_right_available = True
             client.claim_cooldown_until_utc = None
@@ -3883,23 +3882,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             now_utc = datetime.datetime.now(timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
                 remaining_s = (client.next_claim_reset_at_utc - now_utc).total_seconds()
-                if 0 < remaining_s <= 30:
+                if 0 < remaining_s <= 120:
                     BotLogger.log(f"Waiting {remaining_s:.1f}s for claim reset boundary...", preset_name, "RESET")
                     await active_delay(remaining_s + 0.5)
+            client.claim_right_available = True
+            client.claim_cooldown_until_utc = None
+            client.last_successfully_claimed_character = None
             refresh_predicted_claim_and_rt()
+            claimed = False
             if client.collected_rolls:
                 BotLogger.log(f"Smart Timing: Processing {len(client.collected_rolls)} collected roll(s) at claim reset.", preset_name, "CLAIM")
                 try:
-                    await handle_mudae_messages(
+                    claimed = await handle_mudae_messages(
                         client,
                         channel,
                         client.collected_rolls,
-                        ignore_limit_for_post_roll,
+                        ignore_limit_for_post_roll or client.current_min_kakera_for_roll_claim == 0,
                         False,
                     )
                 except Exception as e:
                     BotLogger.log(f"Smart Timing post-roll processing error: {e}", preset_name, "ERROR")
-                client.collected_rolls.clear()
+                if claimed:
+                    client.collected_rolls.clear()
+                    client._claim_reset_rolls_pending = False
+                else:
+                    client._claim_reset_rolls_pending = True
             request_status_refresh({"claim"}, reason="timing-reset-boundary", urgent=True)
             BotLogger.log("Reset passed. Verifying claim status with $tu.", preset_name, "CHECK")
         else:
@@ -4343,35 +4350,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             embed = msg.embeds[0]
             if not is_character_embed(embed): continue
 
-            all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
-            is_k = has_collectible_kakera_button(msg.components, all_k)
-            if is_k:
-                # This is a deferred character-claim backlog. Kakera must be
-                # handled when a roll arrives; retrying stale Purple buttons
-                # here serially can hold the whole rolling loop for minutes.
+            has_claim = is_free_event(embed) or has_claim_option(msg, embed, client.claim_emojis)
+            if not has_claim:
                 continue
-            else:
-                if is_free_event(embed) or has_claim_option(msg, embed, client.claim_emojis):
-                    c_name = embed.author.name.lower()
-                    if is_free_event(embed):
-                        print_log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
-                        await claim_character(client, channel, msg, is_free_claim=True)
-                        continue
 
-                    k_v = 0
-                    m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], embed.description or "")
-                    if m_k: k_v = int(re.sub(r"[^\d]", "", m_k.group(1)))
+            c_name = embed.author.name.lower()
+            if is_free_event(embed):
+                print_log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
+                await claim_character(client, channel, msg, is_free_claim=True)
+                continue
 
-                    description_lines = (embed.description or "").splitlines()
-                    series = description_lines[0].lower() if description_lines else ""
-                    claims_r, likes_r = parse_mudae_ranks(embed.description or "")
-                    is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                    is_series_wl = await series_wishlist_matches(msg, series)
-                    is_wl = c_name in client.wishlist or is_series_wl or is_wished_by_self(msg, client.user.id) or is_ranked
-                    is_avoided = c_name in client.avoid_list
+            k_v = 0
+            m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], embed.description or "")
+            if m_k: k_v = int(re.sub(r"[^\d]", "", m_k.group(1)))
 
-                    if is_wl and not is_avoided: wl_claims.append((msg, c_name, k_v, series))
-                    elif k_v >= min_kak_post and not is_avoided: char_claims.append((msg, c_name, k_v, series))
+            description_lines = (embed.description or "").splitlines()
+            series = description_lines[0].lower() if description_lines else ""
+            claims_r, likes_r = parse_mudae_ranks(embed.description or "")
+            is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
+            is_series_wl = await series_wishlist_matches(msg, series)
+            is_wl = c_name in client.wishlist or is_series_wl or is_wished_by_self(msg, client.user.id) or is_ranked
+            is_avoided = c_name in client.avoid_list
+
+            if is_wl and not is_avoided: wl_claims.append((msg, c_name, k_v, series))
+            elif k_v >= min_kak_post and not is_avoided: char_claims.append((msg, c_name, k_v, series))
 
         # Filter claims to exclude messages already claimed/in progress globally
         wl_claims = _claim_coordinator.filter_available(wl_claims)
@@ -4488,6 +4490,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pass
                 finally:
                     _claim_coordinator.release_all(msg_rt.id)
+        return bool(msg_claimed_id != -1)
 
     def regular_kakera_filter_reason(client, msg, embed, *, is_mk_roll=False, is_external_roll=False):
         """Explain why ordinary Kakera is blocked without blocking spheres or purple."""

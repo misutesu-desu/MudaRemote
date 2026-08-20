@@ -14,6 +14,7 @@ from mudae_core.status import (
     parse_claim_denied_cooldown,
     record_tu_failure,
     record_tu_success,
+    reconcile_shared_roll_deadline,
     rolls_usage_is_active,
     status_dirty_fields,
     status_message_addresses_identity,
@@ -124,6 +125,34 @@ class StatusFreshnessTests(unittest.TestCase):
             0,
         )
         self.assertEqual(tu_cache_seconds_remaining(None, now), 0)
+
+    def test_peer_roll_deadline_cannot_skip_an_imminent_local_boundary(self):
+        observed = datetime.datetime(2026, 8, 20, 21, 4, 50, tzinfo=datetime.timezone.utc)
+        local_boundary = datetime.datetime(2026, 8, 20, 21, 5, tzinfo=datetime.timezone.utc)
+        rounded_next_boundary = datetime.datetime(2026, 8, 20, 22, 4, 50, tzinfo=datetime.timezone.utc)
+
+        deadline, advanced = reconcile_shared_roll_deadline(
+            local_boundary,
+            observed,
+            rounded_next_boundary,
+        )
+
+        self.assertEqual(deadline, local_boundary)
+        self.assertFalse(advanced)
+
+    def test_peer_roll_deadline_advances_after_local_boundary_passes(self):
+        local_boundary = datetime.datetime(2026, 8, 20, 21, 5, tzinfo=datetime.timezone.utc)
+        observed = local_boundary + datetime.timedelta(seconds=1)
+        next_boundary = datetime.datetime(2026, 8, 20, 22, 5, tzinfo=datetime.timezone.utc)
+
+        deadline, advanced = reconcile_shared_roll_deadline(
+            local_boundary,
+            observed,
+            next_boundary,
+        )
+
+        self.assertEqual(deadline, next_boundary)
+        self.assertTrue(advanced)
 
     def test_full_tu_snapshot_is_not_confused_with_claim_rejection(self):
         snapshot = (

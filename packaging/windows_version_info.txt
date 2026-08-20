@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(4, 8, 10, 0),
-    prodvers=(4, 8, 10, 0),
+    filevers=(4, 9, 0, 0),
+    prodvers=(4, 9, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -15,12 +15,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'MudaRemote'),
          StringStruct('FileDescription', 'MudaRemote - Mudae Bot Manager'),
-         StringStruct('FileVersion', '4.8.10.0'),
+         StringStruct('FileVersion', '4.9.0-beta.1.0'),
          StringStruct('InternalName', 'MudaRemote'),
          StringStruct('LegalCopyright', 'Copyright (c) MudaRemote contributors'),
          StringStruct('OriginalFilename', 'MudaRemote.exe'),
          StringStruct('ProductName', 'MudaRemote'),
-         StringStruct('ProductVersion', '4.8.10')]
+         StringStruct('ProductVersion', '4.9.0-beta.1')]
       )
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

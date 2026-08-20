@@ -241,6 +241,24 @@ def tu_cache_seconds_remaining(last_query_utc, now_utc=None, ttl_seconds=TU_CACH
     return max(0.0, float(ttl_seconds) - elapsed)
 
 
+def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_deadline):
+    """Keep a known imminent roll boundary until it has actually passed.
+
+    Mudae reports reset timers in whole minutes.  A peer ``$tu`` received just
+    before the boundary can therefore already say ``60 min`` for the next
+    cycle.  Replacing this account's still-pending boundary with that rounded
+    deadline would carry a cached zero-roll state into the new hour.
+    """
+    if proposed_deadline is None:
+        return previous_deadline, False
+    if previous_deadline is None or observed_at is None:
+        return proposed_deadline, False
+    if observed_at < previous_deadline and proposed_deadline > previous_deadline:
+        return previous_deadline, False
+    boundary_advanced = previous_deadline <= observed_at and proposed_deadline > observed_at
+    return proposed_deadline, boundary_advanced
+
+
 def consume_tu_urgent_bypass(client) -> bool:
     """Allow one urgent state change to bypass an existing failure backoff."""
     if not bool(getattr(client, "_status_refresh_urgent", False)):
