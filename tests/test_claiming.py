@@ -3,6 +3,7 @@ import unittest
 
 from mudae_core.claiming import (
     ClaimOutcome,
+    can_spend_restore_on_character,
     classify_claim_owner,
     classify_claim_text,
     cooldown_deadline,
@@ -107,6 +108,12 @@ class ClaimingTests(unittest.TestCase):
         now = datetime.datetime(2026, 7, 13, 14, 52, 51, tzinfo=datetime.timezone.utc)
         deadline = cooldown_deadline(now, 42)
         self.assertEqual(deadline, datetime.datetime(2026, 7, 13, 15, 34, 53, tzinfo=datetime.timezone.utc))
+
+    def test_restore_keeps_the_base_value_floor_for_panic_only_candidates(self):
+        self.assertFalse(can_spend_restore_on_character(55, 700, False, False))
+        self.assertFalse(can_spend_restore_on_character(55, 700, True, False))
+        self.assertTrue(can_spend_restore_on_character(55, 700, True, True))
+        self.assertTrue(can_spend_restore_on_character(700, 700, False, False))
 
 
 if __name__ == "__main__":

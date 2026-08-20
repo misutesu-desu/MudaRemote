@@ -1334,6 +1334,16 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("is_external_snipe=False", handler_source)
         self.assertIn("Manual Self-Roll Claim", handler_source)
 
+    def test_panic_claim_does_not_spend_rt_on_low_value_cards(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertGreaterEqual(handler_source.count("can_spend_restore_on_character"), 2)
+        self.assertIn("client.min_kakera", handler_source)
+
     def test_claim_cooldown_rejection_is_retried_after_rt_status_refresh(self):
         functions = {
             node.name: node

@@ -1,22 +1,23 @@
 {
-  "version": "4.9.0-beta.1",
+  "version": "4.9.0-beta.2",
   "changelog": {
     "Bug Fixes": [
       "Multi-account rolling keeps the current local roll boundary when a peer status response reports the next hour slightly early, preventing replenished rolls from being skipped.",
       "Snipe-only accounts keep their own pending claim reset until it is verified, preventing another preset's next cycle from causing an unnecessary $rt.",
       "Smart Timing waits through the exact claim reset boundary and keeps deferred claim candidates until a claim succeeds.",
-      "Deferred roll processing ignores stale Kakera-only cards so claim handling cannot be delayed by expired buttons."
+      "Deferred roll processing ignores stale Kakera-only cards so claim handling cannot be delayed by expired buttons.",
+      "Panic Claim now preserves the normal value floor for $rt, so low-value manual rolls cannot consume a restore unless they are an allowed wishlist target."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.1/MudaRemote.exe",
-  "exe_sha256": "b91b633947655f9e644a0b5fb1e126f107dd65d005b1002f2f5d0a6753d76033",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.2/MudaRemote.exe",
+  "exe_sha256": "f17bd06d558d5f0a86fc723639f9654a2dd07faf417f38e0fcab101a45b66d19",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "17a0e4ed491a080e50ca6fbe1c88e99f9623edd4d1d1539438e8a23ce1b5740a"
+      "sha256": "f9bb343756098778f02436113f5f145daaf148be1f4327e62e975e6393e0ab2f"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -26,12 +27,12 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/__init__.py",
-      "sha256": "7d3eadb3cf3f6aadf4f9185dd82f15eea164bbd9cc79c52b9ea79d1902fe4af5"
+      "sha256": "2e961cfdbd7711c5d89dbe2d856613dc723b7dad0002ce9d7232f3437a2f59a1"
     },
     {
       "path": "mudae_core/claiming.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/claiming.py",
-      "sha256": "48a6a7d2fa596401d837c67e6e679a5a9c3d56ed3b559e8d923ba4075e3f8c68"
+      "sha256": "da498ace24109226ea92646e9968f57ac34829d92a15a8699935019b9a77d5c1"
     },
     {
       "path": "mudae_core/config.py",

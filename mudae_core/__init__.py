@@ -4,6 +4,7 @@ from .config import atomic_write_json, load_json, validate_preset
 from .claiming import (
     ClaimEvidence,
     ClaimOutcome,
+    can_spend_restore_on_character,
     classify_claim_owner,
     classify_claim_text,
     cooldown_deadline,
@@ -90,6 +91,7 @@ __all__ = [
     "GlobalIntervalCoordinator",
     "ClaimEvidence",
     "ClaimOutcome",
+    "can_spend_restore_on_character",
     "CommandPacer",
     "WebhookDispatcher",
     "AUTOMATED_STAGGER_INTERVAL_SECONDS",

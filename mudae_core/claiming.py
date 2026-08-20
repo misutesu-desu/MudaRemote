@@ -161,3 +161,15 @@ def cooldown_deadline(
 ) -> datetime.datetime:
     """Build a timezone-preserving deadline without truncating seconds early."""
     return now + datetime.timedelta(minutes=max(0, int(minutes)), seconds=max(0.0, safety_seconds))
+
+
+def can_spend_restore_on_character(
+    kakera_value: int,
+    minimum_kakera: int,
+    is_wishlist_target: bool,
+    restore_for_wishlist: bool,
+) -> bool:
+    """Keep a panic claim's relaxed value floor from spending $rt on any card."""
+    if is_wishlist_target and restore_for_wishlist:
+        return True
+    return int(kakera_value or 0) >= max(0, int(minimum_kakera or 0))

@@ -85,7 +85,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, can_resume_claim_interrupted_rolls, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
+        active_stagger_seconds, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -116,7 +116,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, can_resume_claim_interrupted_rolls, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
+        active_stagger_seconds, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty,
         consume_tu_urgent_bypass,
         cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.1"
+CURRENT_VERSION = "4.9.0-beta.2"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -5425,7 +5425,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_val = k_val >= client.current_min_kakera_for_roll_claim
                     already_in_progress = _claim_coordinator.is_reserved(message.id)
                     if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                        if is_key_mode_kakera_only():
+                        can_spend_rt = can_spend_restore_on_character(
+                            k_val,
+                            client.min_kakera,
+                            is_wl,
+                            client.rt_ignore_min_kakera_for_wishlist,
+                        )
+                        if (
+                            is_key_mode_kakera_only()
+                            or (not client.claim_right_available and not can_spend_rt)
+                        ):
                             pass
                         else:
                             client.interrupt_rolling = True
@@ -5468,7 +5477,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 is_avoided = c_name in client.avoid_list
                 already_in_progress = _claim_coordinator.is_reserved(message.id)
                 if is_wanted and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                    if not is_key_mode_kakera_only() and is_character_snipe_allowed(is_external_snipe=False):
+                    can_spend_rt = can_spend_restore_on_character(
+                        k_val,
+                        client.min_kakera,
+                        c_name in client.wishlist or is_series_wl or is_wished_by_self(message, client.user.id) or is_ranked,
+                        client.rt_ignore_min_kakera_for_wishlist,
+                    )
+                    if (
+                        not is_key_mode_kakera_only()
+                        and is_character_snipe_allowed(is_external_snipe=False)
+                        and (client.claim_right_available or can_spend_rt)
+                    ):
                         BotLogger.log(f"Manual Self-Roll Claim: {c_name} ({k_val} ka)", preset_name, "CLAIM")
                         if client.reactive_snipe_delay > 0:
                             if not await active_delay(client.reactive_snipe_delay + random.uniform(0.05, 0.25)): return
