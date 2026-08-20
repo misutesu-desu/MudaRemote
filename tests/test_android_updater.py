@@ -12,7 +12,10 @@ ANDROID_PYTHON_DIR = os.path.join(PROJECT_ROOT, "android", "app", "src", "main",
 if ANDROID_PYTHON_DIR not in sys.path:
     sys.path.insert(0, ANDROID_PYTHON_DIR)
 
-import android_bridge
+if os.path.isfile(os.path.join(ANDROID_PYTHON_DIR, "android_bridge.py")):
+    import android_bridge
+else:
+    android_bridge = None
 import mudae_bot
 from mudae_core.updater import REQUIRED_SOURCE_PATHS
 
@@ -30,6 +33,7 @@ class _MockResponse:
         return json.loads(self.content.decode("utf-8"))
 
 
+@unittest.skipIf(android_bridge is None, "unreleased Android bridge is not included in this checkout")
 class AndroidUpdaterTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="android-test-")
