@@ -36,7 +36,7 @@ The Discord server now has **310+ members** who use the app, report problems, an
 
 ### Current goal
 
-**40% funded • $40 of $100 raised by early community supporters • Last updated August 2026**
+**60% funded • $60 of $100 raised by early community supporters • Last updated August 2026**
 
 Donations help cover the time spent on:
 
