@@ -220,6 +220,20 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("not status_dirty_fields(client)", status_source)
         self.assertIn('"Skipping $tu (using cached status)."', status_source)
 
+    def test_humanized_reset_wait_ignores_stale_wake_events(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        wait_source = ast.get_source_segment(
+            self.source,
+            functions["humanized_wait_and_proceed"],
+        )
+        self.assertIn("deadline = time.monotonic() + wait_seconds", wait_source)
+        self.assertIn("while True:", wait_source)
+        self.assertIn("status_dirty_fields(client) or client.scheduled_roll_due", wait_source)
+
     def test_slash_interaction_success_does_not_depend_on_response_payload(self):
         functions = {
             node.name: node

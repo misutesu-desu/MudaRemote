@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.2"
+CURRENT_VERSION = "4.9.0-beta.3"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -5030,9 +5030,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         wait_seconds = min_wait + human_jitter + persistent_stagger
 
         BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
-        await _interruptible_sleep(wait_seconds)
-        if client.is_paused:
-            return
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await _interruptible_sleep(remaining)
+            if client.is_paused:
+                return
+            if time.monotonic() >= deadline:
+                break
+            # A stale wake event used to abort the visible wait, while the
+            # status loop still observed only the shorter base deadline. That
+            # allowed a cached roll reset to be scheduled again before a
+            # fresh $tu. Only real work should interrupt this wait.
+            if status_dirty_fields(client) or client.scheduled_roll_due:
+                return
 
         if is_inactive_hour():
             wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)
