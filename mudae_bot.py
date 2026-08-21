@@ -3810,7 +3810,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'is_free': is_free,
                                     'chaos_count': chaos_count,
                                     'has_reaction_cooldown_bypass': (
-                                        chaos_count > 0 or has_sp_perk
+                                        chaos_count > 0 or has_sp_perk or is_free
                                     ),
                                     'cost': calculate_kakera_power_cost(
                                         client.dk_consumption,
@@ -3861,7 +3861,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 async with get_kakera_action_lock():
                     is_free_purple = name.rstrip('2') == 'kakeraP'
-                    if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass:
+                    if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass and not is_free:
                         BotLogger.log(
                             f"Kakera skipped for {char_name}: reaction is on cooldown before queued {name} click.",
                             preset_name,
@@ -4799,7 +4799,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
                 has_reaction_cooldown_bypass = (chaos_count > 0 and not is_snipe) or has_sp_perk
-                if not is_kakera_reaction_allowed(is_free_purple=has_purple_kakera) and not has_reaction_cooldown_bypass:
+                if not is_kakera_reaction_allowed(is_free_purple=has_purple_kakera) and not has_reaction_cooldown_bypass and not has_targeted_sphere:
                     BotLogger.log(
                         f"Kakera skipped for {char_name}: reaction is on cooldown and no valid discount bypass applies.",
                         preset_name,
@@ -4888,7 +4888,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             # Recheck after serializing clicks: another account may
                             # have just received a $ku rejection for this preset.
                             is_free_purple = name_clean == 'kakeraP'
-                            if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass:
+                            if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass and not is_free:
                                 BotLogger.log(
                                     f"Kakera skipped for {char_name}: reaction became unavailable before {name} could be clicked.",
                                     preset_name,
