@@ -91,11 +91,11 @@ try:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
-        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result,
+        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key,
         should_refill_kakera_power, sphere_target_matches,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
@@ -122,11 +122,11 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text,
-        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result,
+        KakeraPowerLedger, mudae_command_ack_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key,
         should_refill_kakera_power, sphere_target_matches,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.3"
+CURRENT_VERSION = "4.9.0-beta.4"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -3180,6 +3180,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
             roll_reset_minutes = parse_timer_minutes("ROLL_RESET", c_lower)
+            if roll_reset_minutes is not None:
+                # This account's complete $tu is authoritative. Keep the
+                # parsed boundary if the narrower roll-count parser misses
+                # the same localized reset phrase below.
+                client.roll_reset_at_utc = cooldown_deadline(now_utc, roll_reset_minutes)
 
             if any(x in c_lower for x in ["you __can__ react", "pode reagir", "pegar kakera", "puedes__ reaccionar", "puedes reaccionar", "pouvez__ réagir", "pouvez réagir"]):
                 client.kakera_react_available = True
@@ -3322,15 +3327,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if bonus_match.group(2).lower() == "us": us_rolls_left += amt
                 else: client.mk_rolls_left = amt
 
-            reset_time_r = parse_timer_minutes("ROLL_RESET_TU", content_lower[main_match.end():])
-            if reset_time_r is not None:
+            reported_reset_time_r = parse_timer_minutes("ROLL_RESET_TU", content_lower[main_match.end():])
+            known_roll_deadline = getattr(client, 'roll_reset_at_utc', None)
+            reset_time_r = roll_reset_wait_minutes(
+                reported_reset_time_r,
+                known_roll_deadline,
+                now_utc,
+            )
+            if reported_reset_time_r is not None:
                 new_reset = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
                 if getattr(client, 'roll_reset_at_utc', None) and (new_reset - client.roll_reset_at_utc).total_seconds() > 600:
                     client.us_pulled_this_cycle = 0
                     client.us_failed_this_cycle = False
                 client.roll_reset_at_utc = new_reset
-            else:
-                reset_time_r = 60
+            elif known_roll_deadline is None or known_roll_deadline <= now_utc:
                 client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
 
             total_rolls = rolls_left + us_rolls_left
@@ -3770,8 +3780,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'char_name': (embed.author.name if embed.author else "Unknown").strip()
                                 })
 
-            # Sort globally by priority descending
-            clickable_buttons.sort(key=lambda item: item['priority'], reverse=True)
+            # Keep the user's Kakera priority order globally, then prefer a
+            # same-priority Perk 8/Chaos click that can bypass the cooldown.
+            clickable_buttons.sort(
+                key=lambda item: queued_kakera_sort_key(
+                    item['priority'], item['has_reaction_cooldown_bypass']
+                ),
+                reverse=True,
+            )
 
             for item in clickable_buttons:
                 msg = item['message']

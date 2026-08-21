@@ -221,6 +221,17 @@ def get_kakera_emoji_targets(
     return tuple(kakera_emojis or ())
 
 
+def queued_kakera_sort_key(priority: object, has_reaction_cooldown_bypass: bool = False):
+    """Order deferred Kakera clicks without discarding the configured priority.
+
+    Perk 8 and Chaos rolls can react through the normal Kakera cooldown.  When
+    two deferred buttons have the same configured emoji priority, attempt that
+    cooldown-safe click first so an ordinary click cannot make it wait behind
+    a newly observed cooldown.
+    """
+    return (float(priority or 0), bool(has_reaction_cooldown_bypass))
+
+
 def find_refreshed_component_button(components, *, custom_id, position, emoji_name):
     """Resolve the same button after a Discord component refresh.
 

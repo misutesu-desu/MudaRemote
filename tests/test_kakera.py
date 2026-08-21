@@ -15,6 +15,7 @@ from mudae_core.kakera import (
     normalize_character_sphere_emoji,
     parse_kakera_result,
     parse_kakera_result_amount,
+    queued_kakera_sort_key,
     should_refill_kakera_power,
     sphere_target_matches,
 )
@@ -240,6 +241,17 @@ class KakeraPowerTests(unittest.TestCase):
         self.assertTrue(sphere_target_matches("sp", ["spR"]))
         self.assertTrue(sphere_target_matches("spR2", ["spR"]))
         self.assertFalse(sphere_target_matches("sp", ["spM"]))
+
+    def test_deferred_clicks_prefer_cooldown_bypass_only_on_equal_priority(self):
+        queued = [
+            ("ordinary", queued_kakera_sort_key(50, False)),
+            ("perk-eight", queued_kakera_sort_key(50, True)),
+            ("sphere", queued_kakera_sort_key(999, False)),
+        ]
+
+        queued.sort(key=lambda item: item[1], reverse=True)
+
+        self.assertEqual([name for name, _ in queued], ["sphere", "perk-eight", "ordinary"])
 
     def test_perk_eight_selection_is_used_for_external_and_own_rolls(self):
         normal = ["kakeraR"]

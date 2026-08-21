@@ -16,6 +16,7 @@ from mudae_core.status import (
     record_tu_success,
     reconcile_shared_claim_deadline,
     reconcile_shared_roll_deadline,
+    roll_reset_wait_minutes,
     rolls_usage_is_active,
     status_dirty_fields,
     status_message_addresses_identity,
@@ -169,6 +170,13 @@ class StatusFreshnessTests(unittest.TestCase):
 
         self.assertEqual(deadline, local_boundary)
         self.assertTrue(elapsed)
+
+    def test_known_roll_deadline_beats_the_sixty_minute_parse_fallback(self):
+        now = datetime.datetime(2026, 8, 21, 11, 1, 42, tzinfo=datetime.timezone.utc)
+        known_deadline = now + datetime.timedelta(minutes=4)
+
+        self.assertEqual(roll_reset_wait_minutes(None, known_deadline, now), 4.0)
+        self.assertEqual(roll_reset_wait_minutes(None, None, now), 60.0)
 
     def test_available_claim_can_adopt_next_shared_reset(self):
         local_boundary = datetime.datetime(2026, 8, 20, 1, 14, tzinfo=datetime.timezone.utc)

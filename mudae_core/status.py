@@ -270,6 +270,21 @@ def reconcile_shared_claim_deadline(previous_deadline, observed_at, proposed_dea
     return proposed_deadline, False
 
 
+def roll_reset_wait_minutes(reported_minutes, known_deadline, now_utc=None, fallback_minutes=60.0):
+    """Use an already verified reset boundary when a duplicate parse misses it."""
+    if reported_minutes is not None:
+        return max(0.0, float(reported_minutes))
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    if known_deadline is not None:
+        try:
+            remaining = (known_deadline - now).total_seconds() / 60.0
+        except (TypeError, ValueError):
+            remaining = 0.0
+        if remaining > 0:
+            return max(0.05, remaining)
+    return max(0.05, float(fallback_minutes))
+
+
 def consume_tu_urgent_bypass(client) -> bool:
     """Allow one urgent state change to bypass an existing failure backoff."""
     if not bool(getattr(client, "_status_refresh_urgent", False)):
