@@ -2,10 +2,7 @@
   "version": "4.9.0-beta.6",
   "changelog": {
     "Bug Fixes": [
-      "Deferred Kakera collection now properly treats character spheres and free buttons as reaction cooldown bypasses, preventing skipped spheres (e.g. spG/spY) when accounts are on Kakera cooldown.",
-      "Smart Timing status bypass deadlock: $tu status checks are no longer skipped when entering the active pre-reset window (<=60m), ensuring scheduled rolls execute reliably.",
-      "Maintenance refresh loop: clear all status dirty state upon receiving a core-complete $tu response to prevent infinite $tu query loops on alt accounts.",
-      "Kakera farm divorce retry: added 3-attempt automated retry with backoff when Mudae responds with 'A harem related command is being processed'."
+      "Deferred Kakera collection now properly treats character spheres and free buttons as reaction cooldown bypasses, preventing skipped spheres (e.g. spG/spY) when accounts are on Kakera cooldown."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
