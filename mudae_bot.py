@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.4"
+CURRENT_VERSION = "4.9.0-beta.5"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -2809,6 +2809,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if cache_seconds_remaining > 0 or known_idle_boundary:
                     if is_before_claim and is_before_roll and client.rolls_left <= 0:
                         can_bypass = True
+                        claim_reset_m_check = (
+                            max(0.0, (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0)
+                            if client.next_claim_reset_at_utc
+                            else None
+                        )
+                        if (
+                            client.time_rolls_to_claim_reset
+                            and not client.claim_right_available
+                            and claim_reset_m_check is not None
+                            and claim_reset_m_check <= 60.0
+                        ):
+                            can_bypass = False
                         pending_rolls, pending_us, pending_mk = pending_roll_work(proceed_to_rolls)
                         if pending_rolls or pending_us or pending_mk:
                             can_bypass = False
@@ -3218,6 +3230,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not core_complete:
                 mark_status_dirty(client, required_fields - fresh_fields, reason="partial-tu-response")
                 defer_tu_queries(client, 30.0)
+            else:
+                if not any(r == "power-changed-during-tu" for r in status_refresh_reasons(client)):
+                    clear_status_dirty(client)
+                else:
+                    client._status_refresh_reasons.discard("mudae-maintenance")
+                    client._status_refresh_reasons.discard("discord-reconnect")
             if client.key_limit_hit:
                 BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
                 client.key_limit_hit = False
@@ -3538,21 +3556,44 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # the command, its confirmation, and the short processing grace period
         # atomic when several edited farm claims arrive almost simultaneously.
         async with client._farm_release_lock:
-            BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
-            if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
-                client._farm_release_recent.pop(release_key, None)
-                BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
-                return False
-            if not await guarded_send(channel, "y"):
-                client._farm_release_recent.pop(release_key, None)
-                BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
-                return False
-            BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
-            if str(getattr(client, 'last_successfully_claimed_character', '') or '').casefold() == str(char_name or '').casefold():
-                # The duplicate-claim guard is no longer valid once Mudae confirms
-                # that the farm character was released.
-                client.last_successfully_claimed_character = None
-            return await active_delay(1.0 + random.uniform(0.1, 0.4))
+            for attempt in range(3):
+                BotLogger.log(f"Kakera Farm: Forcedivorcing {char_name} {reason}.", preset_name, "INFO")
+                if not await guarded_send(channel, f"{client.mudae_prefix}forcedivorce {char_name}"):
+                    client._farm_release_recent.pop(release_key, None)
+                    BotLogger.log(f"Kakera Farm: Could not send forcedivorce for {char_name}.", preset_name, "WARN")
+                    return False
+                if not await active_delay(1.5 + random.uniform(0.1, 0.4)):
+                    return False
+
+                harem_busy = False
+                async for msg in channel.history(limit=5):
+                    if msg.author.id == TARGET_BOT_ID and msg.content:
+                        c_low = msg.content.lower()
+                        if "harem" in c_low and any(phrase in c_low for phrase in ("being processed", "en cours", "procesando", "processando")):
+                            harem_busy = True
+                            break
+                if harem_busy:
+                    if attempt < 2:
+                        BotLogger.log(f"Kakera Farm: Harem command busy, retrying in 3s (attempt {attempt + 1}/3)...", preset_name, "WARN")
+                        if not await active_delay(3.0 + random.uniform(0.2, 0.5)):
+                            return False
+                        continue
+                    else:
+                        BotLogger.log(f"Kakera Farm: Harem command still busy after 3 attempts.", preset_name, "WARN")
+                        client._farm_release_recent.pop(release_key, None)
+                        return False
+
+                if not await guarded_send(channel, "y"):
+                    client._farm_release_recent.pop(release_key, None)
+                    BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
+                    return False
+                BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
+                if str(getattr(client, 'last_successfully_claimed_character', '') or '').casefold() == str(char_name or '').casefold():
+                    # The duplicate-claim guard is no longer valid once Mudae confirms
+                    # that the farm character was released.
+                    client.last_successfully_claimed_character = None
+                return await active_delay(1.0 + random.uniform(0.1, 0.4))
+            return False
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
         if client.is_paused or is_maintenance_active(): return

@@ -1504,6 +1504,29 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("getattr(client, 'is_timing_mode_active', False)", message_source)
         self.assertIn("Smart Timing: Saved {c_name} for claim at reset.", message_source)
 
+    def test_smart_timing_bypasses_disabled_in_timing_window(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn("client.time_rolls_to_claim_reset", status_source)
+        self.assertIn("claim_reset_m_check <= 60.0", status_source)
+        self.assertIn("can_bypass = False", status_source)
+
+    def test_farm_forcedivorce_harem_busy_retry_contract(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        forcedivorce_source = ast.get_source_segment(self.source, functions["execute_farm_forcedivorce"])
+        self.assertIn("for attempt in range(3):", forcedivorce_source)
+        self.assertIn("harem", forcedivorce_source)
+        self.assertIn("being processed", forcedivorce_source)
+
 
 if __name__ == "__main__":
     unittest.main()
+

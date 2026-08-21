@@ -1,20 +1,21 @@
 {
-  "version": "4.9.0-beta.4",
+  "version": "4.9.0-beta.5",
   "changelog": {
     "Bug Fixes": [
-      "Roll reset waits now retain the exact reset time from a complete $tu response if the narrower roll parser cannot read it, preventing an incorrect one-hour wait.",
-      "Deferred Kakera collection now attempts same-priority Perk 8 and Chaos clicks before ordinary clicks, preserving cooldown-safe reactions."
+      "Smart Timing status bypass deadlock: $tu status checks are no longer skipped when entering the active pre-reset window (<=60m), ensuring scheduled rolls execute reliably.",
+      "Maintenance refresh loop: clear all status dirty state upon receiving a core-complete $tu response to prevent infinite $tu query loops on alt accounts.",
+      "Kakera farm divorce retry: added 3-attempt automated retry with backoff when Mudae responds with 'A harem related command is being processed'."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.4/MudaRemote.exe",
-  "exe_sha256": "fbe90c815931543e96452f5de2013934c2a924733be5dbf336229a3fadf040e3",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.5/MudaRemote.exe",
+  "exe_sha256": "5b7477664b18b32d2c52300e7a72a082c343aebe408a8fe445318c73a1d334ce",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "57d87d4b7d9dfb45d10e37a79d378c12334cbf8fe66cb5aabced091f08d5d656"
+      "sha256": "cbfe6a348194f823374c3f5704695667c25eec452ad495beaa57ac1698890cb2"
     },
     {
       "path": "mudae_preset_editor.py",

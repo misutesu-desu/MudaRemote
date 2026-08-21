@@ -244,6 +244,18 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertEqual(coordinator.snapshot(10).claim_reset_at_utc, claim_deadline)
         self.assertIsNone(coordinator.snapshot(11))
 
+    def test_clear_status_dirty_without_fields_clears_all_reasons_and_desync(self):
+        mark_status_dirty(self.client, reason="mudae-maintenance", urgent=True)
+        self.assertTrue(self.client.desync_detected)
+        self.assertIn("mudae-maintenance", status_refresh_reasons(self.client))
+
+        clear_status_dirty(self.client)
+        self.assertFalse(self.client.desync_detected)
+        self.assertEqual(status_dirty_fields(self.client), set())
+        self.assertEqual(status_refresh_reasons(self.client), [])
+        self.assertFalse(self.client._status_refresh_urgent)
+
 
 if __name__ == "__main__":
     unittest.main()
+
