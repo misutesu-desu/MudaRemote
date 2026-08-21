@@ -1,7 +1,8 @@
 {
-  "version": "4.9.0-beta.5",
+  "version": "4.9.0-beta.6",
   "changelog": {
     "Bug Fixes": [
+      "Deferred Kakera collection now properly treats character spheres and free buttons as reaction cooldown bypasses, preventing skipped spheres (e.g. spG/spY) when accounts are on Kakera cooldown.",
       "Smart Timing status bypass deadlock: $tu status checks are no longer skipped when entering the active pre-reset window (<=60m), ensuring scheduled rolls execute reliably.",
       "Maintenance refresh loop: clear all status dirty state upon receiving a core-complete $tu response to prevent infinite $tu query loops on alt accounts.",
       "Kakera farm divorce retry: added 3-attempt automated retry with backoff when Mudae responds with 'A harem related command is being processed'."
@@ -9,13 +10,13 @@
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.5/MudaRemote.exe",
-  "exe_sha256": "5eb4b95bdb404c4fd0053d6584c286f3b326783373efb35550844b25c390ae71",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.6/MudaRemote.exe",
+  "exe_sha256": "8d84aebcbdbccd35a52520488689e359fe03af6236c3573f594a7e868771b736",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "175e35b830da1dca0e2f0dc473c08d8c478c8a1f648d0fe68d4a35cb8e3c2908"
+      "sha256": "6fcc1a87014f75a5878a5fb6c74d8cd94365cfc4696de734c30be3c7d7568cb7"
     },
     {
       "path": "mudae_preset_editor.py",
