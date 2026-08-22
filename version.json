@@ -1,21 +1,21 @@
 {
-  "version": "4.9.0-beta.7",
+  "version": "4.9.0-beta.8",
   "changelog": {
     "Bug Fixes": [
-      "Claim fallback on sniped cards: iterate through remaining wishlist and high-value candidates in a batch if an earlier claim attempt fails.",
-      "Roll reset boundary refresh: immediately refresh rolls status when roll execution crosses the hourly reset time, picking up newly replenished rolls.",
-      "Instant Purple Kakera: claim free Purple Kakera immediately as it appears even when Immediate Kakera Click is disabled, preventing other players from stealing it."
+      "Smart Timing waits: when Time Rolls to Claim Reset is enabled, the bot now sleeps straight to the final-hour threshold instead of waking early for rolls replenishment or claim cooldown, and peer roll-hour announcements no longer wake it prematurely.",
+      "Roll count tracking: every complete $tu response now refreshes the cached roll count, keeping rolls_left authoritative even when the post-roll evaluation is skipped.",
+      "Busy channel stall: the $tu quiet-channel wait is capped at two minutes, so a permanently active channel can no longer freeze status checks and rolling entirely."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.7/MudaRemote.exe",
-  "exe_sha256": "8ad2d9ce6d0bf77cc36488603794a5ae6aed0555a0390e92b6b1f4b99f295f4c",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.8/MudaRemote.exe",
+  "exe_sha256": "78e7b7e47b8996f13b69a7c0b36dfaa784e909686eac4aa26d86b7e12d81cdbf",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "516e1fde0f0fae643ad0993a746537f8b275d4fdb34d97ae45221d54ab122c0e"
+      "sha256": "2c557b23373bd4c94bc2a2b118a3533b155a427fcdab253fb1816f0e03866f14"
     },
     {
       "path": "mudae_preset_editor.py",
