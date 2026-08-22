@@ -187,6 +187,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("seconds_until_active()", inactivity_source)
         self.assertIn("client.humanization_inactivity_seconds", inactivity_source)
         self.assertIn("channel.history(limit=1)", inactivity_source)
+        self.assertIn("TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS", inactivity_source)
+        self.assertIn("sending anyway", inactivity_source)
         self.assertIn("wait_for_tu_send_window()", send_source)
         self.assertEqual(send_source.count("await wait_for_tu_send_window()"), 2)
         self.assertNotIn("await wait_for_global_tu_slot(): return False", send_source)

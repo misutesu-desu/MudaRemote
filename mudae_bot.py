@@ -160,6 +160,10 @@ _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
 TU_GLOBAL_INTERVAL_SECONDS = 20.0
+# A permanently busy channel must never stall status refreshes (and therefore
+# rolling) forever; after this much cumulative quiet-channel waiting, send $tu
+# regardless of the last message age.
+TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS = 120.0
 
 def _apply_shared_reset_snapshot(client, snapshot):
     """Apply only server-wide reset boundaries, never another user's private state."""
@@ -2351,6 +2355,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def wait_for_tu_inactivity(channel):
         """Wait until both the configured active period and channel quiet window allow $tu."""
         waited = False
+        total_quiet_wait = 0.0
         while True:
             if client.is_paused or is_maintenance_active():
                 return False, waited
@@ -2398,6 +2403,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if remaining <= 0:
                     return True, waited
 
+                if total_quiet_wait >= TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS:
+                    BotLogger.log(
+                        f"$tu inactivity check: channel stayed busy for over {int(TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS)}s; sending anyway.",
+                        preset_name,
+                        "WARN",
+                    )
+                    return True, waited
+
                 BotLogger.log(
                     f"$tu inactivity check: waiting {remaining:.1f}s for a quiet channel.",
                     preset_name,
@@ -2406,6 +2419,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 waited = True
                 if not await active_delay(remaining + 0.5):
                     return False, waited
+                total_quiet_wait += remaining + 0.5
             except Exception as exc:
                 BotLogger.log(
                     f"$tu inactivity check unavailable ({type(exc).__name__}); continuing.",
