@@ -1,0 +1,83 @@
+name: Android Pre-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (must be unique, e.g. android-pre1)"
+        required: true
+        default: "android-pre1"
+      title:
+        description: "Release title"
+        required: false
+        default: "MudaRemote Android — Pre-release"
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11"
+
+      - name: Build ux APK
+        working-directory: android
+        run: gradle :app:assembleUx --no-daemon --stacktrace
+
+      - name: Stage release APK
+        run: |
+          SRC="android/app/build/outputs/apk/ux/app-ux.apk"
+          test -s "$SRC" || { echo "APK missing at $SRC"; exit 1; }
+          cp "$SRC" Mudaremote.apk
+          ls -lh Mudaremote.apk
+
+      - name: Write release notes
+        run: |
+          cat > release_notes.md <<'EOF'
+          Pre-release of the MudaRemote Android app.
+
+          - Packages the same desktop Python engine through Chaquopy
+          - Requires Android 8.0+ (arm64-v8a or x86_64)
+          - Debug-signed build: expect an "unknown developer" prompt when installing
+          - Open the app, import your presets.json, enter tokens (stored encrypted in the Android Keystore), then start a profile
+          - For reliable background operation, exempt the app from battery optimization (Battery Guide button)
+
+          Do not share exported presets while they contain tokens.
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mudaremote-apk
+          path: Mudaremote.apk
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+          TITLE: ${{ github.event.inputs.title }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" Mudaremote.apk --clobber
+            echo "Updated asset on existing release $TAG"
+          else
+            gh release create "$TAG" Mudaremote.apk \
+              --prerelease \
+              --title "$TITLE" \
+              --notes-file release_notes.md
+            echo "Created pre-release $TAG"
+          fi
+

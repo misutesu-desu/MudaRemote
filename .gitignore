@@ -33,5 +33,8 @@ venv/
 # Documentation and web portal
 /docs/
 
-# Unreleased Android application
-/android/
+# Android build tooling (app sources under /android/ are tracked; `build/`
+# directories are covered by the global rule above)
+android/.gradle/
+android/.kotlin/
+android/local.properties
