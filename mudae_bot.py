@@ -196,11 +196,20 @@ def _apply_shared_reset_snapshot(client, snapshot):
         # cannot tell us this account's private roll count.  If this account
         # had already exhausted its rolls at the old boundary, its cached zero
         # must not be carried into the newly announced hour.
+        timing_delay_active = bool(
+            getattr(client, "time_rolls_to_claim_reset", False)
+            and not getattr(client, "claim_right_available", False)
+            and (
+                getattr(client, "next_claim_reset_at_utc", None) is None
+                or (client.next_claim_reset_at_utc - observed_at).total_seconds() > 3600.0
+            )
+        )
         if (
             getattr(client, "rolling_enabled", False)
             and
             roll_boundary_advanced
             and int(getattr(client, "rolls_left", 0) or 0) <= 0
+            and not timing_delay_active
         ):
             mark_status_dirty(client, {"rolls"}, reason="shared-roll-boundary", urgent=True)
             event = getattr(client, "_immediate_check_event", None)
@@ -2853,9 +2862,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             max(0.05, cache_seconds_remaining / 60.0),
                             "cached status refresh",
                         ))
-                    if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
-                    if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_m > 60: choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
-                    if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
+                    is_timing_wait_bypass = bool(
+                        client.time_rolls_to_claim_reset
+                        and not client.claim_right_available
+                        and claim_reset_m > 60
+                    )
+                    if is_timing_wait_bypass:
+                        choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
+                    else:
+                        if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
+                        if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
                     if choices:
                         choices.sort(key=lambda x: x[0])
                         selected_wait_minutes, selected_reason = choices[0]
@@ -3191,7 +3207,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 defer_tu_queries(client, 45.0)
                 return
 
-            roll_reset_minutes = parse_timer_minutes("ROLL_RESET", c_lower)
+            roll_reset_minutes = None
+            rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_lower, re.DOTALL)
+            if rolls_match:
+                try:
+                    parsed_rolls = int(re.sub(r"[^\d]", "", rolls_match.group(1)))
+                    client.rolls_left = parsed_rolls
+                    if parsed_rolls > 0:
+                        client._last_normal_roll_count = parsed_rolls
+                except Exception:
+                    pass
+                if roll_reset_minutes is None:
+                    roll_reset_minutes = parse_timer_minutes("ROLL_RESET_TU", c_lower[rolls_match.end():])
+            if roll_reset_minutes is None:
+                roll_reset_minutes = parse_timer_minutes("ROLL_RESET", c_lower)
             if roll_reset_minutes is not None:
                 # This account's complete $tu is authoritative. Keep the
                 # parsed boundary if the narrower roll-count parser misses
@@ -3277,15 +3306,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                           current_cycle_id)
             elif client.rolling_enabled and proceed_to_rolls:
                 sleep_choices = []
-                if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown"))
-                if client.time_rolls_to_claim_reset and not client.claim_right_available and claim_reset_minutes is not None and claim_reset_minutes > 60:
+                is_timing_waiting = bool(
+                    client.time_rolls_to_claim_reset
+                    and not client.claim_right_available
+                    and claim_reset_minutes is not None
+                    and claim_reset_minutes > 60
+                )
+                if is_timing_waiting:
                     sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
-                if is_lurking and claim_reset_minutes is not None:
-                    sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
-                if rt_reset_minutes is not None and rt_reset_minutes > 0:
-                    sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
-                if roll_reset_minutes is not None and roll_reset_minutes > 0:
-                    sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
+                else:
+                    if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown"))
+                    if is_lurking and claim_reset_minutes is not None:
+                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
+                    if rt_reset_minutes is not None and rt_reset_minutes > 0:
+                        sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
+                    if roll_reset_minutes is not None and roll_reset_minutes > 0:
+                        sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
 
                 if sleep_choices:
                     sleep_choices.sort(key=lambda x: x[0])
@@ -3442,7 +3478,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if await send_auto_us(amount, channel):
                         return
 
-                sleep_candidates = [(float(reset_time_r or 60), "rolls reset")]
                 m_c = re.search(REGEX_PATTERNS["CLAIM_RESET"], content_lower)
                 if m_c and any(kw in m_c.group(0) for kw in ["$daily", "$dk", "$rt"]): m_c = None
 
@@ -3455,11 +3490,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if c_min is None:
                         c_min = parse_timer_minutes("CLAIM_COOLDOWN", content_lower)
 
-                if c_min is not None:
-                    if not client.claim_right_available:
-                        sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification"))
-                    if client.time_rolls_to_claim_reset and c_min > 60: sleep_candidates.append((float(c_min - 60), "timing window arrival"))
-                    if client.claim_right_available and c_min > client.panic_roll_minutes: sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival"))
+                sleep_candidates = []
+                is_timing_wait_tu = bool(
+                    client.time_rolls_to_claim_reset
+                    and not client.claim_right_available
+                    and c_min is not None
+                    and c_min > 60
+                )
+                if is_timing_wait_tu:
+                    sleep_candidates.append((float(c_min - 60), "timing window arrival"))
+                else:
+                    sleep_candidates.append((float(reset_time_r or 60), "rolls reset"))
+                    if c_min is not None:
+                        if not client.claim_right_available:
+                            sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification"))
+                        if client.claim_right_available and c_min > client.panic_roll_minutes:
+                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival"))
                 sleep_candidates.sort(key=lambda x: x[0])
                 await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1])
             else:

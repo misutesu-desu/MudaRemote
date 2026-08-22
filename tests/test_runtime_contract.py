@@ -1526,6 +1526,45 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("harem", forcedivorce_source)
         self.assertIn("being processed", forcedivorce_source)
 
+    def test_smart_timing_ignores_shared_roll_boundaries_during_cooldown(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        shared_reset_source = ast.get_source_segment(
+            self.source,
+            functions["_apply_shared_reset_snapshot"],
+        )
+        self.assertIn("timing_delay_active = bool(", shared_reset_source)
+        self.assertIn("time_rolls_to_claim_reset", shared_reset_source)
+        self.assertIn("not timing_delay_active", shared_reset_source)
+
+    def test_smart_timing_sleep_prioritizes_timing_threshold(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        tu_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+        self.assertIn("is_timing_waiting = bool(", status_source)
+        self.assertIn("is_timing_wait_bypass = bool(", status_source)
+        self.assertIn("is_timing_wait_tu = bool(", tu_source)
+        self.assertIn("timing threshold arrival", status_source)
+        self.assertIn("timing window arrival", tu_source)
+
+    def test_check_status_parses_rolls_count_and_roll_reset_tu(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        self.assertIn('rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"]', status_source)
+        self.assertIn("client.rolls_left = parsed_rolls", status_source)
+        self.assertIn('ROLL_RESET_TU', status_source)
+
 
 if __name__ == "__main__":
     unittest.main()
