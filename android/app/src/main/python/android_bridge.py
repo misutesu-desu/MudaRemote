@@ -93,8 +93,11 @@ def _log(message, preset="ANDROID", kind="INFO"):
 _log_lock = threading.Lock()
 _log_handle = None
 # While the runtime CLI runs, stdout is a _Tee that mirrors every print()
-# into the log file; _log must not append a second copy itself.
+# into the log file; _log must not append a second copy itself. _tee_session
+# identifies the owning run so a lingering old thread cannot tear down the
+# flag of a newer session.
 _tee_active = False
+_tee_session = 0
 
 
 def _write_log_file(text):
@@ -507,12 +510,29 @@ def _inject_runtime_presets(mudae_bot, files_dir):
     )
 
 
+def _unwrap_output(stream):
+    """Peel any stacked _Tee layers left by earlier runtime sessions.
+
+    stop() releases the run lock before the previous CLI thread has fully
+    exited, so a quick Start used to capture the old Tee as its "original".
+    Every restart then added a mirror layer and log lines appeared once per
+    layer. Unwrapping guarantees exactly one live Tee per session.
+    """
+    depth = 0
+    while isinstance(stream, _Tee) and depth < 16:
+        stream = stream.original
+        depth += 1
+    return stream
+
+
 def start(profiles_json, tokens_json, files_dir):
     """Invoke the real ``mudae_bot.py`` CLI entry point in a worker thread."""
-    global _running, _threads, _runtime_thread, _runtime_module
+    global _running, _threads, _runtime_thread, _runtime_module, _tee_active, _tee_session
     with _lock:
         if _running:
             return "already-running"
+        if _runtime_thread is not None and _runtime_thread.is_alive():
+            _log("Previous runtime thread is still stopping; starting anyway.", "ANDROID", "WARN")
         _configure_storage(str(files_dir))
         profiles = json.loads(str(profiles_json))
         tokens = json.loads(str(tokens_json))
@@ -522,6 +542,18 @@ def start(profiles_json, tokens_json, files_dir):
         if not isinstance(tokens, dict):
             tokens = {"MAIN": str(tokens)}
         _stage_runtime(profiles, tokens)
+
+        # Install this session's tee BEFORE any staging/updater output so every
+        # line of the session flows through exactly one writer.
+        base_stdout = _unwrap_output(sys.stdout)
+        base_stderr = _unwrap_output(sys.stderr)
+        out_tee = _Tee(base_stdout)
+        err_tee = _Tee(base_stderr)
+        sys.stdout = out_tee
+        sys.stderr = err_tee
+        _tee_session += 1
+        session_id = _tee_session
+        _tee_active = True
 
         # Non-blocking automatic check for Python updates on start
         try:
@@ -539,12 +571,8 @@ def start(profiles_json, tokens_json, files_dir):
         # any profiles and exits immediately after its update checks.
         _inject_runtime_presets(mudae_bot, str(files_dir))
 
-        original_stdout, original_stderr = sys.stdout, sys.stderr
-
         def run_real_cli():
             global _running, _runtime_thread, _tee_active
-            sys.stdout, sys.stderr = _Tee(original_stdout), _Tee(original_stderr)
-            _tee_active = True
             _log("Runtime CLI starting (--all)...", "ANDROID", "INFO")
             try:
                 # This is the same dispatcher used by `python mudae_bot.py`.
@@ -553,8 +581,13 @@ def start(profiles_json, tokens_json, files_dir):
             except Exception as exc:
                 _log("Python runtime stopped: {}".format(exc), "ANDROID", "ERROR")
             finally:
-                _tee_active = False
-                sys.stdout, sys.stderr = original_stdout, original_stderr
+                # Only tear down if a newer session hasn't already replaced us.
+                if sys.stdout is out_tee:
+                    sys.stdout = base_stdout
+                if sys.stderr is err_tee:
+                    sys.stderr = base_stderr
+                if session_id == _tee_session:
+                    _tee_active = False
                 with _lock:
                     _running = False
 
