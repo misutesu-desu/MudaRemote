@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.6"
+CURRENT_VERSION = "4.9.0-beta.7"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -3719,7 +3719,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.is_paused:
             mark_status_dirty(client, {"rolls"}, reason="pause-during-roll")
             return
-        if client.rolls_left <= 0 and client._rolls_received >= client._rolls_sent:
+        now_utc = datetime.datetime.now(timezone.utc)
+        if client.roll_reset_at_utc is not None and now_utc >= client.roll_reset_at_utc:
+            request_status_refresh(
+                {"rolls"},
+                reason="roll-reset-passed-during-rolling",
+                urgent=True,
+            )
+        elif client.rolls_left <= 0 and client._rolls_received >= client._rolls_sent:
             clear_status_dirty(client, {"rolls"})
             # The locally tracked batch is complete, but the cached $tu still
             # describes the rolls that were just sent.  When Auto $us is
@@ -4452,30 +4459,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.claim_right_available:
                 if wl_claims:
                     wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    m_c, n, v, _ = wl_claims[0]
-                    if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
-                        msg_claimed_id = m_c.id
-                        attempted.add(n)
-                elif char_claims:
+                    for m_c, n, v, _ in wl_claims:
+                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                            msg_claimed_id = m_c.id
+                            attempted.add(n)
+                            break
+                        if not client.claim_right_available:
+                            break
+                if msg_claimed_id == -1 and client.claim_right_available and char_claims:
                     char_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    m_c, n, v, _ = char_claims[0]
-                    if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
-                        msg_claimed_id = m_c.id
-                        attempted.add(n)
+                    for m_c, n, v, _ in char_claims:
+                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                            msg_claimed_id = m_c.id
+                            attempted.add(n)
+                            break
+                        if not client.claim_right_available:
+                            break
             elif client.key_mode and not client.rt_available:
                 valid_chars = [x for x in char_claims if x[2] >= client.min_kakera]
                 if wl_claims:
                     wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    m_c, n, v, _ = wl_claims[0]
-                    if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
-                        msg_claimed_id = m_c.id
-                        attempted.add(n)
-                elif valid_chars:
+                    for m_c, n, v, _ in wl_claims:
+                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                            msg_claimed_id = m_c.id
+                            attempted.add(n)
+                            break
+                        if not client.claim_right_available:
+                            break
+                if msg_claimed_id == -1 and client.claim_right_available and valid_chars:
                     valid_chars.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    m_c, n, v, _ = valid_chars[0]
-                    if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
-                        msg_claimed_id = m_c.id
-                        attempted.add(n)
+                    for m_c, n, v, _ in valid_chars:
+                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                            msg_claimed_id = m_c.id
+                            attempted.add(n)
+                            break
+                        if not client.claim_right_available:
+                            break
 
         if client.rt_available and not is_key_mode_kakera_only():
             rt_targets = []
@@ -4658,7 +4677,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         )
         return False
 
-    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False):
+    async def claim_character(client, channel, msg, is_kakera=False, is_rt_claim=False, is_snipe=False, is_free_claim=False, kakera_value=None, is_mk_roll=False, is_purple_only=False):
         if client.is_paused or not msg or not msg.embeds: return False
         if not is_kakera and getattr(client, 'is_claiming', False): return False
 
@@ -4819,6 +4838,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if hasattr(btn.emoji, 'name') and btn.emoji.name:
                                 name = btn.emoji.name
                                 name_clean = name.rstrip('2')
+                                if is_purple_only and name_clean != 'kakeraP':
+                                    continue
                                 if kakera_button_is_eligible(btn, target_list, filter_reason):
                                     all_btns_tracked.append({
                                         'btn': btn, 'custom_id': btn.custom_id,
@@ -5462,11 +5483,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
                 has_btn = has_collectible_kakera_button(message.components, all_k)
                 if has_btn:
+                    has_purple = client.collect_purple_kakera and has_purple_kakera_button(message.components)
                     if getattr(client, 'immediate_kakera_click', True):
                         d_min, d_max = client.reactive_kakera_delay_range
                         if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                         await claim_character(client, message.channel, message, is_kakera=True)
                     else:
+                        if has_purple:
+                            d_min, d_max = client.reactive_kakera_delay_range
+                            if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
+                            await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
                         client.collected_kakera_rolls.append(message)
             else:
                 refresh_predicted_claim_and_rt()
@@ -5518,11 +5544,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 all_k = client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis
                 has_btn = has_collectible_kakera_button(message.components, all_k)
                 if has_btn:
+                    has_purple = client.collect_purple_kakera and has_purple_kakera_button(message.components)
                     if getattr(client, 'immediate_kakera_click', True):
                         d_min, d_max = client.reactive_kakera_delay_range
                         if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                         await claim_character(client, message.channel, message, is_kakera=True)
                     else:
+                        if has_purple:
+                            d_min, d_max = client.reactive_kakera_delay_range
+                            if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
+                            await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
                         client.collected_kakera_rolls.append(message)
         else:
             c_name = embed.author.name.lower()
