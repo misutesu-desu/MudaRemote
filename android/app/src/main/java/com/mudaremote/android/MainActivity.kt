@@ -137,6 +137,20 @@ class MainActivity : ComponentActivity() {
         }
         loadEngineVersion()
         syncRuntimeStatusBadge()
+        adoptLiveLogsIfRunning()
+    }
+
+    /**
+     * The foreground service outlives Activity instances (reopen, process
+     * restart). Without this the console stays on "No logs for this launch
+     * yet." forever even though the runtime is streaming output — the session
+     * flag is only set by pressing Run/Fetch inside this instance.
+     */
+    private fun adoptLiveLogsIfRunning() {
+        if (!MudaRemoteService.isRunning || logsVisibleForSession) return
+        logSessionStartBytes = 0L  // surface the existing tail of the live run
+        logsVisibleForSession = true
+        refreshLogs()
     }
 
     override fun onPause() {
@@ -818,20 +832,19 @@ class MainActivity : ComponentActivity() {
         }
         dock.addView(btnSave, LinearLayout.LayoutParams(0, -2, 1.0f).apply { rightMargin = UiTheme.dp(this@MainActivity, 8) })
 
-        // 2. Run Workflow Button (Primary Action; long-press offers run-all)
+        // 2. Run Workflow Button (Primary Action; long-press opens multi-select dispatch)
         val btnStart = TextView(this).apply {
             text = "▶️ Run"
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            contentDescription = "Start the selected profile. Hold for more options."
+            contentDescription = "Start the selected profile. Hold to pick multiple profiles."
             background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.ACCENT_GREEN, radiusDp = 6f)
             setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                saveCurrentProfile(showStatus = false)
-                startRuntime(selectedOnly = true)
+                startRuntime(listOf(currentProfile))
             }
             setOnLongClickListener {
                 performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -1409,34 +1422,62 @@ class MainActivity : ComponentActivity() {
         vault.put("tokens", tokenRoot.toString())
     }
 
-    private fun startRuntime(selectedOnly: Boolean) {
+    private fun startRuntime(profileNames: Collection<String>) {
         saveCurrentProfile(showStatus = false)
         beginLogSession()
 
         val selectedProfiles = JSONObject()
         val selectedTokens = JSONObject()
-        if (selectedOnly) {
-            profiles[currentProfile]?.let { selectedProfiles.put(currentProfile, it) }
-            tokens[currentProfile]?.let { selectedTokens.put(currentProfile, it) }
-        } else {
-            profiles.forEach { (name, data) -> selectedProfiles.put(name, data) }
-            tokens.forEach { (name, value) -> selectedTokens.put(name, value) }
+        var tokenized = 0
+        profileNames.forEach { name ->
+            profiles[name]?.let { selectedProfiles.put(name, it) }
+            tokens[name]?.let { selectedTokens.put(name, it); tokenized++ }
+        }
+        if (selectedProfiles.length() == 0) {
+            toast("Nothing to run.")
+            return
+        }
+        if (tokenized == 0) {
+            toast("Selected profile(s) have no token.")
+            return
         }
 
         MudaRemoteService.start(this, selectedProfiles.toString(), selectedTokens.toString())
-        updateStatusBadge(if (selectedOnly) "● Running: $currentProfile" else "● Running all", UiTheme.ACCENT_GREEN_BRIGHT)
+        updateStatusBadge(
+            if (selectedProfiles.length() == 1) "● Running: ${profileNames.first()}"
+            else "● Running ${selectedProfiles.length()} profiles",
+            UiTheme.ACCENT_GREEN_BRIGHT
+        )
         logStatusDot.text = "🟢 "
-        toast(if (selectedOnly) "Started workflow '$currentProfile' 🚀" else "Started all workflows 🚀")
+        toast(
+            if (selectedProfiles.length() == 1) "Started workflow '${profileNames.first()}' 🚀"
+            else "Started ${selectedProfiles.length()} workflows 🚀"
+        )
     }
 
     private fun showStartOptionsDialog() {
-        val options = arrayOf("Run branch ($currentProfile)", "Run all branches (${profiles.size})")
+        val names = profiles.keys.toList()
+        if (names.isEmpty()) return
+        val checked = BooleanArray(names.size) { names[it] == currentProfile }
         AlertDialog.Builder(this)
             .setTitle("Dispatch Workflow")
-            .setItems(options) { _, which ->
-                saveCurrentProfile(showStatus = false)
-                startRuntime(selectedOnly = (which == 0))
+            .setMultiChoiceItems(names.toTypedArray(), checked) { _, which, isChecked ->
+                checked[which] = isChecked
             }
+            .setPositiveButton("Run selected") { _, _ ->
+                val picked = names.filterIndexed { index, _ -> checked[index] }
+                if (picked.isEmpty()) {
+                    toast("No profiles selected.")
+                } else {
+                    window.decorView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    startRuntime(picked)
+                }
+            }
+            .setNeutralButton("Run all") { _, _ ->
+                window.decorView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                startRuntime(names)
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 

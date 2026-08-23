@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -17,14 +18,25 @@ import java.io.File
 
 class MudaRemoteService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        appendLocalLog("[INFO] [ANDROID] Service created (pid ${android.os.Process.myPid()}).")
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when {
+            intent == null -> appendLocalLog("[WARN] [ANDROID] System restarted the service (START_STICKY). Relaunching runtime...")
+            intent.action == ACTION_STOP -> appendLocalLog("[INFO] [ANDROID] Stop requested.")
+            else -> appendLocalLog("[INFO] [ANDROID] Start requested.")
+        }
         // Satisfy the startForegroundService() contract on every delivery, then act.
         createChannel()
         startForeground(NOTIFICATION_ID, notification(if (isRunning) "Running in the background" else "Starting..."))
-        when (intent?.action) {
-            ACTION_STOP -> stopRuntime()
-            else -> startRuntime()
+        when {
+            intent == null || intent.action != ACTION_STOP -> startRuntime()
+            else -> stopRuntime()
         }
         return START_STICKY
     }
@@ -32,9 +44,12 @@ class MudaRemoteService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        appendLocalLog("[INFO] [ANDROID] Service destroyed.")
         stopPython()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        wifiLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
         isRunning = false
         super.onDestroy()
     }
@@ -42,10 +57,19 @@ class MudaRemoteService : Service() {
     private fun startRuntime() {
         isRunning = true
         updateNotification("Acquiring wake lock...")
-        val manager = getSystemService(PowerManager::class.java)
-        wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaRemote:runtime").also {
+        val powerManager = getSystemService(PowerManager::class.java)
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaRemote:runtime").also {
             it.setReferenceCounted(false)
             it.acquire(WAKE_LOCK_TIMEOUT_MS)
+        }
+        // Keep the Wi-Fi radio at high performance so gateway heartbeats survive Doze.
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            WifiManager.WIFI_MODE_FULL_LOW_LATENCY else
+            @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        wifiLock = wifiManager.createWifiLock(mode, "MudaRemote:wifi").also {
+            it.setReferenceCounted(false)
+            it.acquire()
         }
         try {
             PythonRuntime.ensureStarted(applicationContext)
@@ -56,7 +80,7 @@ class MudaRemoteService : Service() {
             val profileCount = runCatching { org.json.JSONObject(profiles).length() }.getOrDefault(1)
             updateNotification("Running $profileCount profile(s) in the background")
             Python.getInstance().getModule("android_bridge").callAttr("start", profiles, tokens, filesDir.absolutePath)
-            appendLocalLog("[INFO] [ANDROID] Foreground service started successfully.")
+            appendLocalLog("[INFO] [ANDROID] Foreground service started successfully ($profileCount profile(s)).")
         } catch (error: Exception) {
             isRunning = false
             appendLocalLog("[ERROR] [ANDROID] Runtime failed to start: ${error.message}")
@@ -138,8 +162,7 @@ class MudaRemoteService : Service() {
         fun start(context: Context, profilesJson: String = "", tokensJson: String = "") {
             launchProfiles = profilesJson
             launchTokens = tokensJson
-            val intent = Intent(context, MudaRemoteService::class.java)
-            context.startForegroundService(intent)
+            context.startForegroundService(Intent(context, MudaRemoteService::class.java))
         }
 
         fun stop(context: Context) {
