@@ -78,9 +78,18 @@ def main(project_root, output_dir):
         "default": "", "label": "Discord Account Token (stored separately)",
         "description": "Keep this secret. Android stores it separately with the device Keystore."
     })
+    # Multi-account support: desktop presets expand every entry of "tokens"
+    # into its own running account ("Name", "Name #2", ...).
+    tokens_entry = settings.setdefault("tokens", {
+        "default": [],
+        "label": "Account Tokens (multi-account)",
+        "description": "One Discord token per entry. Each entry runs as an additional account of this preset."
+    })
+    if not isinstance(tokens_entry.get("default"), list):
+        tokens_entry["default"] = []
 
     section_groups = {
-        "Connection": {"token", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
+        "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
         "Rolling": {"rolling", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "panic_roll_minutes", "auto_free_claim", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls"},
         "Character Sniping": {"snipe_mode", "snipe_delay", "snipe_channels", "character_snipe_targets", "reactive_snipe_on_own_rolls", "reactive_snipe_delay", "series_snipe_mode", "series_snipe_delay", "series_snipe_only_self_rolls", "series_wishlist", "kakera_snipe_mode", "kakera_snipe_threshold", "enable_snipe_chat_reactions", "snipe_chat_messages"},

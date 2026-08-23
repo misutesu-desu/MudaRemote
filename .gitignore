@@ -38,3 +38,6 @@ venv/
 android/.gradle/
 android/.kotlin/
 android/local.properties
+# Release signing material: local only; CI restores it from GitHub secrets.
+android/keystore.properties
+android/*.jks

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +8,15 @@ plugins {
 
 val generatedPythonDir = layout.buildDirectory.dir("generated/mudaremote-python")
 val generatedAndroidAssetsDir = layout.buildDirectory.dir("generated/android-assets")
+
+// Stable release signing. The keystore lives outside git (android/keystore.properties,
+// gitignored) locally, and is materialized from GitHub secrets in CI. When absent,
+// builds fall back to the debug key so contributor environments still compile.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasReleaseSigning = keystoreProperties.isNotEmpty()
 val preparePythonRuntime by tasks.registering(Sync::class) {
     from(projectDir.parentFile.parentFile) {
         include("mudae_bot.py", "mudae_core/**/*.py")
@@ -30,27 +41,39 @@ android {
         applicationId = "com.mudaremote.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.2.0"
+        versionCode = 9
+        versionName = "1.2.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("mudaremote") {
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         create("mobile") {
             initWith(getByName("debug"))
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("mudaremote") else signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("debug")
         }
         create("ux") {
             initWith(getByName("mobile"))
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("mudaremote") else signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("mobile", "debug")
         }
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("mudaremote")
         }
     }
 

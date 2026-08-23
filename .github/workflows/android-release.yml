@@ -34,6 +34,26 @@ jobs:
         with:
           gradle-version: "8.11"
 
+      - name: Restore signing keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KS_STORE_PASSWORD: ${{ secrets.ANDROID_KS_STORE_PASSWORD }}
+          ANDROID_KS_ALIAS: ${{ secrets.ANDROID_KS_ALIAS }}
+          ANDROID_KS_KEY_PASSWORD: ${{ secrets.ANDROID_KS_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_B64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_B64 not set; falling back to debug signing (updates will not install over signed releases)."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > mudaremote-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=mudaremote-release.jks
+          storePassword=${ANDROID_KS_STORE_PASSWORD}
+          keyAlias=${ANDROID_KS_ALIAS}
+          keyPassword=${ANDROID_KS_KEY_PASSWORD}
+          EOF
+
       - name: Build ux APK
         working-directory: android
         run: gradle :app:assembleUx --no-daemon --stacktrace

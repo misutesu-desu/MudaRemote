@@ -173,11 +173,22 @@ def _stage_runtime(profiles, tokens):
     staged = {}
     for preset_name, source in profiles.items():
         data = dict(source or {})
-        # Tokens stay in the process environment, never in the JSON file.
+        # The legacy singular token moves to the process environment; the
+        # multi-account "tokens" list stays in the JSON because the Android
+        # token input only carries the primary account.
         data.pop("token", None)
-        data.pop("tokens", None)
+        if isinstance(data.get("tokens"), (list, tuple)):
+            data["tokens"] = [str(item or "").strip() for item in data["tokens"] if str(item or "").strip()]
+            if not data["tokens"]:
+                data.pop("tokens", None)
+        else:
+            data.pop("tokens", None)
         staged[str(preset_name)] = data
-        raw_token = tokens.get(preset_name, "") or source.get("token", "")
+        raw_token = tokens.get(preset_name, "") or ""
+        if not raw_token:
+            # Fall back to whatever accounts the profile itself carries.
+            source_tokens = source.get("tokens") if isinstance(source, dict) else None
+            raw_token = json.dumps(source_tokens) if source_tokens else str(source.get("token", "") or "")
         try:
             token_values = json.loads(raw_token) if isinstance(raw_token, str) and raw_token.strip().startswith("[") else [raw_token]
         except (TypeError, ValueError):
@@ -482,18 +493,27 @@ def _inject_runtime_presets(mudae_bot, files_dir):
 
     prepared_count = 0
     tokenized_count = 0
+    account_count = 0
     for name, data in loaded.items():
         if not isinstance(data, dict):
             continue
         data.pop("token", None)
-        data.pop("tokens", None)
         _normalize_preset_value(data)
-        tokens = tokens_by_preset.get(name) or []
-        data["tokens"] = tokens
-        data["token"] = tokens[0] if tokens else ""
+        # Multi-account presets carry a "tokens" list in the staged JSON; env
+        # vars only ever hold the primary token from the Android input. Merge
+        # both (env first), preserving order and dropping duplicates, so every
+        # account expands in prepare_active_presets.
+        merged = []
+        for candidate in list(tokens_by_preset.get(name) or []) + list(data.get("tokens") or []):
+            cleaned = str(candidate or "").strip()
+            if cleaned and cleaned not in merged:
+                merged.append(cleaned)
+        data["tokens"] = merged
+        data["token"] = merged[0] if merged else ""
         prepared_count += 1
-        if tokens:
+        if merged:
             tokenized_count += 1
+            account_count += len(merged)
 
     target = getattr(mudae_bot, "presets", None)
     if isinstance(target, dict):
@@ -504,7 +524,7 @@ def _inject_runtime_presets(mudae_bot, files_dir):
         return
 
     _log(
-        "Staged {} profile(s); {} with token(s).".format(prepared_count, tokenized_count),
+        "Staged {} profile(s); {} runnable, {} account(s) total.".format(prepared_count, tokenized_count, account_count),
         "ANDROID",
         "INFO" if tokenized_count else "WARN",
     )
