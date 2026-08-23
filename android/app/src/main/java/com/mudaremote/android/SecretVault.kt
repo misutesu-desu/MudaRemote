@@ -19,7 +19,12 @@ class SecretVault(context: Context) {
         preferences.edit().putString(name, encrypt(value)).apply()
     }
 
-    fun get(name: String): String = preferences.getString(name, null)?.let(::decrypt).orEmpty()
+    fun get(name: String): String = read(name).getOrNull().orEmpty()
+
+    /** Distinguishes a missing value from an unreadable encrypted value. */
+    fun read(name: String): Result<String?> = runCatching {
+        preferences.getString(name, null)?.let(::decrypt)
+    }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -42,15 +47,15 @@ class SecretVault(context: Context) {
             .put(iv.size.toByte()).put(iv).put(encrypted).array(), Base64.NO_WRAP)
     }
 
-    private fun decrypt(encoded: String): String = try {
+    private fun decrypt(encoded: String): String {
         val all = Base64.decode(encoded, Base64.NO_WRAP)
+        require(all.isNotEmpty()) { "Encrypted value is empty" }
         val ivLength = all[0].toInt() and 0xff
+        require(ivLength > 0 && 1 + ivLength < all.size) { "Encrypted value is malformed" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, all.copyOfRange(1, 1 + ivLength)))
         }
-        String(cipher.doFinal(all.copyOfRange(1 + ivLength, all.size)), Charsets.UTF_8)
-    } catch (_: Exception) {
-        ""
+        return String(cipher.doFinal(all.copyOfRange(1 + ivLength, all.size)), Charsets.UTF_8)
     }
 
     private companion object { const val KEY_ALIAS = "mudaremote.profile.v1" }

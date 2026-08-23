@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
     private val collapsedSections = mutableMapOf<String, Boolean>()
 
     private var currentProfile = ""
+    private var storageHealthy = true
     private var isTokenVisible = false
     private var activeCategoryFilter = "All"
     private var activeSearchQuery = ""
@@ -156,17 +157,32 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         logHandler.removeCallbacks(logRefresh)
         searchHandler.removeCallbacks(searchDebounce)
-        saveCurrentProfile(showStatus = false)  // Persist drafts so rotation/process death never loses edits.
+        if (storageHealthy) {
+            saveCurrentProfile(showStatus = false)  // Persist drafts so rotation/process death never loses edits.
+        }
         super.onPause()
     }
 
     private fun syncRuntimeStatusBadge() {
-        if (MudaRemoteService.isRunning) {
-            updateStatusBadge("● Running: $currentProfile", UiTheme.ACCENT_GREEN_BRIGHT)
-            logStatusDot.text = "🟢 "
-        } else if (statusBadge.text?.startsWith("● Running") == true) {
-            updateStatusBadge("● Stopped", UiTheme.TEXT_MUTED)
-            logStatusDot.text = "⚪ "
+        when (MudaRemoteService.runtimeState) {
+            MudaRemoteService.RuntimeState.STARTING -> {
+                updateStatusBadge("● Starting...", UiTheme.ACCENT_YELLOW)
+                logStatusDot.text = "🟡 "
+            }
+            MudaRemoteService.RuntimeState.RUNNING -> {
+                updateStatusBadge("● Runtime active", UiTheme.ACCENT_GREEN_BRIGHT)
+                logStatusDot.text = "🟢 "
+            }
+            MudaRemoteService.RuntimeState.STOPPING -> {
+                updateStatusBadge("● Stopping all...", UiTheme.ACCENT_YELLOW)
+                logStatusDot.text = "🟡 "
+            }
+            MudaRemoteService.RuntimeState.STOPPED -> {
+                if (statusBadge.text?.startsWith("●") == true) {
+                    updateStatusBadge("● Stopped", UiTheme.TEXT_MUTED)
+                    logStatusDot.text = "⚪ "
+                }
+            }
         }
     }
 
@@ -492,7 +508,7 @@ class MainActivity : ComponentActivity() {
             contentDescription = "Toggle token visibility"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
-            minWidth = UiTheme.dp(this@MainActivity, 44)
+            minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { toggleTokenVisibility() }
         }
         inputContainer.addView(tokenShowHideBtn)
@@ -503,7 +519,7 @@ class MainActivity : ComponentActivity() {
             contentDescription = "Paste token from clipboard"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
-            minWidth = UiTheme.dp(this@MainActivity, 40)
+            minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { pasteTokenFromClipboard() }
         }
         inputContainer.addView(pasteBtn)
@@ -516,7 +532,7 @@ class MainActivity : ComponentActivity() {
             contentDescription = "Clear token"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
-            minWidth = UiTheme.dp(this@MainActivity, 44)
+            minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener {
                 tokenInput.setText("")
                 tokens.remove(currentProfile)
@@ -856,7 +872,7 @@ class MainActivity : ComponentActivity() {
 
         // 3. Cancel / Stop Workflow Button (GitHub Danger Button)
         val btnStop = TextView(this).apply {
-            text = "⏹ Stop"
+            text = "⏹ Stop all"
             textSize = 12.5f
             setTypeface(null, Typeface.BOLD)
             setTextColor(UiTheme.ACCENT_RED_BRIGHT)
@@ -865,10 +881,11 @@ class MainActivity : ComponentActivity() {
             setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.REJECT)
+                beginLogSession()
                 MudaRemoteService.stop(this@MainActivity)
-                clearRuntimeLogs()
-                updateStatusBadge("● Stopped", UiTheme.TEXT_MUTED)
-                logStatusDot.text = "⚪ "
+                updateStatusBadge("● Stopping all...", UiTheme.ACCENT_YELLOW)
+                logStatusDot.text = "🟡 "
+                toast("Stop requested for all running profiles.")
             }
         }
         dock.addView(btnStop, LinearLayout.LayoutParams(0, -2, 1.0f))
@@ -892,7 +909,7 @@ class MainActivity : ComponentActivity() {
 
         profiles.keys.forEach { name ->
             val isSelected = (name == currentProfile)
-            val hasToken = !tokens[name].isNullOrBlank()
+            val hasToken = allTokensForProfile(name).isNotEmpty()
             val missingMarker = if (hasToken) "" else " ⚠"
             val pill = TextView(this).apply {
                 text = "🌿 $name$missingMarker"
@@ -946,6 +963,7 @@ class MainActivity : ComponentActivity() {
             .setMessage("Enter a branch name for the configuration:")
             .setView(input)
             .setPositiveButton("Create branch") { _, _ ->
+                if (!ensureWritableStorage()) return@setPositiveButton
                 val name = input.text.toString().trim()
                 if (name.isNotBlank()) {
                     if (profiles.containsKey(name)) {
@@ -954,7 +972,6 @@ class MainActivity : ComponentActivity() {
                         saveCurrentProfile(showStatus = false)
                         val newObj = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
                         profiles[name] = newObj
-                        tokens.remove(name)
                         currentProfile = name
                         persist()
                         refreshProfileTabs()
@@ -968,6 +985,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun duplicateCurrentProfile() {
+        if (!ensureWritableStorage()) return
         if (currentProfile.isBlank() || !profiles.containsKey(currentProfile)) return
         saveCurrentProfile(showStatus = false)
         val copyName = "${currentProfile}_patch"
@@ -997,6 +1015,7 @@ class MainActivity : ComponentActivity() {
             .setTitle("Delete Branch")
             .setMessage("Are you sure you want to delete branch '$currentProfile'?")
             .setPositiveButton("Delete branch") { _, _ ->
+                if (!ensureWritableStorage()) return@setPositiveButton
                 val toDelete = currentProfile
                 profiles.remove(toDelete)
                 tokens.remove(toDelete)
@@ -1015,6 +1034,8 @@ class MainActivity : ComponentActivity() {
         val currentJson = profiles[currentProfile] ?: return
         val exportJson = JSONObject(currentJson.toString())
         exportJson.remove("token")
+        exportJson.remove("tokens")
+        exportJson.remove("additional_tokens")
         val formatted = exportJson.toString(2)
 
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1035,7 +1056,9 @@ class MainActivity : ComponentActivity() {
         sectionContainers.clear()
         sectionHeaders.clear()
 
-        val keys = data.keys().asSequence().filter { it != "token" }.toList().sortedWith(
+        val keys = data.keys().asSequence()
+            .filter { it != "token" && it != "additional_tokens" }
+            .toList().sortedWith(
             compareBy<String> { sectionRank(schemaFields.optJSONObject(it)?.optString("section", "Advanced") ?: "Advanced") }.thenBy { it }
         )
 
@@ -1208,7 +1231,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val chipList = ChipListView(this, key, value) { updatedArray ->
-                    // Synced
+                    profiles[currentProfile]?.put(key, updatedArray)
                 }.apply {
                     tag = key
                 }
@@ -1379,6 +1402,10 @@ class MainActivity : ComponentActivity() {
     // =========================================================================
 
     private fun saveCurrentProfile(showStatus: Boolean) {
+        if (!storageHealthy) {
+            if (showStatus) ensureWritableStorage()
+            return
+        }
         if (!::fieldsContainer.isInitialized || currentProfile.isBlank()) return
         val data = profiles[currentProfile] ?: JSONObject()
         val oldKeys = data.keys().asSequence().toList()
@@ -1394,12 +1421,95 @@ class MainActivity : ComponentActivity() {
             }
             data.put(key, value)
         }
-        profiles[currentProfile] = data
-
         val accountToken = tokenInput.text.toString().trim()
         if (accountToken.isNotBlank()) tokens[currentProfile] = accountToken else tokens.remove(currentProfile)
+        normalizeProfileTokens(currentProfile, data)
+        profiles[currentProfile] = data
         persist()
         if (showStatus) toast("Committed changes to '$currentProfile' 💾")
+    }
+
+    private fun decodeTokenValues(raw: Any?): List<String> {
+        val candidates = when (raw) {
+            null, JSONObject.NULL -> emptyList()
+            is JSONArray -> (0 until raw.length()).mapNotNull { index -> raw.opt(index) as? String }
+            is String -> {
+                val text = raw.trim()
+                if (text.startsWith("[")) {
+                    runCatching {
+                        val array = JSONArray(text)
+                        (0 until array.length()).mapNotNull { index -> array.opt(index) as? String }
+                    }.getOrDefault(emptyList())
+                } else {
+                    listOf(text)
+                }
+            }
+            else -> emptyList()
+        }
+        return LinkedHashSet(candidates.map(String::trim).filter(String::isNotBlank)).toList()
+    }
+
+    private fun decodeAdditionalTokenValues(raw: Any?): List<String> {
+        if (raw == null || raw == JSONObject.NULL) return emptyList()
+        if (raw is JSONArray || (raw is String && raw.trim().startsWith("["))) {
+            return decodeTokenValues(raw)
+        }
+        if (raw !is String) return emptyList()
+        return LinkedHashSet(
+            raw?.toString().orEmpty()
+                .split(Regex("[,\\s]+"))
+                .map(String::trim)
+                .filter(String::isNotBlank)
+        ).toList()
+    }
+
+    private fun normalizeProfileTokens(name: String, data: JSONObject) {
+        val secureValues = decodeTokenValues(tokens[name])
+        val legacyValues = decodeTokenValues(data.opt("token"))
+        val primary = secureValues.firstOrNull() ?: legacyValues.firstOrNull()
+        val additional = LinkedHashSet<String>()
+        additional.addAll(secureValues.drop(if (primary == null) 0 else 1))
+        additional.addAll(legacyValues.drop(if (secureValues.isEmpty() && primary != null) 1 else 0))
+        additional.addAll(decodeTokenValues(data.opt("tokens")))
+        additional.addAll(decodeAdditionalTokenValues(data.opt("additional_tokens")))
+        if (primary != null) additional.remove(primary)
+        data.remove("token")
+        data.remove("additional_tokens")
+        if (primary == null) {
+            tokens.remove(name)
+        } else {
+            tokens[name] = primary
+        }
+        data.put("tokens", JSONArray(additional.toList()))
+    }
+
+    private fun setCanonicalTokens(name: String, values: Collection<String>) {
+        val clean = LinkedHashSet(values.map(String::trim).filter(String::isNotBlank)).toList()
+        val data = profiles[name] ?: schemaDefaults()
+            .put("channel_id", "")
+            .put("roll_command", "wa")
+            .put("rolling", true)
+            .also { profiles[name] = it }
+        if (clean.isEmpty()) {
+            tokens.remove(name)
+            data.put("tokens", JSONArray())
+            return
+        }
+        tokens[name] = clean.first()
+        data.put("tokens", JSONArray(clean.drop(1)))
+        data.remove("token")
+        data.remove("additional_tokens")
+    }
+
+    private fun allTokensForProfile(name: String): List<String> {
+        val all = LinkedHashSet<String>()
+        all.addAll(decodeTokenValues(tokens[name]))
+        profiles[name]?.let { data ->
+            all.addAll(decodeTokenValues(data.opt("token")))
+            all.addAll(decodeTokenValues(data.opt("tokens")))
+            all.addAll(decodeAdditionalTokenValues(data.opt("additional_tokens")))
+        }
+        return all.toList()
     }
 
     private fun parseValue(raw: String, oldValue: Any?): Any {
@@ -1416,43 +1526,53 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun persist() {
+        if (!storageHealthy) return
         val profileRoot = JSONObject(); profiles.forEach { (name, data) -> profileRoot.put(name, data) }
         val tokenRoot = JSONObject(); tokens.forEach { (name, value) -> tokenRoot.put(name, value) }
         vault.put("profiles", profileRoot.toString())
         vault.put("tokens", tokenRoot.toString())
     }
 
+    private fun ensureWritableStorage(): Boolean {
+        if (storageHealthy) return true
+        toast("Secure storage is unavailable; changes were not saved.")
+        return false
+    }
+
     private fun startRuntime(profileNames: Collection<String>) {
         saveCurrentProfile(showStatus = false)
-        beginLogSession()
 
         val selectedProfiles = JSONObject()
         val selectedTokens = JSONObject()
-        var tokenized = 0
-        profileNames.forEach { name ->
-            profiles[name]?.let { selectedProfiles.put(name, it) }
-            tokens[name]?.let { selectedTokens.put(name, it); tokenized++ }
+        val runnableNames = profileNames.filter { allTokensForProfile(it).isNotEmpty() }
+        val skippedCount = profileNames.size - runnableNames.size
+        runnableNames.forEach { name ->
+            profiles[name]?.let { source ->
+                val cleanProfile = JSONObject(source.toString()).apply {
+                    remove("token")
+                    remove("tokens")
+                    remove("additional_tokens")
+                }
+                selectedProfiles.put(name, cleanProfile)
+            }
+            selectedTokens.put(name, JSONArray(allTokensForProfile(name)).toString())
         }
         if (selectedProfiles.length() == 0) {
-            toast("Nothing to run.")
-            return
-        }
-        if (tokenized == 0) {
-            toast("Selected profile(s) have no token.")
+            toast("Selected profile(s) have no usable account token.")
             return
         }
 
+        beginLogSession()
+        val addingToRuntime = MudaRemoteService.runtimeState != MudaRemoteService.RuntimeState.STOPPED
         MudaRemoteService.start(this, selectedProfiles.toString(), selectedTokens.toString())
         updateStatusBadge(
-            if (selectedProfiles.length() == 1) "● Running: ${profileNames.first()}"
-            else "● Running ${selectedProfiles.length()} profiles",
-            UiTheme.ACCENT_GREEN_BRIGHT
+            if (addingToRuntime) "● Adding profile(s)..." else "● Starting profile(s)...",
+            UiTheme.ACCENT_YELLOW
         )
-        logStatusDot.text = "🟢 "
-        toast(
-            if (selectedProfiles.length() == 1) "Started workflow '${profileNames.first()}' 🚀"
-            else "Started ${selectedProfiles.length()} workflows 🚀"
-        )
+        logStatusDot.text = "🟡 "
+        val action = if (addingToRuntime) "Add request sent" else "Start request sent"
+        val skipped = if (skippedCount > 0) " ($skippedCount without tokens skipped)" else ""
+        toast("$action for ${selectedProfiles.length()} profile(s)$skipped.")
     }
 
     private fun showStartOptionsDialog() {
@@ -1766,6 +1886,7 @@ class MainActivity : ComponentActivity() {
     // =========================================================================
 
     private fun importPresets(uri: Uri) {
+        if (!ensureWritableStorage()) return
         val text = readUri(uri) ?: return
         runCatching {
             var root = JSONObject(text)
@@ -1773,11 +1894,18 @@ class MainActivity : ComponentActivity() {
             val importedNames = mutableListOf<String>()
             root.keys().asSequence().forEach { name ->
                 val data = root.getJSONObject(name)
-                val embeddedToken = data.optString("token", "").trim()
-                if (embeddedToken.isNotBlank()) tokens[name] = embeddedToken
+                val existingTokens = allTokensForProfile(name)
+                val importedTokens = LinkedHashSet<String>().apply {
+                    addAll(decodeTokenValues(data.opt("token")))
+                    addAll(decodeTokenValues(data.opt("tokens")))
+                    addAll(decodeAdditionalTokenValues(data.opt("additional_tokens")))
+                }.toList()
                 data.remove("token")
+                data.remove("tokens")
+                data.remove("additional_tokens")
                 mergeSchemaDefaults(data)
                 profiles[name] = data
+                setCanonicalTokens(name, if (importedTokens.isEmpty()) existingTokens else importedTokens + existingTokens)
                 importedNames += name
             }
             if (importedNames.isNotEmpty()) {
@@ -1791,30 +1919,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun importSecrets(uri: Uri) {
+        if (!ensureWritableStorage()) return
         val text = readUri(uri) ?: return
         runCatching {
             val root = JSONObject(text)
             var imported = 0
             var encrypted = 0
+            var invalid = 0
             root.keys().asSequence().forEach { name ->
-                val raw = root.optString(name, "").trim()
-                val arrayHasDpapi = raw.startsWith("[") && runCatching {
-                    val values = JSONArray(raw)
-                    (0 until values.length()).any { values.optString(it).startsWith("AQAAANCMnd8BFdER", ignoreCase = true) }
-                }.getOrDefault(false)
-                if (raw.startsWith("AQAAANCMnd8BFdER", ignoreCase = true) || arrayHasDpapi) {
-                    encrypted++
-                } else if (raw.isNotBlank()) {
-                    tokens[name] = raw
-                    imported++
+                val raw = root.opt(name)
+                invalid += when (raw) {
+                    is JSONArray -> (0 until raw.length()).count { raw.opt(it) !is String }
+                    is String -> if (raw.trim().startsWith("[") && runCatching { JSONArray(raw) }.isFailure) 1 else 0
+                    null, JSONObject.NULL -> 0
+                    else -> 1
+                }
+                val values = decodeTokenValues(raw)
+                val portable = values.filterNot {
+                    it.startsWith("AQAAANCMnd8BFdER", ignoreCase = true)
+                }
+                encrypted += values.size - portable.size
+                if (portable.isNotEmpty()) {
+                    setCanonicalTokens(name, portable)
+                    imported += portable.size
                 }
             }
             persist()
-            if (encrypted > 0) {
-                toast("Imported $imported secret(s). $encrypted Windows DPAPI token(s) need manual re-entry on Android.")
+            if (encrypted > 0 || invalid > 0) {
+                val warnings = mutableListOf<String>()
+                if (encrypted > 0) warnings += "$encrypted Windows DPAPI token(s) need manual re-entry"
+                if (invalid > 0) warnings += "$invalid invalid non-text value(s) were ignored"
+                toast("Imported $imported secret(s). ${warnings.joinToString("; ")}.")
             } else {
                 toast("Imported $imported secret(s) to Keystore! 🔒")
             }
+            refreshProfileTabs()
             renderCurrentProfile()
         }.onFailure { toast("Secrets error: ${it.message}") }
     }
@@ -1850,30 +1989,54 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restore() {
-        val storedProfiles = vault.get("profiles")
+        val profilesRead = vault.read("profiles")
+        val tokensRead = vault.read("tokens")
+        storageHealthy = profilesRead.isSuccess && tokensRead.isSuccess
+        val storedProfiles = profilesRead.getOrNull().orEmpty()
+        val storedTokens = tokensRead.getOrNull().orEmpty()
         if (storedProfiles.isNotBlank()) {
             runCatching {
                 val root = JSONObject(storedProfiles)
                 root.keys().asSequence().forEach { name -> profiles[name] = root.getJSONObject(name) }
-            }
+            }.onFailure { storageHealthy = false }
         }
-        val storedTokens = vault.get("tokens")
-        if (storedTokens.isNotBlank()) runCatching {
-            val root = JSONObject(storedTokens)
-            root.keys().asSequence().forEach { name -> tokens[name] = root.optString(name) }
+        if (storedTokens.isNotBlank()) {
+            runCatching {
+                val root = JSONObject(storedTokens)
+                root.keys().asSequence().forEach { name ->
+                    val value = root.opt(name)
+                    if (value !is String) throw IllegalArgumentException("Invalid token entry for '$name'")
+                    tokens[name] = value
+                }
+            }.onFailure { storageHealthy = false }
         }
+        val storedProfileSnapshot = profiles.mapValues { (_, data) -> data.toString() }
+        val storedTokenSnapshot = tokens.toMap()
         if (profiles.isEmpty()) {
-            val legacy = vault.get("profile")
+            val legacyProfileRead = vault.read("profile")
+            val legacyTokenRead = vault.read("token")
+            if (legacyProfileRead.isFailure || legacyTokenRead.isFailure) storageHealthy = false
+            val legacy = legacyProfileRead.getOrNull().orEmpty()
             if (legacy.isNotBlank()) runCatching {
                 val data = JSONObject(legacy)
                 val name = data.optString("name", "MAIN")
                 data.remove("name")
                 profiles[name] = data
-                vault.get("token").takeIf { it.isNotBlank() }?.let { tokens[name] = it }
-            }
+                legacyTokenRead.getOrNull()?.takeIf { it.isNotBlank() }?.let { tokens[name] = it }
+            }.onFailure { storageHealthy = false }
         }
         if (profiles.isEmpty()) profiles["MAIN"] = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
-        profiles.values.forEach { mergeSchemaDefaults(it) }
+        profiles.forEach { (name, data) ->
+            mergeSchemaDefaults(data)
+            normalizeProfileTokens(name, data)
+        }
+        val normalizedProfileSnapshot = profiles.mapValues { (_, data) -> data.toString() }
+        if (storageHealthy && (normalizedProfileSnapshot != storedProfileSnapshot || tokens != storedTokenSnapshot)) {
+            persist()
+        }
+        if (!storageHealthy) {
+            toast("Secure storage could not be read. Existing encrypted data was left untouched.")
+        }
         currentProfile = profiles.keys.first()
         refreshProfileTabs()
         renderCurrentProfile()

@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -36,6 +37,7 @@ class ChipListView(
     private val addItemInput: EditText
     private val modeToggleButton: TextView
     private val countBadge: TextView
+    private val isSensitive = key == "tokens"
     private var isJsonMode = false
     private var isUpdatingInternal = false
 
@@ -73,6 +75,7 @@ class ChipListView(
             setPadding(UiTheme.dp(context, 8), UiTheme.dp(context, 3), UiTheme.dp(context, 8), UiTheme.dp(context, 3))
             background = UiTheme.pillDrawable(context, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 12f, 1f)
             setOnClickListener { toggleMode() }
+            visibility = if (isSensitive) GONE else VISIBLE
         }
         headerRow.addView(modeToggleButton)
         addView(headerRow)
@@ -91,13 +94,21 @@ class ChipListView(
         }
 
         addItemInput = EditText(context).apply {
-            hint = "Add item (e.g. wa, 102938...)"
+            hint = if (isSensitive) "Paste one or more account tokens" else "Add item (e.g. wa, 102938...)"
             textSize = 13f
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
             background = UiTheme.cardDrawable(context, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 6f, 1f)
             setPadding(UiTheme.dp(context, 10), UiTheme.dp(context, 7), UiTheme.dp(context, 10), UiTheme.dp(context, 7))
-            inputType = InputType.TYPE_CLASS_TEXT
+            inputType = InputType.TYPE_CLASS_TEXT or if (isSensitive) {
+                InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            } else {
+                InputType.TYPE_TEXT_VARIATION_NORMAL
+            }
+            if (isSensitive) {
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            }
+            contentDescription = if (isSensitive) "Add account token" else "Add list item"
             setOnEditorActionListener { _, _, _ ->
                 addItemFromInput()
                 true
@@ -111,6 +122,7 @@ class ChipListView(
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
+            minHeight = UiTheme.dp(context, 48)
             background = UiTheme.buttonDrawable(context, UiTheme.ACCENT_GREEN, radiusDp = 6f)
             setPadding(UiTheme.dp(context, 14), UiTheme.dp(context, 7), UiTheme.dp(context, 14), UiTheme.dp(context, 7))
             setOnClickListener { addItemFromInput() }
@@ -215,7 +227,7 @@ class ChipListView(
 
         // Update JSON text if needed
         isUpdatingInternal = true
-        jsonEditText.setText(toJsonArray().toString(2))
+        jsonEditText.setText(if (isSensitive) "[]" else toJsonArray().toString(2))
         isUpdatingInternal = false
     }
 
@@ -228,23 +240,41 @@ class ChipListView(
         }
 
         val label = TextView(context).apply {
-            text = item
+            text = if (isSensitive) maskedTokenLabel(item) else item
             textSize = 11.5f
             setTextColor(UiTheme.ACCENT_BLUE)
+            maxWidth = UiTheme.dp(context, if (isSensitive) 180 else 260)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            contentDescription = if (isSensitive) maskedTokenDescription(item) else item
         }
         chip.addView(label)
 
         val closeBtn = TextView(context).apply {
-            text = " ✕"
-            textSize = 10.5f
+            text = if (isSensitive) "Remove" else " ✕"
+            textSize = if (isSensitive) 11f else 10.5f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_MUTED)
-            setPadding(UiTheme.dp(context, 4), 0, UiTheme.dp(context, 2), 0)
+            setTextColor(if (isSensitive) UiTheme.ACCENT_RED_BRIGHT else UiTheme.TEXT_MUTED)
+            gravity = Gravity.CENTER
+            minHeight = UiTheme.dp(context, 48)
+            minWidth = UiTheme.dp(context, if (isSensitive) 72 else 48)
+            setPadding(UiTheme.dp(context, 8), 0, UiTheme.dp(context, 8), 0)
+            contentDescription = if (isSensitive) "Remove ${maskedTokenDescription(item)}" else "Remove $item"
             setOnClickListener { removeItem(item) }
         }
         chip.addView(closeBtn)
 
         return chip
+    }
+
+    private fun maskedTokenLabel(item: String): String {
+        if (item.length < 8) return "Account token (masked)"
+        return "Account token ****${item.takeLast(4)}"
+    }
+
+    private fun maskedTokenDescription(item: String): String {
+        if (item.length < 8) return "masked account token"
+        return "account token ending in ${item.takeLast(4)}"
     }
 
     private fun toggleMode() {

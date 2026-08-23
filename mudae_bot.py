@@ -153,6 +153,7 @@ IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.t
 _global_paused = False
 _active_clients = []
 _active_clients_lock = threading.Lock()
+_mobile_runtime_stop_event = threading.Event()
 _menu_active = threading.Event()
 _original_terminal_settings = None
 
@@ -473,6 +474,32 @@ def _toggle_global_pause():
         for c in _active_clients:
             set_client_paused(c, _global_paused)
     print_system_log("⏸️  Bot paused. Press 'p' again to resume." if _global_paused else "▶️  Bot resumed. Operations continuing.", "WARN" if _global_paused else "INFO")
+
+
+def _close_client_on_mobile_stop(client):
+    """Own the Stop hand-off until the client loop appears or the run exits."""
+    while True:
+        with _active_clients_lock:
+            if client not in _active_clients:
+                return
+        if not _mobile_runtime_stop_event.wait(0.05):
+            continue
+        try:
+            if client.is_closed():
+                return
+        except Exception:
+            pass
+        loop = getattr(client, "loop", None)
+        try:
+            if loop and loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(client.close(), loop)
+                try:
+                    future.result(timeout=8.0)
+                except Exception:
+                    pass
+                return
+        except (AttributeError, RuntimeError):
+            pass
 
 def _keyboard_listener_thread():
     if os.name == 'nt':
@@ -810,7 +837,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.is_paused = _global_paused
     client._pause_generation = 1 if _global_paused else 0
     client.command_pacer = CommandPacer(0.6, 0.8)
-    with _active_clients_lock: _active_clients.append(client)
+    with _active_clients_lock:
+        if _mobile_runtime_stop_event.is_set():
+            return
+        _active_clients.append(client)
 
     discord_logger = logging.getLogger('discord')
     discord_logger.propagate = False
@@ -5741,6 +5771,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 print_log(f"Sniping free event card: {c_name}", preset_name, "CLAIM")
                 if await claim_character(client, message.channel, message, is_free_claim=True): process = False
 
+    # Stop may be requested while this client is being configured but before
+    # discord.py owns a running loop. Check again immediately before the
+    # blocking run call; shutdown_mobile_runtime also waits for this hand-off.
+    with _active_clients_lock:
+        should_abort_start = _mobile_runtime_stop_event.is_set()
+    if should_abort_start:
+        with _active_clients_lock:
+            if client in _active_clients:
+                _active_clients.remove(client)
+        return
+
+    if IS_TERMUX:
+        threading.Thread(
+            target=_close_client_on_mobile_stop,
+            args=(client,),
+            name=f"MudaRemote-StopWatcher-{preset_name}",
+            daemon=True,
+        ).start()
+
     try:
         client.run(token, reconnect=True)
     except Exception as e:
@@ -5764,7 +5813,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
     if validation_errors:
         print_log("Preset validation failed: " + " | ".join(validation_errors), preset_name, "ERROR")
         return
-    while True:
+    while not _mobile_runtime_stop_event.is_set():
         try:
             run_bot(
                 preset_data["token"], preset_data["prefix"], preset_data["channel_id"],
@@ -5857,7 +5906,11 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 )
                 return
             print_log(f"Instance crashed: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
-        time.sleep(60)
+        # A normal client.close() used to fall through to an unconditional
+        # sleep/reconnect, resurrecting profiles after Android Stop. The event
+        # makes both the retry delay and the next launch cancellable.
+        if _mobile_runtime_stop_event.wait(60):
+            return
 
 def start_preset_thread(preset_name, preset_data):
     if not preset_data.get("token"):
@@ -5949,22 +6002,59 @@ def main_menu():
     if threads:
         print(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m")
 
-def shutdown_mobile_runtime():
-    """Authoritatively close all active Discord clients for the Android foreground service."""
+def shutdown_mobile_runtime(timeout_seconds=8.0):
+    """Cancel retries and close every mobile client with bounded waiting.
+
+    Stop can arrive before a freshly-created client's event loop starts. Keep
+    polling those registered clients for a short bounded window so that race
+    cannot escape the shutdown snapshot and connect after the service stops.
+    """
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
     with _active_clients_lock:
+        _mobile_runtime_stop_event.set()
         clients = list(_active_clients)
-    for client in clients:
-        loop = getattr(client, "loop", None)
-        if loop and loop.is_running():
+
+    pending = list(clients)
+    close_futures = []
+    while pending and time.monotonic() < deadline:
+        still_pending = []
+        for client in pending:
             try:
-                asyncio.run_coroutine_threadsafe(client.close(), loop)
+                if client.is_closed():
+                    continue
             except Exception:
                 pass
+            loop = getattr(client, "loop", None)
+            if loop and loop.is_running():
+                try:
+                    close_futures.append(asyncio.run_coroutine_threadsafe(client.close(), loop))
+                except Exception:
+                    pass
+            else:
+                still_pending.append(client)
+        pending = still_pending
+        if pending:
+            time.sleep(0.05)
+
+    for future in close_futures:
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            future.result(timeout=remaining)
+        except Exception:
+            pass
+
+    return len(clients)
 
 def reset_mobile_runtime():
-    """Reset active mobile runtime state before starting a new run."""
+    """Reset process-wide mobile state after the previous workers have exited."""
+    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator
     with _active_clients_lock:
         _active_clients.clear()
+        _mobile_runtime_stop_event.clear()
+    _global_paused = False
+    _claim_coordinator = ClaimCoordinator()
+    _server_reset_coordinator = ServerResetCoordinator()
+    _tu_interval_coordinator = GlobalIntervalCoordinator()
 
 def parse_args(argv=None):
     import argparse

@@ -70,13 +70,13 @@ jobs:
           cat > release_notes.md <<'EOF'
           Pre-release of the MudaRemote Android app.
 
-          - Packages the same desktop Python engine through Chaquopy
+          - Adds explicit masked Remove controls for every account token
+          - Runs multiple presets and multi-account profiles in one supervised session
+          - Makes Stop all authoritative and queues the next Run until teardown completes
+          - Preserves tokens safely across imports while excluding them from shared preset JSON
           - Requires Android 8.0+ (arm64-v8a or x86_64)
-          - Debug-signed build: expect an "unknown developer" prompt when installing
-          - Open the app, import your presets.json, enter tokens (stored encrypted in the Android Keystore), then start a profile
+          - Tokens are stored encrypted in Android Keystore-backed app storage
           - For reliable background operation, exempt the app from battery optimization (Battery Guide button)
-
-          Do not share exported presets while they contain tokens.
           EOF
 
       - uses: actions/upload-artifact@v4
@@ -96,8 +96,8 @@ jobs:
           else
             gh release create "$TAG" Mudaremote.apk \
               --prerelease \
+              --target "$GITHUB_SHA" \
               --title "$TITLE" \
               --notes-file release_notes.md
             echo "Created pre-release $TAG"
           fi
-

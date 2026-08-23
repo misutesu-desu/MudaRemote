@@ -11,14 +11,20 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 
 _lock = threading.RLock()
 _threads = []
+_profile_threads = {}
+_active_profiles = {}
+_active_tokens = {}
 _running = False
+_stopping = False
 _log_path = ""
 _files_dir = ""
 _runtime_thread = None
 _runtime_module = None
+_TOKEN_ENV_PREFIX = "MUDAREMOTE_TOKEN_"
 
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/version.json"
 REQUIRED_SOURCE_PATHS = {
@@ -101,6 +107,10 @@ _log_handle = None
 # flag of a newer session.
 _tee_active = False
 _tee_session = 0
+_tee_base_stdout = None
+_tee_base_stderr = None
+_tee_stdout = None
+_tee_stderr = None
 
 
 def _write_log_file(text):
@@ -130,6 +140,24 @@ def _write_log_file(text):
                     handle.write(text)
             except (OSError, PermissionError):
                 pass
+
+
+def _close_log_handle():
+    global _log_handle
+    with _log_lock:
+        try:
+            if _log_handle is not None:
+                _log_handle.close()
+        except Exception:
+            pass
+        _log_handle = None
+
+
+def _clear_android_token_environment():
+    """Remove plaintext token variables left by this or an older APK build."""
+    for name in list(os.environ):
+        if name.startswith(_TOKEN_ENV_PREFIX):
+            os.environ.pop(name, None)
 
 
 def _append_log_line(text):
@@ -176,30 +204,16 @@ def _stage_runtime(profiles, tokens):
     staged = {}
     for preset_name, source in profiles.items():
         data = dict(source or {})
-        # The legacy singular token moves to the process environment; the
-        # multi-account "tokens" list stays in the JSON because the Android
-        # token input only carries the primary account.
+        # Secrets move to the in-memory override/environment channel and never
+        # enter the app-private staged presets.json file.
         data.pop("token", None)
-        if isinstance(data.get("tokens"), (list, tuple)):
-            data["tokens"] = [str(item or "").strip() for item in data["tokens"] if str(item or "").strip()]
-            if not data["tokens"]:
-                data.pop("tokens", None)
-        else:
-            data.pop("tokens", None)
+        data.pop("tokens", None)
+        data.pop("additional_tokens", None)
         staged[str(preset_name)] = data
-        raw_token = tokens.get(preset_name, "") or ""
-        if not raw_token:
-            # Fall back to whatever accounts the profile itself carries.
-            source_tokens = source.get("tokens") if isinstance(source, dict) else None
-            raw_token = json.dumps(source_tokens) if source_tokens else str(source.get("token", "") or "")
-        try:
-            token_values = json.loads(raw_token) if isinstance(raw_token, str) and raw_token.strip().startswith("[") else [raw_token]
-        except (TypeError, ValueError):
-            token_values = [raw_token]
-        token_values = [str(item or "").strip() for item in token_values if str(item or "").strip()]
-        env_name = "MUDAREMOTE_TOKEN_{}".format(re.sub(r"[^A-Za-z0-9]+", "_", str(preset_name)).strip("_").upper())
-        if token_values:
-            os.environ[env_name] = json.dumps(token_values) if len(token_values) > 1 else token_values[0]
+
+    # Requests pass secrets directly to _inject_runtime_presets. Do not retain
+    # plaintext copies in process-global environment variables.
+    _clear_android_token_environment()
 
     target_dir = _files_dir or os.environ.get("HOME", ".")
     os.makedirs(target_dir, exist_ok=True)
@@ -233,6 +247,18 @@ def get_installed_version(files_dir):
 def get_runtime_info(files_dir):
     """Return JSON metadata about currently installed and active Python runtime."""
     files_dir = str(files_dir)
+    with _lock:
+        _clear_android_token_environment()
+        if not _running and not _stopping:
+            # presets.json is a derived launch snapshot. Older APKs wrote token
+            # aliases into it, so remove that residue as soon as the bridge is
+            # initialized rather than waiting for the next Run.
+            try:
+                os.remove(os.path.join(files_dir, "presets.json"))
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
     code_dir = _get_python_code_dir(files_dir)
     bundled = get_bundled_version()
     installed = get_installed_version(files_dir)
@@ -449,7 +475,26 @@ def _load_mudae_bot(files_dir):
         return mudae_bot
 
 
-def _inject_runtime_presets(mudae_bot, files_dir):
+def _decode_token_value(raw):
+    """Normalize a scalar or JSON-array secret payload without logging it."""
+    if isinstance(raw, (list, tuple)):
+        decoded = raw
+    elif isinstance(raw, str) and raw.strip().startswith("["):
+        try:
+            decoded = json.loads(raw)
+        except ValueError:
+            decoded = [raw]
+    else:
+        decoded = [raw]
+    values = []
+    for candidate in decoded:
+        cleaned = str(candidate or "").strip()
+        if cleaned and cleaned not in values:
+            values.append(cleaned)
+    return values
+
+
+def _inject_runtime_presets(mudae_bot, files_dir, token_overrides=None):
     """Load the staged presets.json into mudae_bot.presets with resolved tokens.
 
     The engine resolves presets.json relative to its own module directory
@@ -493,6 +538,14 @@ def _inject_runtime_presets(mudae_bot, files_dir):
             except ValueError:
                 values = [raw.strip()] if raw.strip() else []
             tokens_by_preset[name] = values
+
+    # The Android service passes the selected secrets directly to the bridge.
+    # Prefer that immutable request snapshot over sanitized environment names,
+    # which can collide for profile names containing punctuation.
+    for name, raw in dict(token_overrides or {}).items():
+        values = _decode_token_value(raw)
+        if values:
+            tokens_by_preset[str(name)] = values
 
     prepared_count = 0
     tokenized_count = 0
@@ -548,101 +601,276 @@ def _unwrap_output(stream):
     return stream
 
 
+def _parse_launch_payload(profiles_json, tokens_json):
+    profiles = json.loads(str(profiles_json))
+    tokens = json.loads(str(tokens_json))
+    # Backward compatibility with the first one-profile APK format.
+    if isinstance(profiles, dict) and "channel_id" in profiles:
+        profiles = {"MAIN": profiles}
+    if not isinstance(profiles, dict):
+        raise ValueError("Profiles payload must be a JSON object.")
+    if not isinstance(tokens, dict):
+        tokens = {"MAIN": str(tokens)}
+    clean_profiles = {}
+    for name, data in profiles.items():
+        if isinstance(data, dict):
+            clean_profiles[str(name)] = dict(data)
+    clean_tokens = {str(name): raw for name, raw in tokens.items()}
+    return clean_profiles, clean_tokens
+
+
+def _prune_dead_workers_locked():
+    global _threads
+    for name in list(_profile_threads):
+        alive = [thread for thread in _profile_threads[name] if thread and thread.is_alive()]
+        if alive:
+            _profile_threads[name] = alive
+        else:
+            _profile_threads.pop(name, None)
+            _active_profiles.pop(name, None)
+            _active_tokens.pop(name, None)
+    _threads = [thread for workers in _profile_threads.values() for thread in workers]
+
+
+def _worker_count_locked():
+    _prune_dead_workers_locked()
+    return len(_threads)
+
+
+def _install_tee_locked():
+    global _tee_active, _tee_session, _tee_base_stdout, _tee_base_stderr, _tee_stdout, _tee_stderr
+    _tee_base_stdout = _unwrap_output(sys.stdout)
+    _tee_base_stderr = _unwrap_output(sys.stderr)
+    _tee_stdout = _Tee(_tee_base_stdout)
+    _tee_stderr = _Tee(_tee_base_stderr)
+    sys.stdout = _tee_stdout
+    sys.stderr = _tee_stderr
+    _tee_session += 1
+    _tee_active = True
+    return _tee_session
+
+
+def _restore_tee_locked(session_id):
+    global _tee_active, _tee_base_stdout, _tee_base_stderr, _tee_stdout, _tee_stderr
+    if session_id != _tee_session:
+        return
+    if sys.stdout is _tee_stdout and _tee_base_stdout is not None:
+        sys.stdout = _tee_base_stdout
+    if sys.stderr is _tee_stderr and _tee_base_stderr is not None:
+        sys.stderr = _tee_base_stderr
+    _tee_active = False
+    _tee_base_stdout = None
+    _tee_base_stderr = None
+    _tee_stdout = None
+    _tee_stderr = None
+
+
+def _clear_session_locked(session_id):
+    global _running, _stopping, _threads, _runtime_thread, _runtime_module
+    if session_id != _tee_session:
+        return
+    _running = False
+    _stopping = False
+    _threads = []
+    _profile_threads.clear()
+    _active_profiles.clear()
+    _active_tokens.clear()
+    _runtime_thread = None
+    _runtime_module = None
+    _restore_tee_locked(session_id)
+    _clear_android_token_environment()
+    _close_log_handle()
+
+
+def _monitor_workers(session_id):
+    """Own session cleanup after the last account worker actually exits."""
+    while True:
+        with _lock:
+            if session_id != _tee_session:
+                return
+            if _worker_count_locked() == 0:
+                _clear_session_locked(session_id)
+                return
+        time.sleep(0.2)
+
+
+def _start_profile_workers(mudae_bot, profile_names, start_index):
+    started = {}
+    account_index = int(start_index)
+    for profile_name in profile_names:
+        prepared = mudae_bot.prepare_active_presets(
+            [profile_name],
+            mudae_bot.presets,
+            start_index=account_index,
+        )
+        workers = []
+        for account_name, account_data in prepared:
+            worker = mudae_bot.start_preset_thread(account_name, account_data)
+            if worker is not None:
+                workers.append(worker)
+                account_index += 1
+        if workers:
+            started[profile_name] = workers
+    return started
+
+
+def _status_payload(status, added_profiles=None):
+    _prune_dead_workers_locked()
+    return json.dumps({
+        "status": status,
+        "added_profiles": list(added_profiles or []),
+        "active_profiles": list(_profile_threads.keys()),
+        "account_count": len(_threads),
+    }, ensure_ascii=False)
+
+
 def start(profiles_json, tokens_json, files_dir):
-    """Invoke the real ``mudae_bot.py`` CLI entry point in a worker thread."""
-    global _running, _threads, _runtime_thread, _runtime_module, _tee_active, _tee_session
+    """Start new profiles inside one supervised Android runtime session.
+
+    Repeated calls are additive and idempotent: already-active profiles stay
+    connected, while newly requested profiles receive their own account
+    workers. This avoids overlapping CLI generations and needless reconnects.
+    """
+    global _running, _stopping, _runtime_thread, _runtime_module
+    profiles, tokens = _parse_launch_payload(profiles_json, tokens_json)
+    if not profiles:
+        raise ValueError("No profiles were supplied.")
+
     with _lock:
-        if _running:
-            return "already-running"
-        if _runtime_thread is not None and _runtime_thread.is_alive():
-            _log("Previous runtime thread is still stopping; starting anyway.", "ANDROID", "WARN")
         _configure_storage(str(files_dir))
-        profiles = json.loads(str(profiles_json))
-        tokens = json.loads(str(tokens_json))
-        # Backward compatibility with the first one-profile APK format.
-        if "channel_id" in profiles:
-            profiles = {"MAIN": profiles}
-        if not isinstance(tokens, dict):
-            tokens = {"MAIN": str(tokens)}
-        _stage_runtime(profiles, tokens)
+        _prune_dead_workers_locked()
+        if _stopping:
+            if _profile_threads:
+                return _status_payload("stopping")
+            _clear_session_locked(_tee_session)
 
-        # Install this session's tee BEFORE any staging/updater output so every
-        # line of the session flows through exactly one writer.
-        base_stdout = _unwrap_output(sys.stdout)
-        base_stderr = _unwrap_output(sys.stderr)
-        out_tee = _Tee(base_stdout)
-        err_tee = _Tee(base_stderr)
-        sys.stdout = out_tee
-        sys.stderr = err_tee
-        _tee_session += 1
-        session_id = _tee_session
-        _tee_active = True
-
-        # Non-blocking automatic check for Python updates on start
-        try:
-            check_and_apply_update(files_dir, force=False, timeout_seconds=4.0)
-        except Exception as update_err:
-            _log("Auto-update check: {}".format(update_err), "ANDROID", "DEBUG")
-
-        mudae_bot = _load_mudae_bot(files_dir)
-        _runtime_module = mudae_bot
-        mudae_bot.print_log = _log
-        if hasattr(mudae_bot, "reset_mobile_runtime"):
-            mudae_bot.reset_mobile_runtime()
-
-        # Critical on Android: see docstring. Without it the engine never sees
-        # any profiles and exits immediately after its update checks.
-        _inject_runtime_presets(mudae_bot, str(files_dir))
-
-        def run_real_cli():
-            global _running, _runtime_thread, _tee_active
-            _log("Runtime CLI starting (--all)...", "ANDROID", "INFO")
+        first_launch = not _running or not _profile_threads
+        if first_launch:
+            session_id = _install_tee_locked()
             try:
-                # This is the same dispatcher used by `python mudae_bot.py`.
-                mudae_bot.run_cli(["--all"])
-                _log("Runtime CLI exited normally.", "ANDROID", "WARN")
-            except Exception as exc:
-                _log("Python runtime stopped: {}".format(exc), "ANDROID", "ERROR")
-            finally:
-                # Only tear down if a newer session hasn't already replaced us.
-                if sys.stdout is out_tee:
-                    sys.stdout = base_stdout
-                if sys.stderr is err_tee:
-                    sys.stderr = base_stderr
-                if session_id == _tee_session:
-                    _tee_active = False
-                with _lock:
-                    _running = False
+                check_and_apply_update(files_dir, force=False, timeout_seconds=4.0)
+            except Exception as update_err:
+                _log("Auto-update check: {}".format(update_err), "ANDROID", "DEBUG")
+            mudae_bot = _load_mudae_bot(files_dir)
+            _runtime_module = mudae_bot
+            mudae_bot.print_log = _log
+            if hasattr(mudae_bot, "reset_mobile_runtime"):
+                mudae_bot.reset_mobile_runtime()
+        else:
+            session_id = _tee_session
+            mudae_bot = _runtime_module
+
+        requested_names = list(profiles.keys())
+        new_names = [name for name in requested_names if name not in _profile_threads]
+        if not new_names:
+            return _status_payload("already-active")
+
+        for name in new_names:
+            _active_profiles[name] = profiles[name]
+            if name in tokens:
+                _active_tokens[name] = tokens[name]
+
+        # Restage the full active set so sticky restarts and later additions see
+        # one coherent snapshot. Existing clients retain their copied config.
+        _stage_runtime(_active_profiles, _active_tokens)
+        _inject_runtime_presets(mudae_bot, str(files_dir), _active_tokens)
+        start_index = _worker_count_locked()
+        started = _start_profile_workers(mudae_bot, new_names, start_index)
+        for name, workers in started.items():
+            _profile_threads[name] = workers
+
+        skipped = [name for name in new_names if name not in started]
+        for name in skipped:
+            _active_profiles.pop(name, None)
+            _active_tokens.pop(name, None)
+        if not started:
+            if first_launch:
+                _clear_session_locked(session_id)
+            return _status_payload("no-runnable-profiles")
 
         _running = True
-        _runtime_thread = threading.Thread(target=run_real_cli, name="MudaRemote-PythonCLI", daemon=True)
-        _threads = [_runtime_thread]
-        _runtime_thread.start()
-    return "started"
+        _stopping = False
+        if _runtime_thread is None or not _runtime_thread.is_alive():
+            _runtime_thread = threading.Thread(
+                target=_monitor_workers,
+                args=(session_id,),
+                name="MudaRemote-Supervisor",
+                daemon=True,
+            )
+            _runtime_thread.start()
+
+        status = "started" if first_launch else "added"
+        _log(
+            "{} {} profile(s); {} account worker(s) active.".format(
+                "Started" if first_launch else "Added",
+                len(started),
+                _worker_count_locked(),
+            ),
+            "ANDROID",
+            "INFO",
+        )
+        return _status_payload(status, started.keys())
 
 
 def is_running():
-    """Expose runtime state so tooling (and future UI work) can query it cheaply."""
+    """Expose state only while at least one owned account worker is alive."""
     with _lock:
-        return _running
+        return bool(_running and _worker_count_locked())
 
 
-def stop():
-    """Close Discord gateway clients so foreground-service Stop is authoritative."""
-    global _running, _threads, _runtime_thread, _runtime_module
+def stop(timeout_seconds=12.0):
+    """Cancel retries, close clients, and retain ownership until workers exit."""
+    global _running, _stopping
+    timeout_seconds = max(0.0, float(timeout_seconds))
+    deadline = time.monotonic() + timeout_seconds
     with _lock:
+        _prune_dead_workers_locked()
+        session_id = _tee_session
+        if not _profile_threads:
+            _clear_session_locked(session_id)
+            return json.dumps({
+                "status": "stopped",
+                "added_profiles": [],
+                "active_profiles": [],
+                "account_count": 0,
+            }, ensure_ascii=False)
+        _stopping = True
+        mudae_bot = _runtime_module
+        workers = list(_threads)
+
+    if mudae_bot is not None and hasattr(mudae_bot, "shutdown_mobile_runtime"):
         try:
-            mudae_bot = _runtime_module
-            if mudae_bot is not None and hasattr(mudae_bot, "shutdown_mobile_runtime"):
-                mudae_bot.shutdown_mobile_runtime()
-            elif mudae_bot is not None:
-                for client in list(getattr(mudae_bot, "_active_clients", [])):
-                    loop = getattr(client, "loop", None)
-                    if loop and loop.is_running():
-                        asyncio.run_coroutine_threadsafe(client.close(), loop)
-        finally:
-            _running = False
-            _threads = []
-            _runtime_thread = None
-            _runtime_module = None
-    return "stopped"
+            mudae_bot.shutdown_mobile_runtime(min(8.0, timeout_seconds))
+        except TypeError:
+            # Compatibility with a previously downloaded runtime module whose
+            # hook predates the bounded-wait parameter.
+            mudae_bot.shutdown_mobile_runtime()
+    elif mudae_bot is not None:
+        for client in list(getattr(mudae_bot, "_active_clients", [])):
+            loop = getattr(client, "loop", None)
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(client.close(), loop)
+
+    for worker in workers:
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0:
+            break
+        worker.join(remaining)
+
+    with _lock:
+        alive = _worker_count_locked()
+        if alive:
+            _running = True
+            _log(
+                "Stop is still waiting for {} account worker(s); new starts are blocked.".format(alive),
+                "ANDROID",
+                "WARN",
+            )
+            return _status_payload("stopping")
+        _clear_session_locked(session_id)
+        return json.dumps({
+            "status": "stopped",
+            "added_profiles": [],
+            "active_profiles": [],
+            "account_count": 0,
+        }, ensure_ascii=False)
