@@ -326,6 +326,48 @@ class AndroidRuntimeLifecycleTests(unittest.TestCase):
         orphan_watcher.join(1.0)
         self.assertFalse(orphan_watcher.is_alive())
 
+    def test_mobile_shutdown_force_stops_an_unresponsive_client_loop(self):
+        class UnresponsiveClient:
+            def __init__(self, loop):
+                self.loop = loop
+                self.close_started = threading.Event()
+
+            def is_closed(self):
+                return False
+
+            async def close(self):
+                self.close_started.set()
+                await asyncio.Event().wait()
+
+        loop = asyncio.new_event_loop()
+        loop_thread = threading.Thread(target=loop.run_forever)
+        loop_thread.start()
+        client = UnresponsiveClient(loop)
+        mudae_bot.reset_mobile_runtime()
+        with mudae_bot._active_clients_lock:
+            mudae_bot._active_clients.append(client)
+
+        mudae_bot.shutdown_mobile_runtime(timeout_seconds=0.05)
+
+        self.assertTrue(client.close_started.wait(1.0))
+        loop_thread.join(1.0)
+        self.assertFalse(loop_thread.is_alive())
+
+        with mudae_bot._active_clients_lock:
+            if client in mudae_bot._active_clients:
+                mudae_bot._active_clients.remove(client)
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+
+    def test_component_ack_timeout_is_treated_as_ambiguous(self):
+        error = mudae_bot.discord.InvalidData("Did not receive a response from Discord")
+        self.assertTrue(mudae_bot.is_ambiguous_component_interaction_error(error))
+        self.assertFalse(mudae_bot.is_ambiguous_component_interaction_error(RuntimeError(str(error))))
+
     def test_runtime_info_removes_legacy_plaintext_staging_file(self):
         staged_path = os.path.join(self.temp_dir, "presets.json")
         with open(staged_path, "w", encoding="utf-8") as handle:

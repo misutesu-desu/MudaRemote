@@ -937,6 +937,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("await channel.fetch_message(msg.id)", click_source)
         self.assertIn('label = "Purple Kakera" if is_purple', click_source)
         self.assertIn('f"{label} confirmed', click_source)
+        self.assertIn("is_ambiguous_component_interaction_error(error)", click_source)
+        self.assertIn('reason="kakera-interaction-ambiguous"', click_source)
+        self.assertIn("Power will be verified with $tu", click_source)
         self.assertGreaterEqual(
             self.source.count("await click_kakera_with_confirmation("),
             2,
@@ -1570,4 +1573,3 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

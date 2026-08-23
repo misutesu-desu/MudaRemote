@@ -1,21 +1,20 @@
 {
-  "version": "4.9.0-beta.8",
+  "version": "4.9.0-beta.9",
   "changelog": {
     "Bug Fixes": [
-      "Smart Timing waits: when Time Rolls to Claim Reset is enabled, the bot now sleeps straight to the final-hour threshold instead of waking early for rolls replenishment or claim cooldown, and peer roll-hour announcements no longer wake it prematurely.",
-      "Roll count tracking: every complete $tu response now refreshes the cached roll count, keeping rolls_left authoritative even when the post-roll evaluation is skipped.",
-      "Busy channel stall: the $tu quiet-channel wait is capped at two minutes, so a permanently active channel can no longer freeze status checks and rolling entirely."
+      "Kakera click acknowledgement: when Discord accepts a component click but omits its acknowledgement event, the bot avoids an unsafe duplicate click and verifies the resulting power with a fresh $tu.",
+      "Android Stop recovery: a stalled Discord worker now receives a bounded graceful shutdown and a final owned-loop fallback, so Stop can recover without requiring a force-stop."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.8/MudaRemote.exe",
-  "exe_sha256": "78e7b7e47b8996f13b69a7c0b36dfaa784e909686eac4aa26d86b7e12d81cdbf",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.9/MudaRemote.exe",
+  "exe_sha256": "445bb28a304b05f0f3653b1e4a7d2bfd16db754431723fe7bfe4e1b4266b5852",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "3f26a52e15ac668bed6f54c0ce6e5bc6f46e59e1fc836720e8be8d3002670091"
+      "sha256": "6dcae6378ff8334ab6ef3805cd16056786e84be9ee31b9722fb3bce475df59dd"
     },
     {
       "path": "mudae_preset_editor.py",

@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.8"
+CURRENT_VERSION = "4.9.0-beta.9"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -154,6 +154,7 @@ _global_paused = False
 _active_clients = []
 _active_clients_lock = threading.Lock()
 _mobile_runtime_stop_event = threading.Event()
+_mobile_client_close_futures = {}
 _menu_active = threading.Event()
 _original_terminal_settings = None
 
@@ -476,6 +477,32 @@ def _toggle_global_pause():
     print_system_log("⏸️  Bot paused. Press 'p' again to resume." if _global_paused else "▶️  Bot resumed. Operations continuing.", "WARN" if _global_paused else "INFO")
 
 
+def is_ambiguous_component_interaction_error(error):
+    """Return whether an interaction was sent but Discord omitted its ACK event."""
+    invalid_data = getattr(discord, "InvalidData", ())
+    return isinstance(error, invalid_data) and "Did not receive a response from Discord" in str(error)
+
+
+def _request_mobile_client_close(client):
+    """Schedule at most one close coroutine for a mobile Discord client."""
+    client_key = id(client)
+    with _active_clients_lock:
+        existing = _mobile_client_close_futures.get(client_key)
+        if existing is not None and not existing.done():
+            return existing
+        loop = getattr(client, "loop", None)
+        if not loop or not loop.is_running():
+            return None
+        close_coro = client.close()
+        try:
+            future = asyncio.run_coroutine_threadsafe(close_coro, loop)
+        except Exception:
+            close_coro.close()
+            return None
+        _mobile_client_close_futures[client_key] = future
+        return future
+
+
 def _close_client_on_mobile_stop(client):
     """Own the Stop hand-off until the client loop appears or the run exits."""
     while True:
@@ -489,17 +516,14 @@ def _close_client_on_mobile_stop(client):
                 return
         except Exception:
             pass
-        loop = getattr(client, "loop", None)
+        future = _request_mobile_client_close(client)
+        if future is None:
+            continue
         try:
-            if loop and loop.is_running():
-                future = asyncio.run_coroutine_threadsafe(client.close(), loop)
-                try:
-                    future.result(timeout=8.0)
-                except Exception:
-                    pass
-                return
-        except (AttributeError, RuntimeError):
+            future.result(timeout=8.0)
+        except Exception:
             pass
+        return
 
 def _keyboard_listener_thread():
     if os.name == 'nt':
@@ -1693,9 +1717,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         current_button = button
         for attempt in range(attempt_limit):
             waiter_key, waiter = register_kakera_result_waiter(emoji_name)
+            interaction_ack_missing = False
             try:
-                if not await guarded_click(current_button):
-                    return False
+                try:
+                    if not await guarded_click(current_button):
+                        return False
+                except Exception as error:
+                    if not is_ambiguous_component_interaction_error(error):
+                        raise
+                    # discord.py-self documents this timeout as ambiguous: the
+                    # interaction request was sent and may already have worked.
+                    # Never double-click it blindly. Wait for Mudae's account-
+                    # specific result and reconcile power with a fresh $tu if
+                    # the gateway acknowledgement was the only missing event.
+                    if _mobile_runtime_stop_event.is_set():
+                        return False
+                    interaction_ack_missing = True
                 try:
                     amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
                     BotLogger.log(
@@ -1705,7 +1742,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     )
                     return True
                 except asyncio.TimeoutError:
-                    pass
+                    if interaction_ack_missing:
+                        request_status_refresh(
+                            {"power"},
+                            reason="kakera-interaction-ambiguous",
+                            urgent=True,
+                        )
+                        BotLogger.log(
+                            f"{label} interaction was sent for {character_name}, but Discord "
+                            "did not return an acknowledgement. Power will be verified with $tu.",
+                            preset_name,
+                            "WARN",
+                        )
+                        return True
             finally:
                 discard_kakera_result_waiter(waiter_key, waiter)
 
@@ -5795,11 +5844,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     except Exception as e:
         if isinstance(e, getattr(discord, "LoginFailure", ())):
             raise
+        if _mobile_runtime_stop_event.is_set():
+            return
         if "set_wakeup_fd" not in str(e):
             BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
     finally:
         with _active_clients_lock:
             if client in _active_clients: _active_clients.remove(client)
+            _mobile_client_close_futures.pop(id(client), None)
 
 def bot_lifecycle_wrapper(preset_name, preset_data):
     normalized = {
@@ -6024,12 +6076,10 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
                     continue
             except Exception:
                 pass
-            loop = getattr(client, "loop", None)
-            if loop and loop.is_running():
-                try:
-                    close_futures.append(asyncio.run_coroutine_threadsafe(client.close(), loop))
-                except Exception:
-                    pass
+            future = _request_mobile_client_close(client)
+            if future is not None:
+                if future not in close_futures:
+                    close_futures.append(future)
             else:
                 still_pending.append(client)
         pending = still_pending
@@ -6043,6 +6093,36 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
         except Exception:
             pass
 
+    # A completed Client.close() future normally releases client.run() a few
+    # scheduler ticks later. Give that graceful path the rest of the caller's
+    # existing deadline before considering an event-loop stop.
+    while time.monotonic() < deadline:
+        with _active_clients_lock:
+            if not any(client in _active_clients for client in clients):
+                break
+        time.sleep(0.05)
+
+    # A gateway or component interaction can occasionally leave Client.close()
+    # waiting beyond its bounded window. Android cannot safely kill a Python
+    # thread, so stop the owned event loop as the final in-process fallback.
+    # bot_lifecycle_wrapper sees the mobile stop event and will not reconnect.
+    with _active_clients_lock:
+        still_active = [client for client in clients if client in _active_clients]
+    forced_loops = 0
+    for client in still_active:
+        loop = getattr(client, "loop", None)
+        try:
+            if loop and loop.is_running():
+                loop.call_soon_threadsafe(loop.stop)
+                forced_loops += 1
+        except (AttributeError, RuntimeError):
+            pass
+    if forced_loops:
+        print_system_log(
+            f"Mobile stop forced {forced_loops} unresponsive Discord loop(s) to exit.",
+            "WARN",
+        )
+
     return len(clients)
 
 def reset_mobile_runtime():
@@ -6050,6 +6130,7 @@ def reset_mobile_runtime():
     global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator
     with _active_clients_lock:
         _active_clients.clear()
+        _mobile_client_close_futures.clear()
         _mobile_runtime_stop_event.clear()
     _global_paused = False
     _claim_coordinator = ClaimCoordinator()
