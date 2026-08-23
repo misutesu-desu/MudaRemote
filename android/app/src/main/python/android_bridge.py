@@ -50,6 +50,9 @@ LIST_FIELDS = {
 
 def _normalize_preset_value(data):
     """Coerce a staged preset dict into the shape the engine expects."""
+    # Desktop-editor UI artifact: merged into "tokens" by the editor before
+    # save; older Android profiles may still carry it as an inert string.
+    data.pop("additional_tokens", None)
     for key in list(data.keys()):
         value = data[key]
         if value is None or value == "":

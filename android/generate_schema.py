@@ -87,6 +87,9 @@ def main(project_root, output_dir):
     })
     if not isinstance(tokens_entry.get("default"), list):
         tokens_entry["default"] = []
+    # Desktop-only UI convenience (splits primary vs extra tokens); the editor
+    # merges it away before saving, so exposing it here would be a dead control.
+    settings.pop("additional_tokens", None)
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
