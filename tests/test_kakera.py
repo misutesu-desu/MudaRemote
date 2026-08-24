@@ -12,6 +12,7 @@ from mudae_core.kakera import (
     has_purple_kakera_button,
     is_character_sphere_emoji,
     kakera_embed_text,
+    list_includes_purple,
     normalize_character_sphere_emoji,
     parse_kakera_result,
     parse_kakera_result_amount,
@@ -289,6 +290,63 @@ class KakeraPowerTests(unittest.TestCase):
                 has_perk_eight_discount=True,
             ),
             (),
+        )
+
+    def test_purple_selection_detects_variants_and_normal_colors(self):
+        self.assertTrue(list_includes_purple(["kakeraP"]))
+        self.assertTrue(list_includes_purple(["kakeraR", "kakeraP2"]))
+        self.assertTrue(list_includes_purple(["Kakerap"]))
+        self.assertFalse(list_includes_purple(["kakeraR", "kakeraO"]))
+        self.assertFalse(list_includes_purple([]))
+        self.assertFalse(list_includes_purple(None))
+
+    def test_mk_rolls_use_the_dedicated_mk_selection(self):
+        normal = ["kakeraR"]
+        chaos = ["kakeraO"]
+        perk_eight = ["kakeraW"]
+        mk = ["kakeraY"]
+
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                normal, chaos, perk_eight, mk, is_mk_roll=True,
+            ),
+            ("kakeraY",),
+        )
+        # Normal rolls must not leak the MK selection.
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                normal, chaos, perk_eight, mk,
+            ),
+            ("kakeraR",),
+        )
+
+    def test_missing_mk_selection_inherits_regular_selection(self):
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                ["kakeraR"], ["kakeraO"], ["kakeraW"], None, is_mk_roll=True,
+            ),
+            ("kakeraR",),
+        )
+        # An explicit empty MK selection stays empty instead of restoring
+        # every default colour.
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                ["kakeraR"], ["kakeraO"], ["kakeraW"], [], is_mk_roll=True,
+            ),
+            (),
+        )
+
+    def test_perk_eight_marker_still_beats_the_mk_selection(self):
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                ["kakeraR"],
+                ["kakeraO"],
+                ["kakeraW"],
+                ["kakeraY"],
+                has_perk_eight_discount=True,
+                is_mk_roll=True,
+            ),
+            ("kakeraW",),
         )
 
     def test_refreshed_repeated_buttons_prefer_position_over_shared_custom_id(self):

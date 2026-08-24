@@ -40,6 +40,7 @@ REQUIRED_SOURCE_PATHS = {
 # which crashes the runtime (str + list TypeError in on_message).
 LIST_FIELDS = {
     "claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis",
+    "mk_kakera_emojis",
     "randomized_claim_reactions", "kakera_priority_order", "oh_priority_order",
     "oc_reward_priority_order", "sphere_click_targets",
     "wishlist", "avoid_list", "series_wishlist",

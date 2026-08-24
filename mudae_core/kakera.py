@@ -147,6 +147,14 @@ def has_purple_kakera_button(components: object) -> bool:
     return False
 
 
+def list_includes_purple(emoji_list: object) -> bool:
+    """Return whether a configured emoji selection contains purple Kakera."""
+    return any(
+        str(item or "").strip().rstrip("2").casefold() == "kakerap"
+        for item in emoji_list or ()
+    )
+
+
 def has_perk_eight_discount(description: object) -> bool:
     """Detect Perk 8's rendered half-power marker across Unicode variants."""
     normalized = str(description or "").replace("\ufe0f", "").replace("\u20e3", "")
@@ -203,19 +211,29 @@ def get_kakera_emoji_targets(
     kakera_emojis: object,
     chaos_emojis: object,
     perk_eight_emojis: object,
+    mk_emojis: object = None,
     *,
     has_chaos_discount: bool = False,
     has_perk_eight_discount: bool = False,
+    is_mk_roll: bool = False,
     is_external_roll: bool = False,
 ):
     """Choose the one authoritative emoji list for a Kakera roll.
 
-    The visible Perk 8 marker is authoritative even on another user's roll.
-    The 10+ key/Chaos discount remains owner-only because an external roll does
-    not prove that the reacting account owns the character.
+    Selection precedence, most specific first:
+    1. The visible Perk 8 marker (authoritative even on another user's roll).
+    2. ``$mk`` rolls use the dedicated MK selection; when that override is
+       missing it inherits the regular selection instead of every colour.
+    3. The 10+ key/Chaos discount remains owner-only because an external roll
+       does not prove that the reacting account owns the character.
+    4. Regular rolls fall back to the preset's Kakera selection.
     """
     if has_perk_eight_discount:
         return tuple(perk_eight_emojis or ())
+    if is_mk_roll:
+        if mk_emojis is not None:
+            return tuple(mk_emojis or ())
+        return tuple(kakera_emojis or ())
     if has_chaos_discount and not is_external_roll:
         return tuple(chaos_emojis or ())
     return tuple(kakera_emojis or ())

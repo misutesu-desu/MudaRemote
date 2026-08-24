@@ -675,7 +675,7 @@ BOOL_SETTINGS = [
     ("mk_bypass_power_check", "Force $mk Rolls (Use $mk even when power is too low for normal kakera)", False),
     ("enable_hybrid_panic_claim", "Hybrid Smart Panic Claim (Instantly claim high-value characters in the last claim hour, collect others)", False),
     ("immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", True),
-    ("collect_purple_kakera", "Collect Purple Kakera (Disable on extra accounts to avoid reaction races)", True),
+    ("collect_purple_kakera", "Auto-Collect Purple After Claims (Post-claim/refreshed rolls; ordinary purple follows your Kakera emoji selections)", True),
     ("auto_p_enabled", "Auto $p (Automatically claim pokemon when available)", True),
     ("auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)", False),
     ("oh_use_individually", "$oh: Play Every Available Use Separately (one board per use)", False),
@@ -2135,7 +2135,12 @@ class PresetEditor:
         self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
 
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
-        self.add_checkbox(kakera_react_frame.content, "collect_purple_kakera", "Collect Purple Kakera", description="Turn this off on extra accounts when several accounts watch the same rolls.")
+        self.add_checkbox(
+            kakera_react_frame.content,
+            "collect_purple_kakera",
+            "Auto-Collect Purple After Claims",
+            description="Special purple collection on your own claimed/refreshed rolls. Ordinary purple buttons always follow the selected Kakera emoji colours. Turn this off on extra accounts when several accounts watch the same rolls.",
+        )
 
         self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on OP5 Characters")
         self.add_checkbox(
@@ -2145,7 +2150,7 @@ class PresetEditor:
         )
         ttk.Label(
             kakera_react_frame.content,
-            text="Filter rule: every enabled 'Only' option must match. Purple Kakera follows this preset's toggle. Chaos Emojis apply only to your own rolls.",
+            text="Filter rule: every enabled 'Only' option must match. Purple Kakera is clicked when kakeraP is in the roll context's emoji list; 'Auto-Collect Purple After Claims' only adds purple collection after your own claims.",
             foreground="#f9e2af",
             font=("Segoe UI", 9),
         ).pack(anchor=tk.W, padx=20, pady=(2, 6))
@@ -2204,6 +2209,8 @@ class PresetEditor:
                                      ", ".join(DEFAULT_CHAOS_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "sphere_perk_emojis", "Custom Ouroperk 8 Emoji Override (unchecked inherits Kakera Emojis)",
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
+        self.add_optional_list_field(emoji_frame.content, "mk_kakera_emojis", "$mk Kakera Emojis Override (unchecked inherits Kakera Emojis)",
+                                     ", ".join(DEFAULT_KAKERA_EMOJIS))
 
         # [NEW] Task 5: Randomized claim reaction emojis
         self.add_list_field(emoji_frame.content, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
@@ -2691,6 +2698,7 @@ class PresetEditor:
             "kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
             "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
             "sphere_perk_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
+            "mk_kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
         }
         if key in option_sets:
             picker = EmojiOptionPicker(container, entry, option_sets[key])
@@ -2911,7 +2919,8 @@ class PresetEditor:
         for key, defaults in [("claim_emojis", DEFAULT_CLAIM_EMOJIS),
                               ("kakera_emojis", DEFAULT_KAKERA_EMOJIS),
                               ("chaos_emojis", DEFAULT_CHAOS_EMOJIS),
-                              ("sphere_perk_emojis", DEFAULT_SPHERE_PERK_EMOJIS)]:
+                              ("sphere_perk_emojis", DEFAULT_SPHERE_PERK_EMOJIS),
+                              ("mk_kakera_emojis", DEFAULT_KAKERA_EMOJIS)]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 var = self.widgets[enabled_key]
@@ -2934,7 +2943,7 @@ class PresetEditor:
                     # selection. Reflect that effective runtime value instead
                     # of displaying a misleading all-colours default.
                     effective_defaults = defaults
-                    if key in ("chaos_emojis", "sphere_perk_emojis"):
+                    if key in ("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"):
                         effective_defaults = data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)
                     var.set(False)
                     entry.configure(state="normal")
@@ -3164,7 +3173,7 @@ class PresetEditor:
         # - Checkbox unchecked → key NOT in data (use defaults)
         # - Checkbox checked + empty → key = [] (disable)
         # - Checkbox checked + values → key = [values]
-        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis"]:
+        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 if self.widgets[enabled_key].get():  # Checkbox is checked

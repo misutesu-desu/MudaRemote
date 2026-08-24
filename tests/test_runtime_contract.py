@@ -1137,12 +1137,79 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.collect_purple_kakera", claim_source)
         self.assertIn("client.collect_purple_kakera", handler_source)
         self.assertIn('if clean == "kakeraP":', helper_source)
-        self.assertIn("return client.collect_purple_kakera", helper_source)
+        self.assertIn(
+            "return bool(allow_special_purple and client.collect_purple_kakera)",
+            helper_source,
+        )
         self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
-        self.assertIn('if clean == "kakeraP":', helper_source)
-        self.assertIn("return client.collect_purple_kakera", helper_source)
+        # Ordinary purple must follow the roll context's selected colours.
+        self.assertIn(
+            "list_includes_purple(target_list) or special_purple_allowed",
+            claim_source,
+        )
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
-        self.assertIn("Purple Kakera skipped: Collect Purple Kakera is disabled", handler_source)
+        self.assertIn("Collect Purple Kakera is disabled", handler_source)
+
+    def test_external_purple_kakera_respects_reaction_snipe_targets(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        kakera_block = handler_source[
+            handler_source.index("kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages"):
+        ]
+
+        # Purple Kakera used to escape target validation entirely.
+        self.assertNotIn(
+            "and not has_purple_kakera and not is_manual_self_roll",
+            kakera_block,
+        )
+        self.assertIn(
+            "if client.kakera_reaction_snipe_targets and not is_manual_self_roll:",
+            kakera_block,
+        )
+        self.assertIn("is_snipe=not is_manual_self_roll", kakera_block)
+
+    def test_post_claim_purple_collection_keeps_its_special_allowance(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        refresh_source = ast.get_source_segment(
+            self.source,
+            functions["collect_refreshed_purple_after_claim"],
+        )
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+
+        self.assertIn("allow_special_purple=True", refresh_source)
+        self.assertIn("allow_special_purple=False", claim_source)
+        self.assertIn(
+            "special_purple_allowed = bool(allow_special_purple and client.collect_purple_kakera)",
+            claim_source,
+        )
+
+    def test_every_kakera_path_resolves_colours_through_one_helper(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+
+        self.assertIn("def get_active_kakera_emojis(", run_source)
+        self.assertIn("client.mk_kakera_emojis,", run_source)
+        for function_name in ("claim_character", "start_roll_commands"):
+            source = ast.get_source_segment(self.source, functions[function_name])
+            self.assertIn("get_active_kakera_emojis(", source, function_name)
+        # Only the central helper may talk to the pure selection function.
+        self.assertEqual(run_source.count("get_kakera_emoji_targets("), 1)
+        self.assertNotIn(
+            "client.kakera_emojis + client.chaos_emojis + client.sphere_emojis + client.sphere_perk_emojis",
+            run_source,
+        )
 
     def test_enabled_purple_kakera_bypasses_tu_and_reaction_status(self):
         functions = {
@@ -1244,8 +1311,17 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        wrapper_source = ast.get_source_segment(self.source, functions["bot_lifecycle_wrapper"])
         self.assertIn("else list(client.kakera_emojis)", run_source)
         self.assertIn("if sphere_click_targets_preset is None", run_source)
+        # $mk rolls get their own colour selection; old presets inherit the
+        # regular Kakera selection instead of every default colour.
+        self.assertIn("mk_kakera_emojis_preset=None", run_source)
+        self.assertIn(
+            "client.mk_kakera_emojis = mk_kakera_emojis_preset if mk_kakera_emojis_preset is not None else list(client.kakera_emojis)",
+            run_source,
+        )
+        self.assertIn('preset_data.get("mk_kakera_emojis", None)', wrapper_source)
 
     def test_ouroperk_eight_counts_as_half_power_for_chaos_only(self):
         functions = {

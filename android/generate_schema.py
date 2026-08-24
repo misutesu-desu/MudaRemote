@@ -69,6 +69,9 @@ def main(project_root, output_dir):
         "kakera_emojis": list(emoji_defaults),
         "chaos_emojis": list(emoji_defaults),
         "sphere_perk_emojis": list(emoji_defaults),
+        # Optional override: absent/empty inherits kakera_emojis at runtime,
+        # but the schema still needs a typed list default.
+        "mk_kakera_emojis": list(emoji_defaults),
     }
     for key, value in list_field_defaults.items():
         entry = settings.setdefault(key, {})
@@ -98,7 +101,7 @@ def main(project_root, output_dir):
         "Character Sniping": {"snipe_mode", "snipe_delay", "snipe_channels", "character_snipe_targets", "reactive_snipe_on_own_rolls", "reactive_snipe_delay", "series_snipe_mode", "series_snipe_delay", "series_snipe_only_self_rolls", "series_wishlist", "kakera_snipe_mode", "kakera_snipe_threshold", "enable_snipe_chat_reactions", "snipe_chat_messages"},
         "Kakera Reactions": {"kakera_reaction_snipe_mode", "kakera_reaction_snipe_delay", "kakera_reaction_snipe_targets", "kakera_snipe_channels", "enable_kakera_snipe_chat_reactions", "kakera_snipe_chat_messages", "immediate_kakera_click", "collect_purple_kakera", "kakera_power_thresholds", "auto_dk_enabled", "auto_dk_min_power", "max_dk_power"},
         "Wishlist and Farming": {"wishlist", "avoid_list", "key_mode", "only_chaos", "farm_character", "farm_characters", "farm_character_enabled", "forcedivorce_channel_id", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim", "auto_divorce_enabled", "auto_divorce_max_kakera", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "auto_divorce_protect_wishes"},
-        "Spheres and Emoji": {"claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "randomized_claim_reactions", "kakera_priority_order", "sphere_click_targets", "auto_oh_enabled", "oh_priority_order", "oh_unknown_explore_clicks", "oh_use_individually", "auto_oc_enabled", "oc_reward_priority_order", "oc_collect_after_red"},
+        "Spheres and Emoji": {"claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "randomized_claim_reactions", "kakera_priority_order", "sphere_click_targets", "auto_oh_enabled", "oh_priority_order", "oh_unknown_explore_clicks", "oh_use_individually", "auto_oc_enabled", "oc_reward_priority_order", "oc_collect_after_red"},
         "Timing and Humanization": {"humanization_enabled", "humanization_window_minutes", "humanization_inactivity_seconds", "inactive_hours", "scheduled_roll_times", "persistent_stagger_seconds", "time_rolls_to_claim_reset"},
         "Advanced": {"debug_mode", "debug_log_categories", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
     }

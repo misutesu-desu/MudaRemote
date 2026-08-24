@@ -157,6 +157,14 @@ class EditorUxContractTests(unittest.TestCase):
     def test_context_emoji_overrides_document_regular_selection_inheritance(self):
         self.assertIn("unchecked inherits Kakera Emojis", self.editor)
         self.assertIn('data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)', self.editor)
+        # $mk rolls have their own optional colour selection with the same
+        # inheritance rule as chaos/sphere-perk overrides.
+        self.assertIn('"mk_kakera_emojis"', self.editor)
+        self.assertIn(
+            '("mk_kakera_emojis", DEFAULT_KAKERA_EMOJIS)',
+            self.editor,
+        )
+        self.assertIn('"chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"', self.editor)
 
     def test_oh_individual_use_mode_is_configurable(self):
         self.assertIn('"oh_use_individually": False', self.editor)

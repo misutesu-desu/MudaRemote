@@ -229,6 +229,8 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
         errors.append("Chaos Kakera Only cannot be used with an explicitly empty Chaos Emojis list.")
     if data.get("kakera_reaction_snipe_mode", False) and data.get("kakera_emojis") == []:
         errors.append("Auto-Collect Kakera cannot use an explicitly empty Kakera Emojis list.")
+    if data.get("mk_only", False) and data.get("mk_kakera_emojis") == []:
+        errors.append("MK Kakera Only cannot be used with an explicitly empty $mk Kakera Emojis list.")
 
     delay_range = data.get("reactive_kakera_delay_range", [0.3, 1.0])
     if not isinstance(delay_range, (list, tuple)) or len(delay_range) != 2:
