@@ -20,6 +20,66 @@ def mudae_command_ack_matches(payload, message_id, target_bot_id) -> bool:
     )
 
 
+def normalized_mudae_command_matches(content, prefix, command) -> bool:
+    """Match one self-authored Mudae command without accepting arguments."""
+    normalized = " ".join(str(content or "").split()).casefold()
+    expected = "{}{}".format(str(prefix or ""), str(command or "")).casefold()
+    return bool(expected) and normalized == expected
+
+
+def daily_rolls_decision(
+    *,
+    enabled,
+    only_claim_hour,
+    claim_right_available,
+    key_mode,
+    auto_rolls_in_key_mode,
+    next_claim_reset_at_utc,
+    roll_reset_at_utc,
+    used_this_interval,
+    limit_reached,
+    ack_retry_ready,
+    claim_hour_active=False,
+    now_utc=None,
+):
+    """Classify Auto ``$rolls`` work without conflating timing and claim state.
+
+    ``wait-claim-reset`` deliberately remains actionable scheduling work: the
+    current roll interval contains a forthcoming claim reset, but the normal
+    claim right is not available yet.
+    """
+    if not enabled:
+        return "disabled"
+    if limit_reached:
+        return "limit-reached"
+    if used_this_interval:
+        return "already-used"
+    if not ack_retry_ready:
+        return "ack-retry-wait"
+
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    in_claim_hour = bool(claim_hour_active) or bool(
+        next_claim_reset_at_utc
+        and roll_reset_at_utc
+        and now <= next_claim_reset_at_utc <= roll_reset_at_utc
+    )
+    claim_bypass = bool(key_mode and auto_rolls_in_key_mode)
+    if only_claim_hour:
+        if not in_claim_hour:
+            return "outside-claim-hour"
+        if claim_right_available or claim_bypass:
+            return "execute"
+        return "wait-claim-reset"
+    if claim_right_available or claim_bypass:
+        return "execute"
+    return "claim-unavailable"
+
+
+def next_daily_rolls_wake_deadline(decision, next_claim_reset_at_utc):
+    """Return the hard wake boundary required by an Auto ``$rolls`` decision."""
+    return next_claim_reset_at_utc if decision == "wait-claim-reset" else None
+
+
 def humanized_claim_refresh_deadline(
     reset_at_utc,
     humanization_enabled=False,

@@ -7,8 +7,11 @@ from mudae_core.runtime import (
     CommandPacer,
     active_stagger_seconds,
     can_resume_claim_interrupted_rolls,
+    daily_rolls_decision,
     humanized_claim_refresh_deadline,
     mudae_command_ack_matches,
+    next_daily_rolls_wake_deadline,
+    normalized_mudae_command_matches,
     pause_interruptible_sleep,
     prepare_active_presets,
     set_client_paused,
@@ -50,6 +53,66 @@ class RuntimeStaggerTests(unittest.TestCase):
         self.assertFalse(mudae_command_ack_matches(payload, 123, 999))
         payload.emoji.name = "❌"
         self.assertFalse(mudae_command_ack_matches(payload, 123, 456))
+
+    def test_manual_rt_command_match_is_exact_and_normalized(self):
+        self.assertTrue(normalized_mudae_command_matches("  $RT  ", "$", "rt"))
+        self.assertFalse(normalized_mudae_command_matches("$rt now", "$", "rt"))
+        self.assertFalse(normalized_mudae_command_matches("$ru", "$", "rt"))
+
+    def test_daily_rolls_waits_for_claim_reset_inside_eligible_roll_interval(self):
+        now = datetime.datetime(2026, 8, 25, 12, tzinfo=datetime.timezone.utc)
+        claim_reset = now + datetime.timedelta(minutes=20)
+        decision = daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=False,
+            key_mode=False, auto_rolls_in_key_mode=False,
+            next_claim_reset_at_utc=claim_reset,
+            roll_reset_at_utc=now + datetime.timedelta(minutes=50),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
+        )
+        self.assertEqual(decision, "wait-claim-reset")
+        self.assertEqual(next_daily_rolls_wake_deadline(decision, claim_reset), claim_reset)
+
+    def test_daily_rolls_executes_when_claim_is_ready_in_claim_hour(self):
+        now = datetime.datetime(2026, 8, 25, 12, tzinfo=datetime.timezone.utc)
+        self.assertEqual(daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=True,
+            key_mode=False, auto_rolls_in_key_mode=False,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=20),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=50),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
+        ), "execute")
+        # After the reset, $tu may have already replaced the old deadline with
+        # the next claim cycle.  The selected roll interval remains eligible.
+        self.assertEqual(daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=True,
+            key_mode=False, auto_rolls_in_key_mode=False,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=3),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=30),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            claim_hour_active=True, now_utc=now,
+        ), "execute")
+
+    def test_daily_rolls_rejects_claim_reset_after_roll_interval_and_preserves_bypasses(self):
+        now = datetime.datetime(2026, 8, 25, 12, tzinfo=datetime.timezone.utc)
+        common = dict(
+            enabled=True, only_claim_hour=True, claim_right_available=False,
+            key_mode=False, auto_rolls_in_key_mode=False,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=50),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
+        )
+        self.assertEqual(daily_rolls_decision(**common), "outside-claim-hour")
+        self.assertEqual(daily_rolls_decision(
+            **{**common, "only_claim_hour": False, "claim_right_available": True}
+        ), "execute")
+        self.assertEqual(daily_rolls_decision(
+            **{**common, "key_mode": True, "auto_rolls_in_key_mode": True,
+               "next_claim_reset_at_utc": now + datetime.timedelta(minutes=10),
+               "roll_reset_at_utc": now + datetime.timedelta(minutes=20)}
+        ), "execute")
 
     def test_snipe_claim_refresh_uses_one_delay_inside_humanization_window(self):
         reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)

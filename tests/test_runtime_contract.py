@@ -1028,16 +1028,47 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("asyncio.wait_for", ack_source)
         self.assertIn("mudae_command_ack_matches", reaction_source)
         self.assertIn("send_mudae_reaction_command", roll_status_source)
-        self.assertIn("rolls_usage_is_active", roll_status_source)
+        self.assertIn("evaluate_daily_rolls(now_utc)", roll_status_source)
+        self.assertIn("daily_rolls_decision(", self.source)
+        self.assertIn("next_daily_rolls_wake_deadline", self.source)
         self.assertNotIn("rolls_used_this_interval_utc != client.roll_reset_at_utc", roll_status_source)
         self.assertIn("_last_normal_roll_count", roll_status_source)
         self.assertIn("$rolls acknowledged; continuing with", roll_status_source)
         self.assertIn("await start_roll_commands(", roll_status_source)
 
-        rt_send_count = self.source.count(
-            'send_mudae_reaction_command(channel, f"{client.mudae_prefix}rt"'
-        )
+        rt_send_count = self.source.count("await send_rt_command(channel)")
         self.assertGreaterEqual(rt_send_count, 5)
+
+    def test_hybrid_panic_claim_uses_only_the_normal_claim_right(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["on_message"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        self.assertIn("not client.claim_right_available", source)
+        self.assertIn("$rt is not consumed by Hybrid mode", source)
+        self.assertIn("allow_rt=False", source)
+        self.assertIn("allow_rt=True", claim_source)
+
+    def test_manual_rt_acknowledgement_is_account_local_and_reuses_rt_transition(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        reaction_source = ast.get_source_segment(self.source, functions["on_raw_reaction_add"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        self.assertIn("client._rt_command_in_flight = None", run_source)
+        self.assertIn("normalized_mudae_command_matches", self.source)
+        self.assertIn("observe_manual_rt_command(message)", message_source)
+        self.assertIn("operation.get('source') == 'manual'", reaction_source)
+        self.assertIn("apply_rt_acknowledgement(source='manual')", reaction_source)
+        self.assertIn("manual-rt-ack-timeout", self.source)
+        self.assertIn("defer_claim_until_manual_rt_ack", claim_source)
 
     def test_failed_rt_invalidates_cached_state_and_refreshes_claim_status(self):
         functions = {
