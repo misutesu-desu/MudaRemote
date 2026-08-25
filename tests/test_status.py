@@ -14,8 +14,9 @@ from mudae_core.status import (
     parse_claim_denied_cooldown,
     record_tu_failure,
     record_tu_success,
-    reconcile_shared_claim_deadline,
-    reconcile_shared_roll_deadline,
+    dynamic_claim_round,
+    reconcile_private_claim_deadline,
+    reconcile_roll_reset_deadline,
     roll_reset_wait_minutes,
     rolls_usage_is_active,
     status_dirty_fields,
@@ -133,7 +134,7 @@ class StatusFreshnessTests(unittest.TestCase):
         local_boundary = datetime.datetime(2026, 8, 20, 21, 5, tzinfo=datetime.timezone.utc)
         rounded_next_boundary = datetime.datetime(2026, 8, 20, 22, 4, 50, tzinfo=datetime.timezone.utc)
 
-        deadline, advanced = reconcile_shared_roll_deadline(
+        deadline, advanced = reconcile_roll_reset_deadline(
             local_boundary,
             observed,
             rounded_next_boundary,
@@ -147,7 +148,7 @@ class StatusFreshnessTests(unittest.TestCase):
         observed = local_boundary + datetime.timedelta(seconds=1)
         next_boundary = datetime.datetime(2026, 8, 20, 22, 5, tzinfo=datetime.timezone.utc)
 
-        deadline, advanced = reconcile_shared_roll_deadline(
+        deadline, advanced = reconcile_roll_reset_deadline(
             local_boundary,
             observed,
             next_boundary,
@@ -156,20 +157,29 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertEqual(deadline, next_boundary)
         self.assertTrue(advanced)
 
-    def test_peer_claim_deadline_cannot_skip_unverified_local_reset(self):
-        local_boundary = datetime.datetime(2026, 8, 20, 1, 14, tzinfo=datetime.timezone.utc)
-        observed = local_boundary + datetime.timedelta(minutes=41)
-        peer_next_boundary = datetime.datetime(2026, 8, 20, 4, 14, tzinfo=datetime.timezone.utc)
+    def test_local_roll_parse_uses_the_same_imminent_boundary_protection(self):
+        observed = datetime.datetime(2026, 8, 20, 21, 4, 50, tzinfo=datetime.timezone.utc)
+        imminent = datetime.datetime(2026, 8, 20, 21, 5, tzinfo=datetime.timezone.utc)
+        parsed_next_cycle = observed + datetime.timedelta(minutes=60)
 
-        deadline, elapsed = reconcile_shared_claim_deadline(
-            local_boundary,
-            observed,
-            peer_next_boundary,
-            claim_available=False,
-        )
+        deadline, advanced = reconcile_roll_reset_deadline(imminent, observed, parsed_next_cycle)
 
-        self.assertEqual(deadline, local_boundary)
-        self.assertTrue(elapsed)
+        self.assertEqual(deadline, imminent)
+        self.assertFalse(advanced)
+
+    def test_private_claim_timer_refines_once_without_moving_back_to_an_earlier_round(self):
+        observed = datetime.datetime(2026, 8, 20, 1, 0, tzinfo=datetime.timezone.utc)
+        deadline_61 = observed + datetime.timedelta(minutes=61)
+        deadline_60 = observed + datetime.timedelta(minutes=60)
+
+        refined, changed = reconcile_private_claim_deadline(deadline_61, observed, deadline_60)
+        noisy, noisy_changed = reconcile_private_claim_deadline(refined, observed, deadline_61)
+
+        self.assertTrue(changed)
+        self.assertEqual(refined, deadline_60)
+        self.assertFalse(noisy_changed)
+        self.assertEqual(noisy, deadline_60)
+        self.assertEqual(dynamic_claim_round(180, noisy, observed)[0], 3)
 
     def test_known_roll_deadline_beats_the_sixty_minute_parse_fallback(self):
         now = datetime.datetime(2026, 8, 21, 11, 1, 42, tzinfo=datetime.timezone.utc)
@@ -178,20 +188,41 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertEqual(roll_reset_wait_minutes(None, known_deadline, now), 4.0)
         self.assertEqual(roll_reset_wait_minutes(None, None, now), 60.0)
 
-    def test_available_claim_can_adopt_next_shared_reset(self):
-        local_boundary = datetime.datetime(2026, 8, 20, 1, 14, tzinfo=datetime.timezone.utc)
-        observed = local_boundary + datetime.timedelta(minutes=41)
-        peer_next_boundary = datetime.datetime(2026, 8, 20, 4, 14, tzinfo=datetime.timezone.utc)
+    def test_dynamic_claim_rounds_are_private_for_interleaved_accounts(self):
+        now = datetime.datetime(2026, 8, 20, 1, 0, tzinfo=datetime.timezone.utc)
+        deadlines = {
+            "a": now + datetime.timedelta(minutes=170),
+            "b": now + datetime.timedelta(minutes=100),
+            "c": now + datetime.timedelta(minutes=40),
+        }
 
-        deadline, elapsed = reconcile_shared_claim_deadline(
-            local_boundary,
-            observed,
-            peer_next_boundary,
-            claim_available=True,
+        for _ in range(3):
+            self.assertEqual(dynamic_claim_round(180, deadlines["a"], now)[0], 1)
+            self.assertEqual(dynamic_claim_round(180, deadlines["b"], now)[0], 2)
+            self.assertEqual(dynamic_claim_round(180, deadlines["c"], now)[0], 3)
+
+    def test_peer_roll_snapshot_cannot_change_each_account_private_claim_round(self):
+        now = datetime.datetime(2026, 8, 20, 1, 0, tzinfo=datetime.timezone.utc)
+        account_a_claim = now + datetime.timedelta(minutes=45)
+        account_b_claim = now + datetime.timedelta(minutes=110)
+        coordinator = ServerResetCoordinator()
+
+        snapshot, changed = coordinator.observe(
+            10,
+            200,
+            now,
+            roll_reset_at_utc=now + datetime.timedelta(minutes=24),
         )
 
-        self.assertEqual(deadline, peer_next_boundary)
-        self.assertFalse(elapsed)
+        self.assertTrue(changed)
+        self.assertEqual(snapshot.roll_reset_at_utc, now + datetime.timedelta(minutes=24))
+        self.assertEqual(dynamic_claim_round(180, account_a_claim, now)[0], 3)
+        self.assertEqual(dynamic_claim_round(180, account_b_claim, now)[0], 2)
+
+    def test_verified_new_claim_cycle_can_return_from_round_three_to_round_one(self):
+        now = datetime.datetime(2026, 8, 20, 1, 0, tzinfo=datetime.timezone.utc)
+        self.assertEqual(dynamic_claim_round(180, now + datetime.timedelta(minutes=40), now)[0], 3)
+        self.assertEqual(dynamic_claim_round(180, now + datetime.timedelta(minutes=180), now)[0], 1)
 
     def test_full_tu_snapshot_is_not_confused_with_claim_rejection(self):
         snapshot = (
@@ -221,27 +252,26 @@ class StatusFreshnessTests(unittest.TestCase):
     def test_server_reset_observations_are_shared_per_server_and_deduplicated(self):
         coordinator = ServerResetCoordinator(message_limit=2)
         observed = datetime.datetime(2026, 8, 4, 12, 0, tzinfo=datetime.timezone.utc)
-        claim_deadline = observed + datetime.timedelta(minutes=30)
         roll_deadline = observed + datetime.timedelta(minutes=15)
 
         snapshot, changed = coordinator.observe(
             10,
             100,
             observed,
-            claim_reset_at_utc=claim_deadline,
             roll_reset_at_utc=roll_deadline,
         )
         duplicate, duplicate_changed = coordinator.observe(
             10,
             100,
             observed + datetime.timedelta(seconds=1),
-            claim_reset_at_utc=observed + datetime.timedelta(hours=3),
+            roll_reset_at_utc=observed + datetime.timedelta(hours=1),
         )
 
         self.assertTrue(changed)
         self.assertFalse(duplicate_changed)
         self.assertEqual(snapshot, duplicate)
-        self.assertEqual(coordinator.snapshot(10).claim_reset_at_utc, claim_deadline)
+        self.assertFalse(hasattr(coordinator.snapshot(10), "claim_reset_at_utc"))
+        self.assertEqual(coordinator.snapshot(10).roll_reset_at_utc, roll_deadline)
         self.assertIsNone(coordinator.snapshot(11))
 
     def test_clear_status_dirty_without_fields_clears_all_reasons_and_desync(self):
@@ -258,4 +288,3 @@ class StatusFreshnessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

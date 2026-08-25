@@ -3,6 +3,7 @@
 from collections import OrderedDict
 from dataclasses import dataclass
 import datetime
+import math
 import re
 import threading
 import time
@@ -18,7 +19,6 @@ TU_CACHE_TTL_SECONDS = 30.0 * 60.0
 class ServerResetSnapshot:
     server_id: int
     observed_at_utc: datetime.datetime
-    claim_reset_at_utc: datetime.datetime = None
     roll_reset_at_utc: datetime.datetime = None
     observed_fields: frozenset = frozenset()
 
@@ -37,13 +37,12 @@ class ServerResetCoordinator:
         server_id,
         message_id,
         observed_at_utc,
-        claim_reset_at_utc=None,
         roll_reset_at_utc=None,
     ):
         """Record one status message and return ``(snapshot, changed)``."""
         if server_id is None or message_id is None:
             return None, False
-        if claim_reset_at_utc is None and roll_reset_at_utc is None:
+        if roll_reset_at_utc is None:
             return self.snapshot(server_id), False
         with self._lock:
             if message_id in self._seen_messages:
@@ -54,19 +53,12 @@ class ServerResetCoordinator:
 
             previous = self._snapshots.get(server_id)
             observed_fields = frozenset(
-                field for field, value in (
-                    ("claim", claim_reset_at_utc),
-                    ("rolls", roll_reset_at_utc),
-                ) if value is not None
+                field for field, value in (("rolls", roll_reset_at_utc),)
+                if value is not None
             )
             snapshot = ServerResetSnapshot(
                 server_id=int(server_id),
                 observed_at_utc=observed_at_utc,
-                claim_reset_at_utc=(
-                    claim_reset_at_utc
-                    if claim_reset_at_utc is not None
-                    else getattr(previous, "claim_reset_at_utc", None)
-                ),
                 roll_reset_at_utc=(
                     roll_reset_at_utc
                     if roll_reset_at_utc is not None
@@ -241,7 +233,7 @@ def tu_cache_seconds_remaining(last_query_utc, now_utc=None, ttl_seconds=TU_CACH
     return max(0.0, float(ttl_seconds) - elapsed)
 
 
-def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_deadline):
+def reconcile_roll_reset_deadline(previous_deadline, observed_at, proposed_deadline):
     """Keep a known imminent roll boundary until it has actually passed.
 
     Mudae reports reset timers in whole minutes.  A peer ``$tu`` received just
@@ -259,15 +251,42 @@ def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_dead
     return proposed_deadline, boundary_advanced
 
 
-def reconcile_shared_claim_deadline(previous_deadline, observed_at, proposed_deadline, claim_available=False):
-    """Do not skip an unverified local claim boundary with a peer's next cycle."""
+def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_deadline):
+    """Backward-compatible name for the canonical roll-boundary reconciler."""
+    return reconcile_roll_reset_deadline(previous_deadline, observed_at, proposed_deadline)
+
+
+def reconcile_private_claim_deadline(previous_deadline, observed_at, proposed_deadline):
+    """Refine one account's rounded claim timer without changing its cycle.
+
+    A status timer can vary by a minute around a displayed boundary.  Until the
+    known deadline has passed, accept only a small refinement towards the
+    existing boundary; never move it later into a previous dynamic round.
+    A new cycle is established by a verified claim or after the old boundary.
+    """
     if proposed_deadline is None:
         return previous_deadline, False
-    if previous_deadline is None or observed_at is None or claim_available:
-        return proposed_deadline, False
-    if proposed_deadline > previous_deadline:
-        return previous_deadline, previous_deadline <= observed_at
-    return proposed_deadline, False
+    if previous_deadline is None or observed_at is None or previous_deadline <= observed_at:
+        return proposed_deadline, proposed_deadline != previous_deadline
+    if proposed_deadline >= previous_deadline:
+        return previous_deadline, False
+    # A one-minute timer display plus transport latency is a normal refinement.
+    if (previous_deadline - proposed_deadline).total_seconds() <= 120.0:
+        return proposed_deadline, True
+    return previous_deadline, False
+
+
+def dynamic_claim_round(claim_interval_minutes, deadline, now_utc=None):
+    """Return the dynamic claim round for one account's private deadline."""
+    total_rounds = max(1, math.ceil(float(claim_interval_minutes) / 60.0))
+    if deadline is None:
+        return total_rounds, total_rounds
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    remaining_minutes = (deadline - now).total_seconds() / 60.0
+    if remaining_minutes <= 0:
+        return total_rounds, total_rounds
+    remaining_hours = math.ceil(remaining_minutes / 60.0)
+    return max(1, total_rounds - remaining_hours + 1), total_rounds
 
 
 def roll_reset_wait_minutes(reported_minutes, known_deadline, now_utc=None, fallback_minutes=60.0):

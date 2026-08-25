@@ -117,22 +117,19 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("cached_reset != reset_at", loop_source)
         self.assertIn('reason="snipe-claim-reset"', loop_source)
 
-    def test_shared_claim_boundary_does_not_interrupt_humanized_refresh(self):
+    def test_shared_reset_snapshot_never_mutates_private_claim_state(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        start = self.source.index("    def unlock_at_shared_boundary():")
-        end = self.source.index("\n    loop = getattr(client, \"loop\", None)", start)
-        boundary_source = self.source[start:end]
-        self.assertIn('reason="shared-claim-boundary"', boundary_source)
-        self.assertNotIn("event.set()", boundary_source)
         shared_reset_source = ast.get_source_segment(
             self.source,
             functions["_apply_shared_reset_snapshot"],
         )
-        self.assertIn("reconcile_shared_claim_deadline(", shared_reset_source)
+        self.assertNotIn("client.next_claim_reset_at_utc =", shared_reset_source)
+        self.assertNotIn("client.claim_cooldown_until_utc =", shared_reset_source)
+        self.assertNotIn("client.claim_right_available =", shared_reset_source)
 
     def test_tu_response_retry_budget_is_two_commands(self):
         functions = {
@@ -557,12 +554,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("tu_cache_seconds_remaining(", status_source)
         self.assertIn('"cached status refresh"', status_source)
         self.assertIn("hard_deadline=False", wait_source)
+        self.assertIn("boundary_fields=None", wait_source)
         self.assertIn("not hard_deadline", wait_source)
         self.assertIn("persistent_stagger = 0 if hard_deadline", wait_source)
         self.assertNotIn("in reason.lower()", wait_source)
         self.assertIn("hard_deadline=hard_deadline", status_source)
-        self.assertIn('"rolls replenishment", True', status_source)
-        self.assertIn('"claim cooldown", True', status_source)
+        self.assertIn('"rolls replenishment", True, {"rolls"}', status_source)
+        self.assertIn('"claim cooldown", True, {"claim"}', status_source)
+        self.assertIn("for hard state deadline", wait_source)
+        self.assertIn("mark_status_dirty(client, set(boundary_fields)", wait_source)
 
     def test_idle_status_wait_uses_known_reset_instead_of_thirty_minute_refresh(self):
         functions = {
@@ -585,7 +585,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source,
             functions["_apply_shared_reset_snapshot"],
         )
-        self.assertIn("reconcile_shared_roll_deadline(", shared_reset_source)
+        self.assertIn("reconcile_roll_reset_deadline(", shared_reset_source)
         self.assertIn('mark_status_dirty(client, {"rolls"}', shared_reset_source)
         self.assertIn('reason="shared-roll-boundary"', shared_reset_source)
         self.assertIn("_immediate_check_event", shared_reset_source)
@@ -1680,6 +1680,18 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"]', status_source)
         self.assertIn("client.rolls_left = parsed_rolls", status_source)
         self.assertIn('ROLL_RESET_TU', status_source)
+
+    def test_all_roll_deadline_paths_use_the_canonical_reconciler(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        rolls_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+
+        self.assertIn("reconcile_roll_reset_deadline(", status_source)
+        self.assertIn("reconcile_roll_reset_deadline(", rolls_source)
 
 
 if __name__ == "__main__":

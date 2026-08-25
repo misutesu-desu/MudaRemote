@@ -87,11 +87,11 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, list_includes_purple,
@@ -118,11 +118,11 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
         active_stagger_seconds, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision,
         consume_tu_urgent_bypass,
-        cooldown_deadline, defer_tu_queries, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
-        record_tu_success, reconcile_shared_claim_deadline, reconcile_shared_roll_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
+        record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, list_includes_purple,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.12"
+CURRENT_VERSION = "4.9.0-beta.13"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -170,7 +170,6 @@ TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS = 120.0
 def _apply_shared_reset_snapshot(client, snapshot):
     """Apply only server-wide reset boundaries, never another user's private state."""
     observed_at = getattr(snapshot, "observed_at_utc", None)
-    claim_deadline = getattr(snapshot, "claim_reset_at_utc", None)
     roll_deadline = getattr(snapshot, "roll_reset_at_utc", None)
 
     if observed_at is None:
@@ -184,7 +183,7 @@ def _apply_shared_reset_snapshot(client, snapshot):
     observed_fields = getattr(snapshot, "observed_fields", frozenset())
     previous_roll_deadline = getattr(client, "roll_reset_at_utc", None)
     if "rolls" in observed_fields and roll_deadline is not None:
-        client.roll_reset_at_utc, roll_boundary_advanced = reconcile_shared_roll_deadline(
+        client.roll_reset_at_utc, roll_boundary_advanced = reconcile_roll_reset_deadline(
             previous_roll_deadline,
             observed_at,
             roll_deadline,
@@ -221,60 +220,6 @@ def _apply_shared_reset_snapshot(client, snapshot):
             event = getattr(client, "_immediate_check_event", None)
             if event is not None:
                 event.set()
-
-    if "claim" not in observed_fields or claim_deadline is None or getattr(client, "pending_claim", None) is not None:
-        return
-
-    current_deadline = getattr(client, "next_claim_reset_at_utc", None)
-    claimed_character = getattr(client, "last_successfully_claimed_character", None)
-    if (
-        current_deadline is not None
-        and claimed_character
-        and current_deadline > claim_deadline + datetime.timedelta(minutes=1)
-    ):
-        # This account claimed after the shared snapshot was produced. Its
-        # later local deadline must not be moved backwards by stale evidence.
-        return
-
-    claim_deadline, claim_boundary_elapsed = reconcile_shared_claim_deadline(
-        current_deadline,
-        observed_at,
-        claim_deadline,
-        getattr(client, "claim_right_available", False),
-    )
-    if claim_boundary_elapsed:
-        mark_status_dirty(client, {"claim"}, reason="shared-claim-boundary", urgent=True)
-
-    client.next_claim_reset_at_utc = claim_deadline
-    if not getattr(client, "claim_right_available", False):
-        client.claim_cooldown_until_utc = claim_deadline
-
-    old_handle = getattr(client, "_shared_claim_reset_handle", None)
-    if old_handle is not None and not old_handle.cancelled():
-        old_handle.cancel()
-
-    def unlock_at_shared_boundary():
-        client._shared_claim_reset_handle = None
-        if getattr(client, "pending_claim", None) is not None:
-            return
-        current = getattr(client, "next_claim_reset_at_utc", None)
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        if current is None or abs((current - claim_deadline).total_seconds()) > 1.0 or now_utc < current:
-            return
-        mark_status_dirty(client, {"claim"}, reason="shared-claim-boundary", urgent=True)
-        # A shared reset tells us only that the server boundary has passed.
-        # Do not wake a sleeping status loop here: in snipe-only mode that
-        # would cut short the configured post-reset humanization delay and
-        # send $tu at the exact reset.  The already scheduled local refresh
-        # will consume this dirty state at its intended time.
-
-    loop = getattr(client, "loop", None)
-    if loop is not None and loop.is_running():
-        delay = max(
-            0.0,
-            (claim_deadline - datetime.datetime.now(datetime.timezone.utc)).total_seconds(),
-        )
-        client._shared_claim_reset_handle = loop.call_later(delay, unlock_at_shared_boundary)
 
 class BotLogger:
     _file_lock = threading.Lock()
@@ -1302,10 +1247,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def set_claim_cooldown(minutes, source="Mudae", wake=False):
         cooldown_minutes = max(0, int(minutes or 0))
         now_utc = datetime.datetime.now(datetime.timezone.utc)
-        deadline = cooldown_deadline(now_utc, cooldown_minutes)
+        proposed_deadline = cooldown_deadline(now_utc, cooldown_minutes)
+        previous_deadline = getattr(client, "next_claim_reset_at_utc", None)
+        deadline, changed = reconcile_private_claim_deadline(
+            previous_deadline,
+            now_utc,
+            proposed_deadline,
+        )
         client.claim_right_available = False
         client.next_claim_reset_at_utc = deadline
         client.claim_cooldown_until_utc = deadline
+        if changed:
+            BotLogger.log(
+                f"Claim deadline updated: source={source} old={previous_deadline} new={deadline}",
+                preset_name,
+                "DEBUG",
+                client,
+            )
         client._claim_reset_refresh_requested = False
         if wake:
             wake_status_loop()
@@ -1382,7 +1340,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return True
 
     def observe_shared_tu_resets(message):
-        """Share only claim/roll reset boundaries from any visible server $tu."""
+        """Share only the server-wide roll reset boundary from visible ``$tu``."""
         if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
             return False
         guild = getattr(message, 'guild', None)
@@ -1393,16 +1351,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         lowered = content.lower()
         observed_at = datetime.datetime.now(datetime.timezone.utc)
 
-        claim_minutes = None
-        claim_match = re.search(REGEX_PATTERNS["CLAIM_RESET"], lowered)
-        if claim_match and not any(marker in claim_match.group(0) for marker in ("$daily", "$dk", "$rt")):
-            claim_hours, claim_mins = parse_hm(claim_match)
-            claim_minutes = claim_hours * 60 + claim_mins
-        if claim_minutes is None:
-            claim_minutes = parse_claim_denied_cooldown(lowered)
-        if claim_minutes is None:
-            claim_minutes = parse_timer_minutes("CLAIM_COOLDOWN", lowered)
-
         roll_minutes = None
         rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], lowered, re.DOTALL)
         if rolls_match:
@@ -1410,11 +1358,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if roll_minutes is None:
             roll_minutes = parse_timer_minutes("ROLL_RESET", lowered)
 
-        claim_deadline = (
-            cooldown_deadline(observed_at, claim_minutes)
-            if claim_minutes is not None
-            else None
-        )
         roll_deadline = (
             cooldown_deadline(observed_at, roll_minutes)
             if roll_minutes is not None
@@ -1424,7 +1367,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             getattr(guild, 'id', None),
             getattr(message, 'id', None),
             observed_at,
-            claim_reset_at_utc=claim_deadline,
             roll_reset_at_utc=roll_deadline,
         )
         if not changed or snapshot is None:
@@ -2331,22 +2273,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return True
 
     def update_dynamic_thresholds():
-        import math
-        claim_reset_minutes = None
-        if client.next_claim_reset_at_utc:
-            now_utc = datetime.datetime.now(timezone.utc)
-            claim_reset_minutes = (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0
+        now_utc = datetime.datetime.now(timezone.utc)
+        round_num, total_rounds = dynamic_claim_round(
+            client.claim_interval,
+            client.next_claim_reset_at_utc,
+            now_utc,
+        )
 
-        # Determine total rounds based on the preset's claim interval
-        total_rounds = max(1, math.ceil(client.claim_interval / 60))
-
-        if claim_reset_minutes is None or claim_reset_minutes <= 0:
-            round_num = total_rounds
-        else:
-            # Calculate remaining hours
-            remaining_hours = math.ceil(claim_reset_minutes / 60)
-            # Determine active current round (1-indexed)
-            round_num = max(1, total_rounds - remaining_hours + 1)
+        previous_round = getattr(client, "_dynamic_claim_round", None)
+        previous_deadline = getattr(client, "_dynamic_claim_cycle_deadline_utc", None)
+        verified_new_cycle = bool(getattr(client, "_dynamic_claim_cycle_reset_verified", False))
+        if previous_round is not None:
+            same_cycle = previous_deadline == getattr(client, "next_claim_reset_at_utc", None)
+            prior_cycle_still_active = (
+                previous_deadline is not None
+                and now_utc < previous_deadline
+            )
+            # Rounded self-$tu timers can refine a boundary by a minute. They
+            # must not make a cooldown revisit an earlier dynamic round. A
+            # verified successful claim is the authoritative new-cycle signal.
+            if (same_cycle or prior_cycle_still_active) and not verified_new_cycle:
+                round_num = max(previous_round, round_num)
+        client._dynamic_claim_round = round_num
+        client._dynamic_claim_cycle_deadline_utc = getattr(client, "next_claim_reset_at_utc", None)
+        client._dynamic_claim_cycle_reset_verified = False
 
         active_threshold = None
         if hasattr(client, 'claim_rounds_thresholds') and client.claim_rounds_thresholds:
@@ -3145,6 +3095,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             max(0.05, cache_seconds_remaining / 60.0),
                             "cached status refresh",
                             True,
+                            None,
                         ))
                     is_timing_wait_bypass = bool(
                         client.time_rolls_to_claim_reset
@@ -3152,13 +3103,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         and claim_reset_m > 60
                     )
                     if is_timing_wait_bypass:
-                        choices.append((float(claim_reset_m - 60), "timing threshold arrival", True))
+                        choices.append((float(claim_reset_m - 60), "timing threshold arrival", True, {"claim", "rolls"}))
                     else:
-                        if wait_time > 0: choices.append((float(wait_time), "claim cooldown", True))
-                        if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment", True))
+                        if wait_time > 0: choices.append((float(wait_time), "claim cooldown", True, {"claim"}))
+                        if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment", True, {"rolls"}))
                     if choices:
                         choices.sort(key=lambda x: x[0])
-                        selected_wait_minutes, selected_reason, hard_deadline = choices[0]
+                        selected_wait_minutes, selected_reason, hard_deadline, boundary_fields = choices[0]
                         client._status_cycle_not_before_monotonic = time.monotonic() + max(
                             3.0,
                             selected_wait_minutes * 60.0,
@@ -3169,6 +3120,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             max(0.05, selected_wait_minutes),
                             selected_reason,
                             hard_deadline=hard_deadline,
+                            boundary_fields=boundary_fields,
                         )
                     else:
                         client._status_cycle_not_before_monotonic = time.monotonic() + max(
@@ -3472,7 +3424,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             elif claim_reset_minutes is not None:
                 client.current_min_kakera_for_roll_claim = client.min_kakera
                 BotLogger.log(f"Claim: Cooldown ({int(claim_reset_minutes/60)}h {claim_reset_minutes%60}m)", preset_name, "INFO")
-                set_claim_cooldown(claim_reset_minutes, source="$tu")
+                set_claim_cooldown(claim_reset_minutes, source="self-$tu")
                 await resolve_pending_claim_from_status(claim_available=False, channel=channel)
             else:
                 wait_g = parse_timer_minutes("GENERIC_COOLDOWN", c_lower.split('\n')[0])
@@ -3480,7 +3432,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     wait_time = wait_g
                     claim_reset_minutes = wait_time
                     BotLogger.log(f"Claim: Cooldown ({int(wait_time/60)}h {wait_time%60}m) (Generic)", preset_name, "INFO")
-                    set_claim_cooldown(wait_time, source="$tu generic timer")
+                    set_claim_cooldown(wait_time, source="self-$tu-generic-timer")
                     await resolve_pending_claim_from_status(claim_available=False, channel=channel)
                 else:
                     can_claim = client.claim_right_available
@@ -3510,7 +3462,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # This account's complete $tu is authoritative. Keep the
                 # parsed boundary if the narrower roll-count parser misses
                 # the same localized reset phrase below.
-                client.roll_reset_at_utc = cooldown_deadline(now_utc, roll_reset_minutes)
+                client.roll_reset_at_utc, _ = reconcile_roll_reset_deadline(
+                    getattr(client, "roll_reset_at_utc", None),
+                    now_utc,
+                    cooldown_deadline(now_utc, roll_reset_minutes),
+                )
 
             if any(x in c_lower for x in ["you __can__ react", "pode reagir", "pegar kakera", "puedes__ reaccionar", "puedes reaccionar", "pouvez__ réagir", "pouvez réagir"]):
                 client.kakera_react_available = True
@@ -3598,19 +3554,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and claim_reset_minutes > 60
                 )
                 if is_timing_waiting:
-                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival", True))
+                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival", True, {"claim", "rolls"}))
                 else:
-                    if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown", True))
+                    if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown", True, {"claim"}))
                     if is_lurking and claim_reset_minutes is not None:
-                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival", True))
+                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival", True, {"claim", "rolls"}))
                     if rt_reset_minutes is not None and rt_reset_minutes > 0:
-                        sleep_choices.append((float(rt_reset_minutes), "$rt reset", True))
+                        sleep_choices.append((float(rt_reset_minutes), "$rt reset", True, {"rt"}))
                     if roll_reset_minutes is not None and roll_reset_minutes > 0:
-                        sleep_choices.append((float(roll_reset_minutes), "rolls replenishment", True))
+                        sleep_choices.append((float(roll_reset_minutes), "rolls replenishment", True, {"rolls"}))
 
                 if sleep_choices:
                     sleep_choices.sort(key=lambda x: x[0])
-                    await humanized_wait_and_proceed(client, channel, max(0.05, sleep_choices[0][0]), sleep_choices[0][1], hard_deadline=sleep_choices[0][2])
+                    await humanized_wait_and_proceed(client, channel, max(0.05, sleep_choices[0][0]), sleep_choices[0][1], hard_deadline=sleep_choices[0][2], boundary_fields=sleep_choices[0][3])
                 else:
                     await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
         finally:
@@ -3675,12 +3631,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
             if reported_reset_time_r is not None:
                 new_reset = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
-                if getattr(client, 'roll_reset_at_utc', None) and (new_reset - client.roll_reset_at_utc).total_seconds() > 600:
+                reconciled_reset, boundary_advanced = reconcile_roll_reset_deadline(
+                    known_roll_deadline,
+                    now_utc,
+                    new_reset,
+                )
+                if boundary_advanced:
                     client.us_pulled_this_cycle = 0
                     client.us_failed_this_cycle = False
-                client.roll_reset_at_utc = new_reset
+                client.roll_reset_at_utc = reconciled_reset
             elif known_roll_deadline is None or known_roll_deadline <= now_utc:
-                client.roll_reset_at_utc = (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0)
+                client.roll_reset_at_utc, _ = reconcile_roll_reset_deadline(
+                    known_roll_deadline,
+                    now_utc,
+                    (now_utc + datetime.timedelta(minutes=reset_time_r)).replace(second=0, microsecond=0),
+                )
 
             total_rolls = rolls_left + us_rolls_left
             client.rolls_left = total_rolls
@@ -3781,16 +3746,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and c_min > 60
                 )
                 if is_timing_wait_tu:
-                    sleep_candidates.append((float(c_min - 60), "timing window arrival", True))
+                    sleep_candidates.append((float(c_min - 60), "timing window arrival", True, {"claim", "rolls"}))
                 else:
-                    sleep_candidates.append((float(reset_time_r or 60), "rolls reset", True))
+                    sleep_candidates.append((float(reset_time_r or 60), "rolls reset", True, {"rolls"}))
                     if c_min is not None:
                         if not client.claim_right_available:
-                            sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification", True))
+                            sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification", True, {"claim"}))
                         if client.claim_right_available and c_min > client.panic_roll_minutes:
-                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival", True))
+                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival", True, {"claim", "rolls"}))
                 sleep_candidates.sort(key=lambda x: x[0])
-                await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1], hard_deadline=sleep_candidates[0][2])
+                await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1], hard_deadline=sleep_candidates[0][2], boundary_fields=sleep_candidates[0][3])
             else:
                 BotLogger.log(f"Rolls: {total_rolls}" + (f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else "") + f". Reset: {reset_time_r}m", preset_name, "INFO")
                 await start_roll_commands(client, channel, total_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
@@ -4438,6 +4403,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 base += delta
             client.next_claim_reset_at_utc = base
             client.claim_cooldown_until_utc = base
+            client._dynamic_claim_cycle_reset_verified = True
+            BotLogger.log(
+                f"Claim deadline updated: source=verified-successful-claim old={getattr(client, '_dynamic_claim_cycle_deadline_utc', None)} new={base}",
+                preset_name,
+                "DEBUG",
+                client,
+            )
             client._claim_reset_refresh_requested = False
             clear_status_dirty(client, {"claim"})
 
@@ -5488,7 +5460,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if claim_registered or rt_registered:
                     _claim_coordinator.release_all(msg.id)
 
-    async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset", *, hard_deadline=False):
+    async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset", *, hard_deadline=False, boundary_fields=None):
         """Wait for a state boundary or a soft action time.
 
         ``hard_deadline`` is intentionally supplied by the scheduler, never
@@ -5501,7 +5473,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         persistent_stagger = 0 if hard_deadline else getattr(client, 'persistent_stagger_seconds', 0)
         wait_seconds = min_wait + human_jitter + persistent_stagger
 
-        BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
+        if hard_deadline:
+            BotLogger.log(f"Waiting {wait_seconds/60:.1f}m for hard state deadline ({reason}).", preset_name, "RESET")
+        else:
+            BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         deadline = time.monotonic() + wait_seconds
         while True:
             remaining = deadline - time.monotonic()
@@ -5518,6 +5493,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # fresh $tu. Only real work should interrupt this wait.
             if status_dirty_fields(client) or client.scheduled_roll_due:
                 return
+
+        if hard_deadline:
+            if boundary_fields:
+                mark_status_dirty(client, set(boundary_fields), reason=f"{reason}-boundary", urgent=True)
+                event = getattr(client, "_immediate_check_event", None)
+                if event is not None:
+                    event.set()
+            # Boundary discovery takes precedence over inactive-hour and action
+            # pacing. The next status cycle performs the reconciliation; any
+            # deliberately humanized action delay belongs after that cycle.
+            return
 
         if is_inactive_hour():
             wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)
