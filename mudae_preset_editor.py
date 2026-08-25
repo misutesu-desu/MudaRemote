@@ -2041,7 +2041,7 @@ class PresetEditor:
         # claim_rounds_thresholds
         self.rounds_frame = tk.LabelFrame(
             claim_frame.content,
-            text="Dynamic Cooldown Rounds (Hourly Thresholds)",
+            text="Dynamic Cooldown Rounds (Hourly Thresholds — empty = base setting)",
             bg=BG_DARK,
             fg=ACCENT,
             bd=1,
@@ -2332,8 +2332,14 @@ class PresetEditor:
         )
         # [NEW] Task 1: Max DK Power setting
         self.add_number_field(power_frame.content, "max_dk_power", "Maximum DK Power % (Default 100, increase for late-game users)", 100)
-        self.add_checkbox(power_frame.content, "skip_initial_commands", "Fast Start (Skip initial setup commands on startup)")
-        self.add_text_field(power_frame.content, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)")
+        self.add_checkbox(
+            power_frame.content, "skip_initial_commands", "Fast Start (Skip startup setup commands such as $limroul)",
+            description="Enable only when this server's Mudae settings are already configured.",
+        )
+        self.add_text_field(
+            power_frame.content, "kakera_power_thresholds", "Min Power per Kakera (e.g. kakeraY:80, chaos_kakeraY:50)",
+            description="Optional extra power requirement for listed Kakera types. Types not listed still follow normal collection rules.",
+        )
         self.add_checkbox(power_frame.content, "debug_mode", "Expert Logs (Show technical data for every single roll)")
         self.add_list_field(power_frame.content, "debug_log_categories", "Expert Log Categories (all, claim, kakera, roll, status, sphere, coordination, other)")
         self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")

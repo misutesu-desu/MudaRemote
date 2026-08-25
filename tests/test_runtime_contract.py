@@ -543,7 +543,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("[1] * available", available_source)
         self.assertIn("remaining -= batch_size", available_source)
 
-    def test_cached_status_sleep_is_capped_by_cache_expiry(self):
+    def test_hard_status_deadlines_bypass_humanization_structurally(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -556,10 +556,13 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertIn("tu_cache_seconds_remaining(", status_source)
         self.assertIn('"cached status refresh"', status_source)
-        self.assertIn("is_cache_refresh", wait_source)
-        self.assertIn("0 if is_cache_refresh", wait_source)
-        self.assertIn("and not is_cache_refresh", wait_source)
-        self.assertNotIn('"timing threshold" in reason.lower()', wait_source)
+        self.assertIn("hard_deadline=False", wait_source)
+        self.assertIn("not hard_deadline", wait_source)
+        self.assertIn("persistent_stagger = 0 if hard_deadline", wait_source)
+        self.assertNotIn("in reason.lower()", wait_source)
+        self.assertIn("hard_deadline=hard_deadline", status_source)
+        self.assertIn('"rolls replenishment", True', status_source)
+        self.assertIn('"claim cooldown", True', status_source)
 
     def test_idle_status_wait_uses_known_reset_instead_of_thirty_minute_refresh(self):
         functions = {
@@ -1366,8 +1369,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("asyncio.wait_for(asyncio.shield(task)", click_source)
         self.assertIn("return True, False", click_source)
         self.assertIn("click_sent, acknowledged = await send_claim_click", claim_source)
-        self.assertIn("verification_seconds = (", verify_source)
-        self.assertIn("if pending.get(\"consumes_claim\")", verify_source)
+        self.assertIn("is_own_roll_fast_retry", verify_source)
+        self.assertIn("not pending.get(\"is_snipe_action\")", verify_source)
+        self.assertIn("verification_seconds = 1.0 if is_own_roll_fast_retry else 5.0", verify_source)
         self.assertIn("else 5.0", verify_source)
 
     def test_ready_claim_retries_once_without_a_tu_round_trip(self):

@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.10"
+CURRENT_VERSION = "4.9.0-beta.11"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -2240,13 +2240,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.current_min_kakera_for_roll_claim != 0:
             client.current_min_kakera_for_roll_claim = client.min_kakera
 
-        if (client.min_kakera != old_min_kakera or
-            client.max_claim_rank != old_max_claim_rank or
-            client.max_like_rank != old_max_like_rank):
-            override_status = "Overrides applied" if active_threshold else "Default settings restored"
+        signature = (round_num, client.min_kakera, client.max_claim_rank, client.max_like_rank)
+        if signature != getattr(client, "_last_dynamic_threshold_signature", None):
+            client._last_dynamic_threshold_signature = signature
+            override_status = "Overrides applied" if active_threshold else "Base settings active"
+            round_override = active_threshold.get("min_kakera") if active_threshold and "min_kakera" in active_threshold else "none"
             BotLogger.log(
-                f"[CLAIM] Interval: {client.claim_interval}m | Round: {round_num}/{total_rounds} active | {override_status} "
-                f"(Min Kakera: {client.min_kakera}, Max Claim Rank: {client.max_claim_rank}, Max Like Rank: {client.max_like_rank})",
+                f"Claim Thresholds: Base Min Kakera: {client.base_min_kakera} | Active Round: {round_num}/{total_rounds} | "
+                f"Round Min Kakera Override: {round_override} | Effective Min Kakera: {client.min_kakera} | "
+                f"Max Claim Rank: {client.max_claim_rank} | Max Like Rank: {client.max_like_rank} ({override_status})",
                 preset_name, "RESET"
             )
 
@@ -2602,6 +2604,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client._has_initialized:
             BotLogger.log(f"Reconnected: {client.user}. Checking health...", preset_name, "INFO")
+            # A resume may happen while the old loop is waiting for a reset.
+            # Do not let that pre-disconnect monotonic suppression postpone the
+            # reconciliation that makes reset-bound state authoritative again.
+            client._status_cycle_not_before_monotonic = 0.0
             request_status_refresh(reason="discord-reconnect", urgent=True)
             task = client._main_loop_task
             if task is None or task.done():
@@ -2617,6 +2623,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client._immediate_check_event = asyncio.Event()
         client._runtime_state_event = asyncio.Event()
         client._claim_evidence_event = asyncio.Event()
+        runtime_mode = "Android" if IS_TERMUX else ("EXE" if getattr(sys, "frozen", False) else "Python")
+        BotLogger.log(f"MudaRemote v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
 
@@ -2956,6 +2964,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         choices.append((
                             max(0.05, cache_seconds_remaining / 60.0),
                             "cached status refresh",
+                            True,
                         ))
                     is_timing_wait_bypass = bool(
                         client.time_rolls_to_claim_reset
@@ -2963,13 +2972,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         and claim_reset_m > 60
                     )
                     if is_timing_wait_bypass:
-                        choices.append((float(claim_reset_m - 60), "timing threshold arrival"))
+                        choices.append((float(claim_reset_m - 60), "timing threshold arrival", True))
                     else:
-                        if wait_time > 0: choices.append((float(wait_time), "claim cooldown"))
-                        if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment"))
+                        if wait_time > 0: choices.append((float(wait_time), "claim cooldown", True))
+                        if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment", True))
                     if choices:
                         choices.sort(key=lambda x: x[0])
-                        selected_wait_minutes, selected_reason = choices[0]
+                        selected_wait_minutes, selected_reason, hard_deadline = choices[0]
                         client._status_cycle_not_before_monotonic = time.monotonic() + max(
                             3.0,
                             selected_wait_minutes * 60.0,
@@ -2979,6 +2988,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             channel,
                             max(0.05, selected_wait_minutes),
                             selected_reason,
+                            hard_deadline=hard_deadline,
                         )
                     else:
                         client._status_cycle_not_before_monotonic = time.monotonic() + max(
@@ -3408,19 +3418,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and claim_reset_minutes > 60
                 )
                 if is_timing_waiting:
-                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival"))
+                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival", True))
                 else:
-                    if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown"))
+                    if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown", True))
                     if is_lurking and claim_reset_minutes is not None:
-                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival"))
+                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival", True))
                     if rt_reset_minutes is not None and rt_reset_minutes > 0:
-                        sleep_choices.append((float(rt_reset_minutes), "$rt reset"))
+                        sleep_choices.append((float(rt_reset_minutes), "$rt reset", True))
                     if roll_reset_minutes is not None and roll_reset_minutes > 0:
-                        sleep_choices.append((float(roll_reset_minutes), "rolls replenishment"))
+                        sleep_choices.append((float(roll_reset_minutes), "rolls replenishment", True))
 
                 if sleep_choices:
                     sleep_choices.sort(key=lambda x: x[0])
-                    await humanized_wait_and_proceed(client, channel, max(0.05, sleep_choices[0][0]), sleep_choices[0][1])
+                    await humanized_wait_and_proceed(client, channel, max(0.05, sleep_choices[0][0]), sleep_choices[0][1], hard_deadline=sleep_choices[0][2])
                 else:
                     await humanized_wait_and_proceed(client, channel, 30, "default status cycle")
         finally:
@@ -3593,16 +3603,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and c_min > 60
                 )
                 if is_timing_wait_tu:
-                    sleep_candidates.append((float(c_min - 60), "timing window arrival"))
+                    sleep_candidates.append((float(c_min - 60), "timing window arrival", True))
                 else:
-                    sleep_candidates.append((float(reset_time_r or 60), "rolls reset"))
+                    sleep_candidates.append((float(reset_time_r or 60), "rolls reset", True))
                     if c_min is not None:
                         if not client.claim_right_available:
-                            sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification"))
+                            sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification", True))
                         if client.claim_right_available and c_min > client.panic_roll_minutes:
-                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival"))
+                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival", True))
                 sleep_candidates.sort(key=lambda x: x[0])
-                await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1])
+                await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1], hard_deadline=sleep_candidates[0][2])
             else:
                 BotLogger.log(f"Rolls: {total_rolls}" + (f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else "") + f". Reset: {reset_time_r}m", preset_name, "INFO")
                 await start_roll_commands(client, channel, total_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
@@ -4457,13 +4467,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # whole external-snipe window before the retry is sent.  $rt/cooldown
         # claims keep the longer confirmation period because their cached
         # state is not independently retryable.
-        verification_seconds = (
-            3.5
-            if pending.get("consumes_claim")
+        is_own_roll_fast_retry = bool(
+            not pending.get("is_snipe_action")
+            and pending.get("consumes_claim")
             and pending.get("claim_was_available")
             and client.claim_right_available
-            else 5.0
         )
+        verification_seconds = 1.0 if is_own_roll_fast_retry else 5.0
         deadline = time.monotonic() + verification_seconds
 
         while time.monotonic() < deadline:
@@ -5280,16 +5290,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if claim_registered or rt_registered:
                     _claim_coordinator.release_all(msg.id)
 
-    async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset"):
+    async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset", *, hard_deadline=False):
+        """Wait for a state boundary or a soft action time.
+
+        ``hard_deadline`` is intentionally supplied by the scheduler, never
+        inferred from a display reason: reset availability must be discovered
+        on time; only the subsequent action may be humanized.
+        """
         min_wait = max(0.0, base_reset_minutes * 60)
         if min_wait <= 0: min_wait = max(client.delay_seconds + 60, 240)
-        is_cache_refresh = "cached status refresh" in reason.lower()
-        precision_wait = (
-            "claim reset" in reason.lower()
-            or is_cache_refresh
-        )
-        human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not precision_wait else 0
-        persistent_stagger = 0 if is_cache_refresh else getattr(client, 'persistent_stagger_seconds', 0)
+        human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not hard_deadline else 0
+        persistent_stagger = 0 if hard_deadline else getattr(client, 'persistent_stagger_seconds', 0)
         wait_seconds = min_wait + human_jitter + persistent_stagger
 
         BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
@@ -5317,7 +5328,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.is_paused:
                 return
 
-        if client.humanization_enabled and not is_cache_refresh:
+        if client.humanization_enabled and not hard_deadline:
             while True:
                 try:
                     last_msg = None

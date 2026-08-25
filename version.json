@@ -1,32 +1,29 @@
 {
-  "version": "4.9.0-beta.10",
+  "version": "4.9.0-beta.11",
   "changelog": {
     "Bug Fixes": [
-      "Purple Kakera sniping: purple reactions now respect Target User IDs exactly like every other colour instead of bypassing the target list."
-    ],
-    "New Features": [
-      "$mk Kakera Emojis: optional per-preset colour selection for $mk rolls (leave unchecked to inherit your regular Kakera Emojis).",
-      "Purple Kakera clarity: ordinary purple buttons follow your selected Kakera colours, while Collect Purple Kakera now only controls automatic purple collection after your own claims."
+      "Reset and cached-status scheduling now wakes at real availability boundaries instead of applying humanization or account staggering to them.",
+      "Ambiguous own-roll claim clicks now verify and safely retry before the short server protection window expires."
     ],
     "Improvements": [
-      "One colour rulebook: immediate clicks, end-of-batch priority clicks and external Kakera sniping all share a single roll-context selection path.",
-      "MK Kakera Only combined with an explicitly empty $mk colour list is now rejected during preset validation."
+      "Reconnects promptly reconcile reset-bound status, and logs identify the exact MudaRemote version and runtime.",
+      "Dynamic claim rounds, Fast Start, and per-Kakera power thresholds are clearer in the preset editor and logs."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.10/MudaRemote.exe",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.11/MudaRemote.exe",
   "exe_sha256": "86f2b6daa19340ede74bd6f3036bec4085bfcdc11204d703b8611a5d5d425595",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "7a343ba260681fb6197f02826fb8af9b835bdd6d29b5acd8b7ce3d73956dfcc8"
+      "sha256": "18d91c1a753e7562665cf3936582694550fa0aa5613d179f9acf955bed996631"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-      "sha256": "4fb487149ea75760a727eea08b0cf81acd58a0c72177f9bbf94f206cb1dac599"
+      "sha256": "b3346751b3a631fe25bcafff4c1f9d64625f653bcc1c91cfe7a66e1984293bf0"
     },
     {
       "path": "mudae_core/__init__.py",
