@@ -1,7 +1,9 @@
 """Pure helpers for Mudae Kakera reaction discounts."""
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import re
+import time
 from typing import NamedTuple
 
 
@@ -35,6 +37,118 @@ class _PendingPowerClick:
 
 def _normalize_kakera_emoji(value: object) -> str:
     return str(value or "").strip().rstrip("2").casefold()
+
+
+def normalize_kakera_interaction_emoji(value: object) -> str:
+    """Normalize one character-roll Kakera/sphere button for stable identity."""
+    name = normalize_character_sphere_emoji(value)
+    return str(name or "").strip().rstrip("2").casefold()
+
+
+@dataclass(frozen=True)
+class KakeraInteractionKey:
+    """Identity of one logical component, independent of regenerated custom IDs."""
+
+    message_id: int
+    row_index: int
+    child_index: int
+    emoji_name: str
+
+
+def kakera_interaction_key(message_id: object, position: object, emoji_name: object):
+    """Build the canonical logical identity for one Kakera/sphere interaction."""
+    try:
+        row_index, child_index = position
+        return KakeraInteractionKey(
+            message_id=int(message_id),
+            row_index=int(row_index),
+            child_index=int(child_index),
+            emoji_name=normalize_kakera_interaction_emoji(emoji_name),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def unique_messages_by_id(messages: object):
+    """Return the first instance of each Discord message in queue order."""
+    unique = OrderedDict()
+    for message in messages or ():
+        message_id = getattr(message, "id", None)
+        if message_id is not None:
+            unique.setdefault(message_id, message)
+    return tuple(unique.values())
+
+
+class KakeraInteractionLedger:
+    """Bounded per-button ownership and terminal-state ledger.
+
+    ``begin`` owns all retries for a logical button until ``release`` or
+    ``mark_terminal``. Terminal entries cover both an account-confirmed click
+    and Discord's ambiguous-but-sent interaction outcome.
+    """
+
+    def __init__(self, maximum_entries=4096, ttl_seconds=6 * 60 * 60, clock=None):
+        self.maximum_entries = max(1, int(maximum_entries or 1))
+        self.ttl_seconds = max(0.0, float(ttl_seconds or 0.0))
+        self._clock = clock or time.monotonic
+        self._in_flight = set()
+        self._terminal = OrderedDict()
+
+    @property
+    def terminal_count(self) -> int:
+        self._prune()
+        return len(self._terminal)
+
+    @property
+    def in_flight_count(self) -> int:
+        return len(self._in_flight)
+
+    def _prune(self) -> None:
+        now = self._clock()
+        if self.ttl_seconds > 0:
+            while self._terminal:
+                _, entry = next(iter(self._terminal.items()))
+                if now - entry[1] <= self.ttl_seconds:
+                    break
+                self._terminal.popitem(last=False)
+        while len(self._terminal) > self.maximum_entries:
+            self._terminal.popitem(last=False)
+
+    def begin(self, key: object) -> bool:
+        if key is None:
+            return False
+        self._prune()
+        if key in self._terminal or key in self._in_flight:
+            return False
+        self._in_flight.add(key)
+        return True
+
+    def release(self, key: object) -> bool:
+        if key in self._in_flight:
+            self._in_flight.remove(key)
+            return True
+        return False
+
+    def mark_terminal(self, key: object, state="confirmed", custom_id=None) -> None:
+        if key is None:
+            return
+        self._in_flight.discard(key)
+        self._terminal[key] = (str(state or "confirmed"), self._clock(), custom_id)
+        self._terminal.move_to_end(key)
+        self._prune()
+
+    def is_terminal(self, key: object) -> bool:
+        self._prune()
+        return key in self._terminal
+
+    def is_claimed(self, key: object) -> bool:
+        self._prune()
+        return key in self._terminal or key in self._in_flight
+
+    def terminal_state(self, key: object):
+        self._prune()
+        entry = self._terminal.get(key)
+        return entry[0] if entry is not None else None
 
 
 class KakeraPowerLedger:

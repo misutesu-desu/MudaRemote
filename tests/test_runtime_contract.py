@@ -272,7 +272,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         run_source = ast.get_source_segment(self.source, functions["run_bot"])
-        owner_source = ast.get_source_segment(self.source, functions["detect_roll_owner"])
+        owner_source = ast.get_source_segment(self.source, functions["detect_roll_origin"])
         self.assertIn("client.roll_command =", run_source)
         self.assertIn('getattr(client, "roll_command", "")', owner_source)
 
@@ -556,7 +556,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("hard_deadline=False", wait_source)
         self.assertIn("boundary_fields=None", wait_source)
         self.assertIn("not hard_deadline", wait_source)
-        self.assertIn("persistent_stagger = 0 if hard_deadline", wait_source)
+        self.assertNotIn("persistent_stagger_seconds", wait_source)
         self.assertNotIn("in reason.lower()", wait_source)
         self.assertIn("hard_deadline=hard_deadline", status_source)
         self.assertIn('"rolls replenishment", True, {"rolls"}', status_source)
@@ -778,8 +778,23 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, ast.AsyncFunctionDef)
         }
         mk_source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
-        self.assertIn('await send_roll_command(channel, "mk")', mk_source)
+        self.assertIn('channel, "mk", pending_operation=operation', mk_source)
         self.assertNotIn('guarded_send(channel, f"{client.mudae_prefix}mk")', mk_source)
+        self.assertNotIn("channel.history", mk_source)
+        self.assertIn("operation.future", mk_source)
+
+    def test_on_message_routes_pending_mk_before_generic_owner_detection(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        source = ast.get_source_segment(self.source, functions["on_message"])
+        route = "route_pending_mk_response"
+        self.assertIn(route, source)
+        self.assertLess(source.index(route), source.index("detect_roll_origin"))
+        self.assertIn("if await client.roll_command_correlation", source)
+        self.assertIn("return", source[source.index(route):source.index("detect_roll_origin")])
 
     def test_cross_account_farm_release_is_independently_optional(self):
         functions = {
@@ -879,9 +894,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.assertEqual(len(lock_blocks), 1, function_name)
             block_source = ast.get_source_segment(self.source, lock_blocks[0])
             ordered_actions = (
+                "client.kakera_interaction_ledger.is_claimed(interaction_key)",
                 "current_pow = get_current_dk_power()",
                 "threshold = first_configured",
-                "power_token = reserve_kakera_power_click",
                 "await click_kakera_with_confirmation(",
             )
             positions = [block_source.index(action) for action in ordered_actions]
@@ -913,7 +928,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.loop.call_later(8.0, reconcile)", reconcile_source)
         self.assertNotIn("request_status_refresh", reconcile_source)
         self.assertIn("schedule_external_kakera_power_reconcile()", reserve_source)
-        self.assertIn("reserve_kakera_power_click(name, cost)", claim_source)
+        click_source = ast.get_source_segment(
+            self.source,
+            functions["click_kakera_with_confirmation"],
+        )
+        self.assertIn("reserve_kakera_power_click(emoji_name, power_cost)", click_source)
         self.assertIn("parse_kakera_result(", message_source)
         self.assertIn("confirm_kakera_power_click(kakera_result.emoji_name)", message_source)
         self.assertIn("Estimated Pw", claim_source)
@@ -975,6 +994,10 @@ class RuntimeSourceContractTests(unittest.TestCase):
         status_source = ast.get_source_segment(self.source, functions["check_status"])
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
         roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        click_source = ast.get_source_segment(
+            self.source,
+            functions["click_kakera_with_confirmation"],
+        )
 
         self.assertIn("client.kakera_power_ledger = KakeraPowerLedger()", run_source)
         self.assertIn("client.dk_power_revision = 0", run_source)
@@ -996,12 +1019,13 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertIn("and power_snapshot_is_authoritative", status_source)
         for action_source in (claim_source, roll_source):
-            self.assertIn("reserve_kakera_power_click(name, cost)", action_source)
-            self.assertIn("cancel_kakera_power_click(power_token)", action_source)
+            self.assertIn("power_cost=cost", action_source)
             self.assertNotIn(
                 "client.current_dk_power = max(0, get_current_dk_power() - cost)",
                 action_source,
             )
+        self.assertIn("reserve_kakera_power_click(emoji_name, power_cost)", click_source)
+        self.assertIn("cancel_kakera_power_click(power_token)", click_source)
 
     def test_rolls_and_rt_wait_for_mudae_reaction_ack(self):
         functions = {
@@ -1692,6 +1716,114 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
         self.assertIn("reconcile_roll_reset_deadline(", status_source)
         self.assertIn("reconcile_roll_reset_deadline(", rolls_source)
+
+    def test_kakera_button_ledger_replaces_whole_message_success_guard(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        click_source = ast.get_source_segment(self.source, functions["click_kakera_with_confirmation"])
+        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("client.kakera_interaction_ledger = KakeraInteractionLedger()", run_source)
+        self.assertNotIn("kakera_reacted_messages", run_source)
+        self.assertIn("client.kakera_interaction_ledger.begin(interaction_key)", click_source)
+        self.assertIn('state="confirmed"', click_source)
+        self.assertIn('state="sent-ambiguous"', click_source)
+        self.assertIn("client.kakera_interaction_ledger.release(interaction_key)", click_source)
+        self.assertIn("power_cost=cost", claim_source)
+        self.assertIn("clickable_by_identity.setdefault(identity", roll_source)
+        self.assertLess(
+            roll_source.index("clickable_buttons = list(clickable_by_identity.values())"),
+            roll_source.index("clickable_buttons.sort("),
+        )
+
+    def test_deferred_kakera_queue_is_deduplicated_by_message_and_button(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        queue_source = ast.get_source_segment(self.source, functions["queue_collected_kakera_roll"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn('getattr(item, "id", None) == message_id', queue_source)
+        self.assertEqual(message_source.count("queue_collected_kakera_roll(message)"), 2)
+        self.assertIn("unique_messages_by_id(client.collected_kakera_rolls)", roll_source)
+        self.assertIn("client.kakera_interaction_ledger.is_claimed(identity)", roll_source)
+
+    def test_mk_context_is_correlated_before_generic_character_paths(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        process_source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
+        send_source = ast.get_source_segment(self.source, functions["send_roll_command"])
+
+        self.assertIn("route_pending_mk_response(", message_source)
+        self.assertIn("is_mk_roll=is_mk_roll", message_source)
+        self.assertIn("remember_classified_mk_roll(message.id)", message_source)
+        self.assertLess(
+            message_source.index("route_pending_mk_response("),
+            message_source.index("schedule_farm_release_after_other_claim(message)"),
+        )
+        self.assertIn("Roll context: mk-self", message_source)
+        self.assertIn('roll_context = "normal-self" if is_self_roll else "external"', message_source)
+        self.assertNotIn("channel.history", process_source)
+        self.assertNotIn("active_delay(3)", process_source)
+        self.assertIn("pending_operation=operation", process_source)
+        self.assertIn('"mode": "slash"', self.source)
+        self.assertIn('"mode": "text"', send_source)
+
+    def test_pending_mk_lifecycle_is_cleaned_on_runtime_interruptions(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        ready_source = ast.get_source_segment(self.source, functions["on_ready"])
+        disconnect_source = ast.get_source_segment(self.source, functions["on_disconnect"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        process_source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
+
+        self.assertIn('clear_pending_mk_roll(reason="discord-reconnect")', ready_source)
+        self.assertIn('clear_pending_mk_roll(reason="discord-disconnect")', disconnect_source)
+        self.assertIn('clear_pending_mk_roll(reason="mudae-maintenance")', message_source)
+        self.assertIn("finally:", process_source)
+        self.assertIn("clear_pending_mk_roll(operation", process_source)
+
+    def test_roll_timing_variation_has_a_separate_stable_action_phase(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        action_source = ast.get_source_segment(self.source, functions["wait_for_normal_roll_action"])
+        status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        wait_source = ast.get_source_segment(self.source, functions["humanized_wait_and_proceed"])
+
+        self.assertIn("client.roll_action_timing.schedule(", action_source)
+        self.assertIn("roll_replenishment_cycle_key", action_source)
+        self.assertIn("persistent_stagger_seconds=client.persistent_stagger_seconds", action_source)
+        self.assertIn("Timing Variation: delaying roll action", action_source)
+        self.assertIn("Smart Timing owns the exact roll-action deadline", action_source)
+        self.assertIn("normal_roll_count <= 0 or scheduled_trigger", action_source)
+        self.assertIn("latest_action_at_utc=latest_action_at", action_source)
+        self.assertIn("apply_normal_action_timing=True", status_source)
+        self.assertIn("wait_for_normal_roll_action(", roll_source)
+        self.assertLess(
+            roll_source.index("await process_mk_rolls("),
+            roll_source.index("wait_for_normal_roll_action("),
+        )
+        self.assertIn("humanization_enabled and not hard_deadline", wait_source)
+        self.assertNotIn("persistent_stagger_seconds", wait_source)
 
 
 if __name__ == "__main__":

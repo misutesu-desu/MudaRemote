@@ -94,9 +94,9 @@ try:
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
-        has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, list_includes_purple,
-        KakeraPowerLedger, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key,
-        should_refill_kakera_power, sphere_target_matches,
+        has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
+        KakeraInteractionLedger, KakeraPowerLedger, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -125,9 +125,9 @@ except (ModuleNotFoundError, ImportError) as core_error:
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
-        has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, list_includes_purple,
-        KakeraPowerLedger, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key,
-        should_refill_kakera_power, sphere_target_matches,
+        has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
+        KakeraInteractionLedger, KakeraPowerLedger, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -145,7 +145,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.13"
+CURRENT_VERSION = "4.9.0-beta.14"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -649,33 +649,56 @@ KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP
 CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'sp', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
-async def detect_roll_owner(client, message) -> tuple:
-    """
-    Detects the owner of a roll message.
-    Returns a tuple of (user_id, username_lowercase).
-    """
+async def detect_roll_origin(client, message) -> tuple:
+    """Return owner plus the exact roll command that produced a character."""
     # 1. If it was rolled via a Slash Command (Interaction)
     interaction = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
     user = getattr(interaction, "user", None)
     if user is not None:
-        return user.id, str(user.name).casefold()
+        return (
+            user.id,
+            str(user.name).casefold(),
+            interaction_command_name(interaction),
+            None,
+            "slash",
+        )
 
-    # 2. Fallback for text commands: scan channel history right before this message
-    # We look for: $w, $h, $m, $wx, $mx, $hx, $wa, $ha, $ma, $mg, $hg, $wg
-    commands = {"w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma", "mg", "hg", "wg", str(getattr(client, "roll_command", "") or "").strip().lower()}
+    # 2. Text responses do not carry interaction metadata. Prefer the bounded
+    # command ledger populated directly by sends and gateway-observed commands.
+    tracker = getattr(client, "roll_command_correlation", None)
+    if tracker is not None:
+        origin = tracker.latest_text_origin(
+            channel_id=message.channel.id,
+            message_id=getattr(message, "id", None),
+            created_at_utc=getattr(message, "created_at", None),
+            max_age_seconds=15.0,
+        )
+        if origin is not None:
+            tracker.consume_text_origin(origin, getattr(message, "id", None))
+            return (
+                origin.owner_id,
+                origin.owner_name,
+                origin.command_name,
+                origin.message_id,
+                "text",
+            )
+
+    # 3. History is only a best-effort fallback for generic/manual ownership.
+    commands = {"w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma", "mg", "hg", "wg", "mk", str(getattr(client, "roll_command", "") or "").strip().lower()}
     commands.discard("")
-    pattern = re.compile(r"^\s*" + re.escape(client.mudae_prefix) + r"(?:" + "|".join(map(re.escape, sorted(commands, key=len, reverse=True))) + r")\s*$", re.IGNORECASE)
+    pattern = re.compile(r"^\s*" + re.escape(client.mudae_prefix) + r"(" + "|".join(map(re.escape, sorted(commands, key=len, reverse=True))) + r")\s*$", re.IGNORECASE)
 
     try:
-        async for msg in message.channel.history(limit=8, before=message):
+        async for msg in message.channel.history(limit=12, before=message):
             if message.created_at and msg.created_at and (message.created_at - msg.created_at).total_seconds() > 10:
                 break
-            if pattern.fullmatch((msg.content or "").strip()):
-                return msg.author.id, msg.author.name.casefold()
+            match = pattern.fullmatch((msg.content or "").strip())
+            if match:
+                return msg.author.id, msg.author.name.casefold(), match.group(1).casefold(), msg.id, "text"
     except Exception:
         pass
 
-    # 3. Last fallback: Check embed footer for Mudae ownership text if present
+    # 4. Last fallback: Check embed footer for Mudae ownership text if present
     owner_username = None
     if message.embeds:
         embed = message.embeds[0]
@@ -684,7 +707,13 @@ async def detect_roll_owner(client, message) -> tuple:
             if m:
                 owner_username = m.group(1).strip().casefold()
 
-    return None, owner_username
+    return None, owner_username, None, None, None
+
+
+async def detect_roll_owner(client, message) -> tuple:
+    """Backward-compatible owner-only view of ``detect_roll_origin``."""
+    owner_id, owner_name, _, _, _ = await detect_roll_origin(client, message)
+    return owner_id, owner_name
 
 def check_is_green(b):
     s = getattr(b, 'style', None)
@@ -969,6 +998,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._sphere_board_update_events = {}
     client._kakera_power_reconcile_handle = None
     client.kakera_power_ledger = KakeraPowerLedger()
+    client.kakera_interaction_ledger = KakeraInteractionLedger()
     client._mudae_command_ack_waiters = {}
     client._recent_mudae_command_acks = {}
     client._rt_command_in_flight = None
@@ -981,6 +1011,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._rolls_ack_retry_after = 0.0
     client._confirmed_kakera_c_bonus_until = 0.0
     client.collected_kakera_rolls = []
+    client._pending_mk_roll = None
+    client._mk_roll_generation = 0
+    client._classified_mk_roll_messages = {}
+    client.roll_command_correlation = RollCommandCorrelation()
+    client.roll_action_timing = RollActionTiming()
 
     client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
     client.snipe_chat_messages = snipe_chat_messages_preset or ["omg", "ezz"]
@@ -1025,7 +1060,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._us_retry_after = 0.0
     client.us_failed_this_cycle = False
     client.dk_consumption = 35
-    client.kakera_reacted_messages = set()
     client._kakera_result_waiters = {}
     client.processed_claim_messages = set()
     client._rt_failed_message_ids = set()
@@ -1784,82 +1818,113 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         position,
         emoji_name,
         character_name,
+        power_cost=0,
     ):
         """Retry an enabled Kakera button only while this account has no result."""
+        interaction_key = kakera_interaction_key(msg.id, position, emoji_name)
+        if not client.kakera_interaction_ledger.begin(interaction_key):
+            BotLogger.log(
+                f"Kakera duplicate skipped: message={getattr(msg, 'id', None)} "
+                f"position={position} emoji={emoji_name}.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
+            return False
+
+        terminal = False
+        power_token = reserve_kakera_power_click(emoji_name, power_cost) if power_cost > 0 else None
         is_purple = str(emoji_name or "").rstrip("2").casefold() == "kakerap"
         attempt_limit = 3 if is_purple else 2
         label = "Purple Kakera" if is_purple else str(emoji_name or "Kakera")
         current_button = button
-        for attempt in range(attempt_limit):
-            waiter_key, waiter = register_kakera_result_waiter(emoji_name)
-            interaction_ack_missing = False
-            try:
+        try:
+            for attempt in range(attempt_limit):
+                waiter_key, waiter = register_kakera_result_waiter(emoji_name)
+                interaction_ack_missing = False
                 try:
-                    if not await guarded_click(current_button):
-                        return False
-                except Exception as error:
-                    if not is_ambiguous_component_interaction_error(error):
-                        raise
-                    # discord.py-self documents this timeout as ambiguous: the
-                    # interaction request was sent and may already have worked.
-                    # Never double-click it blindly. Wait for Mudae's account-
-                    # specific result and reconcile power with a fresh $tu if
-                    # the gateway acknowledgement was the only missing event.
-                    if _mobile_runtime_stop_event.is_set():
-                        return False
-                    interaction_ack_missing = True
-                try:
-                    amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
-                    BotLogger.log(
-                        f"{label} confirmed for {character_name} (+{amount}).",
-                        preset_name,
-                        "KAKERA",
-                    )
-                    return True
-                except asyncio.TimeoutError:
-                    if interaction_ack_missing:
-                        request_status_refresh(
-                            {"power"},
-                            reason="kakera-interaction-ambiguous",
-                            urgent=True,
+                    try:
+                        if not await guarded_click(current_button):
+                            return False
+                    except Exception as error:
+                        if not is_ambiguous_component_interaction_error(error):
+                            raise
+                        # discord.py-self documents this timeout as ambiguous: the
+                        # interaction request was sent and may already have worked.
+                        # Never double-click it blindly. Wait for Mudae's account-
+                        # specific result and reconcile power with a fresh $tu if
+                        # the gateway acknowledgement was the only missing event.
+                        if _mobile_runtime_stop_event.is_set():
+                            return False
+                        interaction_ack_missing = True
+                    try:
+                        amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
+                        client.kakera_interaction_ledger.mark_terminal(
+                            interaction_key,
+                            state="confirmed",
+                            custom_id=custom_id,
                         )
+                        terminal = True
                         BotLogger.log(
-                            f"{label} interaction was sent for {character_name}, but Discord "
-                            "did not return an acknowledgement. Power will be verified with $tu.",
+                            f"{label} confirmed for {character_name} (+{amount}).",
                             preset_name,
-                            "WARN",
+                            "KAKERA",
                         )
                         return True
-            finally:
-                discard_kakera_result_waiter(waiter_key, waiter)
+                    except asyncio.TimeoutError:
+                        if interaction_ack_missing:
+                            client.kakera_interaction_ledger.mark_terminal(
+                                interaction_key,
+                                state="sent-ambiguous",
+                                custom_id=custom_id,
+                            )
+                            terminal = True
+                            request_status_refresh(
+                                {"power"},
+                                reason="kakera-interaction-ambiguous",
+                                urgent=True,
+                            )
+                            BotLogger.log(
+                                f"{label} interaction was sent for {character_name}, but Discord "
+                                "did not return an acknowledgement. Power will be verified with $tu.",
+                                preset_name,
+                                "WARN",
+                            )
+                            return True
+                finally:
+                    discard_kakera_result_waiter(waiter_key, waiter)
 
-            if attempt >= attempt_limit - 1 or not await active_delay(0.35):
-                break
-            try:
-                msg = await channel.fetch_message(msg.id)
-                current_button = find_refreshed_component_button(
-                    msg.components,
-                    custom_id=custom_id,
-                    position=position,
-                    emoji_name=emoji_name,
+                if attempt >= attempt_limit - 1 or not await active_delay(0.35):
+                    break
+                try:
+                    msg = await channel.fetch_message(msg.id)
+                    current_button = find_refreshed_component_button(
+                        msg.components,
+                        custom_id=custom_id,
+                        position=position,
+                        emoji_name=emoji_name,
+                    )
+                except Exception:
+                    current_button = None
+                if current_button is None or getattr(current_button, "disabled", False):
+                    break
+                BotLogger.log(
+                    f"{label} was not confirmed for {character_name}; retrying "
+                    f"({attempt + 2}/{attempt_limit}).",
+                    preset_name,
+                    "WARN",
                 )
-            except Exception:
-                current_button = None
-            if current_button is None or getattr(current_button, "disabled", False):
-                break
+
             BotLogger.log(
-                f"{label} was not confirmed for {character_name}; retrying "
-                f"({attempt + 2}/{attempt_limit}).",
+                f"{label} was not confirmed for {character_name} after {attempt_limit} attempts.",
                 preset_name,
                 "WARN",
             )
-
-        BotLogger.log(
-            f"{label} was not confirmed for {character_name} after {attempt_limit} attempts.",
-            preset_name,
-            "WARN",
-        )
-        return False
+            return False
+        finally:
+            if not terminal:
+                cancel_kakera_power_click(power_token)
+                client.kakera_interaction_ledger.release(interaction_key)
 
     async def guarded_reaction(message, emoji):
         if client.is_paused or is_maintenance_active():
@@ -2419,7 +2484,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not p.read_messages: return False, "Missing 'View Channel'"
         return True, "OK"
 
-    async def _trigger_mudae_slash(channel, command_text):
+    async def _trigger_mudae_slash(channel, command_text, on_prepared=None, on_sent=None):
         cmd_display = f"/{command_text.strip().lstrip('/')}"
         if client.is_paused or is_maintenance_active(): return False
         if not client.use_slash_rolls: return False
@@ -2477,6 +2542,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # Discord may successfully accept an interaction while returning
                 # an empty payload. The command was sent as long as this request
                 # completed without raising; do not treat that payload as False.
+                if on_prepared is not None:
+                    on_prepared({
+                        "mode": "slash",
+                        "command_name": base_name,
+                        "nonce": nonce_val,
+                        "sent_at_utc": datetime.datetime.now(datetime.timezone.utc),
+                    })
                 await client.http.request(Route("POST", "/interactions"), json=payload)
                 return True
 
@@ -2484,6 +2556,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 post_interaction
             ):
                 return False
+            if on_sent is not None:
+                on_sent({
+                    "mode": "slash",
+                    "nonce": nonce_val,
+                    "sent_at_utc": datetime.datetime.now(datetime.timezone.utc),
+                })
             client.slash_fail_streak = 0
             client.slash_rate_limited_until = 0.0
             return True
@@ -2504,17 +2582,73 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             BotLogger.log(f"Slash: {client.slash_fail_streak} failures. Switching to text commands ({client.mudae_prefix}).", preset_name, "WARN")
         return False
 
-    async def send_roll_command(channel, command_name):
+    async def send_roll_command(channel, command_name, pending_operation=None, on_sent=None):
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         cmd = (command_name or "").strip().lstrip('/')
         if not cmd or client.is_paused or is_maintenance_active(): return False
+        owner_id = client.user.id
+        owner_name = getattr(client.user, "name", "")
+        slash_token = None
+
+        def prearm_slash(receipt):
+            nonlocal slash_token
+            slash_token = client.roll_command_correlation.prearm(
+                channel_id=channel.id,
+                owner_id=owner_id,
+                owner_name=owner_name,
+                command_name=receipt.get("command_name") or cmd,
+                mode="slash",
+                operation=pending_operation,
+                registered_at_utc=receipt.get("sent_at_utc"),
+            )
+
+        def finalize_slash(receipt):
+            client.roll_command_correlation.finalize(
+                slash_token, receipt, operation=pending_operation
+            )
+            if on_sent is not None:
+                on_sent(receipt)
+
         if client.use_slash_rolls and not client.slash_fallback_active:
             override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
-            if await _trigger_mudae_slash(channel, f"/{override}"):
+            if await _trigger_mudae_slash(
+                channel,
+                f"/{override}",
+                on_prepared=prearm_slash,
+                on_sent=finalize_slash,
+            ):
                 return True
+            if slash_token is not None:
+                client.roll_command_correlation.cancel(
+                    slash_token, operation=pending_operation
+                )
             # Do not return here if fallback is not yet active. Let it fall through to text commands.
-        return await guarded_send(channel, f"{client.mudae_prefix}{cmd}")
+        text_token = client.roll_command_correlation.prearm(
+            channel_id=channel.id,
+            owner_id=owner_id,
+            owner_name=owner_name,
+            command_name=cmd,
+            mode="text",
+            operation=pending_operation,
+        )
+        sent_message = await guarded_send(channel, f"{client.mudae_prefix}{cmd}")
+        if sent_message:
+            receipt = {
+                "mode": "text",
+                "message_id": getattr(sent_message, "id", None),
+                "sent_at_utc": getattr(sent_message, "created_at", None) or datetime.datetime.now(datetime.timezone.utc),
+            }
+            client.roll_command_correlation.finalize(
+                text_token, receipt, operation=pending_operation
+            )
+            if on_sent is not None:
+                on_sent(receipt)
+        else:
+            client.roll_command_correlation.cancel(
+                text_token, operation=pending_operation
+            )
+        return sent_message
 
     async def wait_for_tu_inactivity(channel):
         """Wait until both the configured active period and channel quiet window allow $tu."""
@@ -2684,6 +2818,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if ws and getattr(ws, "session_id", None): client.mudae_session_id = ws.session_id
 
         if client._has_initialized:
+            clear_pending_mk_roll(reason="discord-reconnect")
             BotLogger.log(f"Reconnected: {client.user}. Checking health...", preset_name, "INFO")
             # A resume may happen while the old loop is waiting for a reset.
             # Do not let that pre-disconnect monotonic suppression postpone the
@@ -2784,6 +2919,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if client.scheduled_roll_times: client.loop.create_task(scheduled_roll_task(channel))
         else:
             client._main_loop_task = client.loop.create_task(snipe_only_status_loop(client, channel))
+
+    @client.event
+    async def on_disconnect():
+        clear_pending_mk_roll(reason="discord-disconnect")
 
     async def health_monitor_task():
         unhealthy = 0
@@ -3544,7 +3683,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
                                           tu_content, (client.current_min_kakera_for_roll_claim == 0),
                                           (client.key_mode and not client.rt_available and not client.claim_right_available),
-                                          current_cycle_id)
+                                          current_cycle_id, scheduled_trigger=scheduled_trigger)
             elif client.rolling_enabled and proceed_to_rolls:
                 sleep_choices = []
                 is_timing_waiting = bool(
@@ -3603,8 +3742,96 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             request_status_refresh({"rolls"}, reason="auto-us-sent", urgent=True)
             return True
 
+    async def wait_for_normal_roll_action(client, channel, normal_roll_count, *, scheduled_trigger=False):
+        """Apply one stable post-status action deadline to ordinary normal rolls."""
+        if normal_roll_count <= 0 or scheduled_trigger:
+            return True
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        reset_soon = bool(
+            client.next_claim_reset_at_utc
+            and 0 < (client.next_claim_reset_at_utc - now_utc).total_seconds() <= 3600
+        )
+        if client.time_rolls_to_claim_reset and not client.claim_right_available and reset_soon:
+            BotLogger.log(
+                "Timing Variation skipped: Smart Timing owns the exact roll-action deadline.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
+            return True
+
+        cycle_key = roll_replenishment_cycle_key(client.roll_reset_at_utc)
+        if cycle_key is None:
+            return True
+
+        per_roll_seconds = max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed
+        estimated_batch_seconds = max(0.0, normal_roll_count * (per_roll_seconds + 0.25)) + 5.0
+        latest_action_at = (
+            client.roll_reset_at_utc - datetime.timedelta(seconds=estimated_batch_seconds)
+            if client.roll_reset_at_utc is not None
+            else None
+        )
+        action_deadline = client.roll_action_timing.schedule(
+            cycle_key=cycle_key,
+            now_utc=now_utc,
+            latest_action_at_utc=latest_action_at,
+            humanization_enabled=client.humanization_enabled,
+            window_minutes=client.humanization_window_minutes,
+            persistent_stagger_seconds=client.persistent_stagger_seconds,
+        )
+        remaining = max(0.0, (action_deadline - now_utc).total_seconds())
+        if remaining > 0.05:
+            if client.roll_action_timing.random_delay_seconds > 0:
+                BotLogger.log(
+                    f"Timing Variation: delaying roll action by {remaining/60:.1f}m.",
+                    preset_name,
+                    "RESET",
+                )
+            else:
+                BotLogger.log(
+                    f"Automated staggering: delaying roll action by {remaining:.1f}s.",
+                    preset_name,
+                    "RESET",
+                )
+            if not await active_delay(remaining):
+                return False
+
+        # Patience belongs to the action phase too. It may wait for channel
+        # quiet, but never beyond the latest safe start for this roll batch.
+        if client.humanization_enabled and client.humanization_inactivity_seconds > 0:
+            while not client.is_paused and not is_maintenance_active():
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                if latest_action_at is not None and now_utc >= latest_action_at:
+                    break
+                last_message = None
+                try:
+                    async for recent in channel.history(limit=1):
+                        last_message = recent
+                except Exception:
+                    break
+                if last_message is None or getattr(last_message, "created_at", None) is None:
+                    break
+                quiet_for = (now_utc - last_message.created_at).total_seconds()
+                quiet_needed = client.humanization_inactivity_seconds - quiet_for
+                if quiet_needed <= 0:
+                    break
+                if latest_action_at is not None:
+                    safe_remaining = max(0.0, (latest_action_at - now_utc).total_seconds())
+                    quiet_needed = min(quiet_needed + 0.05, safe_remaining)
+                else:
+                    quiet_needed += 0.05
+                if quiet_needed <= 0 or not await active_delay(quiet_needed):
+                    return False
+
+        if client.is_paused or is_maintenance_active():
+            return False
+        client.roll_action_timing.mark_completed(cycle_key)
+        return True
+
     async def check_rolls_left_tu(client, channel, mudae_prefix, log_function, preset_name,
-                                  tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id):
+                                  tu_message_content_for_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id,
+                                  scheduled_trigger=False):
         content_lower = tu_message_content_for_rolls.lower()
         rolls_left = us_rolls_left = reset_time_r = 0
         now_utc = datetime.datetime.now(timezone.utc)
@@ -3758,10 +3985,90 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1], hard_deadline=sleep_candidates[0][2], boundary_fields=sleep_candidates[0][3])
             else:
                 BotLogger.log(f"Rolls: {total_rolls}" + (f" (+{us_rolls_left} $us)" if us_rolls_left > 0 else "") + f". Reset: {reset_time_r}m", preset_name, "INFO")
-                await start_roll_commands(client, channel, total_rolls, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id)
+                await start_roll_commands(
+                    client,
+                    channel,
+                    total_rolls,
+                    ignore_limit_for_post_roll,
+                    key_mode_only_kakera_for_post_roll,
+                    current_cycle_id,
+                    apply_normal_action_timing=True,
+                    scheduled_trigger=scheduled_trigger,
+                    normal_roll_count=rolls_left,
+                )
         else:
             BotLogger.log("Could not parse roll count.", preset_name, "ERROR")
             await asyncio.sleep(30)
+
+    def clear_pending_mk_roll(operation=None, reason=None):
+        pending = getattr(client, "_pending_mk_roll", None)
+        if pending is None or (operation is not None and pending is not operation):
+            return False
+        client._pending_mk_roll = None
+        pending.mark_send_failed()
+        future = getattr(pending, "future", None)
+        if future is not None and not future.done():
+            future.set_result(None)
+        if reason:
+            BotLogger.log(f"Cleared pending $mk correlation ({reason}).", preset_name, "DEBUG", client)
+        return True
+
+    def begin_pending_mk_roll(channel):
+        clear_pending_mk_roll(reason="superseded")
+        client._mk_roll_generation += 1
+        operation = PendingMkRollOperation(
+            generation=client._mk_roll_generation,
+            channel_id=channel.id,
+            expected_user_id=client.user.id,
+            registered_at_utc=datetime.datetime.now(datetime.timezone.utc),
+            future=client.loop.create_future(),
+        )
+        client._pending_mk_roll = operation
+        return operation
+
+    def remember_classified_mk_roll(message_id):
+        if message_id is None:
+            return
+        client._classified_mk_roll_messages[message_id] = time.monotonic()
+        while len(client._classified_mk_roll_messages) > 500:
+            client._classified_mk_roll_messages.pop(next(iter(client._classified_mk_roll_messages)))
+
+    def observe_roll_command_message(message):
+        """Record exact text roll commands before any author/channel filtering."""
+        content = getattr(message, "content", None)
+        author = getattr(message, "author", None)
+        channel = getattr(message, "channel", None)
+        if not content or author is None or channel is None:
+            return None
+        observed_channels = {
+            client.target_channel_id,
+            *getattr(client, "snipe_channels", []),
+            *getattr(client, "kakera_snipe_channels", []),
+        }
+        if channel.id not in observed_channels:
+            return None
+        commands = {
+            "w", "h", "m", "wx", "mx", "hx", "wa", "ha", "ma",
+            "mg", "hg", "wg", "mk",
+            str(getattr(client, "roll_command", "") or "").strip().lower(),
+        }
+        commands.discard("")
+        command_name = next((
+            command for command in commands
+            if normalized_mudae_command_matches(
+                content, client.mudae_prefix, command
+            )
+        ), None)
+        if command_name is None:
+            return None
+        return client.roll_command_correlation.observe_text_command(
+            channel_id=channel.id,
+            owner_id=author.id,
+            owner_name=getattr(author, "name", ""),
+            command_name=command_name,
+            message_id=getattr(message, "id", None),
+            sent_at_utc=getattr(message, "created_at", None),
+        )
 
     async def process_mk_rolls(client, channel, current_cycle_id):
         if channel.id != client.target_channel_id:
@@ -3807,16 +4114,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     break
                 command_label = "/mk" if client.use_slash_rolls and not client.slash_fallback_active else f"{client.mudae_prefix}mk"
                 BotLogger.log(f"Using {command_label} ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", preset_name, "KAKERA")
-                if not await send_roll_command(channel, "mk"):
-                    break
-                client.mk_rolls_left -= 1
-                used += 1
-                if not await active_delay(3):
-                    break
-                async for msg in channel.history(limit=5, oldest_first=False):
-                    if msg.author.id == TARGET_BOT_ID and msg.embeds and is_character_embed(msg.embeds[0]) and msg.components:
-                        await claim_character(client, channel, msg, is_kakera=True, is_mk_roll=True)
+                operation = begin_pending_mk_roll(channel)
+                response_received = False
+                try:
+                    if not await send_roll_command(
+                        channel, "mk", pending_operation=operation
+                    ):
                         break
+                    client.mk_rolls_left -= 1
+                    used += 1
+                    try:
+                        response = await asyncio.wait_for(asyncio.shield(operation.future), timeout=45.0)
+                        response_received = response is not None
+                    except asyncio.TimeoutError:
+                        BotLogger.log(
+                            "$mk response correlation timed out; no channel-history fallback will be used.",
+                            preset_name,
+                            "WARN",
+                        )
+                        request_status_refresh({"rolls", "power"}, reason="mk-response-timeout", urgent=True)
+                    except asyncio.CancelledError:
+                        raise
+                finally:
+                    clear_pending_mk_roll(operation, reason="completed" if response_received else "interrupted-or-timeout")
+                if not response_received:
+                    break
                 if not await active_delay(1):
                     break
             if used > 0: BotLogger.log(f"Used {used} MK rolls.", preset_name, "KAKERA")
@@ -3889,7 +4211,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return await active_delay(1.0 + random.uniform(0.1, 0.4))
             return False
 
-    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id, is_us_pull: bool = False):
+    async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, current_cycle_id,
+                                  is_us_pull: bool = False, apply_normal_action_timing: bool = False,
+                                  scheduled_trigger: bool = False, normal_roll_count=None):
         if client.is_paused or is_maintenance_active(): return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
@@ -3910,6 +4234,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         if client.is_paused or is_maintenance_active() or client.interrupt_rolling: return
         await process_mk_rolls(client, channel, current_cycle_id)
+        if apply_normal_action_timing and not await wait_for_normal_roll_action(
+            client,
+            channel,
+            rolls_left if normal_roll_count is None else normal_roll_count,
+            scheduled_trigger=scheduled_trigger,
+        ):
+            return
 
         reset_soon = False
         if client.next_claim_reset_at_utc:
@@ -4050,8 +4381,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             for s in client.sphere_emojis: prio_map[s] = 999
             prio_map['kakeraP'] = 999
 
-            clickable_buttons = []
-            for msg in client.collected_kakera_rolls:
+            clickable_by_identity = {}
+            for msg in unique_messages_by_id(client.collected_kakera_rolls):
                 if not msg.embeds or not msg.components:
                     continue
                 embed = msg.embeds[0]
@@ -4094,11 +4425,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     is_clickable = True
 
                             if is_clickable:
+                                identity = kakera_interaction_key(msg.id, (row_idx, child_idx), name)
+                                if identity is None or client.kakera_interaction_ledger.is_claimed(identity):
+                                    continue
                                 prio = prio_map.get(name_clean, 0)
                                 if is_sphere or name_clean == 'kakeraP' or check_is_green(btn):
                                     prio = 999
 
-                                clickable_buttons.append({
+                                clickable_by_identity.setdefault(identity, {
                                     'btn': btn,
                                     'custom_id': btn.custom_id,
                                     'pos': (row_idx, child_idx),
@@ -4117,11 +4451,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                         has_perk_eight_discount=has_sp_perk,
                                         is_free=is_free,
                                     ),
-                                    'char_name': (embed.author.name if embed.author else "Unknown").strip()
+                                    'char_name': (embed.author.name if embed.author else "Unknown").strip(),
+                                    'identity': identity,
                                 })
 
             # Keep the user's Kakera priority order globally, then prefer a
             # same-priority Perk 8/Chaos click that can bypass the cooldown.
+            clickable_buttons = list(clickable_by_identity.values())
             clickable_buttons.sort(
                 key=lambda item: queued_kakera_sort_key(
                     item['priority'], item['has_reaction_cooldown_bypass']
@@ -4159,6 +4495,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 async with get_kakera_action_lock():
+                    interaction_key = kakera_interaction_key(msg_id, pos, name)
+                    if client.kakera_interaction_ledger.is_claimed(interaction_key):
+                        continue
                     is_free_purple = name.rstrip('2') == 'kakeraP'
                     if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass and not is_free:
                         BotLogger.log(
@@ -4213,7 +4552,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
                         BotLogger.log(f"Kakera Click: custom_id={getattr(btn, 'custom_id', 'N/A')} | name={name} | session_id={sid}", preset_name, "DEBUG", client)
 
-                    power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                     try:
                         click_ok = await click_kakera_with_confirmation(
                             channel,
@@ -4223,11 +4561,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             position=pos,
                             emoji_name=name,
                             character_name=char_name,
+                            power_cost=cost,
                         )
                         if not click_ok:
-                            cancel_kakera_power_click(power_token)
                             continue
-                        client.kakera_reacted_messages.add(msg_id)
                         estimated_power = get_current_dk_power()
                         power_text = f"{estimated_power}%" if estimated_power is not None else "unknown"
                         BotLogger.log(f"Kakera click sent: {char_name} [{name}] (Estimated Pw: {power_text})", preset_name, "KAKERA")
@@ -4235,10 +4572,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if not await active_delay(0.6):
                             return
                     except discord.HTTPException as e:
-                        cancel_kakera_power_click(power_token)
                         BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                     except Exception as e:
-                        cancel_kakera_power_click(power_token)
                         BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
 
             client.collected_kakera_rolls.clear()
@@ -4924,6 +5259,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             + list(client.mk_kakera_emojis)
         )
 
+    def queue_collected_kakera_roll(message):
+        """Queue one Discord message once while retaining its component grid."""
+        message_id = getattr(message, "id", None)
+        if message_id is None:
+            return False
+        if any(getattr(item, "id", None) == message_id for item in client.collected_kakera_rolls):
+            return False
+        client.collected_kakera_rolls.append(message)
+        return True
+
+    def remember_kakera_snipe_event(message_id):
+        """Bound the coarse event guard; button ownership lives in the ledger."""
+        client.kakera_reaction_sniped_messages.add(message_id)
+        if len(client.kakera_reaction_sniped_messages) > 2000:
+            client.kakera_reaction_sniped_messages.clear()
+            client.kakera_reaction_sniped_messages.add(message_id)
+
     def purple_selected_for_any_context():
         """Whether ordinary purple is selectable in at least one roll context."""
         return any(
@@ -5193,9 +5545,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     )
                     return False
 
-                if msg.id in client.kakera_reacted_messages: return False
-                if len(client.kakera_reacted_messages) > 2000: client.kakera_reacted_messages.clear()
-
                 clicked = False
                 if msg.components:
                     all_btns_tracked = []
@@ -5271,6 +5620,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             is_free=is_free,
                         )
                         async with get_kakera_action_lock():
+                            interaction_key = kakera_interaction_key(msg.id, pos, name)
+                            if client.kakera_interaction_ledger.is_claimed(interaction_key):
+                                continue
                             # Recheck after serializing clicks: another account may
                             # have just received a $ku rejection for this preset.
                             is_free_purple = name_clean == 'kakeraP'
@@ -5329,7 +5681,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
                                 BotLogger.log(f"Kakera Click: custom_id={getattr(btn, 'custom_id', 'N/A')} | name={name} | session_id={sid}", preset_name, "DEBUG", client)
 
-                            power_token = reserve_kakera_power_click(name, cost) if cost > 0 else None
                             try:
                                 click_ok = await click_kakera_with_confirmation(
                                     channel,
@@ -5339,11 +5690,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     position=pos,
                                     emoji_name=name,
                                     character_name=char_name,
+                                    power_cost=cost,
                                 )
                                 if not click_ok:
-                                    cancel_kakera_power_click(power_token)
                                     continue
-                                client.kakera_reacted_messages.add(msg.id)
                                 estimated_power = get_current_dk_power()
                                 power_text = f"{estimated_power}%" if estimated_power is not None else "unknown"
                                 BotLogger.log(f"Kakera click sent: {char_name} [{name}] (Estimated Pw: {power_text})", preset_name, "KAKERA")
@@ -5353,10 +5703,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if not await active_delay(0.6):
                                     return clicked
                             except discord.HTTPException as e:
-                                cancel_kakera_power_click(power_token)
                                 BotLogger.log(f"Kakera click failed (HTTP {getattr(e, 'status', '?')}): {getattr(e, 'text', str(e))[:100]}", preset_name, "ERROR")
                             except Exception as e:
-                                cancel_kakera_power_click(power_token)
                                 BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
                 if (
                     clicked
@@ -5470,8 +5818,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         min_wait = max(0.0, base_reset_minutes * 60)
         if min_wait <= 0: min_wait = max(client.delay_seconds + 60, 240)
         human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not hard_deadline else 0
-        persistent_stagger = 0 if hard_deadline else getattr(client, 'persistent_stagger_seconds', 0)
-        wait_seconds = min_wait + human_jitter + persistent_stagger
+        wait_seconds = min_wait + human_jitter
 
         if hard_deadline:
             BotLogger.log(f"Waiting {wait_seconds/60:.1f}m for hard state deadline ({reason}).", preset_name, "RESET")
@@ -5647,6 +5994,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     @client.event
     async def on_message(message):
         update_dynamic_thresholds()
+        observe_roll_command_message(message)
         observe_manual_rt_command(message)
         observe_shared_tu_resets(message)
         capture_tu_response(message)
@@ -5695,6 +6043,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 except ValueError:
                     pass
             client.maintenance_until = datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=m_mins)
+            clear_pending_mk_roll(reason="mudae-maintenance")
             client.interrupt_rolling = True
             client._roll_interrupt_reason = "maintenance"
             request_status_refresh(reason="mudae-maintenance", urgent=True)
@@ -5724,6 +6073,51 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         break
 
         if is_inactive_hour(): return
+
+        character_roll_origin = None
+        if message.embeds and is_character_embed(message.embeds[0]):
+            if message.id in client._classified_mk_roll_messages:
+                BotLogger.log(
+                    f"Roll context duplicate ignored: mk-self message={message.id}.",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                return
+            pending_mk = getattr(client, "_pending_mk_roll", None)
+            interaction = (
+                getattr(message, "interaction_metadata", None)
+                or getattr(message, "interaction", None)
+            )
+            interaction_user = getattr(interaction, "user", None)
+
+            async def process_correlated_mk(*, is_mk_roll):
+                remember_classified_mk_roll(message.id)
+                BotLogger.log(
+                    f"Roll context: mk-self (generation={pending_mk.generation}, message={message.id}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                await claim_character(
+                    client,
+                    message.channel,
+                    message,
+                    is_kakera=True,
+                    is_mk_roll=is_mk_roll,
+                )
+
+            if await client.roll_command_correlation.route_pending_mk_response(
+                operation=pending_mk,
+                channel_id=message.channel.id,
+                message_id=message.id,
+                created_at_utc=getattr(message, "created_at", None),
+                interaction_owner_id=getattr(interaction_user, "id", None),
+                interaction_command_name=interaction_command_name(interaction),
+                handler=process_correlated_mk,
+            ):
+                return
+            character_roll_origin = await detect_roll_origin(client, message)
 
         schedule_farm_release_after_other_claim(message)
 
@@ -5784,7 +6178,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             is_target = True
                         if not is_target:
                             return
-                    client.kakera_reaction_sniped_messages.add(message.id)
+                    remember_kakera_snipe_event(message.id)
                     if not await active_delay(client.kakera_reaction_snipe_delay_value + random.uniform(0.05, 0.25)): return
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
@@ -5796,12 +6190,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if await claim_character(client, message.channel, message, is_free_claim=True):
                     return
 
-        owner_id, owner_name = await detect_roll_owner(client, message)
+        owner_id, owner_name, origin_command, origin_message_id, origin_mode = character_roll_origin
         self_names = {
             str(getattr(client.user, "name", "") or "").casefold(),
             str(getattr(client.user, "display_name", "") or "").casefold(),
         }
         is_self_roll = owner_id == client.user.id or bool(owner_name and owner_name in self_names)
+        roll_context = "normal-self" if is_self_roll else "external"
+        BotLogger.log(
+            f"Roll context: {roll_context} (command={origin_command or 'unknown'}, message={message.id}).",
+            preset_name,
+            "DEBUG",
+            client,
+        )
         if client.rolling_enabled and client.is_actively_rolling and is_self_roll:
             client._rolls_received += 1
             desc = embed.description or ""
@@ -5884,7 +6285,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             d_min, d_max = client.reactive_kakera_delay_range
                             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                             await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
-                        client.collected_kakera_rolls.append(message)
+                        queue_collected_kakera_roll(message)
             else:
                 refresh_predicted_claim_and_rt()
                 if not client.claim_right_available and not client.rt_available:
@@ -5945,7 +6346,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             d_min, d_max = client.reactive_kakera_delay_range
                             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                             await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
-                        client.collected_kakera_rolls.append(message)
+                        queue_collected_kakera_roll(message)
         else:
             c_name = embed.author.name.lower()
             process = True
@@ -6002,7 +6403,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if not is_target:
                             target_ok = False
                     if target_ok:
-                        client.kakera_reaction_sniped_messages.add(message.id)
+                        remember_kakera_snipe_event(message.id)
                         reaction_delay = 0 if is_manual_self_roll else client.kakera_reaction_snipe_delay_value
                         if reaction_delay > 0 and not await active_delay(reaction_delay): return
                         await claim_character(

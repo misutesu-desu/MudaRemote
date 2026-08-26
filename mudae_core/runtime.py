@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+from dataclasses import dataclass
 import random
 import time
 
@@ -9,6 +10,447 @@ from .status import STATUS_FIELDS, mark_status_dirty
 
 
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
+
+
+def interaction_command_name(interaction):
+    """Extract a normalized slash-command name across discord.py variants."""
+    if interaction is None:
+        return None
+    value = (
+        getattr(interaction, "command_name", None)
+        or getattr(interaction, "name", None)
+    )
+    data = getattr(interaction, "data", None)
+    if value is None and isinstance(data, dict):
+        value = data.get("name")
+    normalized = str(value or "").strip().lstrip("/").casefold()
+    return normalized or None
+
+
+def roll_replenishment_cycle_key(next_reset_at_utc, bucket_seconds=300):
+    """Return a stable key despite Mudae's minute-rounded reset estimates."""
+    if next_reset_at_utc is None:
+        return None
+    seconds = max(1, int(bucket_seconds or 300))
+    try:
+        timestamp = float(next_reset_at_utc.timestamp())
+    except (AttributeError, TypeError, ValueError, OSError):
+        return None
+    return int((timestamp + seconds / 2.0) // seconds)
+
+
+@dataclass
+class RollActionTiming:
+    """Stable, one-draw action deadline for one normal-roll replenishment cycle."""
+
+    cycle_key: object = None
+    deadline_utc: datetime.datetime = None
+    random_delay_seconds: float = 0.0
+    completed: bool = False
+
+    def schedule(
+        self,
+        *,
+        cycle_key,
+        now_utc,
+        latest_action_at_utc=None,
+        humanization_enabled=False,
+        window_minutes=0,
+        persistent_stagger_seconds=0,
+        random_source=None,
+    ):
+        if cycle_key != self.cycle_key:
+            self.cycle_key = cycle_key
+            self.deadline_utc = None
+            self.random_delay_seconds = 0.0
+            self.completed = False
+
+        if self.completed:
+            return now_utc
+        if self.deadline_utc is not None:
+            return self.deadline_utc
+
+        window_seconds = max(0.0, float(window_minutes or 0) * 60.0)
+        random_delay = 0.0
+        if humanization_enabled and window_seconds > 0:
+            draw = random_source or random.uniform
+            random_delay = max(0.0, min(window_seconds, float(draw(0.0, window_seconds))))
+        stagger = max(0.0, float(persistent_stagger_seconds or 0.0))
+        deadline = now_utc + datetime.timedelta(seconds=random_delay + stagger)
+        if latest_action_at_utc is not None:
+            deadline = min(deadline, max(now_utc, latest_action_at_utc))
+
+        self.random_delay_seconds = random_delay
+        self.deadline_utc = deadline
+        return deadline
+
+    def mark_completed(self, cycle_key) -> bool:
+        if cycle_key != self.cycle_key:
+            return False
+        self.completed = True
+        return True
+
+
+@dataclass
+class PendingMkRollOperation:
+    """Ownership record for exactly one automated ``$mk`` response."""
+
+    generation: int
+    channel_id: int
+    expected_user_id: int
+    registered_at_utc: datetime.datetime
+    future: object = None
+    command_name: str = "mk"
+    send_mode: str = None
+    sent_at_utc: datetime.datetime = None
+    source_message_id: int = None
+    slash_nonce: str = None
+    correlation_token: int = None
+    receipt_finalized: bool = False
+    receipt_event: object = None
+    send_failed: bool = False
+    processed_message_id: int = None
+
+    def prearm(
+        self, *, command_name, mode, correlation_token=None, sent_at_utc=None
+    ) -> None:
+        self.command_name = str(command_name or "").strip().lstrip("/").casefold()
+        self.send_mode = str(mode or "").casefold()
+        self.sent_at_utc = sent_at_utc or self.registered_at_utc
+        self.source_message_id = None
+        self.slash_nonce = None
+        self.correlation_token = correlation_token
+        self.receipt_finalized = False
+        self.send_failed = False
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self.receipt_event = None
+        else:
+            self.receipt_event = asyncio.Event()
+
+    def mark_sent(self, receipt: object) -> None:
+        receipt = receipt or {}
+        mode = str(receipt.get("mode") or self.send_mode or "").casefold()
+        if not self.send_mode:
+            self.prearm(command_name=self.command_name, mode=mode)
+        self.send_mode = mode
+        self.sent_at_utc = receipt.get("sent_at_utc") or self.registered_at_utc
+        self.source_message_id = receipt.get("message_id")
+        self.slash_nonce = receipt.get("nonce")
+        self.receipt_finalized = True
+        self.send_failed = False
+        if self.receipt_event is not None:
+            self.receipt_event.set()
+
+    def mark_send_failed(self) -> None:
+        self.send_failed = True
+        if self.receipt_event is not None:
+            self.receipt_event.set()
+
+    def matches(
+        self,
+        *,
+        channel_id,
+        message_id,
+        created_at_utc,
+        owner_id,
+        command_name,
+        source_message_id=None,
+        source_mode=None,
+        timeout_seconds=45.0,
+    ) -> bool:
+        if self.processed_message_id is not None or not self.send_mode or self.send_failed:
+            return False
+        if channel_id != self.channel_id or owner_id != self.expected_user_id:
+            return False
+        if str(command_name or "").strip().lstrip("/").casefold() != "mk":
+            return False
+        if source_mode and str(source_mode).casefold() != self.send_mode.casefold():
+            return False
+        if self.send_mode == "text":
+            if self.source_message_id is None or source_message_id != self.source_message_id:
+                return False
+            if message_id is not None and int(message_id) <= int(self.source_message_id):
+                return False
+        if created_at_utc is not None and self.sent_at_utc is not None:
+            try:
+                elapsed = (created_at_utc - self.sent_at_utc).total_seconds()
+            except (TypeError, ValueError):
+                return False
+            if elapsed < -1.0 or elapsed > max(1.0, float(timeout_seconds or 45.0)):
+                return False
+        return True
+
+
+@dataclass
+class OutgoingRollCommand:
+    """One directly observed or pre-armed roll command from this client."""
+
+    token: int
+    channel_id: int
+    owner_id: int
+    owner_name: str
+    command_name: str
+    mode: str
+    registered_at_utc: datetime.datetime
+    operation_generation: int = None
+    message_id: int = None
+    sent_at_utc: datetime.datetime = None
+    slash_nonce: str = None
+    finalized: bool = False
+    cancelled: bool = False
+    response_message_id: int = None
+
+
+class RollCommandCorrelation:
+    """Bounded source of truth for this client's outgoing roll commands."""
+
+    def __init__(self, max_entries=128, ttl_seconds=90.0):
+        self.max_entries = max(8, int(max_entries or 128))
+        self.ttl_seconds = max(45.0, float(ttl_seconds or 90.0))
+        self._next_token = 0
+        self._entries = []
+
+    def _prune(self, now_utc=None):
+        now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(seconds=self.ttl_seconds)
+        self._entries = [
+            entry for entry in self._entries
+            if not entry.cancelled and entry.registered_at_utc >= cutoff
+        ][-self.max_entries:]
+
+    def prearm(
+        self,
+        *,
+        channel_id,
+        owner_id,
+        owner_name,
+        command_name,
+        mode,
+        operation=None,
+        registered_at_utc=None,
+    ):
+        registered = registered_at_utc or datetime.datetime.now(datetime.timezone.utc)
+        self._prune(registered)
+        if operation is not None and operation.correlation_token is not None:
+            self.cancel(operation.correlation_token, notify_operation=False)
+        self._next_token += 1
+        entry = OutgoingRollCommand(
+            token=self._next_token,
+            channel_id=int(channel_id),
+            owner_id=int(owner_id),
+            owner_name=str(owner_name or "").casefold(),
+            command_name=str(command_name or "").strip().lstrip("/").casefold(),
+            mode=str(mode or "").casefold(),
+            registered_at_utc=registered,
+            operation_generation=getattr(operation, "generation", None),
+        )
+        self._entries.append(entry)
+        if operation is not None:
+            operation.prearm(
+                command_name=entry.command_name,
+                mode=entry.mode,
+                correlation_token=entry.token,
+                sent_at_utc=entry.registered_at_utc,
+            )
+        self._prune(registered)
+        return entry.token
+
+    def _entry(self, token):
+        return next((entry for entry in self._entries if entry.token == token), None)
+
+    def finalize(self, token, receipt, operation=None):
+        entry = self._entry(token)
+        if entry is None or entry.cancelled:
+            return None
+        receipt = receipt or {}
+        entry.message_id = receipt.get("message_id") or entry.message_id
+        entry.sent_at_utc = (
+            receipt.get("sent_at_utc") or entry.sent_at_utc or entry.registered_at_utc
+        )
+        entry.slash_nonce = receipt.get("nonce") or entry.slash_nonce
+        entry.finalized = True
+        if operation is not None and operation.correlation_token == token:
+            operation.mark_sent({
+                "mode": entry.mode,
+                "message_id": entry.message_id,
+                "sent_at_utc": entry.sent_at_utc,
+                "nonce": entry.slash_nonce,
+            })
+        self._prune(entry.sent_at_utc)
+        return entry
+
+    def cancel(self, token, operation=None, notify_operation=True):
+        entry = self._entry(token)
+        if entry is not None:
+            entry.cancelled = True
+        if (
+            notify_operation
+            and operation is not None
+            and operation.correlation_token == token
+        ):
+            operation.mark_send_failed()
+        self._prune()
+
+    def observe_text_command(
+        self,
+        *,
+        channel_id,
+        owner_id,
+        owner_name,
+        command_name,
+        message_id,
+        sent_at_utc,
+    ):
+        """Record a gateway-observed command, reconciling a pre-armed self send."""
+        sent_at = sent_at_utc or datetime.datetime.now(datetime.timezone.utc)
+        self._prune(sent_at)
+        normalized = str(command_name or "").strip().lstrip("/").casefold()
+        for entry in reversed(self._entries):
+            if entry.cancelled or entry.mode != "text":
+                continue
+            if entry.message_id == message_id:
+                return entry
+            if (
+                not entry.finalized
+                and entry.channel_id == int(channel_id)
+                and entry.owner_id == int(owner_id)
+                and entry.command_name == normalized
+            ):
+                return self.finalize(entry.token, {
+                    "mode": "text",
+                    "message_id": message_id,
+                    "sent_at_utc": sent_at,
+                })
+        token = self.prearm(
+            channel_id=channel_id,
+            owner_id=owner_id,
+            owner_name=owner_name,
+            command_name=normalized,
+            mode="text",
+            registered_at_utc=sent_at,
+        )
+        return self.finalize(token, {
+            "mode": "text",
+            "message_id": message_id,
+            "sent_at_utc": sent_at,
+        })
+
+    def latest_text_origin(
+        self, *, channel_id, message_id, created_at_utc, owner_id=None,
+        max_age_seconds=None,
+    ):
+        self._prune(created_at_utc)
+        eligible = []
+        for entry in self._entries:
+            if (
+                entry.cancelled
+                or not entry.finalized
+                or entry.mode != "text"
+                or entry.response_message_id is not None
+            ):
+                continue
+            if entry.channel_id != int(channel_id):
+                continue
+            if owner_id is not None and entry.owner_id != int(owner_id):
+                continue
+            if entry.message_id is not None and message_id is not None:
+                if int(entry.message_id) >= int(message_id):
+                    continue
+            elif created_at_utc is not None and entry.sent_at_utc is not None:
+                elapsed = (created_at_utc - entry.sent_at_utc).total_seconds()
+                if elapsed < -1.0 or elapsed > self.ttl_seconds:
+                    continue
+            if created_at_utc is not None and entry.sent_at_utc is not None:
+                elapsed = (created_at_utc - entry.sent_at_utc).total_seconds()
+                age_limit = self.ttl_seconds if max_age_seconds is None else max_age_seconds
+                if elapsed < -1.0 or elapsed > max(1.0, float(age_limit)):
+                    continue
+            eligible.append(entry)
+        if not eligible:
+            return None
+        return max(
+            eligible,
+            key=lambda entry: (
+                int(entry.message_id or 0),
+                entry.sent_at_utc or entry.registered_at_utc,
+                entry.token,
+            ),
+        )
+
+    def consume_text_origin(self, entry, response_message_id):
+        if entry is not None and entry in self._entries:
+            entry.response_message_id = response_message_id
+
+    async def route_pending_mk_response(
+        self,
+        *,
+        operation,
+        channel_id,
+        message_id,
+        created_at_utc,
+        interaction_owner_id=None,
+        interaction_command_name=None,
+        handler,
+        receipt_timeout_seconds=45.0,
+    ):
+        """Route one response to its automated $mk handler, suppressing duplicates."""
+        if operation is None:
+            return False
+        if operation.processed_message_id is not None:
+            return operation.processed_message_id == message_id
+        if channel_id != operation.channel_id or not operation.send_mode:
+            return False
+
+        if operation.send_mode == "slash":
+            matched = operation.matches(
+                channel_id=channel_id,
+                message_id=message_id,
+                created_at_utc=created_at_utc,
+                owner_id=interaction_owner_id,
+                command_name=interaction_command_name,
+                source_mode="slash",
+            )
+        else:
+            if not operation.receipt_finalized and not operation.send_failed:
+                event = operation.receipt_event
+                if event is None:
+                    return True
+                try:
+                    await asyncio.wait_for(
+                        event.wait(),
+                        timeout=max(0.01, float(receipt_timeout_seconds or 45.0)),
+                    )
+                except asyncio.TimeoutError:
+                    # This response belongs to a known in-flight send candidate.
+                    # Never let it silently fall through to normal-self handling.
+                    return True
+            if operation.send_failed:
+                return False
+            origin = self.latest_text_origin(
+                channel_id=channel_id,
+                message_id=message_id,
+                created_at_utc=created_at_utc,
+                max_age_seconds=receipt_timeout_seconds,
+            )
+            matched = bool(
+                origin
+                and origin.token == operation.correlation_token
+                and origin.command_name == operation.command_name == "mk"
+            )
+
+        if not matched:
+            return False
+        if operation.send_mode == "text":
+            self.consume_text_origin(origin, message_id)
+        operation.processed_message_id = message_id
+        try:
+            await handler(is_mk_roll=True)
+        finally:
+            if operation.future is not None and not operation.future.done():
+                operation.future.set_result(message_id)
+        return True
 
 
 def mudae_command_ack_matches(payload, message_id, target_bot_id) -> bool:
@@ -207,6 +649,13 @@ class CommandPacer:
 
 
 def _wake_runtime_events(client) -> None:
+    if bool(getattr(client, "is_paused", False)):
+        operation = getattr(client, "_pending_mk_roll", None)
+        if operation is not None:
+            client._pending_mk_roll = None
+            future = getattr(operation, "future", None)
+            if future is not None and not future.done():
+                future.set_result(None)
     for name in ("_runtime_state_event", "_immediate_check_event"):
         event = getattr(client, name, None)
         if event is not None:
@@ -225,6 +674,8 @@ def set_client_paused(client, paused: bool) -> None:
         if getattr(client, "pending_claim", None) is not None:
             interrupted_fields.add("claim")
         if bool(getattr(client, "is_actively_rolling", False)):
+            interrupted_fields.add("rolls")
+        if getattr(client, "_pending_mk_roll", None) is not None:
             interrupted_fields.add("rolls")
         tu_future = getattr(client, "_tu_response_future", None)
         if tu_future is not None and not tu_future.done():

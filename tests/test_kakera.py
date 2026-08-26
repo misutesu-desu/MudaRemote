@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from mudae_core.kakera import (
+    KakeraInteractionLedger,
     KakeraPowerLedger,
     calculate_kakera_power_cost,
     find_refreshed_component_button,
@@ -12,6 +13,7 @@ from mudae_core.kakera import (
     has_purple_kakera_button,
     is_character_sphere_emoji,
     kakera_embed_text,
+    kakera_interaction_key,
     list_includes_purple,
     normalize_character_sphere_emoji,
     parse_kakera_result,
@@ -19,10 +21,83 @@ from mudae_core.kakera import (
     queued_kakera_sort_key,
     should_refill_kakera_power,
     sphere_target_matches,
+    unique_messages_by_id,
 )
 
 
 class KakeraPowerTests(unittest.TestCase):
+    def test_terminal_purple_is_not_reowned_by_a_deferred_queue(self):
+        ledger = KakeraInteractionLedger()
+        purple = kakera_interaction_key(100, (0, 0), "kakeraP2")
+
+        self.assertTrue(ledger.begin(purple))
+        ledger.mark_terminal(purple, state="confirmed", custom_id="old")
+
+        self.assertFalse(ledger.begin(kakera_interaction_key(100, (0, 0), "kakeraP")))
+        self.assertEqual(ledger.terminal_state(purple), "confirmed")
+
+    def test_distinct_button_on_same_message_remains_processable(self):
+        ledger = KakeraInteractionLedger()
+        purple = kakera_interaction_key(100, (0, 0), "kakeraP")
+        white = kakera_interaction_key(100, (0, 1), "kakeraW")
+        ledger.begin(purple)
+        ledger.mark_terminal(purple)
+
+        self.assertFalse(ledger.begin(purple))
+        self.assertTrue(ledger.begin(white))
+
+    def test_duplicate_queue_identity_can_only_be_owned_once(self):
+        ledger = KakeraInteractionLedger()
+        duplicate_keys = [kakera_interaction_key(200, (1, 2), "kakeraY")] * 3
+
+        self.assertEqual(sum(ledger.begin(key) for key in duplicate_keys), 1)
+
+    def test_duplicate_collected_roll_messages_keep_only_the_first_instance(self):
+        original = SimpleNamespace(id=200, payload="original")
+        duplicate = SimpleNamespace(id=200, payload="duplicate")
+        independent = SimpleNamespace(id=201, payload="independent")
+
+        self.assertEqual(
+            unique_messages_by_id([original, duplicate, independent]),
+            (original, independent),
+        )
+
+    def test_ambiguous_sent_interaction_is_terminal_for_outer_retries(self):
+        ledger = KakeraInteractionLedger()
+        key = kakera_interaction_key(300, (0, 0), "kakeraL")
+        ledger.begin(key)
+        ledger.mark_terminal(key, state="sent-ambiguous")
+
+        self.assertFalse(ledger.begin(key))
+        self.assertEqual(ledger.terminal_state(key), "sent-ambiguous")
+
+    def test_genuine_failure_releases_identity_for_a_later_attempt(self):
+        ledger = KakeraInteractionLedger()
+        key = kakera_interaction_key(400, (0, 0), "kakeraO")
+
+        self.assertTrue(ledger.begin(key))
+        self.assertTrue(ledger.release(key))
+        self.assertTrue(ledger.begin(key))
+
+    def test_same_emoji_on_two_messages_has_independent_identity(self):
+        ledger = KakeraInteractionLedger()
+        first = kakera_interaction_key(500, (0, 0), "kakeraW")
+        second = kakera_interaction_key(501, (0, 0), "kakeraW")
+        ledger.begin(first)
+        ledger.mark_terminal(first)
+
+        self.assertTrue(ledger.begin(second))
+
+    def test_interaction_ledger_prunes_terminal_entries_to_a_bound(self):
+        ledger = KakeraInteractionLedger(maximum_entries=2)
+        keys = [kakera_interaction_key(value, (0, 0), "kakeraP") for value in range(3)]
+        for key in keys:
+            ledger.begin(key)
+            ledger.mark_terminal(key)
+
+        self.assertEqual(ledger.terminal_count, 2)
+        self.assertFalse(ledger.is_terminal(keys[0]))
+
     def test_paid_click_cost_is_reserved_until_matching_result(self):
         ledger = KakeraPowerLedger()
         token = ledger.reserve("kakeraL2", 40)
@@ -318,6 +393,18 @@ class KakeraPowerTests(unittest.TestCase):
                 normal, chaos, perk_eight, mk,
             ),
             ("kakeraR",),
+        )
+
+    def test_mk_only_white_and_purple_share_the_same_mk_context(self):
+        self.assertIsNone(
+            get_regular_kakera_filter_reason(mk_only=True, is_mk_roll=True)
+        )
+        self.assertEqual(
+            get_kakera_emoji_targets(
+                ["kakeraR"], ["kakeraO"], ["kakeraY"],
+                ["kakeraP", "kakeraW"], is_mk_roll=True,
+            ),
+            ("kakeraP", "kakeraW"),
         )
 
     def test_missing_mk_selection_inherits_regular_selection(self):
