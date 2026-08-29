@@ -94,6 +94,55 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('request_status_refresh(\n                    {"rolls"}', roll_source)
         self.assertIn('reason="normal-roll-responses-missing"', roll_source)
 
+    def test_cross_cycle_execution_keeps_status_lane_and_roll_counter_separate(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        advance_source = ast.get_source_segment(self.source, functions["advance_predicted_reset_cycles"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        # check_status has one policy-controlled physical $tu lane, including
+        # the narrow Auto $rolls reconciliation exception.
+        self.assertIn("normal_action_status_policy(", status_source)
+        self.assertIn('action_status_policy in {"suppress-routine", "defer-executing"}', status_source)
+        self.assertIn("if suppress_physical_tu:", status_source)
+        self.assertIn("reconciliation_cycle_ids=", status_source)
+        # A reset queues the next-cycle count without replacing an executing
+        # batch's remaining local roll counter.
+        self.assertIn("client._normal_roll_action_roll_counts[cycle_id] = next_cycle_roll_count", advance_source)
+        self.assertIn('client.normal_roll_action_owner.state != "executing"', advance_source)
+        self.assertIn("while remaining_batch_rolls > 0:", roll_source)
+        self.assertIn("advance_predicted_reset_cycles(send_end_utc)", roll_source)
+        self.assertIn("client.current_roll_cycle_id != logical_roll_cycle_id", roll_source)
+        self.assertIn("mark_roll_cycle_count_uncertain(", roll_source)
+        self.assertIn("client._active_normal_batch_remaining = remaining_batch_rolls", roll_source)
+        self.assertIn("if client.current_roll_cycle_id == logical_roll_cycle_id:", roll_source)
+        self.assertIn("_prune_normal_action_metadata()", roll_source)
+
+    def test_pending_boundary_origin_is_provisional_until_confirmed_or_timed_out(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        registration_source = ast.get_source_segment(
+            self.source, functions["_check_and_track_boundary_origin"]
+        )
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        prune_source = ast.get_source_segment(
+            self.source, functions["_prune_normal_action_metadata"]
+        )
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("add_provisional_roll_cycle_uncertainty(", registration_source)
+        self.assertNotIn("add_roll_cycle_uncertainty(", registration_source)
+        self.assertIn("roll_cycle_uncertainty_requires_status(q_state)", roll_source)
+        self.assertIn('(\"boundary-origin-timeout\", tok)', prune_source)
+        self.assertIn('(\"confirmed-boundary-result\", pending_token)', message_source)
+
     def test_snipe_only_clients_ignore_shared_roll_boundaries(self):
         functions = {
             node.name: node
@@ -101,8 +150,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         source = ast.get_source_segment(self.source, functions["_apply_shared_reset_snapshot"])
-        self.assertIn('getattr(client, "rolling_enabled", False)', source)
-        self.assertIn('reason="shared-roll-boundary"', source)
+        self.assertIn('roll_anchor = getattr(client, "roll_reset_anchor", None)', source)
+        self.assertIn("roll_anchor.observe(roll_deadline, observed_at)", source)
         self.assertIn("client.us_pulled_this_cycle = 0", source)
         self.assertIn("client.us_failed_this_cycle = False", source)
 
@@ -562,7 +611,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('"rolls replenishment", True, {"rolls"}', status_source)
         self.assertIn('"claim cooldown", True, {"claim"}', status_source)
         self.assertIn("for hard state deadline", wait_source)
-        self.assertIn("mark_status_dirty(client, set(boundary_fields)", wait_source)
+        self.assertIn("unresolved_fields = set(boundary_fields) - set(predicted_fields)", wait_source)
+        self.assertIn("mark_status_dirty(client, unresolved_fields", wait_source)
 
     def test_idle_status_wait_uses_known_reset_instead_of_thirty_minute_refresh(self):
         functions = {
@@ -585,10 +635,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source,
             functions["_apply_shared_reset_snapshot"],
         )
-        self.assertIn("reconcile_roll_reset_deadline(", shared_reset_source)
-        self.assertIn('mark_status_dirty(client, {"rolls"}', shared_reset_source)
-        self.assertIn('reason="shared-roll-boundary"', shared_reset_source)
-        self.assertIn("_immediate_check_event", shared_reset_source)
+        self.assertIn("roll_anchor.observe(roll_deadline, observed_at)", shared_reset_source)
+        self.assertIn("_advance_predicted_reset_cycles", shared_reset_source)
+        self.assertNotIn('reason="shared-roll-boundary"', shared_reset_source)
 
     def test_localized_sphere_boards_do_not_require_english_text(self):
         functions = {
@@ -673,7 +722,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         status_source = ast.get_source_segment(self.source, functions["check_status"])
         self.assertIn("client.claim_right_available = True", refresh_source)
         self.assertIn("client.rt_available = True", refresh_source)
-        self.assertIn('reason="predicted-claim-reset"', refresh_source)
+        self.assertIn("advance_predicted_reset_cycles(now_utc)", refresh_source)
+        self.assertNotIn('reason="predicted-claim-reset"', refresh_source)
         self.assertIn('reason="predicted-rt-reset"', refresh_source)
         self.assertIn("refresh_predicted_claim_and_rt()", allowed_source)
         self.assertIn("refresh_predicted_claim_and_rt()", key_source)
@@ -1051,14 +1101,14 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("await guarded_send(channel, content)", ack_source)
         self.assertIn("asyncio.wait_for", ack_source)
         self.assertIn("mudae_command_ack_matches", reaction_source)
-        self.assertIn("send_mudae_reaction_command", roll_status_source)
+        self.assertIn("schedule_owned_normal_roll_action", roll_status_source)
         self.assertIn("evaluate_daily_rolls(now_utc)", roll_status_source)
         self.assertIn("daily_rolls_decision(", self.source)
         self.assertIn("next_daily_rolls_wake_deadline", self.source)
         self.assertNotIn("rolls_used_this_interval_utc != client.roll_reset_at_utc", roll_status_source)
-        self.assertIn("_last_normal_roll_count", roll_status_source)
-        self.assertIn("$rolls acknowledged; continuing with", roll_status_source)
-        self.assertIn("await start_roll_commands(", roll_status_source)
+        self.assertIn("reconcile_authoritative_current_roll_count", roll_status_source)
+        self.assertIn("scheduling the owned normal action", roll_status_source)
+        self.assertNotIn("await start_roll_commands(", roll_status_source)
 
         rt_send_count = self.source.count("await send_rt_command(channel)")
         self.assertGreaterEqual(rt_send_count, 5)
@@ -1676,9 +1726,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source,
             functions["_apply_shared_reset_snapshot"],
         )
-        self.assertIn("timing_delay_active = bool(", shared_reset_source)
-        self.assertIn("time_rolls_to_claim_reset", shared_reset_source)
-        self.assertIn("not timing_delay_active", shared_reset_source)
+        self.assertIn("roll_anchor.observe(roll_deadline, observed_at)", shared_reset_source)
+        self.assertNotIn('reason="shared-roll-boundary"', shared_reset_source)
 
     def test_smart_timing_sleep_prioritizes_timing_threshold(self):
         functions = {
@@ -1702,7 +1751,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         status_source = ast.get_source_segment(self.source, functions["check_status"])
         self.assertIn('rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"]', status_source)
-        self.assertIn("client.rolls_left = parsed_rolls", status_source)
+        self.assertIn("reconcile_authoritative_current_roll_count(", status_source)
         self.assertIn('ROLL_RESET_TU', status_source)
 
     def test_all_roll_deadline_paths_use_the_canonical_reconciler(self):
@@ -1804,26 +1853,187 @@ class RuntimeSourceContractTests(unittest.TestCase):
             for node in ast.walk(self.tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        action_source = ast.get_source_segment(self.source, functions["wait_for_normal_roll_action"])
+        action_source = ast.get_source_segment(self.source, functions["schedule_owned_normal_roll_action"])
+        executor_source = ast.get_source_segment(self.source, functions["execute_owned_normal_roll_action"])
         status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
         roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
         wait_source = ast.get_source_segment(self.source, functions["humanized_wait_and_proceed"])
 
-        self.assertIn("client.roll_action_timing.schedule(", action_source)
-        self.assertIn("roll_replenishment_cycle_key", action_source)
-        self.assertIn("persistent_stagger_seconds=client.persistent_stagger_seconds", action_source)
-        self.assertIn("Timing Variation: delaying roll action", action_source)
-        self.assertIn("Smart Timing owns the exact roll-action deadline", action_source)
-        self.assertIn("normal_roll_count <= 0 or scheduled_trigger", action_source)
-        self.assertIn("latest_action_at_utc=latest_action_at", action_source)
-        self.assertIn("apply_normal_action_timing=True", status_source)
-        self.assertIn("wait_for_normal_roll_action(", roll_source)
-        self.assertLess(
-            roll_source.index("await process_mk_rolls("),
-            roll_source.index("wait_for_normal_roll_action("),
-        )
+        self.assertIn("owner.schedule(", action_source)
+        self.assertIn("logical_roll_cycle_id", action_source)
+        self.assertIn("persistent_stagger_seconds=(0 if no_extra_humanization else client.persistent_stagger_seconds)", action_source)
+        self.assertIn("scheduled_trigger or smart_timing_owns_deadline", action_source)
+        self.assertIn("_schedule_owned_normal_action_callback", action_source)
+        self.assertIn("schedule_owned_normal_roll_action(", status_source)
+        self.assertIn("evaluate_daily_rolls()", executor_source)
+        self.assertIn("await start_roll_commands(", executor_source)
+        self.assertNotIn("wait_for_normal_roll_action(", roll_source)
         self.assertIn("humanization_enabled and not hard_deadline", wait_source)
         self.assertNotIn("persistent_stagger_seconds", wait_source)
+
+    def test_cross_boundary_result_detection_and_capacity_contracts(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        run_source = ast.get_source_segment(self.source, functions["run_bot"])
+        send_source = ast.get_source_segment(self.source, functions["send_roll_command"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        sync_source = ast.get_source_segment(self.source, functions["schedule_periodic_sanity_sync"])
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+
+        executor_source = ast.get_source_segment(self.source, functions["execute_owned_normal_roll_action"])
+        self.assertIn("client.normal_roll_replenishment_capacity = None", run_source)
+        self.assertIn("client._normal_roll_cycle_state = {}", run_source)
+        self.assertIn("client._pending_boundary_roll_origins = {}", run_source)
+        self.assertIn("client._advance_predicted_reset_cycles = advance_predicted_reset_cycles", run_source)
+        self.assertIn("client._schedule_private_roll_count_sync = schedule_private_roll_count_sync", run_source)
+        self.assertIn("def schedule_private_roll_count_sync(", run_source)
+        self.assertIn("def reconcile_authoritative_current_roll_count(", run_source)
+        self.assertNotIn("client._last_normal_roll_count", run_source)
+        self.assertIn("logical_roll_cycle_id=None", send_source)
+        self.assertIn("expected_reset_boundary_utc=None", send_source)
+        self.assertIn("is_roll_result_cross_boundary_ambiguous(", message_source)
+        self.assertIn("seed_material = (", sync_source)
+        self.assertIn("reconcile_authoritative_current_roll_count(", status_source)
+        self.assertIn("roll_cycle_needs_authoritative_reconcile(state)", executor_source)
+        self.assertIn("request_roll_count_reconciliation(logical_roll_cycle_id)", executor_source)
+        self.assertIn("schedule_private_roll_count_sync(", executor_source)
+        self.assertNotIn('reason="normal-action-count-sync"', executor_source)
+
+    def test_authoritative_roll_parser_delegates_to_state_only_reconciliation(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        helper_source = ast.get_source_segment(
+            self.source,
+            functions["reconcile_authoritative_current_roll_count"],
+        )
+
+        self.assertIn("reconcile_authoritative_roll_count_state_only(", helper_source)
+        self.assertNotIn("elif remaining > 0", helper_source)
+        self.assertNotIn("owner.schedule(", helper_source)
+
+    def test_scheduler_is_read_only_with_respect_to_authoritative_roll_state(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        scheduler_source = ast.get_source_segment(
+            self.source,
+            functions["schedule_owned_normal_roll_action"],
+        )
+        status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+
+        self.assertNotIn("roll_count=None", scheduler_source)
+        self.assertNotIn("apply_authoritative_roll_remaining(", scheduler_source)
+        self.assertIn("normal_roll_schedule_count(state)", scheduler_source)
+        self.assertNotIn("roll_count=", status_source)
+
+    def test_pending_boundary_executor_waits_then_reconciles_exactly_once(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        executor_source = ast.get_source_segment(
+            self.source,
+            functions["execute_owned_normal_roll_action"],
+        )
+        prune_source = ast.get_source_segment(
+            self.source,
+            functions["_prune_normal_action_metadata"],
+        )
+        wake_source = ast.get_source_segment(
+            self.source,
+            functions["wake_existing_owned_normal_action"],
+        )
+        result_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("Waiting for a pending boundary roll result", executor_source)
+        self.assertIn("request_roll_count_reconciliation(logical_roll_cycle_id)", executor_source)
+        self.assertIn("request_roll_count_reconciliation(affected_cycle)", prune_source)
+        self.assertIn("rearm_existing_normal_roll_action(", wake_source)
+        self.assertIn("resolve_pending_boundary_roll_and_rearm(", result_source)
+        self.assertIn("affected_cycle_id", result_source)
+        self.assertNotIn("wake_existing_owned_normal_action(target_cycle)", result_source)
+
+    def test_roll_count_reconciliation_lease_ends_on_every_tu_terminal_path(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        disconnect_source = ast.get_source_segment(self.source, functions["on_disconnect"])
+        ready_source = ast.get_source_segment(self.source, functions["on_ready"])
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+
+        self.assertIn("if not await send_tu_command(cmd_channel):", status_source)
+        self.assertIn("backoff = record_tu_failure(client)", status_source)
+        self.assertIn('if "rolls" not in fresh_fields:', status_source)
+        self.assertIn("release_roll_count_reconciliation(client)", status_source)
+        self.assertIn("material_reanchor=roll_anchor_materially_reanchored", status_source)
+        self.assertIn("except asyncio.CancelledError:", status_source)
+        self.assertIn("release_roll_count_reconciliation(client)", disconnect_source)
+        self.assertIn("release_roll_count_reconciliation(client)", ready_source)
+        self.assertIn("release_roll_count_reconciliation(client)", message_source)
+
+    def test_definite_same_cycle_send_updates_current_remaining_after_boundary_guard(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        boundary_guard = roll_source.index("client.current_roll_cycle_id != logical_roll_cycle_id")
+        consumption = roll_source.index("record_definite_normal_roll_consumption(")
+
+        self.assertGreater(consumption, boundary_guard)
+
+    def test_batch_completion_cannot_clear_successor_reconciliation_state(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("can_clear_roll_status_after_exact_batch(", roll_source)
+        self.assertIn("deferred_status_fields=deferred_status_fields", roll_source)
+        self.assertLess(
+            roll_source.index("request_status_refresh(\n                deferred_status_fields"),
+            roll_source.index("can_clear_roll_status_after_exact_batch("),
+        )
+
+    def test_partial_tu_seals_current_urgency_against_its_own_defer(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+        partial_start = status_source.index('if not core_complete:')
+        partial_source = status_source[partial_start:partial_start + 500]
+
+        self.assertIn("defer_tu_queries(client, 30.0)", partial_source)
+        self.assertIn("consume_current_tu_urgency_for_backoff(client)", partial_source)
+
+    def test_lurker_and_status_only_paths_use_behavior_gate_before_roll_evaluation(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        status_source = ast.get_source_segment(self.source, functions["check_status"])
+
+        self.assertIn("normal_roll_behavior_flags(", status_source)
+        self.assertIn("is_lurking=is_lurking", status_source)
+        self.assertIn("proceed_to_rolls=proceed_to_rolls", status_source)
 
 
 if __name__ == "__main__":

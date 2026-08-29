@@ -7,6 +7,10 @@ from mudae_core.status import (
     ServerResetCoordinator,
     clear_status_dirty,
     consume_tu_urgent_bypass,
+    consume_current_tu_urgency_for_backoff,
+    bounded_sanity_deadline,
+    ensure_sanity_deadline_safe,
+    nearest_periodic_boundary_distance,
     defer_tu_queries,
     initialize_status_tracking,
     looks_like_tu_status_snapshot,
@@ -17,6 +21,7 @@ from mudae_core.status import (
     dynamic_claim_round,
     reconcile_private_claim_deadline,
     reconcile_roll_reset_deadline,
+    ResetAnchor,
     roll_reset_wait_minutes,
     rolls_usage_is_active,
     status_dirty_fields,
@@ -24,6 +29,10 @@ from mudae_core.status import (
     status_refresh_reasons,
     tu_cache_seconds_remaining,
     tu_retry_wait,
+)
+from mudae_core.runtime import (
+    claim_roll_count_reconciliation,
+    release_roll_count_reconciliation,
 )
 
 
@@ -94,6 +103,91 @@ class StatusFreshnessTests(unittest.TestCase):
         record_tu_success(self.client)
         self.assertEqual(tu_retry_wait(self.client, now_monotonic=150.0), 0.0)
         self.assertEqual(self.client._tu_failure_streak, 0)
+
+    def test_failed_reconciliation_same_reason_cannot_bypass_own_backoff(self):
+        cycle_id = ("roll", 1700000000, 5)
+        mark_status_dirty(
+            self.client,
+            {"rolls"},
+            reason="normal-action-count-reconcile",
+            urgent=True,
+        )
+        self.assertTrue(claim_roll_count_reconciliation(self.client, cycle_id))
+        physical_tu_count = 1
+
+        record_tu_failure(self.client, now_monotonic=0.0)
+        self.assertIsNone(self.client._roll_count_reconcile_cycle_id)
+        self.assertTrue(self.client._tu_urgent_bypass_used)
+        self.assertTrue(claim_roll_count_reconciliation(self.client, cycle_id))
+        mark_status_dirty(
+            self.client,
+            {"rolls"},
+            reason="normal-action-count-reconcile",
+            urgent=True,
+        )
+
+        for now_monotonic in (10.0, 29.0):
+            if (
+                tu_retry_wait(self.client, now_monotonic=now_monotonic) <= 0
+                or consume_tu_urgent_bypass(self.client)
+            ):
+                physical_tu_count += 1
+        self.assertEqual(physical_tu_count, 1)
+        self.assertEqual(tu_retry_wait(self.client, now_monotonic=30.0), 0.0)
+        physical_tu_count += 1
+        self.assertEqual(physical_tu_count, 2)
+
+    def test_partial_reconciliation_same_reason_cannot_bypass_own_defer(self):
+        cycle_id = ("roll", 1700000000, 5)
+        mark_status_dirty(
+            self.client,
+            {"rolls"},
+            reason="normal-action-count-reconcile",
+            urgent=True,
+        )
+        self.assertTrue(claim_roll_count_reconciliation(self.client, cycle_id))
+        physical_tu_count = 1
+        record_tu_success(self.client)
+        self.assertTrue(release_roll_count_reconciliation(self.client))
+        mark_status_dirty(self.client, {"rolls"}, reason="partial-tu-response")
+        defer_tu_queries(self.client, 30.0, now_monotonic=0.0)
+        consume_current_tu_urgency_for_backoff(self.client)
+        self.assertTrue(claim_roll_count_reconciliation(self.client, cycle_id))
+        mark_status_dirty(
+            self.client,
+            {"rolls"},
+            reason="normal-action-count-reconcile",
+            urgent=True,
+        )
+
+        for now_monotonic in (10.0, 29.0):
+            if (
+                tu_retry_wait(self.client, now_monotonic=now_monotonic) <= 0
+                or consume_tu_urgent_bypass(self.client)
+            ):
+                physical_tu_count += 1
+        self.assertEqual(physical_tu_count, 1)
+        self.assertEqual(tu_retry_wait(self.client, now_monotonic=30.0), 0.0)
+
+    def test_new_urgent_reason_can_bypass_existing_reconciliation_backoff_once(self):
+        mark_status_dirty(
+            self.client,
+            {"rolls"},
+            reason="normal-action-count-reconcile",
+            urgent=True,
+        )
+        record_tu_failure(self.client, now_monotonic=0.0)
+        self.assertFalse(consume_tu_urgent_bypass(self.client))
+
+        mark_status_dirty(
+            self.client,
+            {"claim"},
+            reason="new-claim-evidence",
+            urgent=True,
+        )
+
+        self.assertTrue(consume_tu_urgent_bypass(self.client))
+        self.assertFalse(consume_tu_urgent_bypass(self.client))
 
     def test_explicit_defer_never_shortens_an_existing_deadline(self):
         defer_tu_queries(self.client, 45.0, now_monotonic=10.0)
@@ -284,6 +378,79 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertEqual(status_dirty_fields(self.client), set())
         self.assertEqual(status_refresh_reasons(self.client), [])
         self.assertFalse(self.client._status_refresh_urgent)
+
+    def test_reset_anchor_advances_known_cycles_without_new_observations(self):
+        start = datetime.datetime(2026, 8, 27, 14, 13, tzinfo=datetime.timezone.utc)
+        anchor = ResetAnchor("roll", 60)
+        changed, refined = anchor.observe(start, start - datetime.timedelta(minutes=20))
+
+        self.assertTrue(changed)
+        self.assertFalse(refined)
+        self.assertEqual(
+            anchor.advance_through(start + datetime.timedelta(hours=3, seconds=1)),
+            [
+                (("roll", int(start.timestamp()), 0), start),
+                (("roll", int(start.timestamp()), 1), start + datetime.timedelta(hours=1)),
+                (("roll", int(start.timestamp()), 2), start + datetime.timedelta(hours=2)),
+                (("roll", int(start.timestamp()), 3), start + datetime.timedelta(hours=3)),
+            ],
+        )
+        self.assertEqual(anchor.next_boundary_at_utc, start + datetime.timedelta(hours=4))
+
+    def test_reset_anchor_ignores_minute_rounding_but_reanchors_material_mismatch(self):
+        start = datetime.datetime(2026, 8, 27, 14, 13, tzinfo=datetime.timezone.utc)
+        anchor = ResetAnchor("roll", 60)
+        anchor.observe(start, start - datetime.timedelta(minutes=20))
+
+        changed, refined = anchor.observe(start + datetime.timedelta(seconds=62), start)
+        self.assertFalse(changed)
+        self.assertTrue(refined)
+        self.assertEqual(anchor.cycle_id_for_boundary(), ("roll", int(start.timestamp()), 0))
+        self.assertEqual(anchor.next_boundary_at_utc, start)
+
+        shifted = start + datetime.timedelta(minutes=8)
+        changed, refined = anchor.observe(shifted, start)
+        self.assertTrue(changed)
+        self.assertFalse(refined)
+        self.assertEqual(anchor.cycle_id_for_boundary(), ("roll", int(shifted.timestamp()), 0))
+
+    def test_bounded_sanity_deadline_avoids_future_and_short_interval_resets(self):
+        now = datetime.datetime(2026, 8, 27, 14, 13, tzinfo=datetime.timezone.utc)
+        roll = ResetAnchor("roll", 60)
+        claim = ResetAnchor("claim", 180)
+        roll.observe(now, now)
+        claim.observe(now, now)
+        candidate, guard = bounded_sanity_deadline(now, roll, claim, 0)
+        self.assertGreaterEqual(
+            nearest_periodic_boundary_distance(now, roll.interval_seconds, candidate), guard,
+        )
+        short_roll = ResetAnchor("roll", 2)
+        short_claim = ResetAnchor("claim", 3)
+        short_roll.observe(now, now)
+        short_claim.observe(now, now)
+        candidate, guard = bounded_sanity_deadline(now, short_roll, short_claim, 0)
+        self.assertGreaterEqual(
+            min(
+                nearest_periodic_boundary_distance(now, short_roll.interval_seconds, candidate),
+                nearest_periodic_boundary_distance(now, short_claim.interval_seconds, candidate),
+            ),
+            guard,
+        )
+
+    def test_shifted_sanity_candidate_is_rechecked_against_claim_boundaries(self):
+        now = datetime.datetime(2026, 8, 27, 14, 13, tzinfo=datetime.timezone.utc)
+        roll = ResetAnchor("roll", 60)
+        claim = ResetAnchor("claim", 180)
+        roll.observe(now, now)
+        claim.observe(now, now)
+        shifted = now + datetime.timedelta(hours=3)
+        safe = ensure_sanity_deadline_safe(shifted, roll, claim, guard_seconds=180)
+        self.assertGreaterEqual(
+            nearest_periodic_boundary_distance(claim.anchor_at_utc, claim.interval_seconds, safe), 180,
+        )
+        self.assertGreaterEqual(
+            nearest_periodic_boundary_distance(roll.anchor_at_utc, roll.interval_seconds, safe), 180,
+        )
 
 
 if __name__ == "__main__":

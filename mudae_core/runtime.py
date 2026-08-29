@@ -2,7 +2,7 @@
 
 import asyncio
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import random
 import time
 
@@ -10,6 +10,104 @@ from .status import STATUS_FIELDS, mark_status_dirty
 
 
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
+NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS = 30.0
+NORMAL_ROLL_PREROLL_RESERVE_SECONDS = 30.0
+
+
+def normal_roll_behavior_flags(
+    *,
+    rolling_enabled,
+    proceed_to_rolls,
+    scheduled_roll_due,
+    can_claim,
+    is_lurking,
+    key_mode,
+    rt_available,
+    is_timing_window,
+    is_panic_window,
+    pending_rolls=False,
+    pending_us=False,
+):
+    """Return behavior-gated immediate/evaluation decisions for normal rolls."""
+    if not rolling_enabled or not proceed_to_rolls:
+        return False, False
+    immediate = bool(
+        scheduled_roll_due
+        or (can_claim and not is_lurking)
+        or key_mode
+        or rt_available
+        or is_timing_window
+        or is_panic_window
+    )
+    return immediate, bool(immediate or pending_rolls or pending_us)
+
+
+def estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls=False, fixed_overhead_seconds=5.0):
+    """Conservative duration used to clamp a visible normal-roll start."""
+    effective_speed = max(2.0, float(roll_speed or 0.0)) if use_slash_rolls else max(0.0, float(roll_speed or 0.0))
+    return max(0, int(roll_count or 0)) * (effective_speed + 0.25) + max(0.0, float(fixed_overhead_seconds or 0.0))
+
+
+def normal_roll_start_window(now_utc, next_reset_at_utc, roll_count, roll_speed,
+                             use_slash_rolls=False, pre_roll_seconds=0.0,
+                             safety_margin_seconds=NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS):
+    """Return the latest safe start and whether that start is still reachable.
+
+    The visible batch is not the only time between an action deadline and the
+    next reset. Callers reserve predictable prerequisite time; the margin covers
+    command pacing and ordinary transport jitter.
+    """
+    if next_reset_at_utc is None:
+        return None, True
+    duration = (
+        estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls)
+        + max(0.0, float(pre_roll_seconds or 0.0))
+        + max(0.0, float(safety_margin_seconds or 0.0))
+    )
+    latest = next_reset_at_utc - datetime.timedelta(seconds=duration)
+    return latest, latest >= now_utc
+
+
+def normal_roll_batch_fits_window(now_utc, next_reset_at_utc, roll_count,
+                                  roll_speed, use_slash_rolls=False,
+                                  safety_margin_seconds=NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS):
+    """Whether a batch may start *now* without knowingly crossing its reset."""
+    _latest, fits = normal_roll_start_window(
+        now_utc, next_reset_at_utc, roll_count, roll_speed, use_slash_rolls,
+        safety_margin_seconds=safety_margin_seconds,
+    )
+    return fits
+
+
+def normal_action_status_policy(*, owner_cycle_id, current_roll_cycle_id, owner_state,
+                                state_dirty, reconciliation_cycle_ids=()):
+    """Classify routine status work while a current normal action owns a cycle.
+
+    A complete self-``$tu`` and a locally predicted ResetAnchor are both valid
+    sources of a current action.  The policy therefore intentionally does not
+    use a "predicted" flag.  Explicit Auto ``$rolls`` reconciliation is the
+    narrow exception that may send a physical status command while executing.
+    """
+    if owner_state == "executing":
+        # An executing batch owns its original logical transaction even if a
+        # trusted ResetAnchor has already advanced the visible current cycle.
+        # Only its explicitly correlated Auto $rolls reconciliation may use
+        # the physical status lane until that batch releases the owner.
+        if owner_cycle_id is None:
+            return "none"
+        if owner_cycle_id in set(reconciliation_cycle_ids or ()):
+            return "allow-reconciliation"
+        return "defer-executing"
+    owns_current_cycle = (
+        owner_cycle_id is not None
+        and owner_cycle_id == current_roll_cycle_id
+        and owner_state in {"pending", "waiting_claim"}
+    )
+    if not owns_current_cycle:
+        return "none"
+    if not state_dirty:
+        return "suppress-routine"
+    return "none"
 
 
 def interaction_command_name(interaction):
@@ -88,6 +186,149 @@ class RollActionTiming:
         if cycle_key != self.cycle_key:
             return False
         self.completed = True
+        return True
+
+
+@dataclass
+class NormalRollActionOwner:
+    """One authoritative normal-roll action for one logical reset cycle.
+
+    The owner deliberately wraps (rather than replaces) ``RollActionTiming``:
+    timing still owns the random draw, while this state machine owns whether a
+    scheduler may create, start, or repeat the visible action.
+    """
+
+    timing: RollActionTiming
+    cycle_id: object = None
+    deadline_utc: datetime.datetime = None
+    state: str = "idle"  # idle, pending, waiting_claim, executing, completed
+    queued_cycle_id: object = None
+    queued_deadline_utc: datetime.datetime = None
+    post_claim_deadline_created: bool = False
+
+    @staticmethod
+    def _calculate_deadline(*, now_utc, latest_action_at_utc=None,
+                            humanization_enabled=False, window_minutes=0,
+                            persistent_stagger_seconds=0, random_source=None):
+        window_seconds = max(0.0, float(window_minutes or 0) * 60.0)
+        random_delay = 0.0
+        if humanization_enabled and window_seconds > 0:
+            draw = random_source or random.uniform
+            random_delay = max(0.0, min(window_seconds, float(draw(0.0, window_seconds))))
+        deadline = now_utc + datetime.timedelta(
+            seconds=random_delay + max(0.0, float(persistent_stagger_seconds or 0.0))
+        )
+        if latest_action_at_utc is not None:
+            deadline = min(deadline, max(now_utc, latest_action_at_utc))
+        return deadline
+
+    def schedule(self, *, cycle_id, **timing_kwargs):
+        if cycle_id is None:
+            return None, False
+        if cycle_id == self.cycle_id and self.state in {"pending", "waiting_claim", "executing", "completed"}:
+            return self.deadline_utc, False
+        if self.state == "executing":
+            # Coalesce missed cycles to the latest successor while retaining
+            # exclusive ownership of the batch that is still running.
+            if self.queued_cycle_id == cycle_id:
+                return self.queued_deadline_utc, False
+            self.queued_cycle_id = cycle_id
+            self.queued_deadline_utc = self._calculate_deadline(**timing_kwargs)
+            return self.queued_deadline_utc, False
+        if self.state == "waiting_claim":
+            # A simultaneous claim+roll boundary supersedes the stale waiting
+            # opportunity atomically with the new actionable roll cycle.
+            return self.supersede_waiting_claim(cycle_id=cycle_id, **timing_kwargs)
+        deadline = self.timing.schedule(cycle_key=cycle_id, **timing_kwargs)
+        self.cycle_id = cycle_id
+        self.deadline_utc = deadline
+        self.state = "pending"
+        self.post_claim_deadline_created = False
+        return deadline, True
+
+    def is_pending(self, cycle_id):
+        return cycle_id == self.cycle_id and self.state == "pending"
+
+    def is_waiting_claim(self, cycle_id=None):
+        return self.state == "waiting_claim" and (cycle_id is None or cycle_id == self.cycle_id)
+
+    def start(self, cycle_id):
+        if not self.is_pending(cycle_id):
+            return False
+        self.state = "executing"
+        return True
+
+    def complete(self, cycle_id):
+        if cycle_id != self.cycle_id or self.state not in {"pending", "executing", "waiting_claim"}:
+            return False
+        self.state = "completed"
+        self.timing.mark_completed(cycle_id)
+        if self.queued_cycle_id is not None:
+            queued_cycle = self.queued_cycle_id
+            queued_deadline = self.queued_deadline_utc
+            self.queued_cycle_id = None
+            self.queued_deadline_utc = None
+            self.cycle_id = queued_cycle
+            self.deadline_utc = queued_deadline
+            self.state = "pending"
+            self.timing.cycle_key = queued_cycle
+            self.timing.deadline_utc = queued_deadline
+            self.timing.completed = False
+        return True
+
+    def defer(self, cycle_id):
+        if cycle_id != self.cycle_id or self.state not in {"pending", "executing", "waiting_claim"}:
+            return False
+        self.state = "waiting_claim"
+        return True
+
+    def resume_claim(self, cycle_id):
+        if cycle_id != self.cycle_id or self.state != "waiting_claim":
+            return False
+        self.state = "pending"
+        return True
+
+    def resume_after_claim(self, *, cycle_id, now_utc, latest_action_at_utc=None,
+                           humanization_enabled=False, window_minutes=0,
+                           persistent_stagger_seconds=0, random_source=None):
+        if cycle_id != self.cycle_id or self.state != "waiting_claim":
+            return self.deadline_utc, False
+        created = False
+        if self.deadline_utc is None or self.deadline_utc <= now_utc:
+            if not self.post_claim_deadline_created:
+                self.deadline_utc = self._calculate_deadline(
+                    now_utc=now_utc,
+                    latest_action_at_utc=latest_action_at_utc,
+                    humanization_enabled=humanization_enabled,
+                    window_minutes=window_minutes,
+                    persistent_stagger_seconds=persistent_stagger_seconds,
+                    random_source=random_source,
+                )
+                self.post_claim_deadline_created = True
+                created = True
+            self.timing.deadline_utc = self.deadline_utc
+        self.state = "pending"
+        return self.deadline_utc, created
+
+    def supersede_waiting_claim(self, *, cycle_id, **timing_kwargs):
+        if self.state != "waiting_claim" or cycle_id == self.cycle_id:
+            return self.deadline_utc, False
+        deadline = self.timing.schedule(cycle_key=cycle_id, **timing_kwargs)
+        self.cycle_id = cycle_id
+        self.deadline_utc = deadline
+        self.state = "pending"
+        self.post_claim_deadline_created = False
+        return deadline, True
+
+    def cancel(self, cycle_id=None):
+        if cycle_id is not None and cycle_id != self.cycle_id:
+            return False
+        if self.state == "executing":
+            return False
+        self.state = "completed"
+        self.queued_cycle_id = None
+        self.queued_deadline_utc = None
+        self.timing.mark_completed(self.cycle_id)
         return True
 
 
@@ -201,6 +442,538 @@ class OutgoingRollCommand:
     finalized: bool = False
     cancelled: bool = False
     response_message_id: int = None
+    automation_owned: bool = False
+    logical_roll_cycle_id: object = None
+    expected_reset_boundary_utc: datetime.datetime = None
+    send_start_utc: datetime.datetime = None
+    send_end_utc: datetime.datetime = None
+
+
+ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS = 3.0
+
+
+@dataclass
+class NormalRollCycleState:
+    """Per-cycle executable rolls, separate from replenishment capacity.
+
+    ``remaining`` is the current count: an authoritative snapshot reduced by
+    definitely attributed local sends. ``remaining_authoritative`` records
+    that this value is grounded in such a snapshot, not that no local sends
+    have occurred since it was received.
+    """
+
+    remaining: object = None
+    remaining_authoritative: bool = False
+    proven_fresh: bool = False
+    known_consumed: int = 0
+    uncertainty_reasons: set = field(default_factory=set)
+    last_authoritative_at_utc: datetime.datetime = None
+    authoritative_revision: int = 0
+
+    @property
+    def count_uncertain(self) -> bool:
+        return bool(self.uncertainty_reasons)
+
+    @count_uncertain.setter
+    def count_uncertain(self, value: bool):
+        if not value:
+            self.uncertainty_reasons.clear()
+        elif not self.uncertainty_reasons:
+            self.uncertainty_reasons.add("legacy-uncertainty")
+
+
+def get_normal_roll_cycle_state(client, cycle_id):
+    """Retrieve or create the authoritative per-cycle roll state."""
+    if cycle_id is None:
+        return None
+    states = getattr(client, "_normal_roll_cycle_state", None)
+    if states is None:
+        client._normal_roll_cycle_state = {}
+        states = client._normal_roll_cycle_state
+    state = states.get(cycle_id)
+    if state is None:
+        state = NormalRollCycleState()
+        states[cycle_id] = state
+    return state
+
+
+def mark_roll_cycle_proven_fresh(client, cycle_id):
+    """Mark that this process observed this cycle begin cleanly without ambiguous cross-boundary commands."""
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is None:
+        return
+    state.proven_fresh = True
+    state.known_consumed = 0
+
+
+def refresh_legacy_uncertainty_view(client):
+    """Synchronize client-level legacy uncertainty view with active cycle states."""
+    if client is None:
+        return
+    states = getattr(client, "_normal_roll_cycle_state", None) or {}
+    uncertain_cid = None
+    for cid, st in states.items():
+        if getattr(st, "count_uncertain", False):
+            uncertain_cid = cid
+            break
+    if uncertain_cid is not None:
+        client.cross_cycle_roll_count_uncertain = True
+        client.cross_cycle_uncertain_cycle_id = uncertain_cid
+    else:
+        client.cross_cycle_roll_count_uncertain = False
+        client.cross_cycle_uncertain_cycle_id = None
+
+
+def add_roll_cycle_uncertainty(client, cycle_id, key, *, reason="uncertainty"):
+    """Mark a cycle's roll count as uncertain with a specific reason/token key."""
+    if cycle_id is None:
+        return
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is not None:
+        state.uncertainty_reasons.add(key)
+        state.remaining_authoritative = False
+    refresh_legacy_uncertainty_view(client)
+    if hasattr(client, "_roll_batch_deferred_status_fields"):
+        client._roll_batch_deferred_status_fields.add("rolls")
+    try:
+        from mudae_core.status import mark_status_dirty
+        mark_status_dirty(client, {"rolls"}, reason=reason)
+    except Exception:
+        pass
+
+
+def add_provisional_roll_cycle_uncertainty(client, cycle_id, key):
+    """Record unresolved boundary evidence without requesting status work."""
+    if cycle_id is None:
+        return
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is not None:
+        state.uncertainty_reasons.add(key)
+        state.remaining_authoritative = False
+    refresh_legacy_uncertainty_view(client)
+
+
+def remove_roll_cycle_uncertainty(client, cycle_id, key):
+    """Remove one specific uncertainty reason/token for a cycle."""
+    if cycle_id is None:
+        return
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is not None:
+        state.uncertainty_reasons.discard(key)
+    refresh_legacy_uncertainty_view(client)
+
+
+def clear_roll_cycle_uncertainty(client, cycle_id):
+    """Explicitly clear all uncertainty reasons for a cycle."""
+    if cycle_id is None:
+        return
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is not None:
+        state.uncertainty_reasons.clear()
+    refresh_legacy_uncertainty_view(client)
+
+
+def mark_roll_cycle_count_uncertain(client, cycle_id, reason="uncertainty"):
+    """Compatibility wrapper for marking a cycle uncertain with a generic reason."""
+    add_roll_cycle_uncertainty(client, cycle_id, reason, reason=reason)
+
+
+def clear_roll_cycle_count_uncertainty(client, cycle_id):
+    """Compatibility wrapper for clearing all uncertainty on a resolved cycle."""
+    clear_roll_cycle_uncertainty(client, cycle_id)
+
+
+def unresolved_pending_roll_uncertainty_keys(client, cycle_id):
+    """Return provisional boundary-command keys whose results are unresolved."""
+    if cycle_id is None:
+        return set()
+    return {
+        ("pending-boundary-origin", token)
+        for token, info in getattr(client, "_pending_boundary_roll_origins", {}).items()
+        if info.get("affected_cycle_id") == cycle_id
+    }
+
+
+def roll_cycle_has_only_pending_boundary_origins(state):
+    """Whether every uncertainty reason is a still-provisional boundary command."""
+    reasons = set(getattr(state, "uncertainty_reasons", set()) or set())
+    return bool(reasons) and all(
+        isinstance(reason, tuple)
+        and len(reason) >= 2
+        and reason[0] == "pending-boundary-origin"
+        for reason in reasons
+    )
+
+
+def roll_cycle_needs_authoritative_reconcile(state):
+    """Whether uncertainty requires status now instead of awaiting a result."""
+    return bool(
+        state is not None
+        and state.count_uncertain
+        and not roll_cycle_has_only_pending_boundary_origins(state)
+    )
+
+
+def roll_cycle_uncertainty_requires_status(state):
+    """Whether a blocked successor lacks enough evidence to await its result."""
+    return bool(
+        state is None
+        or state.remaining is None
+        or roll_cycle_needs_authoritative_reconcile(state)
+    )
+
+
+def normal_roll_schedule_count(state):
+    """Read the executable count used by scheduling without mutating evidence."""
+    if state is None or state.remaining is None:
+        return None
+    return max(0, int(state.remaining))
+
+
+def can_clear_roll_status_after_exact_batch(
+    client,
+    *,
+    logical_roll_cycle_id,
+    deferred_status_fields=(),
+):
+    """Whether exact old-batch completion proves current Rolls state clean."""
+    if "rolls" in set(deferred_status_fields or ()):
+        return False
+    if getattr(client, "_roll_count_reconcile_cycle_id", None) is not None:
+        return False
+    if getattr(client, "_roll_count_sync_cycle_id", None) is not None:
+        return False
+    current_cycle_id = getattr(client, "current_roll_cycle_id", None)
+    if logical_roll_cycle_id is not None and current_cycle_id != logical_roll_cycle_id:
+        return False
+    state = get_normal_roll_cycle_state(client, current_cycle_id)
+    if state is not None and (state.remaining is None or state.count_uncertain):
+        return False
+    return True
+
+
+def roll_cycle_is_same_or_newer(observed_cycle, requested_cycle):
+    """Whether two roll IDs share a lineage and observed is not older."""
+    if not (
+        isinstance(observed_cycle, tuple)
+        and isinstance(requested_cycle, tuple)
+        and len(observed_cycle) >= 3
+        and len(requested_cycle) >= 3
+        and observed_cycle[0] == requested_cycle[0] == "roll"
+        and observed_cycle[1] == requested_cycle[1]
+    ):
+        return False
+    try:
+        return int(observed_cycle[-1]) >= int(requested_cycle[-1])
+    except (TypeError, ValueError):
+        return False
+
+
+def release_roll_count_reconciliation(client, cycle_id=None):
+    """Release the active roll-count reconciliation lease."""
+    claimed_cycle = getattr(client, "_roll_count_reconcile_cycle_id", None)
+    if claimed_cycle is None:
+        return False
+    if cycle_id is not None and claimed_cycle != cycle_id:
+        return False
+    client._roll_count_reconcile_cycle_id = None
+    client._roll_count_reconcile_started_at_utc = None
+    return True
+
+
+def claim_roll_count_reconciliation(client, cycle_id, *, now_utc=None):
+    """Acquire the single timed count-reconciliation lease for a cycle."""
+    if cycle_id is None:
+        return False
+    claimed_cycle = getattr(client, "_roll_count_reconcile_cycle_id", None)
+    if claimed_cycle is not None:
+        return False
+    client._roll_count_reconcile_cycle_id = cycle_id
+    client._roll_count_reconcile_started_at_utc = (
+        now_utc or datetime.datetime.now(datetime.timezone.utc)
+    )
+    return True
+
+
+def release_reconciliation_for_authoritative_cycle(
+    client,
+    observed_cycle,
+    *,
+    material_reanchor=False,
+):
+    """Release a lease fulfilled or superseded by authoritative roll state."""
+    claimed_cycle = getattr(client, "_roll_count_reconcile_cycle_id", None)
+    if claimed_cycle is None:
+        return False
+    if (
+        material_reanchor
+        or claimed_cycle == observed_cycle
+        or roll_cycle_is_same_or_newer(observed_cycle, claimed_cycle)
+    ):
+        return release_roll_count_reconciliation(client)
+    return False
+
+
+def record_definite_normal_roll_consumption(client, cycle_id):
+    """Apply one definitely same-cycle automated send to executable state."""
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is None:
+        return False
+    state.known_consumed += 1
+    if state.remaining is not None:
+        state.remaining = max(0, int(state.remaining) - 1)
+        counts = getattr(client, "_normal_roll_action_roll_counts", None)
+        if counts is not None:
+            counts[cycle_id] = state.remaining
+    return True
+
+
+def rearm_existing_normal_roll_action(
+    client,
+    cycle_id,
+    schedule_callback,
+    *,
+    now_utc=None,
+):
+    """Replace a pending owner's timer without changing its chosen deadline."""
+    owner = getattr(client, "normal_roll_action_owner", None)
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if (
+        owner is None
+        or not owner.is_pending(cycle_id)
+        or state is None
+        or state.remaining is None
+        or state.count_uncertain
+    ):
+        return False
+    now_utc = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    deadline_utc = owner.deadline_utc or now_utc
+    delay = max(0.0, (deadline_utc - now_utc).total_seconds())
+    schedule_callback(cycle_id, delay, replace_existing=True)
+    return True
+
+
+def resolve_pending_boundary_roll_uncertainty(client, cycle_id, token):
+    """Resolve one registered provisional boundary origin, if it is still live."""
+    if cycle_id is None or token is None:
+        return False
+    pending = getattr(client, "_pending_boundary_roll_origins", {})
+    info = pending.get(token)
+    metadata_existed = bool(
+        info is not None and info.get("affected_cycle_id") == cycle_id
+    )
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    key = ("pending-boundary-origin", token)
+    reason_existed = bool(state is not None and key in state.uncertainty_reasons)
+    if not metadata_existed and not reason_existed:
+        return False
+    if metadata_existed:
+        pending.pop(token, None)
+    remove_roll_cycle_uncertainty(client, cycle_id, key)
+    return True
+
+
+def resolve_pending_boundary_roll_and_rearm(
+    client,
+    cycle_id,
+    token,
+    schedule_callback,
+    *,
+    now_utc=None,
+):
+    """Resolve a live boundary origin and rearm only when its cycle is clean."""
+    if not resolve_pending_boundary_roll_uncertainty(client, cycle_id, token):
+        return False
+    return rearm_existing_normal_roll_action(
+        client,
+        cycle_id,
+        schedule_callback,
+        now_utc=now_utc,
+    )
+
+
+def apply_authoritative_roll_remaining(
+    client,
+    cycle_id,
+    remaining,
+    *,
+    observation_kind="tu",
+    observed_at_utc=None,
+    base_normal_remaining=None,
+    material_reanchor=False,
+):
+    """Apply an authoritative roll count to the specified cycle and evaluate capacity learning."""
+    if cycle_id is None:
+        return
+    remaining = max(0, int(remaining or 0))
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is None:
+        return
+    observed_at_utc = observed_at_utc or datetime.datetime.now(datetime.timezone.utc)
+    state.remaining = remaining
+    state.remaining_authoritative = True
+    state.last_authoritative_at_utc = observed_at_utc
+    state.authoritative_revision += 1
+    # A snapshot supersedes prior confirmed/timeout ambiguity, but it cannot
+    # settle a command whose result is still outstanding.  That result may
+    # have been created after the snapshot and must first resolve or expire.
+    pending_keys = unresolved_pending_roll_uncertainty_keys(client, cycle_id)
+    state.uncertainty_reasons.intersection_update(pending_keys)
+    state.uncertainty_reasons.update(pending_keys)
+    refresh_legacy_uncertainty_view(client)
+
+    release_reconciliation_for_authoritative_cycle(
+        client,
+        cycle_id,
+        material_reanchor=material_reanchor,
+    )
+
+    counts = getattr(client, "_normal_roll_action_roll_counts", None)
+    if counts is not None:
+        counts[cycle_id] = remaining
+    client.rolls_left = remaining
+
+    # ONLY learn/update replenishment capacity if THIS cycle is PROVEN fresh, untouched, and NOT uncertain
+    if (
+        state.proven_fresh
+        and state.known_consumed == 0
+        and not state.count_uncertain
+    ):
+        capacity_value = (
+            max(0, int(base_normal_remaining))
+            if base_normal_remaining is not None
+            else remaining
+        )
+        client.normal_roll_replenishment_capacity = capacity_value
+        client.normal_roll_replenishment_capacity_confidence = True
+
+
+def reconcile_authoritative_current_roll_count(
+    client,
+    remaining,
+    *,
+    observation_kind,
+    observed_at_utc=None,
+    base_normal_remaining=None,
+    rearm_existing_owner=None,
+    material_reanchor=False,
+):
+    """Apply authoritative count state without originating a roll action.
+
+    The status parser runs before behavior gates such as Lurker Mode and
+    ``proceed_to_rolls``.  It may therefore reconcile an owner that a behavior
+    layer already created, but it must never create ownership from count state
+    alone.
+    """
+    cycle_id = getattr(client, "current_roll_cycle_id", None)
+    if cycle_id is None:
+        return False
+
+    observed_at_utc = observed_at_utc or datetime.datetime.now(datetime.timezone.utc)
+    apply_authoritative_roll_remaining(
+        client,
+        cycle_id,
+        remaining,
+        observation_kind=observation_kind,
+        observed_at_utc=observed_at_utc,
+        base_normal_remaining=base_normal_remaining,
+        material_reanchor=material_reanchor,
+    )
+
+    if getattr(client, "_roll_count_sync_cycle_id", None) == cycle_id:
+        handle = getattr(client, "_roll_count_sync_handle", None)
+        if handle is not None and not handle.cancelled():
+            handle.cancel()
+        client._roll_count_sync_handle = None
+        client._roll_count_sync_cycle_id = None
+        client._roll_count_sync_at_utc = None
+
+    owner = getattr(client, "normal_roll_action_owner", None)
+    if owner is None or not owner.is_pending(cycle_id):
+        return True
+
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    authoritative_remaining = state.remaining if state is not None else max(0, int(remaining or 0))
+    if authoritative_remaining <= 0 and not getattr(client, "auto_rolls_enabled", False):
+        owner.cancel(cycle_id)
+        handle = getattr(client, "_predicted_roll_action_handle", None)
+        if handle is not None and not handle.cancelled():
+            handle.cancel()
+        client._predicted_roll_action_handle = None
+        return True
+
+    if (
+        state is not None
+        and state.remaining is not None
+        and not state.count_uncertain
+        and rearm_existing_owner is not None
+    ):
+        rearm_existing_owner(
+            cycle_id,
+            owner.deadline_utc or observed_at_utc,
+        )
+    return True
+
+
+def successor_roll_cycle_id(cycle_id):
+    """Return the next logical successor cycle ID for a roll cycle."""
+    if cycle_id is None:
+        return None
+    if isinstance(cycle_id, tuple) and len(cycle_id) >= 3 and cycle_id[0] == "roll":
+        parts = list(cycle_id)
+        parts[-1] = int(parts[-1]) + 1
+        return tuple(parts)
+    return None
+
+
+def roll_cycle_matches_anchor_lineage(anchor, cycle_id):
+    """Return whether a cycle_id belongs to the current anchor lineage."""
+    if anchor is None or cycle_id is None:
+        return False
+    if not (isinstance(cycle_id, tuple) and len(cycle_id) >= 3 and cycle_id[0] == anchor.name):
+        return False
+    if getattr(anchor, "anchor_at_utc", None) is None:
+        return False
+    try:
+        return int(cycle_id[1]) == int(anchor.anchor_at_utc.timestamp())
+    except (ValueError, TypeError):
+        return False
+
+
+def is_roll_result_cross_boundary_ambiguous(command_entry, result_created_at_utc, boundary_utc, guard_seconds=1.5):
+    """Determine whether an outgoing roll command or its result straddled the reset boundary.
+
+    If command send timestamp, command completion, or result timestamp indicates
+    that attribution between cycle R and cycle R+1 cannot be provably safe, returns True.
+    """
+    if command_entry is None or boundary_utc is None:
+        return False
+    boundary_dt = getattr(command_entry, "expected_reset_boundary_utc", None) or boundary_utc
+    if boundary_dt is None:
+        return False
+    guard = max(0.0, float(guard_seconds or 1.5))
+
+    # 1. Check if the Mudae character result message was created at or after the boundary
+    if result_created_at_utc is not None and result_created_at_utc >= boundary_dt:
+        return True
+
+    # 2. Check if local send completion ended at or after the boundary
+    send_end = getattr(command_entry, "send_end_utc", None)
+    if send_end is not None and send_end >= boundary_dt:
+        return True
+
+    # 3. Check if command was sent within the guard window before the boundary
+    command_sent = getattr(command_entry, "sent_at_utc", None) or getattr(command_entry, "registered_at_utc", None) or getattr(command_entry, "send_start_utc", None)
+    if command_sent is not None:
+        if command_sent >= (boundary_dt - datetime.timedelta(seconds=guard)):
+            return True
+
+    # 4. Check if result arrived suspiciously close to the boundary (within 0.5s)
+    if result_created_at_utc is not None:
+        if result_created_at_utc >= (boundary_dt - datetime.timedelta(seconds=0.5)):
+            return True
+
+    return False
 
 
 class RollCommandCorrelation:
@@ -230,6 +1003,10 @@ class RollCommandCorrelation:
         mode,
         operation=None,
         registered_at_utc=None,
+        automation_owned=False,
+        logical_roll_cycle_id=None,
+        expected_reset_boundary_utc=None,
+        send_start_utc=None,
     ):
         registered = registered_at_utc or datetime.datetime.now(datetime.timezone.utc)
         self._prune(registered)
@@ -245,6 +1022,10 @@ class RollCommandCorrelation:
             mode=str(mode or "").casefold(),
             registered_at_utc=registered,
             operation_generation=getattr(operation, "generation", None),
+            automation_owned=bool(automation_owned),
+            logical_roll_cycle_id=logical_roll_cycle_id,
+            expected_reset_boundary_utc=expected_reset_boundary_utc,
+            send_start_utc=send_start_utc or registered,
         )
         self._entries.append(entry)
         if operation is not None:
@@ -269,6 +1050,7 @@ class RollCommandCorrelation:
         entry.sent_at_utc = (
             receipt.get("sent_at_utc") or entry.sent_at_utc or entry.registered_at_utc
         )
+        entry.send_end_utc = receipt.get("send_end_utc") or entry.send_end_utc
         entry.slash_nonce = receipt.get("nonce") or entry.slash_nonce
         entry.finalized = True
         if operation is not None and operation.correlation_token == token:
@@ -330,6 +1112,7 @@ class RollCommandCorrelation:
             command_name=normalized,
             mode="text",
             registered_at_utc=sent_at,
+            automation_owned=False,
         )
         return self.finalize(token, {
             "mode": "text",
@@ -379,7 +1162,48 @@ class RollCommandCorrelation:
             ),
         )
 
+    def latest_slash_origin(
+        self, *, channel_id, created_at_utc, owner_id=None, command_name=None,
+        max_age_seconds=None,
+    ):
+        self._prune(created_at_utc)
+        eligible = []
+        normalized_cmd = str(command_name or "").strip().lstrip("/").casefold() if command_name else None
+        for entry in self._entries:
+            if (
+                entry.cancelled
+                or entry.mode != "slash"
+                or entry.response_message_id is not None
+            ):
+                continue
+            if entry.channel_id != int(channel_id):
+                continue
+            if owner_id is not None and entry.owner_id != int(owner_id):
+                continue
+            if normalized_cmd is not None and entry.command_name != normalized_cmd:
+                continue
+            if created_at_utc is not None and (entry.sent_at_utc or entry.registered_at_utc) is not None:
+                sent_time = entry.sent_at_utc or entry.registered_at_utc
+                elapsed = (created_at_utc - sent_time).total_seconds()
+                age_limit = self.ttl_seconds if max_age_seconds is None else max_age_seconds
+                if elapsed < -1.0 or elapsed > max(1.0, float(age_limit)):
+                    continue
+            eligible.append(entry)
+        if not eligible:
+            return None
+        return max(
+            eligible,
+            key=lambda entry: (
+                entry.sent_at_utc or entry.registered_at_utc,
+                entry.token,
+            ),
+        )
+
     def consume_text_origin(self, entry, response_message_id):
+        if entry is not None and entry in self._entries:
+            entry.response_message_id = response_message_id
+
+    def consume_slash_origin(self, entry, response_message_id):
         if entry is not None and entry in self._entries:
             entry.response_message_id = response_message_id
 

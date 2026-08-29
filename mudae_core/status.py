@@ -74,6 +74,94 @@ class ServerResetCoordinator:
             return self._snapshots.get(server_id)
 
 
+@dataclass
+class ResetAnchor:
+    """A locally-predictable periodic reset schedule.
+
+    ``$tu`` exposes timers rounded to minutes, so a raw future deadline is not
+    a reliable identity for an interval.  This object keeps the first trusted
+    boundary as an anchor and derives every later boundary from its configured
+    interval.  Small later timer refinements are observations of that same
+    schedule, not new cycles.
+    """
+
+    name: str
+    interval_minutes: float
+    anchor_at_utc: datetime.datetime = None
+    next_boundary_at_utc: datetime.datetime = None
+    next_boundary_index: int = 0
+    confidence: bool = False
+
+    @property
+    def interval_seconds(self):
+        return max(1.0, float(self.interval_minutes or 0) * 60.0)
+
+    def cycle_id_for_boundary(self, index=None):
+        if self.anchor_at_utc is None:
+            return None
+        index = self.next_boundary_index if index is None else int(index)
+        return (self.name, int(self.anchor_at_utc.timestamp()), index)
+
+    def successor_cycle_id(self, cycle_id):
+        if cycle_id is None:
+            return None
+        if isinstance(cycle_id, tuple) and len(cycle_id) >= 3 and cycle_id[0] == self.name:
+            parts = list(cycle_id)
+            parts[-1] = int(parts[-1]) + 1
+            return tuple(parts)
+        return None
+
+    def observe(self, proposed_boundary_utc, observed_at_utc=None, *, tolerance_seconds=125.0):
+        """Accept a trusted future boundary and return ``(changed, refined)``.
+
+        A difference inside the display/transport tolerance deliberately does
+        not replace the anchor: retaining the anchor keeps daily-roll and
+        humanization state attached to the same logical cycle.  A material
+        disagreement safely starts a new authoritative schedule.
+        """
+        if proposed_boundary_utc is None:
+            return False, False
+        if self.anchor_at_utc is None or self.next_boundary_at_utc is None:
+            self.anchor_at_utc = proposed_boundary_utc
+            self.next_boundary_at_utc = proposed_boundary_utc
+            self.next_boundary_index = 0
+            self.confidence = True
+            return True, False
+
+        expected = self.next_boundary_at_utc
+        if abs((proposed_boundary_utc - expected).total_seconds()) <= float(tolerance_seconds):
+            self.confidence = True
+            return False, True
+
+        # A snapshot immediately after an already-known boundary normally
+        # reports the following interval.  Advance the local schedule first
+        # so that observation does not manufacture a fake cycle.
+        while expected <= (observed_at_utc or proposed_boundary_utc):
+            expected += datetime.timedelta(seconds=self.interval_seconds)
+            self.next_boundary_index += 1
+        if abs((proposed_boundary_utc - expected).total_seconds()) <= float(tolerance_seconds):
+            self.next_boundary_at_utc = expected
+            self.confidence = True
+            return False, True
+
+        self.anchor_at_utc = proposed_boundary_utc
+        self.next_boundary_at_utc = proposed_boundary_utc
+        self.next_boundary_index = 0
+        self.confidence = True
+        return True, False
+
+    def advance_through(self, now_utc):
+        """Advance locally through passed boundaries and return their cycles."""
+        if not self.confidence or self.next_boundary_at_utc is None or now_utc is None:
+            return []
+        advanced = []
+        while now_utc >= self.next_boundary_at_utc:
+            advanced.append((self.cycle_id_for_boundary(), self.next_boundary_at_utc))
+            self.next_boundary_at_utc += datetime.timedelta(seconds=self.interval_seconds)
+            self.next_boundary_index += 1
+        return advanced
+
+
 _CLAIM_DENIED_COOLDOWN_RE = re.compile(
     r"(?:"
     r"can(?:not|'t)\s+(?:claim|marry)"
@@ -314,6 +402,14 @@ def consume_tu_urgent_bypass(client) -> bool:
     return True
 
 
+def consume_current_tu_urgency_for_backoff(client) -> bool:
+    """Seal current urgent evidence against the retry defer it produced."""
+    if not bool(getattr(client, "_status_refresh_urgent", False)):
+        return False
+    client._tu_urgent_bypass_used = True
+    return True
+
+
 def defer_tu_queries(client, seconds, now_monotonic=None) -> float:
     """Prevent repeated physical queries until a bounded monotonic deadline."""
     now = time.monotonic() if now_monotonic is None else float(now_monotonic)
@@ -345,13 +441,71 @@ def rolls_usage_is_active(used_until_utc, now_utc=None) -> bool:
         return False
 
 
+def nearest_periodic_boundary_distance(anchor_at_utc, interval_seconds, candidate_utc):
+    """Return seconds from ``candidate`` to the nearest projected boundary."""
+    if anchor_at_utc is None or candidate_utc is None:
+        return float("inf")
+    seconds = max(1.0, float(interval_seconds or 0.0))
+    cycles = round((candidate_utc - anchor_at_utc).total_seconds() / seconds)
+    boundary = anchor_at_utc + datetime.timedelta(seconds=cycles * seconds)
+    return abs((candidate_utc - boundary).total_seconds())
+
+
+def bounded_sanity_deadline(now_utc, roll_anchor, claim_anchor, seed_offset_seconds=0.0):
+    """Choose a bounded, interval-aware time away from all projected resets."""
+    roll_seconds = max(1.0, roll_anchor.interval_seconds)
+    claim_seconds = max(1.0, claim_anchor.interval_seconds)
+    candidate = now_utc + datetime.timedelta(
+        seconds=roll_seconds * 4.0 + max(0.0, float(seed_offset_seconds or 0.0))
+    )
+    shortest = min(roll_seconds, claim_seconds)
+    guard = min(180.0, max(1.0, shortest * 0.20))
+    adjustment = max(guard * 1.25, shortest * 0.25)
+    for _attempt in range(16):
+        nearest = min(
+            nearest_periodic_boundary_distance(roll_anchor.anchor_at_utc, roll_seconds, candidate),
+            nearest_periodic_boundary_distance(claim_anchor.anchor_at_utc, claim_seconds, candidate),
+        )
+        if nearest >= guard:
+            break
+        candidate += datetime.timedelta(seconds=adjustment)
+    return candidate, guard
+
+
+def ensure_sanity_deadline_safe(candidate_utc, roll_anchor, claim_anchor, guard_seconds=None):
+    """Move an already selected sanity time away from both projected resets."""
+    if candidate_utc is None:
+        return None
+    roll_seconds = max(1.0, roll_anchor.interval_seconds)
+    claim_seconds = max(1.0, claim_anchor.interval_seconds)
+    guard = (
+        min(180.0, max(1.0, min(roll_seconds, claim_seconds) * 0.20))
+        if guard_seconds is None else max(0.0, float(guard_seconds))
+    )
+    adjustment = max(guard * 1.25, min(roll_seconds, claim_seconds) * 0.25)
+    for _attempt in range(16):
+        nearest = min(
+            nearest_periodic_boundary_distance(roll_anchor.anchor_at_utc, roll_seconds, candidate_utc),
+            nearest_periodic_boundary_distance(claim_anchor.anchor_at_utc, claim_seconds, candidate_utc),
+        )
+        if nearest >= guard:
+            break
+        candidate_utc += datetime.timedelta(seconds=adjustment)
+    return candidate_utc
+
+
 def record_tu_failure(client, now_monotonic=None) -> float:
     """Apply exponential retry backoff after a complete unanswered query cycle."""
+    # A failed physical query ends any count-reconciliation attempt.  Import
+    # lazily because runtime itself consumes status helpers.
+    from .runtime import release_roll_count_reconciliation
+    release_roll_count_reconciliation(client)
     streak = int(getattr(client, "_tu_failure_streak", 0)) + 1
     client._tu_failure_streak = streak
     index = min(streak - 1, len(TU_FAILURE_BACKOFF_SECONDS) - 1)
     delay = TU_FAILURE_BACKOFF_SECONDS[index]
     defer_tu_queries(client, delay, now_monotonic=now_monotonic)
+    consume_current_tu_urgency_for_backoff(client)
     return delay
 
 
