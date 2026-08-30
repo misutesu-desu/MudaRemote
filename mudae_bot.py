@@ -3236,7 +3236,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if existing is not None and not existing.cancelled():
             existing.cancel()
 
+        owner_at_schedule = client.normal_roll_action_owner
+        expected_roll_cycle_id = (
+            owner_at_schedule.cycle_id if owner_at_schedule.is_waiting_claim() else None
+        )
+
         def wake_at_claim_reset():
+            if getattr(client, '_daily_rolls_claim_wake_at_utc', None) != deadline:
+                return
+            if (
+                expected_roll_cycle_id is not None
+                and client.normal_roll_action_owner.cycle_id != expected_roll_cycle_id
+            ):
+                return
             client._daily_rolls_claim_wake_handle = None
             client._daily_rolls_claim_wake_at_utc = None
             # The claim anchor is account-private and authoritative.  A
@@ -3355,9 +3367,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
             existing.cancel()
         client._predicted_roll_action_cycle_id = logical_roll_cycle_id
+
+        def run_owned_normal_action():
+            if getattr(client, "_predicted_roll_action_cycle_id", None) != logical_roll_cycle_id:
+                return
+            client._predicted_roll_action_handle = None
+            client._predicted_roll_action_cycle_id = None
+            client.loop.create_task(execute_owned_normal_roll_action(logical_roll_cycle_id))
+
         client._predicted_roll_action_handle = client.loop.call_later(
             max(0.0, delay),
-            lambda: client.loop.create_task(execute_owned_normal_roll_action(logical_roll_cycle_id)),
+            run_owned_normal_action,
         )
 
     def request_roll_count_reconciliation(logical_roll_cycle_id):
@@ -3428,7 +3448,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def execute_owned_normal_roll_action(logical_roll_cycle_id):
         """The sole executor for every ordinary replenished normal-roll batch."""
-        client._predicted_roll_action_handle = None
         owner = client.normal_roll_action_owner
         if logical_roll_cycle_id != owner.cycle_id:
             return
@@ -3686,8 +3705,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         no_extra_humanization = scheduled_trigger or smart_timing_owns_deadline
         if scheduled_trigger and owner.is_pending(logical_roll_cycle_id):
             if not fits_before_reset:
-                defer_owned_normal_roll_window(logical_roll_cycle_id)
-                BotLogger.log("Scheduled roll is too late to finish safely; deferring to the next cycle.", preset_name, "WARN", client)
+                if defer_owned_normal_roll_window(logical_roll_cycle_id):
+                    BotLogger.log("Scheduled roll is too late to finish safely; deferring to the next cycle.", preset_name, "WARN", client)
                 return
             # A user-defined schedule is already the chosen action time. Keep
             # its owner but replace any earlier generic humanization deadline.
@@ -3707,11 +3726,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             persistent_stagger_seconds=(0 if no_extra_humanization else client.persistent_stagger_seconds),
         )
         if not fits_before_reset and owner.is_pending(logical_roll_cycle_id):
-            defer_owned_normal_roll_window(logical_roll_cycle_id)
-            BotLogger.log(
-                "Timing Variation: no safe batch window remains; deferring normal rolls to the next cycle.",
-                preset_name, "WARN", client,
-            )
+            if defer_owned_normal_roll_window(logical_roll_cycle_id):
+                BotLogger.log(
+                    "Timing Variation: no safe batch window remains; deferring normal rolls to the next cycle.",
+                    preset_name, "WARN", client,
+                )
             return
         if action_at is None or not owner.is_pending(logical_roll_cycle_id):
             return
@@ -5167,12 +5186,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.use_slash_rolls,
             )
         ):
-            BotLogger.log(
-                "Timing Variation: prerequisite delay exhausted the safe roll window; deferring this batch to the next cycle.",
-                preset_name, "WARN", client,
-            )
-            if client.normal_roll_action_owner.cycle_id == logical_roll_cycle_id:
-                defer_owned_normal_roll_window(logical_roll_cycle_id)
+            if (
+                client.normal_roll_action_owner.cycle_id == logical_roll_cycle_id
+                and defer_owned_normal_roll_window(logical_roll_cycle_id)
+            ):
+                BotLogger.log(
+                    "Timing Variation: prerequisite delay exhausted the safe roll window; deferring this batch to the next cycle.",
+                    preset_name, "WARN", client,
+                )
             return
 
         BotLogger.log(f"Rolling {rolls_left} times" + (" (Reactive)" if client.enable_reactive_self_snipe else ""), preset_name, "INFO")
@@ -7549,6 +7570,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if process and is_free_event(embed):
                 print_log(f"Sniping free event card: {c_name}", preset_name, "CLAIM")
                 if await claim_character(client, message.channel, message, is_free_claim=True): process = False
+
+    # Keep the production orchestration callable for focused runtime testing
+    # and diagnostics without duplicating these nested state transitions.
+    client._runtime_defer_owned_normal_roll_window = defer_owned_normal_roll_window
+    client._runtime_schedule_owned_normal_roll_action = schedule_owned_normal_roll_action
+    client._runtime_start_roll_commands = start_roll_commands
+    client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
+    client._runtime_check_status = check_status
 
     # Stop may be requested while this client is being configured but before
     # discord.py owns a running loop. Check again immediately before the

@@ -425,7 +425,8 @@ def normal_roll_window_is_deferred(client, cycle_id, boundary_utc, *, tolerance_
         return True
     if boundary_utc is None or sealed_boundary is None:
         return True
-    if abs((boundary_utc - sealed_boundary).total_seconds()) <= tolerance_seconds:
+    delta_seconds = (boundary_utc - sealed_boundary).total_seconds()
+    if delta_seconds <= tolerance_seconds:
         return True
     client._normal_roll_deferred_cycle_id = None
     client._normal_roll_deferred_until_utc = None
