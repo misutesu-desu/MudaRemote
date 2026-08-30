@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.17
+  group: windows-prerelease-v4.9.0-beta.18
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.17
-      RELEASE_TAG: v4.9.0-beta.17
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.17 — Roll Scheduler Stability Hotfix
+      RELEASE_VERSION: 4.9.0-beta.18
+      RELEASE_TAG: v4.9.0-beta.18
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.18 — Roll Scheduler & Multi-Preset Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,26 +128,19 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.17**
+          **🆕 MudaRemote v4.9.0-beta.18**
 
           ### 🐛 Bug Fixes
 
-          - **Fixed Remaining $tu Spam:** Fixed additional roll scheduling paths that could repeatedly check `$tu` instead of correctly preserving their current roll action
-          - **Fixed Pre-Roll Deferral:** Roll batches that become unsafe to start at the last moment now wait for the next cycle instead of being incorrectly marked as completed
-          - **Fixed Scheduled Roll Deferral:** Scheduled roll actions that can no longer finish safely now remain deferred until the next genuine roll cycle
+          - **Fixed Another $tu Roll Loop:** Accounts that receive usable rolls later in the same cycle can now re-arm their roll action instead of repeatedly checking `$tu`
+          - **Fixed Multi-Preset Roll Timing:** Running multiple presets together can no longer incorrectly invalidate another account's authoritative roll state and interfere with its scheduled rolls
+          - **Fixed Timed Roll Reconciliation:** Claim-timed roll actions now use the same state validation rules during scheduling and actual execution
 
           ### ⚡ Improvements
 
-          - **More Reliable Cycle Detection:** Small reset timer adjustments and backwards timer corrections can no longer accidentally reopen an exhausted roll cycle
-          - **Stronger Runtime Protection:** Roll scheduling and final pre-roll behavior are now tested through the actual production orchestration paths
-          - **Safer Successor Handling:** Stale roll callbacks are prevented from replacing the current successor action
-
-          ### 🧪 Testing
-
-          - Added production-path regression coverage for scheduled and ordinary roll-window exhaustion
-          - Added coverage for final pre-roll safe-window validation
-          - Added same-cycle `$tu` loop regression coverage
-          - Added reset re-anchor and successor-cycle coverage
+          - **Stable Pending Roll Actions:** Unrelated status updates such as power, points, DK, or RT changes no longer unnecessarily block a valid normal-roll action
+          - **Safer Shared Reset State:** Shared reset information can update timing without erasing another account's already-authoritative roll count
+          - **More Consistent Scheduler State:** Roll scheduling and execution now agree on exactly when claim/roll state must be reconciled
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease

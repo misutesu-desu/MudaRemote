@@ -1,32 +1,26 @@
 {
-  "version": "4.9.0-beta.17",
+  "version": "4.9.0-beta.18",
   "changelog": {
     "Bug Fixes": [
-      "Fixed additional roll scheduling paths that could repeatedly check $tu instead of correctly preserving their current roll action.",
-      "Roll batches that become unsafe to start at the last moment now wait for the next cycle instead of being incorrectly marked as completed.",
-      "Scheduled roll actions that can no longer finish safely now remain deferred until the next genuine roll cycle."
+      "Accounts that receive usable rolls later in the same cycle can now resume their scheduled roll action instead of repeatedly checking $tu.",
+      "Running multiple presets together can no longer incorrectly interfere with another account's authoritative roll state and roll timing.",
+      "Claim-timed rolls now use consistent status checks from scheduling through actual execution."
     ],
     "Improvements": [
-      "Small reset timer adjustments and backwards timer corrections can no longer accidentally reopen an exhausted roll cycle.",
-      "Roll scheduling and final pre-roll behavior are now tested through the actual production orchestration paths.",
-      "Stale roll callbacks are prevented from replacing the current successor action."
-    ],
-    "Testing": [
-      "Added production-path regression coverage for scheduled and ordinary roll-window exhaustion.",
-      "Added coverage for final pre-roll safe-window validation.",
-      "Added same-cycle $tu loop regression coverage.",
-      "Added reset re-anchor and successor-cycle coverage."
+      "Unrelated status updates no longer unnecessarily block an already valid normal-roll action.",
+      "Shared server timing can be reused across presets without erasing another account's authoritative roll count.",
+      "Scheduling and execution now agree on which claim/roll changes require a fresh $tu reconciliation."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.17/MudaRemote.exe",
-  "exe_sha256": "c36c994999400eabe0cf07551d11498bb9685c10561adba74f983564c607cd49",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.18/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "c36555f187b0d44672c7c61ab77c0bc265f587a4ba54b6a6f48ff5dae7955213"
+      "sha256": "2cb13581318e9314b4eb40a832a6f430b7c6c2676f3edd45198b4f2187b72e76"
     },
     {
       "path": "mudae_preset_editor.py",
