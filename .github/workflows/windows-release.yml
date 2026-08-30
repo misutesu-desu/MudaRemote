@@ -1,32 +1,30 @@
 name: Windows Pre-Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Release version without the v prefix
-        required: true
-        default: 4.9.0-beta.17
-      title:
-        description: GitHub release title
-        required: true
-        default: MudaRemote v4.9.0-beta.17 — Roll Scheduler Stability Hotfix
+  push:
+    branches:
+      - beta
+    paths:
+      - .github/workflows/windows-release.yml
+      - packaging/windows_version_info.txt
+      - version.json
 
 permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-${{ inputs.version }}
+  group: windows-prerelease-v4.9.0-beta.17
   cancel-in-progress: false
 
 jobs:
   build-and-publish:
+    if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: v${{ inputs.version }}
-      RELEASE_TITLE: ${{ inputs.title }}
+      RELEASE_VERSION: 4.9.0-beta.17
+      RELEASE_TAG: v4.9.0-beta.17
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.17 — Roll Scheduler Stability Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -110,7 +108,7 @@ jobs:
       - name: Upload executable workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MudaRemote-${{ inputs.version }}-windows
+          name: MudaRemote-${{ env.RELEASE_VERSION }}-windows
           path: dist/MudaRemote.exe
           if-no-files-found: error
           retention-days: 30
