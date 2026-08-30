@@ -31,12 +31,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Preserve repository line endings for integrity hashes
-        shell: pwsh
-        run: |
-          git config core.autocrlf false
-          git checkout-index --force --all
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
