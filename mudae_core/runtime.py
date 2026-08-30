@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import random
 import time
 
-from .status import STATUS_FIELDS, mark_status_dirty
+from .status import STATUS_FIELDS, mark_status_dirty, status_dirty_fields
 
 
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
@@ -720,6 +720,29 @@ def roll_cycle_uncertainty_requires_status(state):
         or state.remaining is None
         or roll_cycle_needs_authoritative_reconcile(state)
     )
+
+
+def normal_roll_action_state_is_dirty(client, cycle_id=None):
+    """Return whether normal roll action state requires authoritative status reconciliation.
+
+    A normal roll action requires reconciliation when:
+    - roll count is unknown or count state is uncertain for the cycle
+    - 'rolls' is marked dirty in status tracking
+    - 'claim' is marked dirty in status tracking AND claim timing affects roll scheduling (time_rolls_to_claim_reset)
+
+    Unrelated fields (power, points, dk, rt) do NOT make the normal roll action dirty.
+    """
+    dirty_fields = status_dirty_fields(client) if callable(status_dirty_fields) else set()
+    if "rolls" in dirty_fields:
+        return True
+    if getattr(client, "time_rolls_to_claim_reset", False) and "claim" in dirty_fields:
+        return True
+    target_cycle = cycle_id if cycle_id is not None else getattr(client, "current_roll_cycle_id", None)
+    if target_cycle is not None:
+        state = get_normal_roll_cycle_state(client, target_cycle)
+        if state is not None and (state.remaining is None or state.count_uncertain):
+            return True
+    return False
 
 
 def normal_roll_schedule_count(state):

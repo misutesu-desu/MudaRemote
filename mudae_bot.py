@@ -85,7 +85,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -116,7 +116,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -3483,12 +3483,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 BotLogger.log("Waiting for a pending boundary roll result before count reconciliation.", preset_name, "DEBUG", client)
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
-        if (
-            ("rolls" in status_dirty_fields(client) or state.count_uncertain or state.remaining is None)
-            and not reconciling_auto_rolls
-        ):
+        if normal_roll_action_state_is_dirty(client, logical_roll_cycle_id) and not reconciling_auto_rolls:
             BotLogger.log("Status sync requested: ambiguity before owned roll action.", preset_name, "DEBUG", client)
-            request_status_refresh({"claim", "rolls"}, reason="normal-action-ambiguity", urgent=True)
+            refresh_fields = {"claim", "rolls"} if getattr(client, "time_rolls_to_claim_reset", False) else {"rolls"}
+            request_status_refresh(refresh_fields, reason="normal-action-ambiguity", urgent=True)
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
         channel = _get_command_channel() or getattr(client, "_main_channel", None)
@@ -3955,9 +3953,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ):
                 client._sanity_sync_at_utc = None
                 mark_status_dirty(client, {"claim", "rolls"}, reason="periodic-sanity")
-            roll_action_state_dirty = bool(
-                ("rolls" in status_dirty_fields(client))
-                or (client.time_rolls_to_claim_reset and "claim" in status_dirty_fields(client))
+            roll_action_state_dirty = normal_roll_action_state_is_dirty(
+                client, client.current_roll_cycle_id
             )
             action_status_policy = normal_action_status_policy(
                 owner_cycle_id=action_owner.cycle_id,

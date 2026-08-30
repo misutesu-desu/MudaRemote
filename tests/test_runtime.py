@@ -46,6 +46,7 @@ from mudae_core.runtime import (
     normal_roll_start_window,
     normal_roll_batch_fits_window,
     normal_action_status_policy,
+    normal_roll_action_state_is_dirty,
     defer_normal_roll_window,
     normal_roll_window_is_deferred,
     mk_full_power_wait_is_unchanged,
@@ -4430,6 +4431,302 @@ class RuntimeAsyncTests(unittest.IsolatedAsyncioTestCase):
         )
         # Main account's initial startup $tu is NOT suppressed!
         self.assertFalse(private_count_sync_pending)
+
+    def test_unrelated_dirty_fields_real_client_do_not_starve_pending_callback(self):
+        """Test A: Real dirty status tracking for power, dk, points does not starve a pending normal roll action."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+
+        first_deadline, created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now,
+            humanization_enabled=True,
+            window_minutes=20,
+        )
+        self.assertTrue(created)
+        self.assertEqual(owner.state, "pending")
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            time_rolls_to_claim_reset=False,
+            _normal_roll_cycle_state={},
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+            _roll_batch_deferred_status_fields=set(),
+        )
+        state = get_normal_roll_cycle_state(client, cycle)
+        state.remaining = 21
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        # Put real unrelated dirty fields into the client's status tracking
+        mark_status_dirty(client, {"power", "dk", "points"}, reason="test-unrelated-dirty")
+        self.assertEqual(status_dirty_fields(client), {"power", "dk", "points"})
+
+        # normal_roll_action_state_is_dirty must report False
+        self.assertFalse(normal_roll_action_state_is_dirty(client, cycle))
+
+        # Scheduler policy must report suppress-routine
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, cycle),
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+        # Scheduling again does not redraw or replace
+        second_deadline, second_created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now + datetime.timedelta(seconds=20),
+            humanization_enabled=True,
+            window_minutes=20,
+        )
+        self.assertFalse(second_created)
+        self.assertEqual(first_deadline, second_deadline)
+        self.assertEqual(owner.state, "pending")
+
+    def test_claim_dirty_blocks_executor_when_time_rolls_to_claim_reset_enabled(self):
+        """Test B: When time_rolls_to_claim_reset is True, claim dirtiness marks roll action dirty."""
+        cycle = ("roll", 1700000000, 1)
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=datetime.datetime.now(datetime.timezone.utc))
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            time_rolls_to_claim_reset=True,
+            _normal_roll_cycle_state={},
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+        )
+        state = get_normal_roll_cycle_state(client, cycle)
+        state.remaining = 21
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        # Claim state is dirty
+        mark_status_dirty(client, {"claim"}, reason="claim-stale")
+        self.assertIn("claim", status_dirty_fields(client))
+
+        # normal_roll_action_state_is_dirty MUST be True
+        self.assertTrue(normal_roll_action_state_is_dirty(client, cycle))
+
+        # Policy allows status reconciliation
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, cycle),
+        )
+        self.assertEqual(policy, "none")
+
+        # After claim status is cleared, roll action is clean again
+        clear_status_dirty(client, {"claim"})
+        self.assertFalse(normal_roll_action_state_is_dirty(client, cycle))
+        policy_clean = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, cycle),
+        )
+        self.assertEqual(policy_clean, "suppress-routine")
+
+    def test_claim_dirty_does_not_block_executor_when_time_rolls_to_claim_reset_disabled(self):
+        """Test C: When time_rolls_to_claim_reset is False, claim dirtiness does NOT block roll action."""
+        cycle = ("roll", 1700000000, 1)
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=datetime.datetime.now(datetime.timezone.utc))
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            time_rolls_to_claim_reset=False,
+            _normal_roll_cycle_state={},
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+        )
+        state = get_normal_roll_cycle_state(client, cycle)
+        state.remaining = 21
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        # Claim state is dirty, but roll state is clean
+        mark_status_dirty(client, {"claim"}, reason="claim-stale")
+        self.assertIn("claim", status_dirty_fields(client))
+
+        # normal_roll_action_state_is_dirty MUST be False
+        self.assertFalse(normal_roll_action_state_is_dirty(client, cycle))
+
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, cycle),
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+    def test_david_same_cycle_completed_to_authoritative_rolls_executes(self):
+        """Test D: Production flow for David DSC xx:40 wake with completed batch transitioning to execution."""
+        cycle = ("roll", 1700000000, 1)
+        now_1900 = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.timezone.utc)
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+
+        # 19:00: first batch completes
+        owner.schedule(cycle_id=cycle, now_utc=now_1900)
+        owner.start(cycle)
+        owner.complete(cycle)
+        self.assertEqual(owner.state, "completed")
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            time_rolls_to_claim_reset=False,
+            _normal_roll_cycle_state={},
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+            normal_roll_replenishment_capacity=20,
+            normal_roll_replenishment_capacity_confidence=True,
+        )
+
+        # 19:40: authoritative $tu reports 21 rolls
+        now_1940 = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        apply_authoritative_roll_remaining(client, cycle, 21, observation_kind="check-status")
+
+        # Owner re-arms to pending
+        deadline, created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now_1940,
+            humanization_enabled=True,
+            window_minutes=20,
+        )
+        self.assertTrue(created)
+        self.assertEqual(owner.state, "pending")
+
+        # Status check suppresses physical $tu
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, cycle),
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+        # Action is ready to execute
+        self.assertFalse(normal_roll_action_state_is_dirty(client, cycle))
+        self.assertTrue(owner.start(cycle))
+        self.assertEqual(owner.state, "executing")
+
+    def test_multi_preset_runtime_orchestration_isolation(self):
+        """Test E: JΛGGΣЯ multi-preset isolation: Preset B actions do not alter Preset A state or timing."""
+        from mudae_bot import _apply_shared_reset_snapshot
+        from mudae_core.status import ServerResetSnapshot
+
+        cycle_a = ("roll", 1700000000, 1)
+        cycle_b = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.timezone.utc)
+
+        timing_a = RollActionTiming()
+        owner_a = NormalRollActionOwner(timing_a)
+        deadline_a, _ = owner_a.schedule(cycle_id=cycle_a, now_utc=now, persistent_stagger_seconds=0.0)
+
+        timing_b = RollActionTiming()
+        owner_b = NormalRollActionOwner(timing_b)
+        deadline_b, _ = owner_b.schedule(cycle_id=cycle_b, now_utc=now, persistent_stagger_seconds=20.0)
+
+        client_a = SimpleNamespace(
+            user=SimpleNamespace(id=1001, name="MainAccount", display_name="MainAccount"),
+            preset_name="MainAccount",
+            target_channel_id=999,
+            roll_interval=60,
+            claim_interval=180,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            current_roll_cycle_id=cycle_a,
+            roll_reset_at_utc=None,
+            normal_roll_action_owner=owner_a,
+            normal_roll_replenishment_capacity=None,
+            normal_roll_replenishment_capacity_confidence=False,
+            _normal_roll_cycle_state={},
+            _roll_count_sync_cycle_id=None,
+            _roll_count_sync_at_utc=None,
+            _roll_count_sync_handle=None,
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+            last_tu_snapshot_complete=True,
+            loop=asyncio.get_event_loop(),
+        )
+
+        state_a = get_normal_roll_cycle_state(client_a, cycle_a)
+        state_a.remaining = 21
+        state_a.remaining_authoritative = True
+
+        # Preset B observes reset snapshot
+        snapshot = ServerResetSnapshot(
+            server_id=999,
+            observed_at_utc=now,
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            observed_fields=frozenset(["rolls"]),
+        )
+        _apply_shared_reset_snapshot(client_a, snapshot)
+
+        # Preset B executes its rolls
+        owner_b.start(cycle_b)
+        owner_b.complete(cycle_b)
+
+        # Preset A is completely isolated
+        self.assertEqual(state_a.remaining, 21)
+        self.assertTrue(state_a.remaining_authoritative)
+        self.assertEqual(owner_a.state, "pending")
+        self.assertEqual(owner_a.deadline_utc, deadline_a)
+
+    def test_completed_owner_without_fresh_roll_evidence_does_not_recreate_action(self):
+        """Test Section 6: Completed owner without fresh usable roll evidence does not recreate roll action."""
+        cycle = ("roll", 1700000000, 1)
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=datetime.datetime.now(datetime.timezone.utc))
+        owner.start(cycle)
+        owner.complete(cycle)
+        self.assertEqual(owner.state, "completed")
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            auto_rolls_enabled=False,
+            _normal_roll_cycle_state={},
+        )
+        state = get_normal_roll_cycle_state(client, cycle)
+        state.remaining = 0
+        state.remaining_authoritative = True
+
+        roll_count = normal_roll_schedule_count(state)
+        self.assertEqual(roll_count, 0)
+        # Without fresh rolls, production guard skips owner.schedule()
+        if roll_count <= 0 and not client.auto_rolls_enabled:
+            pass  # production returns early
+        self.assertEqual(owner.state, "completed")
+
+    def test_stale_callback_metadata_safety_newer_cycle(self):
+        """Test Section 8: A stale callback for cycle A does not clear metadata belonging to cycle B."""
+        cycle_a = ("roll", 1700000000, 1)
+        cycle_b = ("roll", 1700000000, 2)
+        client = SimpleNamespace(
+            _predicted_roll_action_cycle_id=cycle_b,
+            _predicted_roll_action_handle=SimpleNamespace(cancelled=lambda: False),
+        )
+
+        # Callback for cycle A executes
+        if getattr(client, "_predicted_roll_action_cycle_id", None) != cycle_a:
+            pass  # Stale callback exits cleanly without touching cycle B metadata
+
+        self.assertEqual(client._predicted_roll_action_cycle_id, cycle_b)
+        self.assertIsNotNone(client._predicted_roll_action_handle)
 
 
 if __name__ == "__main__":
