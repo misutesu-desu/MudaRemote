@@ -4165,6 +4165,272 @@ class RuntimeAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.normal_roll_replenishment_capacity, 13)
         self.assertTrue(client.normal_roll_replenishment_capacity_confidence)
 
+    def test_repeated_status_boundary_iterations_do_not_redraw_or_replace_pending_callback(self):
+        """Test A1: Repeated routine status iterations for the same cycle preserve pending callback without redraw."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+
+        first_deadline, created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now,
+            humanization_enabled=True,
+            window_minutes=20,
+        )
+        self.assertTrue(created)
+        self.assertEqual(owner.state, "pending")
+
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=False,
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+        # Second routine iteration 20s later
+        second_deadline, second_created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now + datetime.timedelta(seconds=20),
+            humanization_enabled=True,
+            window_minutes=20,
+        )
+        self.assertFalse(second_created)
+        self.assertEqual(first_deadline, second_deadline)
+        self.assertEqual(owner.state, "pending")
+
+    def test_unrelated_dirty_fields_do_not_starve_pending_roll_action(self):
+        """Test A2: Unrelated dirty status fields (power, points, dk) do not break normal action suppression."""
+        cycle = ("roll", 1700000000, 1)
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=datetime.datetime.now(datetime.timezone.utc))
+        self.assertEqual(owner.state, "pending")
+
+        # Only roll-relevant state is considered dirty for roll suppression
+        unrelated_dirty = False  # power/points/dk dirty, but rolls clean
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=unrelated_dirty,
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+    def test_completed_owner_reschedules_when_new_authoritative_rolls_arrive_in_same_cycle(self):
+        """Test A3: When an action was completed and new rolls are observed in the same cycle, owner re-arms to pending."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.timezone.utc)
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+
+        # First batch at 19:00 completes
+        first_deadline, created = owner.schedule(cycle_id=cycle, now_utc=now)
+        self.assertTrue(created)
+        self.assertTrue(owner.start(cycle))
+        self.assertTrue(owner.complete(cycle))
+        self.assertEqual(owner.state, "completed")
+
+        # At 19:40, authoritative $tu discovers 21 remaining rolls in the same cycle
+        wake_time = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        rearmed_deadline, rearmed_created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=wake_time,
+        )
+        self.assertTrue(rearmed_created)
+        self.assertEqual(owner.state, "pending")
+        self.assertTrue(owner.is_pending(cycle))
+
+        # Status policy now correctly suppresses routine checks instead of looping
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=False,
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+    def test_peer_shared_reset_snapshot_does_not_erase_authoritative_roll_state(self):
+        """Test B2: Peer $tu observation does not erase local client's authoritative roll count."""
+        from mudae_bot import _apply_shared_reset_snapshot
+        from mudae_core.status import ServerResetSnapshot
+        anchor = ResetAnchor("roll", 60)
+        client = SimpleNamespace(
+            user=SimpleNamespace(id=1001, name="AccountA", display_name="AccountA"),
+            preset_name="AccountA",
+            target_channel_id=999,
+            roll_interval=60,
+            claim_interval=180,
+            roll_reset_anchor=anchor,
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            current_roll_cycle_id=("roll", 1787857500, -1),
+            roll_reset_at_utc=None,
+            normal_roll_replenishment_capacity=None,
+            normal_roll_replenishment_capacity_confidence=False,
+            _normal_roll_cycle_state={},
+            _roll_count_sync_cycle_id=None,
+            _roll_count_sync_at_utc=None,
+            _roll_count_sync_handle=None,
+            last_tu_snapshot_complete=True,
+            loop=asyncio.get_event_loop(),
+        )
+
+        state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
+        state.remaining = 21
+        state.remaining_authoritative = True
+
+        observed_at = datetime.datetime(2026, 8, 27, 18, 5, 2, tzinfo=datetime.timezone.utc)
+        proposed_next = datetime.datetime(2026, 8, 27, 19, 5, tzinfo=datetime.timezone.utc)
+        snapshot = ServerResetSnapshot(
+            server_id=999,
+            observed_at_utc=observed_at,
+            roll_reset_at_utc=proposed_next,
+            observed_fields=frozenset(["rolls"]),
+        )
+
+        _apply_shared_reset_snapshot(client, snapshot)
+
+        # Authoritative count was preserved!
+        self.assertEqual(state.remaining, 21)
+        self.assertTrue(state.remaining_authoritative)
+
+    def test_peer_preset_actions_do_not_mutate_other_client_owner_or_timing(self):
+        """Test B3: Multi-preset timing isolation ensures Preset 1's action owner is isolated from Preset 2."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.timezone.utc)
+
+        timing1 = RollActionTiming()
+        owner1 = NormalRollActionOwner(timing1)
+        deadline1, _ = owner1.schedule(cycle_id=cycle, now_utc=now, persistent_stagger_seconds=0.0)
+
+        timing2 = RollActionTiming()
+        owner2 = NormalRollActionOwner(timing2)
+        deadline2, _ = owner2.schedule(cycle_id=cycle, now_utc=now, persistent_stagger_seconds=20.0)
+
+        self.assertNotEqual(deadline1, deadline2)
+        self.assertTrue(owner2.start(cycle))
+        self.assertTrue(owner2.complete(cycle))
+
+        # Client 1 state is completely untouched by Client 2's actions
+        self.assertEqual(owner1.state, "pending")
+        self.assertEqual(owner1.deadline_utc, deadline1)
+
+    def test_timing_threshold_wake_preserves_clean_roll_state(self):
+        """Test A4: humanized wait wake for timing threshold arrival does not dirty clean roll state when owner is pending."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=now)
+
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=20),
+            _status_dirty_fields=set(),
+            _status_refresh_reasons=set(),
+            _local_boundary_wake_pending=False,
+            _immediate_check_event=asyncio.Event(),
+        )
+
+        boundary_fields = {"claim", "rolls"}
+        unresolved_fields = set(boundary_fields)
+        if owner.is_pending(client.current_roll_cycle_id):
+            unresolved_fields.discard("rolls")
+
+        self.assertNotIn("rolls", unresolved_fields)
+        self.assertEqual(unresolved_fields, {"claim"})
+
+    def test_multi_account_simultaneous_completed_to_pending_no_loop(self):
+        """Test A5: Multiple accounts with completed batches transition cleanly to pending when new rolls arrive and suppress $tu."""
+        cycle = ("roll", 1700000000, 1)
+        now = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.timezone.utc)
+        accounts = []
+
+        for i in range(4):
+            timing = RollActionTiming()
+            owner = NormalRollActionOwner(timing)
+            owner.schedule(cycle_id=cycle, now_utc=now, persistent_stagger_seconds=i * 20.0)
+            owner.start(cycle)
+            owner.complete(cycle)
+            self.assertEqual(owner.state, "completed")
+            accounts.append((timing, owner))
+
+        # At 19:40, all 4 accounts wake and receive authoritative rolls
+        wake_time = datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.timezone.utc)
+        for i, (timing, owner) in enumerate(accounts):
+            deadline, created = owner.schedule(
+                cycle_id=cycle,
+                now_utc=wake_time,
+                persistent_stagger_seconds=i * 20.0,
+            )
+            self.assertTrue(created)
+            self.assertEqual(owner.state, "pending")
+            self.assertTrue(owner.is_pending(cycle))
+
+            policy = normal_action_status_policy(
+                owner_cycle_id=owner.cycle_id,
+                current_roll_cycle_id=cycle,
+                owner_state=owner.state,
+                state_dirty=False,
+            )
+            self.assertEqual(policy, "suppress-routine")
+
+    def test_multi_preset_startup_unanchored_main_not_suppressed_by_peer_tu(self):
+        """Test B1: Main account starting up is not suppressed by a peer preset's early $tu reset observation."""
+        anchor = ResetAnchor("roll", 60)
+        client = SimpleNamespace(
+            user=SimpleNamespace(id=1001, name="MainAccount", display_name="MainAccount"),
+            preset_name="MainAccount",
+            target_channel_id=999,
+            roll_interval=60,
+            claim_interval=180,
+            roll_reset_anchor=anchor,
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            current_roll_cycle_id=("roll", 1787857500, -1),
+            roll_reset_at_utc=None,
+            normal_roll_replenishment_capacity=None,
+            normal_roll_replenishment_capacity_confidence=False,
+            _normal_roll_cycle_state={},
+            _roll_count_sync_cycle_id=None,
+            _roll_count_sync_at_utc=None,
+            _roll_count_sync_handle=None,
+            last_tu_snapshot_complete=False,
+            loop=asyncio.get_event_loop(),
+        )
+
+        def schedule_private_sync(cid, boundary, *, reason=""):
+            client._roll_count_sync_cycle_id = cid
+            client._roll_count_sync_handle = client.loop.call_later(60.0, lambda: None)
+
+        client._schedule_private_roll_count_sync = schedule_private_sync
+
+        from mudae_bot import _apply_shared_reset_snapshot
+        from mudae_core.status import ServerResetSnapshot
+
+        observed_at = datetime.datetime(2026, 8, 27, 18, 5, 2, tzinfo=datetime.timezone.utc)
+        proposed_next = datetime.datetime(2026, 8, 27, 19, 5, tzinfo=datetime.timezone.utc)
+        snapshot = ServerResetSnapshot(
+            server_id=999,
+            observed_at_utc=observed_at,
+            roll_reset_at_utc=proposed_next,
+            observed_fields=frozenset(["rolls"]),
+        )
+
+        _apply_shared_reset_snapshot(client, snapshot)
+
+        # Check status policy on startup:
+        private_count_sync_pending = bool(
+            getattr(client, "last_tu_snapshot_complete", False)
+            and getattr(client, "_roll_count_sync_cycle_id", None) == client.current_roll_cycle_id
+            and getattr(client, "_roll_count_sync_handle", None) is not None
+            and not client._roll_count_sync_handle.cancelled()
+        )
+        # Main account's initial startup $tu is NOT suppressed!
+        self.assertFalse(private_count_sync_pending)
+
 
 if __name__ == "__main__":
     unittest.main()

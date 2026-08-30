@@ -196,7 +196,7 @@ def _apply_shared_reset_snapshot(client, snapshot):
                 roll_anchor.next_boundary_index - 1
             )
             state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
-            if state is not None:
+            if state is not None and not getattr(state, "remaining_authoritative", False):
                 state.proven_fresh = False
                 state.remaining = None
                 state.remaining_authoritative = False
@@ -3483,7 +3483,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 BotLogger.log("Waiting for a pending boundary roll result before count reconciliation.", preset_name, "DEBUG", client)
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
-        if status_dirty_fields(client) and not reconciling_auto_rolls:
+        if (
+            ("rolls" in status_dirty_fields(client) or state.count_uncertain or state.remaining is None)
+            and not reconciling_auto_rolls
+        ):
             BotLogger.log("Status sync requested: ambiguity before owned roll action.", preset_name, "DEBUG", client)
             request_status_refresh({"claim", "rolls"}, reason="normal-action-ambiguity", urgent=True)
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
@@ -3952,19 +3955,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ):
                 client._sanity_sync_at_utc = None
                 mark_status_dirty(client, {"claim", "rolls"}, reason="periodic-sanity")
+            roll_action_state_dirty = bool(
+                ("rolls" in status_dirty_fields(client))
+                or (client.time_rolls_to_claim_reset and "claim" in status_dirty_fields(client))
+            )
             action_status_policy = normal_action_status_policy(
                 owner_cycle_id=action_owner.cycle_id,
                 current_roll_cycle_id=client.current_roll_cycle_id,
                 owner_state=action_owner.state,
-                state_dirty=bool(status_dirty_fields(client)),
+                state_dirty=roll_action_state_dirty,
                 reconciliation_cycle_ids={
                     getattr(client, "_auto_rolls_ack_ambiguous_cycle_id", None),
                     getattr(client, "_auto_rolls_reconcile_cycle_id", None),
                 },
             )
             suppress_physical_tu = action_status_policy in {"suppress-routine", "defer-executing"}
-            private_count_sync_pending = (
-                getattr(client, "_roll_count_sync_cycle_id", None) == client.current_roll_cycle_id
+            private_count_sync_pending = bool(
+                getattr(client, "last_tu_snapshot_complete", False)
+                and getattr(client, "_roll_count_sync_cycle_id", None) == client.current_roll_cycle_id
                 and getattr(client, "_roll_count_sync_handle", None) is not None
                 and not client._roll_count_sync_handle.cancelled()
             )
@@ -6851,10 +6859,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if predicted_fields and not unresolved_fields:
                     client._local_boundary_wake_pending = True
                     return
-                mark_status_dirty(client, unresolved_fields or set(boundary_fields), reason=f"{reason}-boundary", urgent=True)
-                event = getattr(client, "_immediate_check_event", None)
-                if event is not None:
-                    event.set()
+                owner = getattr(client, "normal_roll_action_owner", None)
+                if owner is not None and owner.is_pending(getattr(client, "current_roll_cycle_id", None)):
+                    unresolved_fields.discard("rolls")
+                if unresolved_fields:
+                    mark_status_dirty(client, unresolved_fields, reason=f"{reason}-boundary", urgent=True)
+                    event = getattr(client, "_immediate_check_event", None)
+                    if event is not None:
+                        event.set()
             # Boundary discovery takes precedence over inactive-hour and action
             # pacing. The next status cycle performs the reconciliation; any
             # deliberately humanized action delay belongs after that cycle.

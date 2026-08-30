@@ -175,14 +175,12 @@ class RollActionTiming:
         persistent_stagger_seconds=0,
         random_source=None,
     ):
-        if cycle_key != self.cycle_key:
+        if cycle_key != self.cycle_key or self.completed:
             self.cycle_key = cycle_key
             self.deadline_utc = None
             self.random_delay_seconds = 0.0
             self.completed = False
 
-        if self.completed:
-            return now_utc
         if self.deadline_utc is not None:
             return self.deadline_utc
 
@@ -247,7 +245,7 @@ class NormalRollActionOwner:
         if cycle_id in self.deferred_window_cycle_ids:
             return self.deadline_utc, False
         if cycle_id == self.cycle_id and self.state in {
-            "pending", "waiting_claim", "executing", "deferred_window", "completed"
+            "pending", "waiting_claim", "executing", "deferred_window"
         }:
             return self.deadline_utc, False
         if self.state == "executing":
