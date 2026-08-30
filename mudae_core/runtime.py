@@ -223,6 +223,7 @@ class NormalRollActionOwner:
     queued_cycle_id: object = None
     queued_deadline_utc: datetime.datetime = None
     post_claim_deadline_created: bool = False
+    deferred_window_cycle_ids: list = field(default_factory=list)
 
     @staticmethod
     def _calculate_deadline(*, now_utc, latest_action_at_utc=None,
@@ -243,6 +244,8 @@ class NormalRollActionOwner:
     def schedule(self, *, cycle_id, **timing_kwargs):
         if cycle_id is None:
             return None, False
+        if cycle_id in self.deferred_window_cycle_ids:
+            return self.deadline_utc, False
         if cycle_id == self.cycle_id and self.state in {
             "pending", "waiting_claim", "executing", "deferred_window", "completed"
         }:
@@ -304,9 +307,16 @@ class NormalRollActionOwner:
 
     def defer_window(self, cycle_id):
         """Seal a cycle whose trusted safe roll window has expired."""
-        if cycle_id != self.cycle_id or self.state not in {"pending", "executing"}:
+        if cycle_id != self.cycle_id:
+            return False
+        if self.state == "deferred_window":
+            return True
+        if self.state not in {"pending", "executing"}:
             return False
         self.state = "deferred_window"
+        self.deferred_window_cycle_ids.append(cycle_id)
+        if len(self.deferred_window_cycle_ids) > 32:
+            del self.deferred_window_cycle_ids[:-32]
         self.timing.mark_completed(cycle_id)
         return True
 
@@ -358,6 +368,68 @@ class NormalRollActionOwner:
         self.queued_deadline_utc = None
         self.timing.mark_completed(self.cycle_id)
         return True
+
+
+def defer_normal_roll_window(client, cycle_id, boundary_utc, *, now_utc=None,
+                             monotonic_now=None):
+    """Atomically seal one exhausted owned roll cycle.
+
+    The owner transition is the authorization point for all associated cleanup.
+    Repeating the operation for the already-sealed cycle is harmless and keeps
+    the first trusted successor boundary and wake deadline intact.
+    """
+    owner = getattr(client, "normal_roll_action_owner", None)
+    if owner is None:
+        return False
+    already_deferred = owner.cycle_id == cycle_id and owner.state == "deferred_window"
+    if not owner.defer_window(cycle_id):
+        return False
+
+    predicted_cycle_id = getattr(client, "_predicted_roll_action_cycle_id", None)
+    if predicted_cycle_id == cycle_id:
+        handle = getattr(client, "_predicted_roll_action_handle", None)
+        if handle is not None and not handle.cancelled():
+            handle.cancel()
+        client._predicted_roll_action_handle = None
+        client._predicted_roll_action_cycle_id = None
+    getattr(client, "_normal_roll_action_scheduled_triggers", set()).discard(cycle_id)
+
+    if already_deferred:
+        return True
+
+    client._normal_roll_deferred_cycle_id = cycle_id
+    client._normal_roll_deferred_until_utc = boundary_utc
+    if boundary_utc is not None:
+        now_utc = now_utc or datetime.datetime.now(datetime.timezone.utc)
+        monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+        wait_seconds = max(3.0, (boundary_utc - now_utc).total_seconds())
+        client._status_cycle_not_before_monotonic = max(
+            float(getattr(client, "_status_cycle_not_before_monotonic", 0.0) or 0.0),
+            monotonic_now + wait_seconds,
+        )
+    return True
+
+
+def normal_roll_window_is_deferred(client, cycle_id, boundary_utc, *, tolerance_seconds=125.0):
+    """Return whether an owned cycle is covered by the active exhausted-window seal.
+
+    A small timer refinement is still the same boundary even if rebuilding the
+    anchor changes its incidental cycle key. Only a different owner cycle plus
+    a materially different successor boundary releases the seal.
+    """
+    sealed_cycle_id = getattr(client, "_normal_roll_deferred_cycle_id", None)
+    sealed_boundary = getattr(client, "_normal_roll_deferred_until_utc", None)
+    if sealed_cycle_id is None:
+        return False
+    if cycle_id == sealed_cycle_id:
+        return True
+    if boundary_utc is None or sealed_boundary is None:
+        return True
+    if abs((boundary_utc - sealed_boundary).total_seconds()) <= tolerance_seconds:
+        return True
+    client._normal_roll_deferred_cycle_id = None
+    client._normal_roll_deferred_until_utc = None
+    return False
 
 
 @dataclass

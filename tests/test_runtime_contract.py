@@ -2059,11 +2059,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
             2,
         )
         self.assertIn("defer_owned_normal_roll_window(logical_roll_cycle_id)", roll_source)
-        self.assertIn("owner.defer_window(logical_roll_cycle_id)", defer_source)
-        self.assertIn("_status_cycle_not_before_monotonic", defer_source)
-        self.assertIn("_normal_roll_deferred_until_utc", defer_source)
-        self.assertIn("same_logical_boundary", schedule_source)
-        self.assertIn("<= 125.0", schedule_source)
+        self.assertIn("defer_normal_roll_window(", defer_source)
+        self.assertIn("normal_roll_window_is_deferred(", schedule_source)
         self.assertNotIn("request_status_refresh(", defer_source)
 
     def test_mk_full_power_wait_deduplicates_unchanged_state(self):

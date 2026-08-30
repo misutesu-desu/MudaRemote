@@ -46,6 +46,8 @@ from mudae_core.runtime import (
     normal_roll_start_window,
     normal_roll_batch_fits_window,
     normal_action_status_policy,
+    defer_normal_roll_window,
+    normal_roll_window_is_deferred,
     mk_full_power_wait_is_unchanged,
     is_roll_result_cross_boundary_ambiguous,
     can_resume_claim_interrupted_rolls,
@@ -362,6 +364,188 @@ class RuntimeStaggerTests(unittest.TestCase):
         self.assertEqual(successor_deadline, now + datetime.timedelta(hours=1))
         self.assertFalse(owner.defer_window(cycle))
         self.assertEqual(owner.cycle_id, successor)
+
+    @staticmethod
+    def _deferred_window_client(cycle, now, boundary, remaining=1258):
+        owner = NormalRollActionOwner(RollActionTiming())
+        owner.schedule(cycle_id=cycle, now_utc=now)
+        handle = _TimerHandle(lambda: None, ())
+        client = SimpleNamespace(
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=cycle,
+            roll_reset_at_utc=boundary,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _normal_roll_action_scheduled_triggers={cycle},
+            _predicted_roll_action_handle=handle,
+            _predicted_roll_action_cycle_id=cycle,
+            _normal_roll_deferred_cycle_id=None,
+            _normal_roll_deferred_until_utc=None,
+            _status_cycle_not_before_monotonic=0.0,
+            _roll_count_sync_cycle_id=None,
+            _roll_count_sync_handle=None,
+            _roll_count_sync_at_utc=None,
+            auto_rolls_enabled=False,
+        )
+        state = get_normal_roll_cycle_state(client, cycle)
+        state.remaining = remaining
+        state.remaining_authoritative = True
+        return client, owner, handle
+
+    def test_pending_safe_window_exhaustion_uses_atomic_production_defer(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(seconds=20)
+        cycle = ("roll", 200, 1)
+        client, owner, handle = self._deferred_window_client(cycle, now, boundary)
+        _latest, fits = normal_roll_start_window(now, boundary, 1258, 1.0)
+
+        self.assertFalse(fits)
+        self.assertTrue(defer_normal_roll_window(
+            client, cycle, boundary, now_utc=now, monotonic_now=100.0,
+        ))
+        self.assertEqual(owner.cycle_id, cycle)
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertNotEqual(owner.state, "completed")
+        self.assertEqual(client._normal_roll_deferred_until_utc, boundary)
+        self.assertEqual(client._normal_roll_deferred_cycle_id, cycle)
+        self.assertEqual(client._status_cycle_not_before_monotonic, 120.0)
+        self.assertTrue(handle.cancelled())
+        self.assertNotIn(cycle, client._normal_roll_action_scheduled_triggers)
+        _, created = owner.schedule(cycle_id=cycle, now_utc=now)
+        self.assertFalse(created)
+
+    def test_executing_pre_roll_exhaustion_defers_instead_of_completing(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(seconds=20)
+        cycle = ("roll", 200, 2)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        self.assertTrue(owner.start(cycle))
+
+        self.assertTrue(defer_normal_roll_window(
+            client, cycle, boundary, now_utc=now, monotonic_now=500.0,
+        ))
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertFalse(owner.complete(cycle))
+
+    def test_claim_wait_safe_window_exhaustion_returns_to_pending_before_defer(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(seconds=20)
+        cycle = ("roll", 200, 20)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        self.assertTrue(owner.defer(cycle))
+        self.assertTrue(owner.resume_claim(cycle))
+
+        self.assertTrue(defer_normal_roll_window(
+            client, cycle, boundary, now_utc=now, monotonic_now=750.0,
+        ))
+        self.assertEqual(owner.state, "deferred_window")
+
+    def test_beta16_same_cycle_status_loop_stays_sealed(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(seconds=20)
+        cycle = ("roll", 200, 3)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        defer_normal_roll_window(client, cycle, boundary, now_utc=now, monotonic_now=1000.0)
+
+        reconcile_authoritative_current_roll_count(
+            client, 1258, observation_kind="check-status", observed_at_utc=now + datetime.timedelta(seconds=2),
+        )
+        self.assertTrue(normal_roll_window_is_deferred(client, cycle, boundary))
+        _, recreated = owner.schedule(cycle_id=cycle, now_utc=now + datetime.timedelta(seconds=2))
+        self.assertFalse(recreated)
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertEqual(normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=False,
+        ), "suppress-routine")
+        self.assertGreater(client._status_cycle_not_before_monotonic, 1000.0)
+
+    def test_authoritative_same_cycle_dirty_reconciliation_keeps_defer_seal(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(seconds=60)
+        cycle = ("roll", 200, 4)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        initialize_status_tracking(client)
+        defer_normal_roll_window(client, cycle, boundary, now_utc=now, monotonic_now=2000.0)
+        mark_status_dirty(client, {"power"}, reason="legitimate-power-reconcile")
+        self.assertIn("power", status_dirty_fields(client))
+
+        reconcile_authoritative_current_roll_count(
+            client, 1258, observation_kind="check-status", observed_at_utc=now + datetime.timedelta(seconds=2),
+        )
+        clear_status_dirty(client, {"power"})
+        self.assertFalse(status_dirty_fields(client))
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertTrue(normal_roll_window_is_deferred(client, cycle, boundary))
+        self.assertEqual(normal_action_status_policy(
+            owner_cycle_id=cycle,
+            current_roll_cycle_id=cycle,
+            owner_state=owner.state,
+            state_dirty=False,
+        ), "suppress-routine")
+
+    def test_small_reset_reanchor_preserves_defer_seal(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(minutes=20)
+        cycle = ("roll", 200, 5)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        defer_normal_roll_window(client, cycle, boundary, now_utc=now, monotonic_now=3000.0)
+
+        refined_cycle_key = ("roll", 201, 5)
+        refined_boundary = boundary + datetime.timedelta(seconds=125)
+        self.assertTrue(normal_roll_window_is_deferred(
+            client, refined_cycle_key, refined_boundary,
+        ))
+        self.assertEqual(owner.cycle_id, cycle)
+        self.assertEqual(client._normal_roll_deferred_until_utc, boundary)
+
+    def test_true_successor_schedules_once_and_stale_cycle_cannot_act(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(minutes=1)
+        cycle = ("roll", 200, 6)
+        successor = ("roll", 200, 7)
+        successor_boundary = boundary + datetime.timedelta(hours=1)
+        client, owner, _handle = self._deferred_window_client(cycle, now, boundary)
+        defer_normal_roll_window(client, cycle, boundary, now_utc=now, monotonic_now=4000.0)
+
+        self.assertFalse(normal_roll_window_is_deferred(client, successor, successor_boundary))
+        deadline, created = owner.schedule(cycle_id=successor, now_utc=boundary)
+        repeated_deadline, repeated_created = owner.schedule(
+            cycle_id=successor, now_utc=boundary + datetime.timedelta(seconds=2),
+        )
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertEqual(deadline, repeated_deadline)
+        self.assertFalse(owner.start(cycle))
+        self.assertFalse(defer_normal_roll_window(client, cycle, boundary))
+        _, stale_created = owner.schedule(cycle_id=cycle, now_utc=successor_boundary)
+        self.assertFalse(stale_created)
+        self.assertEqual(owner.cycle_id, successor)
+        self.assertEqual(owner.state, "pending")
+
+    def test_duplicate_production_defer_is_idempotent(self):
+        now = datetime.datetime(2026, 8, 30, 12, 59, tzinfo=datetime.timezone.utc)
+        boundary = now + datetime.timedelta(minutes=10)
+        cycle = ("roll", 200, 8)
+        client, owner, handle = self._deferred_window_client(cycle, now, boundary)
+        self.assertTrue(defer_normal_roll_window(
+            client, cycle, boundary, now_utc=now, monotonic_now=5000.0,
+        ))
+        original_status_deadline = client._status_cycle_not_before_monotonic
+        refined_boundary = boundary + datetime.timedelta(seconds=30)
+
+        self.assertTrue(defer_normal_roll_window(
+            client, cycle, refined_boundary,
+            now_utc=now + datetime.timedelta(seconds=2), monotonic_now=9000.0,
+        ))
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertEqual(client._normal_roll_deferred_until_utc, boundary)
+        self.assertEqual(client._status_cycle_not_before_monotonic, original_status_deadline)
+        self.assertTrue(handle.cancelled())
+        self.assertIsNone(client._predicted_roll_action_handle)
+        self.assertFalse(client._normal_roll_action_scheduled_triggers)
 
     def test_prearmed_automation_text_command_keeps_ownership_before_receipt(self):
         tracker = RollCommandCorrelation()

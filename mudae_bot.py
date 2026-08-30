@@ -85,7 +85,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -116,7 +116,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -1036,6 +1036,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._deferred_independent_known_work = False
     client._normal_roll_transaction_cycle_id = None
     client._normal_roll_deferred_until_utc = None
+    client._normal_roll_deferred_cycle_id = None
     client._confirmed_kakera_c_bonus_until = 0.0
     client.collected_kakera_rolls = []
     client._pending_mk_roll = None
@@ -3256,7 +3257,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
                 )
                 if not fits_before_reset:
-                    defer_owned_normal_roll_window(owner.cycle_id)
+                    # The claim wait has ended; restore the owner to its
+                    # eligible pending state before atomically sealing the
+                    # exhausted execution window.
+                    if owner.resume_claim(owner.cycle_id):
+                        defer_owned_normal_roll_window(owner.cycle_id)
                     BotLogger.log(
                         "Timing Variation: no safe batch window remains; deferring normal rolls to the next cycle.",
                         preset_name, "WARN", client,
@@ -3376,26 +3381,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     def defer_owned_normal_roll_window(logical_roll_cycle_id):
         """Seal one exhausted cycle and sleep until its trusted successor boundary."""
-        owner = client.normal_roll_action_owner
-        if not owner.defer_window(logical_roll_cycle_id):
-            return False
-        handle = getattr(client, "_predicted_roll_action_handle", None)
-        if handle is not None and not handle.cancelled():
-            handle.cancel()
-        client._predicted_roll_action_handle = None
-        client._normal_roll_action_scheduled_triggers.discard(logical_roll_cycle_id)
-        boundary = getattr(client, "roll_reset_at_utc", None)
-        if boundary is not None:
-            client._normal_roll_deferred_until_utc = boundary
-            wait_seconds = max(
-                3.0,
-                (boundary - datetime.datetime.now(timezone.utc)).total_seconds(),
-            )
-            client._status_cycle_not_before_monotonic = max(
-                float(getattr(client, "_status_cycle_not_before_monotonic", 0.0) or 0.0),
-                time.monotonic() + wait_seconds,
-            )
-        return True
+        return defer_normal_roll_window(
+            client,
+            logical_roll_cycle_id,
+            getattr(client, "roll_reset_at_utc", None),
+        )
 
     async def complete_owned_normal_roll_transaction(logical_roll_cycle_id, channel):
         """Release exactly the executing owner and then promote any trusted successor."""
@@ -3659,21 +3649,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         _prune_normal_action_metadata()
         actual_now_utc = datetime.datetime.now(timezone.utc)
-        deferred_until = getattr(client, "_normal_roll_deferred_until_utc", None)
-        if deferred_until is not None:
-            if actual_now_utc >= deferred_until:
-                client._normal_roll_deferred_until_utc = None
-            else:
-                current_boundary = getattr(client, "roll_reset_at_utc", None)
-                same_logical_boundary = bool(
-                    current_boundary is None
-                    or abs((current_boundary - deferred_until).total_seconds()) <= 125.0
-                )
-                if same_logical_boundary:
-                    return
-                # A materially later authoritative boundary is a genuine state
-                # change and may make the batch safe again.
-                client._normal_roll_deferred_until_utc = None
+        if normal_roll_window_is_deferred(
+            client,
+            logical_roll_cycle_id,
+            getattr(client, "roll_reset_at_utc", None),
+        ):
+            return
         state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
         if state is None or state.remaining is None:
             if state is None or not state.remaining_authoritative:
