@@ -1,27 +1,32 @@
 {
-  "version": "4.9.0-beta.16",
+  "version": "4.9.0-beta.17",
   "changelog": {
     "Bug Fixes": [
-      "Fixed repeated $tu checks that could prevent normal rolls from starting.",
-      "Fixed interrupted $oc and $oh games after an ambiguous Discord click response.",
-      "Restored automatic $rolls usage after the current normal roll batch.",
-      "Stopped repeated $mk full-power waiting messages."
+      "Fixed additional roll scheduling paths that could repeatedly check $tu instead of correctly preserving their current roll action.",
+      "Roll batches that become unsafe to start at the last moment now wait for the next cycle instead of being incorrectly marked as completed.",
+      "Scheduled roll actions that can no longer finish safely now remain deferred until the next genuine roll cycle."
     ],
     "Improvements": [
-      "Claim-critical roll processing now runs before independent $oh and $oc games.",
-      "Roll batches that cannot finish safely wait for the next cycle without polling repeatedly.",
-      "Sphere boards are refreshed and checked before a missing click acknowledgement is retried."
+      "Small reset timer adjustments and backwards timer corrections can no longer accidentally reopen an exhausted roll cycle.",
+      "Roll scheduling and final pre-roll behavior are now tested through the actual production orchestration paths.",
+      "Stale roll callbacks are prevented from replacing the current successor action."
+    ],
+    "Testing": [
+      "Added production-path regression coverage for scheduled and ordinary roll-window exhaustion.",
+      "Added coverage for final pre-roll safe-window validation.",
+      "Added same-cycle $tu loop regression coverage.",
+      "Added reset re-anchor and successor-cycle coverage."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.16/MudaRemote.exe",
-  "exe_sha256": "7bd0cea1cf727fff57978df5857036bca8788c45fd87a47c303a5c12ca95ee3e",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.17/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "5a97dd2da23a41879aa42b1f7a897cca01bad34d69624a456fe399e9281e5d3c"
+      "sha256": "c4b18a59c7cc9b174298f75fed8601f38c59d197499b68d3984df85cf195799f"
     },
     {
       "path": "mudae_preset_editor.py",

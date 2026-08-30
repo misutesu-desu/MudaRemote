@@ -1,0 +1,184 @@
+name: Windows Pre-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix
+        required: true
+        default: 4.9.0-beta.17
+      title:
+        description: GitHub release title
+        required: true
+        default: MudaRemote v4.9.0-beta.17 — Roll Scheduler Stability Hotfix
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-prerelease-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: v${{ inputs.version }}
+      RELEASE_TITLE: ${{ inputs.title }}
+    steps:
+      - name: Check out the requested release revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preserve repository line endings for integrity hashes
+        shell: pwsh
+        run: |
+          git config core.autocrlf false
+          git checkout-index --force --all
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Verify release request and source revision
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -LiteralPath .\version.json -Raw | ConvertFrom-Json
+          if ($manifest.version -ne $env:RELEASE_VERSION) {
+            throw "Requested $env:RELEASE_VERSION but version.json contains $($manifest.version)."
+          }
+          if ($env:GITHUB_REF_NAME -ne "beta") {
+            throw "Windows releases must be dispatched from beta; got $env:GITHUB_REF_NAME."
+          }
+          git fetch origin beta --tags
+          $remoteBeta = (git rev-parse origin/beta).Trim()
+          if ($remoteBeta -ne $env:GITHUB_SHA) {
+            throw "origin/beta advanced from dispatched SHA $env:GITHUB_SHA to $remoteBeta."
+          }
+          if (git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG") {
+            throw "Tag $env:RELEASE_TAG already exists."
+          }
+
+      - name: Run full test suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Compile Python sources
+        run: python -m compileall -q mudae_bot.py mudae_preset_editor.py mudae_core tests build.py
+
+      - name: Build final executable and finalize integrity manifest
+        run: python build.py --onefile --update-manifest
+
+      - name: Verify executable and finalized checksums
+        id: executable
+        shell: pwsh
+        run: |
+          $exe = Get-Item -LiteralPath .\dist\MudaRemote.exe
+          if ($exe.Length -le 0) { throw "MudaRemote.exe is empty." }
+          $manifest = Get-Content -LiteralPath .\version.json -Raw | ConvertFrom-Json
+          $sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.exe_sha256 -eq "pending-github-actions") {
+            throw "build.py did not finalize exe_sha256."
+          }
+          if ($manifest.exe_sha256 -ne $sha256) {
+            throw "Executable hash mismatch: manifest=$($manifest.exe_sha256), actual=$sha256."
+          }
+          $versionInfo = $exe.VersionInfo
+          if ($versionInfo.ProductVersion -ne $env:RELEASE_VERSION) {
+            throw "ProductVersion mismatch: expected $env:RELEASE_VERSION, got $($versionInfo.ProductVersion)."
+          }
+          if ($versionInfo.OriginalFilename -ne "MudaRemote.exe") {
+            throw "Unexpected OriginalFilename: $($versionInfo.OriginalFilename)."
+          }
+          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "size=$($exe.Length)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "MudaRemote.exe size: $($exe.Length) bytes"
+          Write-Host "MudaRemote.exe SHA-256: $sha256"
+
+      - name: Verify finalized source integrity metadata
+        run: python -m unittest tests.test_release_manifest tests.test_build_contract -v
+
+      - name: Upload executable workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MudaRemote-${{ inputs.version }}-windows
+          path: dist/MudaRemote.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Commit finalized executable checksum
+        id: finalize
+        shell: pwsh
+        run: |
+          $changed = @(git status --porcelain)
+          if ($changed.Count -ne 1 -or $changed[0] -notmatch '^ M version\.json$') {
+            throw "Build changed unexpected files: $($changed -join ', ')"
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- version.json
+          git commit -m "🔐 chore: record $env:RELEASE_TAG executable checksum"
+          $releaseSha = (git rev-parse HEAD).Trim()
+          git push origin HEAD:beta
+          "release_sha=$releaseSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Final release commit: $releaseSha"
+
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          @'
+          **🆕 MudaRemote v4.9.0-beta.17**
+
+          ### 🐛 Bug Fixes
+
+          - **Fixed Remaining $tu Spam:** Fixed additional roll scheduling paths that could repeatedly check `$tu` instead of correctly preserving their current roll action
+          - **Fixed Pre-Roll Deferral:** Roll batches that become unsafe to start at the last moment now wait for the next cycle instead of being incorrectly marked as completed
+          - **Fixed Scheduled Roll Deferral:** Scheduled roll actions that can no longer finish safely now remain deferred until the next genuine roll cycle
+
+          ### ⚡ Improvements
+
+          - **More Reliable Cycle Detection:** Small reset timer adjustments and backwards timer corrections can no longer accidentally reopen an exhausted roll cycle
+          - **Stronger Runtime Protection:** Roll scheduling and final pre-roll behavior are now tested through the actual production orchestration paths
+          - **Safer Successor Handling:** Stale roll callbacks are prevented from replacing the current successor action
+
+          ### 🧪 Testing
+
+          - Added production-path regression coverage for scheduled and ordinary roll-window exhaustion
+          - Added coverage for final pre-roll safe-window validation
+          - Added same-cycle `$tu` loop regression coverage
+          - Added reset re-anchor and successor-cycle coverage
+          '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
+
+      - name: Publish GitHub prerelease
+        shell: pwsh
+        run: |
+          gh release create $env:RELEASE_TAG .\dist\MudaRemote.exe `
+            --prerelease `
+            --target "${{ steps.finalize.outputs.release_sha }}" `
+            --title $env:RELEASE_TITLE `
+            --notes-file .\release_notes.md
+
+      - name: Verify published prerelease
+        shell: pwsh
+        run: |
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($release.draft) { throw "Release is unexpectedly a draft." }
+          if (-not $release.prerelease) { throw "Release is not marked as a prerelease." }
+          if ($release.name -ne $env:RELEASE_TITLE) { throw "Unexpected release title: $($release.name)" }
+          $asset = @($release.assets | Where-Object { $_.name -eq "MudaRemote.exe" })
+          if ($asset.Count -ne 1) { throw "Expected exactly one MudaRemote.exe asset." }
+          if ($asset[0].size -le 0) { throw "Published MudaRemote.exe is empty." }
+          if ($asset[0].size -ne [int64]"${{ steps.executable.outputs.size }}") {
+            throw "Published asset size does not match the Action-built executable."
+          }
+          Write-Host "Published release: $($release.html_url)"
+          Write-Host "Published MudaRemote.exe SHA-256: ${{ steps.executable.outputs.sha256 }}"

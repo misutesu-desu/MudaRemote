@@ -45,7 +45,10 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_executable_manifest_checksum_is_well_formed(self):
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
             expected = json.load(handle)["exe_sha256"]
-        self.assertRegex(expected, r"^[0-9a-f]{64}$")
+        self.assertTrue(
+            expected == "pending-github-actions" or re.fullmatch(r"[0-9a-f]{64}", expected),
+            expected,
+        )
 
 
 if __name__ == "__main__":
