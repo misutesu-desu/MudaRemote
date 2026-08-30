@@ -46,6 +46,7 @@ from mudae_core.runtime import (
     normal_roll_start_window,
     normal_roll_batch_fits_window,
     normal_action_status_policy,
+    mk_full_power_wait_is_unchanged,
     is_roll_result_cross_boundary_ambiguous,
     can_resume_claim_interrupted_rolls,
     daily_rolls_decision,
@@ -125,6 +126,34 @@ class _Future:
 
 
 class RuntimeStaggerTests(unittest.TestCase):
+    def test_mk_full_power_wait_only_suppresses_identical_future_state(self):
+        now = 1000.0
+        signature = (394, 400, 7)
+        self.assertTrue(mk_full_power_wait_is_unchanged(
+            2085.0,
+            signature,
+            current_power=394,
+            max_power=400,
+            power_revision=7,
+            now_monotonic=now,
+        ))
+        self.assertFalse(mk_full_power_wait_is_unchanged(
+            2085.0,
+            signature,
+            current_power=395,
+            max_power=400,
+            power_revision=8,
+            now_monotonic=now,
+        ))
+        self.assertFalse(mk_full_power_wait_is_unchanged(
+            999.0,
+            signature,
+            current_power=394,
+            max_power=400,
+            power_revision=7,
+            now_monotonic=now,
+        ))
+
     def test_batch_estimate_clamps_slow_and_slash_rolls(self):
         self.assertEqual(estimate_roll_batch_seconds(10, 1.0, True), 27.5)
         self.assertEqual(estimate_roll_batch_seconds(13, 120.0, False), 1568.25)
@@ -287,6 +316,52 @@ class RuntimeStaggerTests(unittest.TestCase):
         self.assertEqual(resumed, deadline)
         self.assertTrue(owner.resume_claim("cycle"))
         self.assertTrue(owner.start("cycle"))
+
+    def test_exhausted_window_seals_cycle_until_successor(self):
+        now = datetime.datetime(2026, 8, 30, 12, tzinfo=datetime.timezone.utc)
+        cycle = ("roll", 100, 4)
+        successor = ("roll", 100, 5)
+        owner = NormalRollActionOwner(RollActionTiming())
+        deadline, created = owner.schedule(cycle_id=cycle, now_utc=now)
+
+        self.assertTrue(created)
+        self.assertTrue(owner.defer_window(cycle))
+        repeated, repeated_created = owner.schedule(
+            cycle_id=cycle,
+            now_utc=now + datetime.timedelta(seconds=20),
+        )
+        self.assertFalse(repeated_created)
+        self.assertEqual(repeated, deadline)
+        self.assertEqual(owner.state, "deferred_window")
+        self.assertEqual(
+            normal_action_status_policy(
+                owner_cycle_id=cycle,
+                current_roll_cycle_id=cycle,
+                owner_state=owner.state,
+                state_dirty=False,
+            ),
+            "suppress-routine",
+        )
+        self.assertEqual(
+            normal_action_status_policy(
+                owner_cycle_id=cycle,
+                current_roll_cycle_id=cycle,
+                owner_state=owner.state,
+                state_dirty=True,
+            ),
+            "none",
+        )
+
+        successor_deadline, successor_created = owner.schedule(
+            cycle_id=successor,
+            now_utc=now + datetime.timedelta(hours=1),
+        )
+        self.assertTrue(successor_created)
+        self.assertEqual(owner.cycle_id, successor)
+        self.assertEqual(owner.state, "pending")
+        self.assertEqual(successor_deadline, now + datetime.timedelta(hours=1))
+        self.assertFalse(owner.defer_window(cycle))
+        self.assertEqual(owner.cycle_id, successor)
 
     def test_prearmed_automation_text_command_keeps_ownership_before_receipt(self):
         tracker = RollCommandCorrelation()

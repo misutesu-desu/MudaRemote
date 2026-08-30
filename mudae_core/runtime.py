@@ -14,6 +14,24 @@ NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS = 30.0
 NORMAL_ROLL_PREROLL_RESERVE_SECONDS = 30.0
 
 
+def mk_full_power_wait_is_unchanged(
+    refresh_at,
+    previous_signature,
+    *,
+    current_power,
+    max_power,
+    power_revision,
+    now_monotonic,
+):
+    """Whether an existing full-power wake already represents this state."""
+    signature = (int(current_power), int(max_power), int(power_revision or 0))
+    return bool(
+        refresh_at is not None
+        and refresh_at > float(now_monotonic)
+        and previous_signature == signature
+    )
+
+
 def normal_roll_behavior_flags(
     *,
     rolling_enabled,
@@ -101,7 +119,7 @@ def normal_action_status_policy(*, owner_cycle_id, current_roll_cycle_id, owner_
     owns_current_cycle = (
         owner_cycle_id is not None
         and owner_cycle_id == current_roll_cycle_id
-        and owner_state in {"pending", "waiting_claim"}
+        and owner_state in {"pending", "waiting_claim", "deferred_window"}
     )
     if not owns_current_cycle:
         return "none"
@@ -201,7 +219,7 @@ class NormalRollActionOwner:
     timing: RollActionTiming
     cycle_id: object = None
     deadline_utc: datetime.datetime = None
-    state: str = "idle"  # idle, pending, waiting_claim, executing, completed
+    state: str = "idle"  # idle, pending, waiting_claim, executing, deferred_window, completed
     queued_cycle_id: object = None
     queued_deadline_utc: datetime.datetime = None
     post_claim_deadline_created: bool = False
@@ -225,7 +243,9 @@ class NormalRollActionOwner:
     def schedule(self, *, cycle_id, **timing_kwargs):
         if cycle_id is None:
             return None, False
-        if cycle_id == self.cycle_id and self.state in {"pending", "waiting_claim", "executing", "completed"}:
+        if cycle_id == self.cycle_id and self.state in {
+            "pending", "waiting_claim", "executing", "deferred_window", "completed"
+        }:
             return self.deadline_utc, False
         if self.state == "executing":
             # Coalesce missed cycles to the latest successor while retaining
@@ -280,6 +300,14 @@ class NormalRollActionOwner:
         if cycle_id != self.cycle_id or self.state not in {"pending", "executing", "waiting_claim"}:
             return False
         self.state = "waiting_claim"
+        return True
+
+    def defer_window(self, cycle_id):
+        """Seal a cycle whose trusted safe roll window has expired."""
+        if cycle_id != self.cycle_id or self.state not in {"pending", "executing"}:
+            return False
+        self.state = "deferred_window"
+        self.timing.mark_completed(cycle_id)
         return True
 
     def resume_claim(self, cycle_id):

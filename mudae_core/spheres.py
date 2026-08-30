@@ -11,6 +11,15 @@ UNKNOWN_SPHERE = "spU"
 RED_SPHERE = "sp"
 
 
+def sphere_click_recovery_decision(previous_snapshot, latest_snapshot, attempts_used, max_attempts=2):
+    """Classify an acknowledged or ambiguous logical board click."""
+    if latest_snapshot is not None and latest_snapshot != previous_snapshot:
+        return "delivered"
+    if max(0, int(attempts_used or 0)) < max(1, int(max_attempts or 1)):
+        return "retry"
+    return "stop"
+
+
 @dataclass(frozen=True)
 class SphereGameStatus:
     oh: int

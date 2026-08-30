@@ -132,6 +132,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
             self.source, functions["_check_and_track_boundary_origin"]
         )
         roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        completion_source = ast.get_source_segment(
+            self.source, functions["complete_owned_normal_roll_transaction"]
+        )
         prune_source = ast.get_source_segment(
             self.source, functions["_prune_normal_action_metadata"]
         )
@@ -139,7 +142,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
         self.assertIn("add_provisional_roll_cycle_uncertainty(", registration_source)
         self.assertNotIn("add_roll_cycle_uncertainty(", registration_source)
-        self.assertIn("roll_cycle_uncertainty_requires_status(q_state)", roll_source)
+        # Owner promotion moved out of start_roll_commands so post-roll claim
+        # processing and Auto $rolls remain inside the same transaction.
+        self.assertIn("roll_cycle_uncertainty_requires_status(queued_state)", completion_source)
         self.assertIn('(\"boundary-origin-timeout\", tok)', prune_source)
         self.assertIn('(\"confirmed-boundary-result\", pending_token)', message_source)
 
@@ -2034,6 +2039,112 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("normal_roll_behavior_flags(", status_source)
         self.assertIn("is_lurking=is_lurking", status_source)
         self.assertIn("proceed_to_rolls=proceed_to_rolls", status_source)
+
+    def test_exhausted_safe_window_is_terminal_for_the_current_cycle(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        schedule_source = ast.get_source_segment(
+            self.source, functions["schedule_owned_normal_roll_action"]
+        )
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+        defer_source = ast.get_source_segment(
+            self.source, functions["defer_owned_normal_roll_window"]
+        )
+
+        self.assertGreaterEqual(
+            schedule_source.count("defer_owned_normal_roll_window(logical_roll_cycle_id)"),
+            2,
+        )
+        self.assertIn("defer_owned_normal_roll_window(logical_roll_cycle_id)", roll_source)
+        self.assertIn("owner.defer_window(logical_roll_cycle_id)", defer_source)
+        self.assertIn("_status_cycle_not_before_monotonic", defer_source)
+        self.assertIn("_normal_roll_deferred_until_utc", defer_source)
+        self.assertIn("same_logical_boundary", schedule_source)
+        self.assertIn("<= 125.0", schedule_source)
+        self.assertNotIn("request_status_refresh(", defer_source)
+
+    def test_mk_full_power_wait_deduplicates_unchanged_state(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(self.source, functions["process_mk_rolls"])
+        unchanged_guard = source.index("_mk_full_power_wait_signature")
+        skip_log = source.index("Skipping $mk until full power")
+
+        self.assertLess(unchanged_guard, skip_log)
+        self.assertIn("mk_full_power_wait_is_unchanged(", source)
+        self.assertIn("old_handle.cancel()", source)
+        self.assertIn("wake_for_full_mk_power", source)
+        self.assertIn("client._mk_full_power_wait_signature = None", source)
+
+    def test_ambiguous_sphere_click_recovers_before_bounded_retry(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(self.source, functions["play_sphere_game"])
+
+        ambiguity = source.index("is_ambiguous_component_interaction_error(error)")
+        board_check = source.index("await wait_for_sphere_board_update(", ambiguity)
+        reacquire = source.index("retry_buttons = sphere_game_buttons(latest)", board_check)
+        count_click = source.index("total_clicks += 1", reacquire)
+        self.assertLess(ambiguity, board_check)
+        self.assertLess(board_check, reacquire)
+        self.assertLess(reacquire, count_click)
+        self.assertIn("for click_attempt in range(2)", source)
+        self.assertIn("current_button = retry_buttons[position]", source)
+
+    def test_claim_critical_work_defers_sphere_commands_until_settled(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        priority_source = ast.get_source_segment(
+            self.source, functions["claim_critical_work_pending"]
+        )
+        available_source = ast.get_source_segment(
+            self.source, functions["run_available_sphere_games"]
+        )
+        transaction_source = ast.get_source_segment(
+            self.source, functions["complete_owned_normal_roll_transaction"]
+        )
+
+        self.assertIn("pending_claim", priority_source)
+        self.assertIn("collected_rolls", priority_source)
+        self.assertIn("_claim_reset_rolls_pending", priority_source)
+        self.assertIn("_normal_roll_transaction_cycle_id", priority_source)
+        self.assertLess(
+            available_source.index("claim_critical_work_pending()"),
+            available_source.index("await run_sphere_game("),
+        )
+        self.assertLess(
+            transaction_source.index("owner.complete(logical_roll_cycle_id)"),
+            transaction_source.index("await run_independent_known_work("),
+        )
+
+    def test_auto_rolls_runs_after_current_batch_in_same_owner(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(
+            self.source, functions["execute_owned_normal_roll_action"]
+        )
+        current_batch = source.index("await start_roll_commands(")
+        item_send = source.index('f"{client.mudae_prefix}rolls"')
+
+        self.assertLess(current_batch, item_send)
+        self.assertEqual(source.count('f"{client.mudae_prefix}rolls"'), 1)
+        self.assertIn("_auto_rolls_reconcile_cycle_id = logical_roll_cycle_id", source)
+        self.assertIn("post_batch_rolls_decision = evaluate_daily_rolls()", source)
 
 
 if __name__ == "__main__":

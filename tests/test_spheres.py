@@ -9,6 +9,7 @@ from mudae_core.spheres import (
     harvest_reveal_is_free,
     normalize_sphere_emoji,
     parse_sphere_game_status,
+    sphere_click_recovery_decision,
 )
 
 
@@ -77,6 +78,29 @@ class SphereStatusTests(unittest.TestCase):
 
 
 class SphereBoardTests(unittest.TestCase):
+    def test_ambiguous_ack_with_changed_board_counts_as_one_delivery(self):
+        before = (("spU", False, "secondary"),) * 25
+        after = list(before)
+        after[12] = ("spG", True, "success")
+        self.assertEqual(
+            sphere_click_recovery_decision(before, tuple(after), 1),
+            "delivered",
+        )
+
+    def test_ambiguous_ack_with_unchanged_board_allows_one_retry(self):
+        before = (("spU", False, "secondary"),) * 25
+        self.assertEqual(
+            sphere_click_recovery_decision(before, before, 1),
+            "retry",
+        )
+
+    def test_ambiguous_ack_stops_after_unchanged_bounded_retry(self):
+        before = (("spU", False, "secondary"),) * 25
+        self.assertEqual(
+            sphere_click_recovery_decision(before, before, 2),
+            "stop",
+        )
+
     def test_chest_solver_finds_red_on_supplied_board_within_five_clicks(self):
         completed_board = [
             "spG", "spT", "spT", "spO", "sp",
