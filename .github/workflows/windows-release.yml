@@ -63,7 +63,7 @@ jobs:
           if ($remoteBeta -ne $env:GITHUB_SHA) {
             throw "origin/beta advanced from dispatched SHA $env:GITHUB_SHA to $remoteBeta."
           }
-          if (git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG") {
+          if (git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG") {
             throw "Tag $env:RELEASE_TAG already exists."
           }
 
