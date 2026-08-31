@@ -169,6 +169,25 @@ class ConfigTests(unittest.TestCase):
         populated_mk = dict(base, mk_only=True, mk_kakera_emojis=["kakeraY"])
         self.assertEqual(validate_preset(populated_mk), [])
 
+    def test_server_reset_minute_validation(self):
+        base = {
+            "token": "secret", "prefix": "////////", "mudae_prefix": "$",
+            "roll_command": "wa", "channel_id": "123", "claim_interval": 180,
+            "roll_interval": 60, "max_dk_power": 100,
+            "reactive_kakera_delay_range": [0.3, 1.0],
+        }
+        self.assertEqual(validate_preset(dict(base, server_reset_minute=None)), [])
+        self.assertEqual(validate_preset(dict(base, server_reset_minute=0)), [])
+        self.assertEqual(validate_preset(dict(base, server_reset_minute=25)), [])
+        self.assertEqual(validate_preset(dict(base, server_reset_minute=59)), [])
+
+        invalid_negative = dict(base, server_reset_minute=-1)
+        self.assertTrue(any("server_reset_minute" in err for err in validate_preset(invalid_negative)))
+        invalid_too_high = dict(base, server_reset_minute=60)
+        self.assertTrue(any("server_reset_minute" in err for err in validate_preset(invalid_too_high)))
+        invalid_string = dict(base, server_reset_minute="abc")
+        self.assertTrue(any("server_reset_minute" in err for err in validate_preset(invalid_string)))
+
 
 if __name__ == "__main__":
     unittest.main()

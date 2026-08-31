@@ -39,6 +39,9 @@ from mudae_core.runtime import (
     claim_roll_count_reconciliation,
     get_normal_roll_cycle_state,
     is_tu_still_required,
+    normal_action_status_policy,
+    normal_roll_action_state_is_dirty,
+    reconcile_authoritative_current_roll_count,
     release_roll_count_reconciliation,
 )
 
@@ -852,6 +855,214 @@ class StatusFreshnessTests(unittest.TestCase):
         required, reason = is_tu_still_required(client, proceed_to_rolls=False)
         self.assertFalse(required)
         self.assertEqual(reason, "rolling-disabled")
+
+    def test_server_reset_minute_anchoring_test_a(self):
+        """Issue 1 Test A: server_reset_minute=25 anchors boundaries; stale xx:05 observation cannot advance early."""
+        anchor = ResetAnchor("roll", 60, authoritative_minute=25)
+        # Reference time at 14:10 UTC
+        ref_time = datetime.datetime(2026, 8, 27, 14, 10, tzinfo=datetime.timezone.utc)
+        anchor.advance_through(ref_time)
+        self.assertEqual(anchor.next_boundary_at_utc, datetime.datetime(2026, 8, 27, 14, 25, tzinfo=datetime.timezone.utc))
+
+        # Stale/learned anchor observation suggesting xx:05 (e.g. 15:05)
+        stale_observed = datetime.datetime(2026, 8, 27, 14, 5, tzinfo=datetime.timezone.utc)
+        stale_proposed = datetime.datetime(2026, 8, 27, 15, 5, tzinfo=datetime.timezone.utc)
+        changed, refined = anchor.observe(stale_proposed, stale_observed)
+        self.assertFalse(changed)
+        self.assertEqual(anchor.next_boundary_at_utc.minute, 25)
+
+        # Local roll cycle does NOT advance at xx:05
+        early_adv = anchor.advance_through(stale_observed)
+        self.assertEqual(early_adv, [])
+
+        # Cycle advances at xx:25
+        reset_time = datetime.datetime(2026, 8, 27, 14, 25, tzinfo=datetime.timezone.utc)
+        advanced = anchor.advance_through(reset_time)
+        self.assertEqual(len(advanced), 1)
+        self.assertEqual(advanced[0][1], reset_time)
+        self.assertEqual(anchor.next_boundary_at_utc, datetime.datetime(2026, 8, 27, 15, 25, tzinfo=datetime.timezone.utc))
+
+    def test_server_reset_minute_none_auto_detection_test_b(self):
+        """Issue 1 Test B: server_reset_minute=None preserves automatic reset boundary detection."""
+        anchor = ResetAnchor("roll", 60, authoritative_minute=None)
+        start = datetime.datetime(2026, 8, 27, 14, 5, tzinfo=datetime.timezone.utc)
+        changed, refined = anchor.observe(start, start - datetime.timedelta(minutes=20))
+        self.assertTrue(changed)
+        self.assertEqual(anchor.next_boundary_at_utc, start)
+        self.assertEqual(anchor.next_boundary_at_utc.minute, 5)
+
+    def test_server_reset_minute_tu_private_state_preserved_test_c(self):
+        """Issue 1 Test C: Authoritative $tu updates private state while reset minute remains strictly 25."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        now = datetime.datetime(2026, 8, 27, 14, 10, tzinfo=datetime.timezone.utc)
+        anchor = ResetAnchor("roll", 60, authoritative_minute=25)
+        anchor.advance_through(now)
+        cycle_id = anchor.cycle_id_for_boundary(anchor.next_boundary_index - 1)
+
+        client = SimpleNamespace(
+            preset_name="anchor_test",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=True,
+            last_tu_query_utc=now,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=anchor.next_boundary_at_utc,
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=owner,
+            roll_reset_anchor=anchor,
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            rolls_left=0,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+
+        # $tu arrives indicating rolls = 16 and roll timer suggesting 5 minutes (xx:05)
+        parsed_rolls = 16
+        stale_reset_deadline = now + datetime.timedelta(minutes=5)
+        anchor.observe(stale_reset_deadline, now)
+        reconcile_authoritative_current_roll_count(
+            client,
+            parsed_rolls,
+            observation_kind="check-status",
+            observed_at_utc=now,
+        )
+
+        # Configured reset minute remains 25
+        self.assertEqual(anchor.next_boundary_at_utc.minute, 25)
+        # Private state updated to 16
+        self.assertEqual(client.rolls_left, 16)
+        state = get_normal_roll_cycle_state(client, cycle_id)
+        self.assertEqual(state.remaining, 16)
+        self.assertTrue(state.remaining_authoritative)
+
+    def test_authoritative_status_pending_action_suppresses_redundant_tu_and_executes(self):
+        """Issue 2 Mandatory Regression Test: Rolls=16 pending action suppresses redundant $tu and executes correctly."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+
+        wake_invoked = []
+        def mock_schedule_owned_normal_action(cid, now_ts):
+            wake_invoked.append(cid)
+
+        client = SimpleNamespace(
+            preset_name="test_prod_path",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=True,
+            last_tu_query_utc=now,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=owner,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            rolls_left=16,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+            _schedule_owned_normal_roll_action=mock_schedule_owned_normal_action,
+        )
+        initialize_status_tracking(client)
+
+        state = get_normal_roll_cycle_state(client, cycle_id)
+        state.remaining = 16
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        # Real production scheduling
+        owner.schedule(
+            cycle_id=cycle_id,
+            now_utc=now,
+            humanization_enabled=True,
+            window_minutes=5,
+        )
+        self.assertTrue(owner.is_pending(cycle_id))
+
+        # Status boundary wake occurs before action execution
+        mark_status_dirty(client, set(), reason="status-boundary")
+        policy = normal_action_status_policy(
+            owner_cycle_id=owner.cycle_id,
+            current_roll_cycle_id=client.current_roll_cycle_id,
+            owner_state=owner.state,
+            state_dirty=normal_roll_action_state_is_dirty(client, client.current_roll_cycle_id),
+        )
+        self.assertEqual(policy, "suppress-routine")
+
+        # Assert no second physical $tu requested
+        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertFalse(required)
+        self.assertEqual(reason, "policy-suppress-routine")
+
+        # One valid normal action remains pending
+        self.assertTrue(owner.is_pending(cycle_id))
+
+        # When wake fires: execution transitions pending -> executing
+        started = owner.start(cycle_id)
+        self.assertTrue(started)
+        self.assertEqual(owner.state, "executing")
+
+    def test_pending_wake_cancelled_or_broken_rearmer(self):
+        """Issue 2 Failure/Recovery Test: scheduler detects and rearms broken wake instead of permanently suppressing work."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+
+        rearmed = []
+        def mock_rearm(cid, now_ts):
+            rearmed.append(cid)
+
+        client = SimpleNamespace(
+            preset_name="test_broken_wake",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=True,
+            last_tu_query_utc=now,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=owner,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            rolls_left=16,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+            _schedule_owned_normal_roll_action=mock_rearm,
+        )
+        initialize_status_tracking(client)
+
+        state = get_normal_roll_cycle_state(client, cycle_id)
+        state.remaining = 16
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        owner.schedule(cycle_id=cycle_id, now_utc=now)
+        self.assertTrue(owner.is_pending(cycle_id))
+
+        # Status check verifies policy and triggers rearm check
+        is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertIn(cycle_id, rearmed)
 
 
 if __name__ == "__main__":

@@ -860,7 +860,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             oh_use_individually_preset=False,
             auto_dk_min_power_preset=0,
             kakera_snipe_channels_preset=None,
-            mk_kakera_emojis_preset=None):
+            mk_kakera_emojis_preset=None,
+            server_reset_minute_preset=None):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -1182,11 +1183,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client.claim_interval = claim_interval_preset or 180
     client.roll_interval = roll_interval_preset or 60
+    if server_reset_minute_preset is not None and str(server_reset_minute_preset).strip() != "":
+        try:
+            client.server_reset_minute = int(server_reset_minute_preset)
+        except (TypeError, ValueError):
+            client.server_reset_minute = None
+    else:
+        client.server_reset_minute = None
+
     # Complete self-$tu snapshots establish these runtime-only anchors.  They
     # intentionally survive gateway RESUME but are discarded on a full start.
-    client.roll_reset_anchor = ResetAnchor("roll", client.roll_interval)
+    client.roll_reset_anchor = ResetAnchor("roll", client.roll_interval, authoritative_minute=client.server_reset_minute)
     client.claim_reset_anchor = ResetAnchor("claim", client.claim_interval)
-    client.current_roll_cycle_id = None
+    if client.server_reset_minute is not None:
+        init_anchor_now = datetime.datetime.now(timezone.utc)
+        client.roll_reset_anchor.advance_through(init_anchor_now)
+        client.roll_reset_at_utc = client.roll_reset_anchor.next_boundary_at_utc
+        client.current_roll_cycle_id = client.roll_reset_anchor.cycle_id_for_boundary(
+            client.roll_reset_anchor.next_boundary_index - 1
+        )
+    else:
+        client.current_roll_cycle_id = None
     client.current_claim_cycle_id = None
     client.normal_roll_replenishment_capacity = None
     client.normal_roll_replenishment_capacity_confidence = False
@@ -3865,6 +3882,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if created:
             BotLogger.log("Timing Variation: owned normal action scheduled.", preset_name, "DEBUG", client)
 
+    client._schedule_owned_normal_roll_action = schedule_owned_normal_roll_action
+
     def advance_predicted_reset_cycles(now_utc=None):
         """Advance trustworthy anchors without turning a boundary into a /tu."""
         now_utc = now_utc or datetime.datetime.now(timezone.utc)
@@ -4117,10 +4136,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             cmd_channel = _get_command_channel() or channel
 
             if suppress_physical_tu:
-                if action_status_policy == "suppress-routine" and action_owner.is_pending(client.current_roll_cycle_id):
+                target_cycle = client.current_roll_cycle_id or action_owner.cycle_id
+                if action_status_policy == "suppress-routine" and action_owner.is_pending(target_cycle):
                     # A complete authoritative $tu is just as trustworthy as a
                     # predicted anchor for preserving the one stable callback.
-                    schedule_owned_normal_roll_action(client.current_roll_cycle_id, now_utc)
+                    schedule_owned_normal_roll_action(target_cycle, now_utc)
                 await run_independent_known_work(cmd_channel, scheduler_cycle_id)
                 return
 
@@ -4978,6 +4998,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if logical_roll_cycle_id is None:
                     request_status_refresh({"rolls"}, reason="normal-action-cycle-unknown", urgent=True)
                     return
+                if client.current_roll_cycle_id is None:
+                    client.current_roll_cycle_id = logical_roll_cycle_id
                 BotLogger.log(
                     f"Rolls: {total_rolls}; scheduling the owned normal action"
                     + (" (scheduled trigger)." if scheduled_trigger else "."),
@@ -7000,7 +7022,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client._local_boundary_wake_pending = True
                     return
                 owner = getattr(client, "normal_roll_action_owner", None)
-                if owner is not None and owner.is_pending(getattr(client, "current_roll_cycle_id", None)):
+                if owner is not None and (owner.is_pending(getattr(client, "current_roll_cycle_id", None)) or (owner.state == "pending" and owner.cycle_id is not None)):
                     unresolved_fields.discard("rolls")
                 if unresolved_fields:
                     mark_status_dirty(client, unresolved_fields, reason=f"{reason}-boundary", urgent=True)
@@ -7861,6 +7883,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("auto_dk_min_power", 0),
                 preset_data.get("kakera_snipe_channels", None),
                 preset_data.get("mk_kakera_emojis", None),
+                preset_data.get("server_reset_minute", None),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

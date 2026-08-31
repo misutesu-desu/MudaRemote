@@ -219,6 +219,15 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
         except (TypeError, ValueError):
             errors.append("{} must be numeric.".format(key))
 
+    server_reset_minute = data.get("server_reset_minute")
+    if server_reset_minute is not None and str(server_reset_minute).strip() != "":
+        try:
+            val = int(server_reset_minute)
+            if val < 0 or val > 59:
+                errors.append("server_reset_minute must be an integer between 0 and 59, or left empty.")
+        except (TypeError, ValueError):
+            errors.append("server_reset_minute must be an integer between 0 and 59, or left empty.")
+
     try:
         if float(data.get("auto_dk_min_power", 0) or 0) > float(data.get("max_dk_power", 100)):
             errors.append("auto_dk_min_power cannot exceed max_dk_power.")

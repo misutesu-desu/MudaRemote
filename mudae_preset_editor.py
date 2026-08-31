@@ -567,6 +567,7 @@ DEFAULTS = {
     "reactive_kakera_delay_range": [0.3, 1.0],
     "claim_interval": 180,
     "roll_interval": 60,
+    "server_reset_minute": None,
     "avoid_list": [],
     "auto_us_enabled": False,
     "auto_us_limit": 0,
@@ -1986,6 +1987,12 @@ class PresetEditor:
         self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
         self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
+        self.add_text_field(
+            roll_sub,
+            "server_reset_minute",
+            "Server Reset Minute",
+            description="Minute of each hour when this server replenishes rolls. Leave empty to auto-detect."
+        )
         self.add_checkbox(roll_sub, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
 
         auto_rolls_var = self.add_checkbox(roll_sub, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
@@ -2859,7 +2866,7 @@ class PresetEditor:
                     "snipe_delay", "series_snipe_delay", "kakera_snipe_threshold",
                     "kakera_reaction_snipe_delay", "humanization_window_minutes",
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
-                    "claim_interval", "roll_interval", "auto_us_limit",
+                    "claim_interval", "roll_interval", "server_reset_minute", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "main_account_id", "webhook_url", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
@@ -3139,6 +3146,37 @@ class PresetEditor:
                         return False
         for key in numeric_keys:
             data.setdefault(key, DEFAULTS.get(key, 0))
+
+        if "server_reset_minute" in self.widgets:
+            value = self.widgets["server_reset_minute"].get().strip()
+            if value:
+                try:
+                    minute_val = int(value)
+                    if minute_val < 0 or minute_val > 59:
+                        messagebox.showerror(
+                            "Validation Error",
+                            "Server Reset Minute must be an integer between 0 and 59, or left empty.",
+                            parent=self.root
+                        )
+                        widget = self.widgets["server_reset_minute"]
+                        if hasattr(widget, "focus_set"):
+                            widget.focus_set()
+                        return False
+                    data["server_reset_minute"] = minute_val
+                except ValueError:
+                    messagebox.showerror(
+                        "Validation Error",
+                        f"Invalid value '{value}' for Server Reset Minute. Please enter a valid number (0-59) or leave empty.",
+                        parent=self.root
+                    )
+                    widget = self.widgets["server_reset_minute"]
+                    if hasattr(widget, "focus_set"):
+                        widget.focus_set()
+                    return False
+            else:
+                data["server_reset_minute"] = None
+        else:
+            data.setdefault("server_reset_minute", DEFAULTS.get("server_reset_minute", None))
 
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",

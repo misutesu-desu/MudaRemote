@@ -125,7 +125,10 @@ def normal_action_status_policy(*, owner_cycle_id, current_roll_cycle_id, owner_
         return "defer-executing"
     owns_current_cycle = (
         owner_cycle_id is not None
-        and owner_cycle_id == current_roll_cycle_id
+        and (
+            owner_cycle_id == current_roll_cycle_id
+            or current_roll_cycle_id is None
+        )
         and owner_state in {"pending", "waiting_claim", "deferred_window"}
     )
     if not owns_current_cycle:
@@ -274,7 +277,9 @@ class NormalRollActionOwner:
         self.post_claim_deadline_created = False
         return deadline, True
 
-    def is_pending(self, cycle_id):
+    def is_pending(self, cycle_id=None):
+        if cycle_id is None:
+            return self.state == "pending" and self.cycle_id is not None
         return cycle_id == self.cycle_id and self.state == "pending"
 
     def is_waiting_claim(self, cycle_id=None):
@@ -995,6 +1000,14 @@ def reconcile_authoritative_current_roll_count(
     alone.
     """
     cycle_id = getattr(client, "current_roll_cycle_id", None)
+    if cycle_id is None:
+        anchor = getattr(client, "roll_reset_anchor", None)
+        if anchor is not None and getattr(anchor, "confidence", False):
+            cycle_id = anchor.cycle_id_for_boundary(anchor.next_boundary_index - 1)
+        if cycle_id is None and getattr(client, "roll_reset_at_utc", None) is not None:
+            cycle_id = roll_replenishment_cycle_key(client.roll_reset_at_utc)
+        if cycle_id is not None:
+            client.current_roll_cycle_id = cycle_id
     if cycle_id is None:
         return False
 
@@ -1719,7 +1732,8 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     owner_cid = getattr(action_owner, "cycle_id", None) if action_owner is not None else None
     owner_state = getattr(action_owner, "state", "idle") if action_owner is not None else "idle"
 
-    roll_state_dirty = normal_roll_action_state_is_dirty(client, current_cid)
+    target_cid = current_cid or owner_cid
+    roll_state_dirty = normal_roll_action_state_is_dirty(client, target_cid)
     policy = normal_action_status_policy(
         owner_cycle_id=owner_cid,
         current_roll_cycle_id=current_cid,
@@ -1732,10 +1746,10 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     )
 
     if policy in {"suppress-routine", "defer-executing"}:
-        if policy == "suppress-routine" and action_owner is not None and action_owner.is_pending(current_cid):
+        if policy == "suppress-routine" and action_owner is not None and (action_owner.is_pending(target_cid) or (action_owner.state == "pending" and target_cid is not None)):
             schedule_fn = getattr(client, "_schedule_owned_normal_roll_action", None)
             if callable(schedule_fn):
-                schedule_fn(current_cid, now_utc)
+                schedule_fn(target_cid, now_utc)
         return False, f"policy-{policy}"
 
     private_count_sync_pending = bool(

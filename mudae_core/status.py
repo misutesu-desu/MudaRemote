@@ -91,6 +91,27 @@ class ResetAnchor:
     next_boundary_at_utc: datetime.datetime = None
     next_boundary_index: int = 0
     confidence: bool = False
+    authoritative_minute: int = None
+
+    def __post_init__(self):
+        if self.authoritative_minute is not None:
+            try:
+                self.authoritative_minute = int(self.authoritative_minute)
+            except (TypeError, ValueError):
+                self.authoritative_minute = None
+
+    def _calculate_authoritative_boundary(self, ref_utc):
+        if self.authoritative_minute is None or ref_utc is None:
+            return None, None
+        minute = int(self.authoritative_minute)
+        same_hour_boundary = ref_utc.replace(minute=minute, second=0, microsecond=0)
+        if same_hour_boundary <= ref_utc:
+            next_boundary = same_hour_boundary + datetime.timedelta(seconds=self.interval_seconds)
+            anchor_boundary = same_hour_boundary
+        else:
+            next_boundary = same_hour_boundary
+            anchor_boundary = same_hour_boundary - datetime.timedelta(seconds=self.interval_seconds)
+        return anchor_boundary, next_boundary
 
     @property
     def interval_seconds(self):
@@ -119,6 +140,20 @@ class ResetAnchor:
         humanization state attached to the same logical cycle.  A material
         disagreement safely starts a new authoritative schedule.
         """
+        if self.authoritative_minute is not None:
+            ref_utc = observed_at_utc or proposed_boundary_utc
+            if ref_utc is not None and (self.anchor_at_utc is None or self.next_boundary_at_utc is None):
+                self.anchor_at_utc, self.next_boundary_at_utc = self._calculate_authoritative_boundary(ref_utc)
+                self.next_boundary_index = 1
+                self.confidence = True
+                return True, False
+            if self.next_boundary_at_utc is not None and ref_utc is not None:
+                while self.next_boundary_at_utc <= ref_utc:
+                    self.next_boundary_at_utc += datetime.timedelta(seconds=self.interval_seconds)
+                    self.next_boundary_index += 1
+            self.confidence = True
+            return False, False
+
         if proposed_boundary_utc is None:
             return False, False
         if self.anchor_at_utc is None or self.next_boundary_at_utc is None:
@@ -152,6 +187,10 @@ class ResetAnchor:
 
     def advance_through(self, now_utc):
         """Advance locally through passed boundaries and return their cycles."""
+        if self.authoritative_minute is not None and (self.anchor_at_utc is None or self.next_boundary_at_utc is None) and now_utc is not None:
+            self.anchor_at_utc, self.next_boundary_at_utc = self._calculate_authoritative_boundary(now_utc)
+            self.next_boundary_index = 1
+            self.confidence = True
         if not self.confidence or self.next_boundary_at_utc is None or now_utc is None:
             return []
         advanced = []
