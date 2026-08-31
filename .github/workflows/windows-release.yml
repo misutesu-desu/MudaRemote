@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.20
+  group: windows-prerelease-v4.9.0-beta.21
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.20
-      RELEASE_TAG: v4.9.0-beta.20
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.20 — Large-Account Status Queue Hotfix
+      RELEASE_VERSION: 4.9.0-beta.21
+      RELEASE_TAG: v4.9.0-beta.21
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.21 — Reset Timing & Roll Scheduler Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,17 +128,18 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.20**
+          **🆕 MudaRemote v4.9.0-beta.21**
 
           ### 🐛 Bug Fixes
-          - Reduced unnecessary `$tu` queue buildup around predictable reset boundaries
-          - Prevented accounts with sufficient predicted state from consuming global `$tu` pacing slots
-          - Reduced redundant per-account private status synchronization in large multi-account setups
+          - Fixed local reset prediction triggering rolls on the wrong minute
+          - Fixed pending roll actions falling back into repeated `$tu` status loops
+          - Fixed cases where authoritative rolls were repeatedly rediscovered without the scheduled action executing
 
-          ### ⚡ Improvements
-          - Better scaling for 50+ account setups
-          - Private `$tu` checks are now reserved for cases where authoritative per-account state is genuinely required
-          - Verified Purple and Chaos Kakera filtering behavior against current preset settings
+          ### ⚙️ Improvements
+          - Added an optional **Server Reset Minute** setting under Rolling Options
+          - Configured reset minutes now override stale automatic roll-reset anchors
+          - Automatic reset detection remains available when the setting is left empty
+          - Pending roll actions now remain owned while waiting for their scheduled execution
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease
