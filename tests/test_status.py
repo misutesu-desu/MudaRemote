@@ -695,6 +695,164 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertTrue(required)
         self.assertEqual(reason, "required")
 
+    def test_sixty_account_realistic_boundary_avoids_pacer_queue_starvation(self):
+        """Test 5: 60 realistic clients at a shared boundary only send physical $tu for genuinely unresolved accounts."""
+        pacer = GlobalIntervalCoordinator()
+        guild_id = 123456
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+        clients = []
+
+        # Construct 60 accounts with realistic operational states
+        for i in range(60):
+            timing = RollActionTiming()
+            owner = NormalRollActionOwner(timing)
+            is_claim_only = (i < 10)  # 10 claim-only accounts (rolling_enabled=False)
+            is_timing_mode = (10 <= i < 20)  # 10 accounts waiting for claim reset (time_rolls_to_claim_reset=True)
+            is_cached_idle = (20 <= i < 28)  # 8 accounts with 0 rolls left and cached status
+            is_unresolved = (i >= 58)  # 2 accounts genuinely unresolved
+            is_learned_normal = (not is_claim_only and not is_timing_mode and not is_cached_idle and not is_unresolved)  # 30 accounts
+
+            c = SimpleNamespace(
+                preset_name=f"bot_{i}",
+                user=SimpleNamespace(id=2000 + i, name=f"bot_{i}"),
+                is_paused=False,
+                rolling_enabled=not is_claim_only,
+                mudae_prefix="$",
+                time_rolls_to_claim_reset=is_timing_mode,
+                scheduled_roll_due=False,
+                last_tu_snapshot_complete=not is_unresolved,
+                last_tu_query_utc=now if not is_unresolved else None,
+                claim_right_available=not is_timing_mode,
+                next_claim_reset_at_utc=now + datetime.timedelta(minutes=90 if is_timing_mode else 120),
+                roll_reset_at_utc=now + datetime.timedelta(hours=1),
+                current_roll_cycle_id=cycle_id,
+                current_claim_cycle_id=("claim", 1700000000, 1),
+                normal_roll_action_owner=owner,
+                roll_reset_anchor=ResetAnchor("roll", 60),
+                claim_reset_anchor=ResetAnchor("claim", 180),
+                normal_roll_replenishment_capacity_confidence=is_learned_normal,
+                normal_roll_replenishment_capacity=8 if is_learned_normal else None,
+                predicted_roll_state_valid=is_learned_normal,
+                rolls_left=8 if is_learned_normal else 0,
+                key_mode=False,
+                rt_available=False,
+                _normal_roll_cycle_state={},
+                _normal_roll_action_roll_counts={},
+                _roll_batch_deferred_status_fields=set(),
+            )
+            initialize_status_tracking(c)
+
+            # Establish initial cycle state
+            state = get_normal_roll_cycle_state(c, cycle_id)
+            if is_learned_normal:
+                state.remaining = 8
+                state.remaining_authoritative = True
+                state.count_uncertain = False
+                c.normal_roll_action_owner.schedule(
+                    cycle_id=cycle_id,
+                    now_utc=now,
+                    humanization_enabled=True,
+                    window_minutes=10,
+                )
+            elif is_unresolved:
+                state.remaining = None
+                state.count_uncertain = True
+            elif is_cached_idle:
+                state.remaining = 0
+                state.remaining_authoritative = True
+                state.count_uncertain = False
+
+            clients.append(c)
+
+        # Trigger boundary events across all 60 accounts
+        for client in clients:
+            mark_status_dirty(client, {"claim"}, reason="claim cooldown-boundary", urgent=True)
+            mark_status_dirty(client, {"rolls"}, reason="rolls replenishment-boundary", urgent=True)
+            mark_status_dirty(client, {"claim", "rolls"}, reason="status-boundary", urgent=True)
+
+        # 1. Duplicate reasons remain coalesced per client
+        for client in clients:
+            pending = getattr(client, "_pending_status_request", None)
+            self.assertIsNotNone(pending)
+            self.assertTrue(len(pending.reasons) >= 3)
+
+        # 2. Advance predicted reset cycles locally on all accounts
+        for idx, client in enumerate(clients):
+            if getattr(client, "normal_roll_replenishment_capacity_confidence", False):
+                clear_status_dirty(client, {"rolls", "claim"})
+            elif not getattr(client, "rolling_enabled", True):
+                clear_status_dirty(client, {"claim"})
+            elif getattr(client, "time_rolls_to_claim_reset", False):
+                clear_status_dirty(client, {"rolls", "claim"})
+            elif 20 <= idx < 28:
+                clear_status_dirty(client, {"rolls", "claim"})
+
+        # 3. Simulate pre-pacing check and pacer reservation across all 60 clients
+        physical_tu_sent = 0
+        pacer_slots_reserved = 0
+        skipped_accounts = 0
+
+        for client in clients:
+            # Check is_tu_still_required BEFORE reserving a slot in the pacer
+            required, reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+            )
+            if not required:
+                skipped_accounts += 1
+                continue
+
+            # Only unresolved accounts reserve a pacer slot
+            wait = pacer.reserve(guild_id, 20.0)
+            pacer_slots_reserved += 1
+
+            # After pacing, revalidate
+            req_post, reason_post = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+            )
+            if req_post:
+                physical_tu_sent += 1
+
+        # Assert exactly 58 accounts were skipped before pacing and only 2 genuinely unresolved accounts reached $tu
+        self.assertEqual(skipped_accounts, 58)
+        self.assertEqual(pacer_slots_reserved, 2)
+        self.assertEqual(physical_tu_sent, 2)
+
+    def test_disabled_rolling_account_does_not_enter_tu_pacing(self):
+        """Test 6: An account with rolling disabled and only rolls marked dirty skips physical $tu."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+        client = SimpleNamespace(
+            preset_name="claim_only_bot",
+            is_paused=False,
+            rolling_enabled=False,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=True,
+            last_tu_query_utc=now,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=None,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            rolls_left=0,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+        mark_status_dirty(client, {"rolls"}, reason="rolls replenishment-boundary")
+
+        required, reason = is_tu_still_required(client, proceed_to_rolls=False)
+        self.assertFalse(required)
+        self.assertEqual(reason, "rolling-disabled")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1752,6 +1752,17 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     last_complete = bool(getattr(client, "last_tu_snapshot_complete", False))
     last_query_utc = getattr(client, "last_tu_query_utc", None)
 
+    rolling_enabled = bool(getattr(client, "rolling_enabled", True) and proceed_to_rolls)
+    if not rolling_enabled and dirty.issubset({"rolls"}):
+        return False, "rolling-disabled"
+
+    if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):
+        claim_reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        if claim_reset_at is not None:
+            claim_reset_m_check = (claim_reset_at - now_utc).total_seconds() / 60.0
+            if claim_reset_m_check > 60.0 and dirty.issubset({"rolls"}):
+                return False, "timing-wait-active"
+
     if not dirty and not scheduled_due and last_complete and last_query_utc is not None:
         cache_seconds = tu_cache_seconds_remaining(last_query_utc, now_utc)
         claim_reset_at = getattr(client, "next_claim_reset_at_utc", None)
@@ -1807,5 +1818,14 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
                 and action_owner.is_pending(current_cid)
             ):
                 return False, "roll-action-already-pending"
+
+    if (
+        not dirty
+        and action_owner is not None
+        and action_owner.is_pending(current_cid)
+    ):
+        state = get_normal_roll_cycle_state(client, current_cid)
+        if state is not None and state.remaining is not None and not state.count_uncertain:
+            return False, "roll-action-already-pending"
 
     return True, "required"

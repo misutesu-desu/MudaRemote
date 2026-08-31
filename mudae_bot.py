@@ -199,21 +199,30 @@ def _apply_shared_reset_snapshot(client, snapshot):
             )
             state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
             if state is not None and not getattr(state, "remaining_authoritative", False):
-                state.proven_fresh = False
-                state.remaining = None
-                state.remaining_authoritative = False
+                if not getattr(client, "normal_roll_replenishment_capacity_confidence", False):
+                    state.proven_fresh = False
+                    state.remaining = None
+                    state.remaining_authoritative = False
+            if advance_fn is not None:
+                advance_fn(observed_at)
             sync_fn = getattr(client, "_schedule_private_roll_count_sync", None)
             if sync_fn is not None and client.current_roll_cycle_id is not None:
-                interval_seconds = float(client.roll_interval) * 60.0
-                current_cycle_started_at = (
-                    roll_anchor.next_boundary_at_utc - datetime.timedelta(seconds=interval_seconds)
+                state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
+                needs_sync = bool(
+                    getattr(client, "rolling_enabled", True)
+                    and (state is None or state.remaining is None or getattr(state, "count_uncertain", False))
                 )
-                sync_base = max(observed_at, current_cycle_started_at)
-                sync_fn(
-                    client.current_roll_cycle_id,
-                    sync_base,
-                    reason="shared-reset-private-count",
-                )
+                if needs_sync:
+                    interval_seconds = float(client.roll_interval) * 60.0
+                    current_cycle_started_at = (
+                        roll_anchor.next_boundary_at_utc - datetime.timedelta(seconds=interval_seconds)
+                    )
+                    sync_base = max(observed_at, current_cycle_started_at)
+                    sync_fn(
+                        client.current_roll_cycle_id,
+                        sync_base,
+                        reason="shared-reset-private-count",
+                    )
         else:
             previous_roll_deadline = getattr(client, "roll_reset_at_utc", None)
             client.roll_reset_at_utc, roll_boundary_advanced = reconcile_roll_reset_deadline(
@@ -2906,6 +2915,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def send_tu_command(channel):
         if client.is_paused or is_maintenance_active(): return False
         async def wait_for_global_tu_slot():
+            required, skip_reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+                is_maintenance_fn=is_maintenance_active,
+            )
+            if not required:
+                client._tu_skipped_stale = True
+                BotLogger.log(
+                    f"Skipping stale queued $tu before pacing; required state already reconciled ({skip_reason}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                return False
             guild_id = getattr(getattr(channel, "guild", None), "id", None)
             pacing_key = guild_id if guild_id is not None else getattr(channel, "id", None)
             global_wait = _tu_interval_coordinator.reserve(pacing_key, TU_GLOBAL_INTERVAL_SECONDS)
@@ -2915,6 +2938,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return await active_delay(global_wait)
 
         async def wait_for_tu_send_window():
+            required, skip_reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+                is_maintenance_fn=is_maintenance_active,
+            )
+            if not required:
+                client._tu_skipped_stale = True
+                BotLogger.log(
+                    f"Skipping stale queued $tu before pacing; required state already reconciled ({skip_reason}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                return False
             ready, _ = await wait_for_tu_inactivity(channel)
             if not ready:
                 return False
@@ -2932,6 +2969,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         client._tu_in_flight = True
         try:
+            required, skip_reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+                is_maintenance_fn=is_maintenance_active,
+            )
+            if not required:
+                client._tu_skipped_stale = True
+                BotLogger.log(
+                    f"Skipping stale queued $tu; required state already reconciled ({skip_reason}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                return False
             if client.use_slash_rolls and not client.slash_fallback_active:
                 for attempt in range(1, 4):
                     if not await wait_for_tu_send_window(): return False
@@ -3652,6 +3703,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         """Schedule one stable, humanized, non-boundary /tu to resolve unknown roll count."""
         if logical_roll_cycle_id is None:
             return
+        if not getattr(client, "rolling_enabled", True):
+            return
+        if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):
+            claim_reset = getattr(client, "next_claim_reset_at_utc", None)
+            now_ref = boundary_utc or datetime.datetime.now(timezone.utc)
+            if claim_reset is not None and (claim_reset - now_ref).total_seconds() / 60.0 > 60.0:
+                return
         existing_cid = getattr(client, "_roll_count_sync_cycle_id", None)
         existing_handle = getattr(client, "_roll_count_sync_handle", None)
         if existing_cid == logical_roll_cycle_id and existing_handle is not None and not existing_handle.cancelled():
@@ -3691,6 +3749,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client._roll_count_sync_cycle_id = None
                 client._roll_count_sync_at_utc = None
                 return
+            if not getattr(client, "rolling_enabled", True):
+                client._roll_count_sync_cycle_id = None
+                client._roll_count_sync_at_utc = None
+                return
+            if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):
+                claim_reset = getattr(client, "next_claim_reset_at_utc", None)
+                if claim_reset is not None and (claim_reset - datetime.datetime.now(timezone.utc)).total_seconds() / 60.0 > 60.0:
+                    client._roll_count_sync_cycle_id = None
+                    client._roll_count_sync_at_utc = None
+                    return
             state = get_normal_roll_cycle_state(client, cycle_id)
             if state is None or (state.remaining is not None and not state.count_uncertain):
                 client._roll_count_sync_cycle_id = None
@@ -4152,7 +4220,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         and claim_reset_m > 60
                     )
                     if is_timing_wait_bypass:
-                        choices.append((float(claim_reset_m - 60), "timing threshold arrival", True, {"claim", "rolls"}))
+                        choices.append((float(claim_reset_m - 60), "timing threshold arrival", True, {"rolls"}))
                     else:
                         if wait_time > 0: choices.append((float(wait_time), "claim cooldown", True, {"claim"}))
                         if roll_reset_m > 0: choices.append((float(roll_reset_m), "rolls replenishment", True, {"rolls"}))
@@ -4189,6 +4257,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     dirty = ", ".join(sorted(status_dirty_fields(client))) or "scheduled status"
                     BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after an incomplete status update ({dirty}).", preset_name, "INFO")
                     client._tu_last_defer_log_monotonic = now_mono
+                return
+
+            required, skip_reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+                is_maintenance_fn=is_maintenance_active,
+            )
+            if not required:
+                BotLogger.log(
+                    f"Skipping $tu; required state already reconciled ({skip_reason}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
                 return
 
             if client.delay_seconds > 0:
@@ -4680,7 +4762,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and claim_reset_minutes > 60
                 )
                 if is_timing_waiting:
-                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival", True, {"claim", "rolls"}))
+                    sleep_choices.append((float(claim_reset_minutes - 60), "timing threshold arrival", True, {"rolls"}))
                 else:
                     if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown", True, {"claim"}))
                     if is_lurking and claim_reset_minutes is not None:
@@ -4878,7 +4960,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and c_min > 60
                 )
                 if is_timing_wait_tu:
-                    sleep_candidates.append((float(c_min - 60), "timing window arrival", True, {"claim", "rolls"}))
+                    sleep_candidates.append((float(c_min - 60), "timing window arrival", True, {"rolls"}))
                 else:
                     sleep_candidates.append((float(reset_time_r or 60), "rolls reset", True, {"rolls"}))
                     if c_min is not None:

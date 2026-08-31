@@ -456,6 +456,62 @@ class KakeraPowerTests(unittest.TestCase):
         )
         self.assertIs(resolved, second_orange)
 
+    def test_purple_and_chaos_configuration_semantics(self):
+        """Verify exact semantics of only_chaos, collect_purple_kakera, wish_starwish_kakera_only, and kakera_emojis."""
+        # Config 1: Reporter setup where only kakeraC is configured in kakera_emojis and chaos_emojis
+        kakera_emojis = ["kakeraC"]
+        chaos_emojis = ["kakeraC"]
+
+        # Case 1: Ordinary character (not wish, no chaos discount) -> blocked by wish_only and chaos_only
+        filter_reason = get_regular_kakera_filter_reason(
+            wish_only=True,
+            is_wish=False,
+            chaos_only=True,
+            has_chaos_discount=False,
+        )
+        self.assertEqual(filter_reason, "character is not wished/starwished")
+
+        # Case 2: Wishlist character without chaos discount -> blocked by chaos_only
+        filter_reason = get_regular_kakera_filter_reason(
+            wish_only=True,
+            is_wish=True,
+            chaos_only=True,
+            has_chaos_discount=False,
+        )
+        self.assertEqual(filter_reason, "Chaos Only requires a half-power Kakera reaction on your own roll")
+
+        # Case 3: Starwish character with chaos discount -> filter passes
+        filter_reason = get_regular_kakera_filter_reason(
+            wish_only=True,
+            is_wish=True,
+            chaos_only=True,
+            has_chaos_discount=True,
+        )
+        self.assertIsNone(filter_reason)
+
+        # Target list for regular roll with chaos discount:
+        targets = get_kakera_emoji_targets(
+            kakera_emojis,
+            chaos_emojis,
+            perk_eight_emojis=[],
+            mk_emojis=None,
+            has_chaos_discount=True,
+        )
+        self.assertEqual(targets, ("kakeraC",))
+        # Ordinary purple is NOT in targets
+        self.assertFalse(list_includes_purple(targets))
+
+        # Case 4: If kakera_emojis includes kakeraP, ordinary purple IS in targets and collected
+        kakera_emojis_with_purple = ["kakeraC", "kakeraP"]
+        targets_with_purple = get_kakera_emoji_targets(
+            kakera_emojis_with_purple,
+            chaos_emojis,
+            perk_eight_emojis=[],
+            mk_emojis=None,
+            has_chaos_discount=False,
+        )
+        self.assertTrue(list_includes_purple(targets_with_purple))
+
 
 if __name__ == "__main__":
     unittest.main()
