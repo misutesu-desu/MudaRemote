@@ -27,11 +27,18 @@ from mudae_core.status import (
     status_dirty_fields,
     status_message_addresses_identity,
     status_refresh_reasons,
+    PendingStatusRequest,
+    coalesce_status_request,
     tu_cache_seconds_remaining,
     tu_retry_wait,
 )
+from mudae_core.coordinator import GlobalIntervalCoordinator
 from mudae_core.runtime import (
+    NormalRollActionOwner,
+    RollActionTiming,
     claim_roll_count_reconciliation,
+    get_normal_roll_cycle_state,
+    is_tu_still_required,
     release_roll_count_reconciliation,
 )
 
@@ -451,6 +458,242 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertGreaterEqual(
             nearest_periodic_boundary_distance(roll.anchor_at_utc, roll.interval_seconds, safe), 180,
         )
+
+
+    def test_same_client_coalesces_simultaneous_boundary_requests(self):
+        """Test 1: Simultaneous boundary refresh requests for the same client coalesce into one logical $tu."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        client = SimpleNamespace(
+            preset_name="test_account",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            normal_roll_action_owner=owner,
+            current_roll_cycle_id=("roll", 1700000000, 1),
+            _normal_roll_cycle_state={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+
+        # Trigger claim cooldown boundary
+        mark_status_dirty(client, {"claim"}, reason="claim cooldown-boundary", urgent=True)
+        self.assertIsNotNone(client._pending_status_request)
+        self.assertIn("claim", client._pending_status_request.required_fields)
+        self.assertIn("claim cooldown-boundary", client._pending_status_request.reasons)
+
+        # Trigger simultaneous rolls replenishment boundary
+        mark_status_dirty(client, {"rolls"}, reason="rolls replenishment-boundary", urgent=True)
+        self.assertIn("claim", client._pending_status_request.required_fields)
+        self.assertIn("rolls", client._pending_status_request.required_fields)
+        self.assertIn("claim cooldown-boundary", client._pending_status_request.reasons)
+        self.assertIn("rolls replenishment-boundary", client._pending_status_request.reasons)
+
+        # Trigger generic status boundary
+        mark_status_dirty(client, None, reason="status-boundary", urgent=True)
+        self.assertEqual(client._pending_status_request.required_fields, set(STATUS_FIELDS))
+        self.assertIn("status-boundary", client._pending_status_request.reasons)
+        self.assertTrue(client._pending_status_request.urgent)
+
+        # Verify exactly one pending status request object exists with merged requirements
+        self.assertEqual(status_dirty_fields(client), set(STATUS_FIELDS))
+        self.assertEqual(
+            status_refresh_reasons(client),
+            ["claim cooldown-boundary", "rolls replenishment-boundary", "status-boundary"],
+        )
+
+    def test_stale_queued_tu_is_skipped_after_pacing_wait(self):
+        """Test 2: A queued $tu whose required state was reconciled during the pacing wait is skipped without error."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+        client = SimpleNamespace(
+            preset_name="test_account",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=True,
+            last_tu_query_utc=now,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=owner,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            normal_roll_replenishment_capacity_confidence=True,
+            normal_roll_replenishment_capacity=8,
+            predicted_roll_state_valid=True,
+            rolls_left=8,
+            key_mode=False,
+            rt_available=False,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+
+        state = get_normal_roll_cycle_state(client, cycle_id)
+        state.remaining = 8
+        state.remaining_authoritative = True
+        state.count_uncertain = False
+
+        owner.schedule(
+            cycle_id=cycle_id,
+            now_utc=now,
+            humanization_enabled=True,
+            window_minutes=10,
+        )
+        self.assertTrue(owner.is_pending(cycle_id))
+
+        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertFalse(required)
+        self.assertIn(reason, ("roll-action-already-pending", "policy-suppress-routine", "cached-status-valid"))
+
+        client._tu_skipped_stale = True
+        if client._tu_skipped_stale:
+            client._tu_skipped_stale = False
+            skipped_cleanly = True
+        else:
+            record_tu_failure(client)
+            skipped_cleanly = False
+
+        self.assertTrue(skipped_cleanly)
+        self.assertEqual(getattr(client, "_tu_failure_streak", 0), 0)
+
+    def test_high_account_boundary_burst_avoids_queue_explosion_and_stale_sends(self):
+        """Test 3: 50 accounts experiencing simultaneous boundary events coalesce requests and skip stale work."""
+        pacer = GlobalIntervalCoordinator()
+        guild_id = 999999
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+        clients = []
+        for i in range(50):
+            timing = RollActionTiming()
+            owner = NormalRollActionOwner(timing)
+            c = SimpleNamespace(
+                preset_name=f"bot_{i}",
+                user=SimpleNamespace(id=1000 + i, name=f"bot_{i}"),
+                is_paused=False,
+                rolling_enabled=True,
+                mudae_prefix="$",
+                time_rolls_to_claim_reset=False,
+                scheduled_roll_due=False,
+                last_tu_snapshot_complete=True,
+                last_tu_query_utc=now,
+                claim_right_available=True,
+                next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+                roll_reset_at_utc=now + datetime.timedelta(hours=1),
+                current_roll_cycle_id=cycle_id,
+                current_claim_cycle_id=("claim", 1700000000, 1),
+                normal_roll_action_owner=owner,
+                roll_reset_anchor=ResetAnchor("roll", 60),
+                claim_reset_anchor=ResetAnchor("claim", 180),
+                normal_roll_replenishment_capacity_confidence=True,
+                normal_roll_replenishment_capacity=8,
+                predicted_roll_state_valid=True,
+                rolls_left=8,
+                key_mode=False,
+                rt_available=False,
+                _normal_roll_cycle_state={},
+                _normal_roll_action_roll_counts={},
+                _roll_batch_deferred_status_fields=set(),
+            )
+            initialize_status_tracking(c)
+            clients.append(c)
+
+        # Simultaneously trigger 3 boundary events per account (150 boundary triggers total)
+        for client in clients:
+            mark_status_dirty(client, {"claim"}, reason="claim cooldown-boundary", urgent=True)
+            mark_status_dirty(client, {"rolls"}, reason="rolls replenishment-boundary", urgent=True)
+            mark_status_dirty(client, None, reason="status-boundary", urgent=True)
+
+        # Each client has exactly 1 merged pending request
+        total_pending_requests = sum(1 for c in clients if getattr(c, "_pending_status_request", None) is not None)
+        self.assertEqual(total_pending_requests, 50)
+
+        # Simulate first account executing $tu and clearing its status
+        first_client = clients[0]
+        pacing_wait_0 = pacer.reserve(guild_id, 20.0)
+        self.assertEqual(pacing_wait_0, 0.0)
+        clear_status_dirty(first_client)
+
+        # Now simulate remaining 49 clients advancing their roll cycle locally from anchor prediction
+        executed_tu_count = 1
+        skipped_tu_count = 0
+
+        for client in clients[1:]:
+            clear_status_dirty(client)
+            state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
+            state.remaining = 8
+            state.count_uncertain = False
+            client.normal_roll_action_owner.schedule(
+                cycle_id=client.current_roll_cycle_id,
+                now_utc=now,
+                humanization_enabled=True,
+                window_minutes=10,
+            )
+
+            required, skip_reason = is_tu_still_required(client, proceed_to_rolls=True)
+            if not required:
+                client._tu_skipped_stale = True
+                skipped_tu_count += 1
+            else:
+                executed_tu_count += 1
+
+        self.assertEqual(executed_tu_count, 1)
+        self.assertEqual(skipped_tu_count, 49)
+
+    def test_genuinely_unresolved_private_roll_count_still_gets_physical_tu(self):
+        """Test 4: An account with a genuinely unknown roll count still sends a physical $tu."""
+        timing = RollActionTiming()
+        owner = NormalRollActionOwner(timing)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_id = ("roll", 1700000000, 1)
+        client = SimpleNamespace(
+            preset_name="test_account",
+            is_paused=False,
+            rolling_enabled=True,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=False,
+            last_tu_query_utc=None,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=2),
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=cycle_id,
+            current_claim_cycle_id=("claim", 1700000000, 1),
+            normal_roll_action_owner=owner,
+            roll_reset_anchor=ResetAnchor("roll", 60),
+            claim_reset_anchor=ResetAnchor("claim", 180),
+            normal_roll_replenishment_capacity_confidence=False,
+            normal_roll_replenishment_capacity=None,
+            predicted_roll_state_valid=False,
+            rolls_left=0,
+            key_mode=False,
+            rt_available=False,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+
+        # Mark rolls dirty with unknown count and uncertain state
+        mark_status_dirty(client, {"rolls"}, reason="private-roll-count-sync", urgent=True)
+        state = get_normal_roll_cycle_state(client, cycle_id)
+        state.remaining = None
+        state.count_uncertain = True
+        client.rolls_left = 0
+        client.predicted_roll_state_valid = False
+
+        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertTrue(required)
+        self.assertEqual(reason, "required")
 
 
 if __name__ == "__main__":

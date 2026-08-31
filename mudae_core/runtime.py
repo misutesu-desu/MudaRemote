@@ -6,7 +6,14 @@ from dataclasses import dataclass, field
 import random
 import time
 
-from .status import STATUS_FIELDS, mark_status_dirty, status_dirty_fields
+from .status import (
+    STATUS_FIELDS,
+    PendingStatusRequest,
+    coalesce_status_request,
+    mark_status_dirty,
+    status_dirty_fields,
+    tu_cache_seconds_remaining,
+)
 
 
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
@@ -1685,3 +1692,120 @@ async def pause_interruptible_sleep(client, seconds: float, abort_on_pause: bool
             await asyncio.wait_for(event.wait(), timeout=remaining)
         except asyncio.TimeoutError:
             return True
+
+
+def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_fn=None) -> tuple:
+    """Return ``(required, reason)`` checking whether a queued $tu is still needed.
+
+    Revalidates the client's current status, cycle state, and pending roll actions
+    after waiting for global pacing or channel inactivity. If the demand has been
+    reconciled or deferred by surrounding systems, returns ``(False, skip_reason)``.
+    """
+    if bool(getattr(client, "is_paused", False)):
+        return False, "client-paused"
+    if callable(is_maintenance_fn) and is_maintenance_fn():
+        return False, "maintenance-active"
+    check_maint = getattr(client, "is_maintenance_active", None)
+    if callable(check_maint) and check_maint():
+        return False, "maintenance-active"
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    advance_fn = getattr(client, "_advance_predicted_reset_cycles", None)
+    if callable(advance_fn):
+        advance_fn(now_utc)
+
+    current_cid = getattr(client, "current_roll_cycle_id", None)
+    action_owner = getattr(client, "normal_roll_action_owner", None)
+    owner_cid = getattr(action_owner, "cycle_id", None) if action_owner is not None else None
+    owner_state = getattr(action_owner, "state", "idle") if action_owner is not None else "idle"
+
+    roll_state_dirty = normal_roll_action_state_is_dirty(client, current_cid)
+    policy = normal_action_status_policy(
+        owner_cycle_id=owner_cid,
+        current_roll_cycle_id=current_cid,
+        owner_state=owner_state,
+        state_dirty=roll_state_dirty,
+        reconciliation_cycle_ids={
+            getattr(client, "_auto_rolls_ack_ambiguous_cycle_id", None),
+            getattr(client, "_auto_rolls_reconcile_cycle_id", None),
+        },
+    )
+
+    if policy in {"suppress-routine", "defer-executing"}:
+        if policy == "suppress-routine" and action_owner is not None and action_owner.is_pending(current_cid):
+            schedule_fn = getattr(client, "_schedule_owned_normal_roll_action", None)
+            if callable(schedule_fn):
+                schedule_fn(current_cid, now_utc)
+        return False, f"policy-{policy}"
+
+    private_count_sync_pending = bool(
+        getattr(client, "last_tu_snapshot_complete", False)
+        and getattr(client, "_roll_count_sync_cycle_id", None) == current_cid
+        and getattr(client, "_roll_count_sync_handle", None) is not None
+        and not client._roll_count_sync_handle.cancelled()
+    )
+    if private_count_sync_pending:
+        return False, "private-roll-count-sync-pending"
+
+    dirty = status_dirty_fields(client)
+    scheduled_due = bool(getattr(client, "scheduled_roll_due", False))
+    last_complete = bool(getattr(client, "last_tu_snapshot_complete", False))
+    last_query_utc = getattr(client, "last_tu_query_utc", None)
+
+    if not dirty and not scheduled_due and last_complete and last_query_utc is not None:
+        cache_seconds = tu_cache_seconds_remaining(last_query_utc, now_utc)
+        claim_reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        roll_reset_at = getattr(client, "roll_reset_at_utc", None)
+        is_before_claim = claim_reset_at is None or now_utc < claim_reset_at
+        is_before_roll = roll_reset_at is None or now_utc < roll_reset_at
+        known_idle = bool((claim_reset_at and is_before_claim) or (roll_reset_at and is_before_roll))
+
+        if cache_seconds > 0 or known_idle:
+            state = get_normal_roll_cycle_state(client, current_cid)
+            has_unknown_rolls = state is not None and (state.remaining is None or state.count_uncertain)
+            rolls_left = int(getattr(client, "rolls_left", 0) or 0)
+
+            if is_before_claim and is_before_roll and rolls_left <= 0 and not has_unknown_rolls:
+                pending_fn = getattr(client, "_pending_roll_work", None)
+                pending_rolls, pending_us, pending_mk = pending_fn(proceed_to_rolls) if callable(pending_fn) else (False, False, False)
+                claim_reset_m_check = (
+                    max(0.0, (claim_reset_at - now_utc).total_seconds() / 60.0)
+                    if claim_reset_at is not None else None
+                )
+                timing_wait_needed = bool(
+                    getattr(client, "time_rolls_to_claim_reset", False)
+                    and not getattr(client, "claim_right_available", False)
+                    and claim_reset_m_check is not None
+                    and claim_reset_m_check <= 60.0
+                )
+                sphere_retry = any(
+                    bool(getattr(client, f"auto_{kind}_enabled", False))
+                    and int(getattr(client, "sphere_game_counts", {}).get(kind, 0) or 0) > 0
+                    and time.monotonic() >= float(getattr(client, "_sphere_game_retry_after", {}).get(kind, 0.0) or 0.0)
+                    for kind in ("oh", "oc")
+                )
+                sphere_refill = bool(
+                    (getattr(client, "auto_oh_enabled", False) or getattr(client, "auto_oc_enabled", False))
+                    and getattr(client, "sphere_game_refill_at_utc", None) is not None
+                    and now_utc >= client.sphere_game_refill_at_utc
+                )
+                if (
+                    not pending_rolls
+                    and not pending_us
+                    and not pending_mk
+                    and not timing_wait_needed
+                    and not sphere_retry
+                    and not sphere_refill
+                ):
+                    return False, "cached-status-valid"
+
+            elif (
+                state is not None
+                and state.remaining is not None
+                and not state.count_uncertain
+                and action_owner is not None
+                and action_owner.is_pending(current_cid)
+            ):
+                return False, "roll-action-already-pending"
+
+    return True, "required"

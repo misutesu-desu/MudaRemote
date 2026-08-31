@@ -100,6 +100,7 @@ try:
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
+        PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -131,6 +132,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
+        PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
     from mudae_core.config import atomic_write_json, load_json, validate_preset
 
@@ -1278,7 +1280,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             event.set()
 
     def request_status_refresh(fields=None, reason="state-change", urgent=False):
-        mark_status_dirty(client, fields=fields, reason=reason, urgent=urgent)
+        _is_new, is_coalesced = coalesce_status_request(
+            client, fields=fields, reason=reason, urgent=urgent,
+        )
+        if is_coalesced:
+            BotLogger.log(
+                f"Coalesced $tu refresh: {reason} into pending status check ({', '.join(sorted(fields or []))}).",
+                preset_name,
+                "DEBUG",
+                client,
+            )
         wake_status_loop()
 
     def invalidate_rt_after_failed_attempt(message_id=None, reason="rt-attempt-inconclusive"):
@@ -2919,17 +2930,61 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # settling. Reserve a new slot so another account cannot send
                 # $tu too close to this one.
 
-        if client.use_slash_rolls and not client.slash_fallback_active:
-            for attempt in range(1, 4):
-                if not await wait_for_tu_send_window(): return False
-                if await _trigger_mudae_slash(channel, "tu"): return True
-                if client.slash_fallback_active: break
-                if attempt < 3 and not await active_delay(5.0): return False
-            if not client.slash_fallback_active:
-                client.slash_fallback_active = True
-                BotLogger.log("/tu failed after 3 attempts. Switching to text $tu so status tracking can continue.", preset_name, "WARN")
-        if not await wait_for_tu_send_window(): return False
-        return await guarded_send(channel, f"{client.mudae_prefix}tu")
+        client._tu_in_flight = True
+        try:
+            if client.use_slash_rolls and not client.slash_fallback_active:
+                for attempt in range(1, 4):
+                    if not await wait_for_tu_send_window(): return False
+                    required, skip_reason = is_tu_still_required(
+                        client,
+                        proceed_to_rolls=client.rolling_enabled,
+                        is_maintenance_fn=is_maintenance_active,
+                    )
+                    if not required:
+                        client._tu_skipped_stale = True
+                        BotLogger.log(
+                            f"Skipping stale queued $tu; required state already reconciled ({skip_reason}).",
+                            preset_name,
+                            "DEBUG",
+                            client,
+                        )
+                        return False
+                    BotLogger.log(
+                        f"Physical $tu still required: sending command (reason: {skip_reason}).",
+                        preset_name,
+                        "DEBUG",
+                        client,
+                    )
+                    if await _trigger_mudae_slash(channel, "tu"): return True
+                    if client.slash_fallback_active: break
+                    if attempt < 3 and not await active_delay(5.0): return False
+                if not client.slash_fallback_active:
+                    client.slash_fallback_active = True
+                    BotLogger.log("/tu failed after 3 attempts. Switching to text $tu so status tracking can continue.", preset_name, "WARN")
+            if not await wait_for_tu_send_window(): return False
+            required, skip_reason = is_tu_still_required(
+                client,
+                proceed_to_rolls=client.rolling_enabled,
+                is_maintenance_fn=is_maintenance_active,
+            )
+            if not required:
+                client._tu_skipped_stale = True
+                BotLogger.log(
+                    f"Skipping stale queued $tu; required state already reconciled ({skip_reason}).",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
+                return False
+            BotLogger.log(
+                f"Physical $tu still required: sending command (reason: {skip_reason}).",
+                preset_name,
+                "DEBUG",
+                client,
+            )
+            return await guarded_send(channel, f"{client.mudae_prefix}tu")
+        finally:
+            client._tu_in_flight = False
 
     def _get_command_channel():
         configured = getattr(client, "command_channel", None)
@@ -3755,6 +3810,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.claim_right_available = True
                 client.claim_cooldown_until_utc = None
                 client.last_successfully_claimed_character = None
+                clear_status_dirty(client, {"claim"})
                 BotLogger.log("Reset prediction: claim cycle advanced locally.", preset_name, "DEBUG", client)
         roll_anchor = getattr(client, "roll_reset_anchor", None)
         if roll_anchor is not None:
@@ -3779,11 +3835,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if client.normal_roll_action_owner.state != "executing":
                         client.rolls_left = next_cycle_roll_count
                     client.predicted_roll_state_valid = not state.count_uncertain
+                    clear_status_dirty(client, {"rolls"})
                 else:
                     state.remaining = None
                     state.remaining_authoritative = False
                     client.predicted_roll_state_valid = False
                     client._normal_roll_action_roll_counts.pop(cycle_id, None)
+                    clear_status_dirty(client, {"rolls"})
                 client.predicted_roll_cycle_id = cycle_id
                 client.us_pulled_this_cycle = 0
                 client.us_failed_this_cycle = False
@@ -4156,6 +4214,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 try:
                     for attempt in range(2):
                         if not await send_tu_command(cmd_channel):
+                            if getattr(client, "_tu_skipped_stale", False):
+                                client._tu_skipped_stale = False
+                                return
                             backoff = record_tu_failure(client)
                             BotLogger.log(
                                 f"Failed to send $tu. Retrying in {backoff:.0f}s.",
@@ -7587,6 +7648,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._runtime_start_roll_commands = start_roll_commands
     client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
     client._runtime_check_status = check_status
+    client._runtime_is_tu_still_required = is_tu_still_required
 
     # Stop may be requested while this client is being configured but before
     # discord.py owns a running loop. Check again immediately before the

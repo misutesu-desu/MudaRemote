@@ -1,7 +1,7 @@
 """Status freshness helpers used to minimize physical Mudae ``$tu`` queries."""
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import datetime
 import math
 import re
@@ -247,6 +247,16 @@ def _normalize_fields(fields):
     return {str(field) for field in fields if str(field) in STATUS_FIELDS}
 
 
+@dataclass
+class PendingStatusRequest:
+    """A logical pending $tu status refresh coalesced across boundary triggers."""
+    required_fields: set = field(default_factory=set)
+    reasons: set = field(default_factory=set)
+    cycle_id: object = None
+    urgent: bool = False
+    in_flight: bool = False
+
+
 def initialize_status_tracking(client) -> None:
     """Initialize per-client status freshness and query backoff state."""
     client._status_dirty_fields = set()
@@ -260,6 +270,9 @@ def initialize_status_tracking(client) -> None:
     client._tu_missing_categories = set()
     client._tu_missing_category_warnings = set()
     client.tu_query_count = 0
+    client._pending_status_request = None
+    client._tu_in_flight = False
+    client._tu_skipped_stale = False
 
 
 def status_dirty_fields(client):
@@ -271,23 +284,74 @@ def status_dirty_fields(client):
     return dirty
 
 
-def mark_status_dirty(client, fields=None, reason=None, urgent=False) -> None:
-    """Mark only the status fields whose local value may no longer be reliable."""
+def coalesce_status_request(
+    client,
+    fields=None,
+    reason=None,
+    urgent=False,
+    cycle_id=None,
+) -> tuple:
+    """Merge requested fields/reasons into this client's active status demand.
+
+    Returns ``(is_new, is_coalesced)``.
+    """
     dirty = status_dirty_fields(client)
-    dirty.update(_normalize_fields(fields))
+    new_fields = _normalize_fields(fields)
+    dirty.update(new_fields)
     client._status_dirty_fields = dirty
     client.desync_detected = bool(dirty)
+
+    reasons = set(getattr(client, "_status_refresh_reasons", set()))
+    is_new_reason = False
     if reason:
-        reasons = set(getattr(client, "_status_refresh_reasons", set()))
-        is_new_reason = str(reason) not in reasons
-        reasons.add(str(reason))
+        reason_str = str(reason)
+        if reason_str not in reasons:
+            is_new_reason = True
+            reasons.add(reason_str)
         client._status_refresh_reasons = reasons
-    else:
-        is_new_reason = False
+
     if urgent:
         client._status_refresh_urgent = True
         if is_new_reason:
             client._tu_urgent_bypass_used = False
+
+    pending = getattr(client, "_pending_status_request", None)
+    in_flight = bool(getattr(client, "_tu_in_flight", False))
+    if pending is not None or in_flight:
+        if pending is None:
+            pending = PendingStatusRequest(
+                required_fields=set(dirty),
+                reasons=set(reasons),
+                cycle_id=cycle_id,
+                urgent=bool(getattr(client, "_status_refresh_urgent", False)),
+                in_flight=in_flight,
+            )
+            client._pending_status_request = pending
+        else:
+            pending.required_fields.update(new_fields or dirty)
+            if reason:
+                pending.reasons.add(str(reason))
+            if urgent:
+                pending.urgent = True
+            if cycle_id is not None:
+                pending.cycle_id = cycle_id
+            pending.in_flight = in_flight
+        return False, True
+
+    pending = PendingStatusRequest(
+        required_fields=set(dirty),
+        reasons=set(reasons),
+        cycle_id=cycle_id,
+        urgent=bool(getattr(client, "_status_refresh_urgent", False)),
+        in_flight=False,
+    )
+    client._pending_status_request = pending
+    return True, False
+
+
+def mark_status_dirty(client, fields=None, reason=None, urgent=False, cycle_id=None) -> None:
+    """Mark only the status fields whose local value may no longer be reliable."""
+    coalesce_status_request(client, fields=fields, reason=reason, urgent=urgent, cycle_id=cycle_id)
 
 
 def clear_status_dirty(client, fields=None) -> None:
@@ -299,10 +363,18 @@ def clear_status_dirty(client, fields=None) -> None:
         dirty.difference_update(_normalize_fields(fields))
     client._status_dirty_fields = dirty
     client.desync_detected = bool(dirty)
+    pending = getattr(client, "_pending_status_request", None)
+    if pending is not None:
+        if fields is None:
+            pending.required_fields.clear()
+        else:
+            pending.required_fields.difference_update(_normalize_fields(fields))
     if not dirty:
         client._status_refresh_reasons = set()
         client._status_refresh_urgent = False
         client._tu_urgent_bypass_used = False
+        if pending is not None and not pending.in_flight:
+            client._pending_status_request = None
 
 
 def status_refresh_reasons(client):
