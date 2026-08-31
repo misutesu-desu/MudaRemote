@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.19
+  group: windows-prerelease-v4.9.0-beta.20
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.19
-      RELEASE_TAG: v4.9.0-beta.19
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.19 — High-Account $tu Pacing & Queue Optimization
+      RELEASE_VERSION: 4.9.0-beta.20
+      RELEASE_TAG: v4.9.0-beta.20
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.20 — Large-Account Status Queue Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,18 +128,17 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.19**
+          **🆕 MudaRemote v4.9.0-beta.20**
 
           ### 🐛 Bug Fixes
-
-          - **High-Account Boundary Coalescing:** Simultaneous boundary-time status refresh triggers on the same client (claim cooldown, rolls replenishment, status boundary) are now coalesced into a single request, preventing queue explosion
-          - **Post-Pacing Stale Command Revalidation:** Queued status checks revalidate local and shared state after waiting for the global pacing window and safely skip physical commands if already reconciled
-          - **Predictable Boundary Advancement:** Confident reset anchors advance cycles cleanly without producing redundant boundary `$tu` spikes
+          - Reduced unnecessary `$tu` queue buildup around predictable reset boundaries
+          - Prevented accounts with sufficient predicted state from consuming global `$tu` pacing slots
+          - Reduced redundant per-account private status synchronization in large multi-account setups
 
           ### ⚡ Improvements
-
-          - **Eliminated Queue Starvation in 50+ Account Setups:** Accounts no longer wait minutes in global pacing queues or miss roll execution windows at reset boundaries
-          - **Preserved Authoritative State:** Reconciled state and learned replenishment capacities remain intact while skipping unneeded boundary traffic
+          - Better scaling for 50+ account setups
+          - Private `$tu` checks are now reserved for cases where authoritative per-account state is genuinely required
+          - Verified Purple and Chaos Kakera filtering behavior against current preset settings
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease
