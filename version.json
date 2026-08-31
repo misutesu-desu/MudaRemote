@@ -1,26 +1,25 @@
 {
-  "version": "4.9.0-beta.18",
+  "version": "4.9.0-beta.19",
   "changelog": {
     "Bug Fixes": [
-      "Accounts that receive usable rolls later in the same cycle can now resume their scheduled roll action instead of repeatedly checking $tu.",
-      "Running multiple presets together can no longer incorrectly interfere with another account's authoritative roll state and roll timing.",
-      "Claim-timed rolls now use consistent status checks from scheduling through actual execution."
+      "Simultaneous boundary-time status checks on the same account are now coalesced into a single request.",
+      "Queued $tu commands are revalidated after the global pacing wait and safely skipped when the state is already reconciled.",
+      "Predictable reset boundaries advance cycle state locally without triggering unneeded $tu bursts."
     ],
     "Improvements": [
-      "Unrelated status updates no longer unnecessarily block an already valid normal-roll action.",
-      "Shared server timing can be reused across presets without erasing another account's authoritative roll count.",
-      "Scheduling and execution now agree on which claim/roll changes require a fresh $tu reconciliation."
+      "High-account setups (50+ accounts) no longer experience queue starvation at reset boundaries.",
+      "Preserved exact authoritative roll counts while eliminating redundant boundary queries."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.18/MudaRemote.exe",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.19/MudaRemote.exe",
   "exe_sha256": "be73a57bf5d049559fb9d83c04601c6ecda38ec8da41928a979399b30fd99322",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "5bff7c1022d34b332a21ee3d71a079ae6cbc2a26d7742b839a27d734bf4f0b29"
+      "sha256": "3502e397dd403b9022c0c66e020ea38cd15e1e1d3e06edd64bfc2de72e55d9fb"
     },
     {
       "path": "mudae_preset_editor.py",

@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.18
+  group: windows-prerelease-v4.9.0-beta.19
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.18
-      RELEASE_TAG: v4.9.0-beta.18
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.18 — Roll Scheduler & Multi-Preset Hotfix
+      RELEASE_VERSION: 4.9.0-beta.19
+      RELEASE_TAG: v4.9.0-beta.19
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.19 — High-Account $tu Pacing & Queue Optimization
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,19 +128,18 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.18**
+          **🆕 MudaRemote v4.9.0-beta.19**
 
           ### 🐛 Bug Fixes
 
-          - **Fixed Another $tu Roll Loop:** Accounts that receive usable rolls later in the same cycle can now re-arm their roll action instead of repeatedly checking `$tu`
-          - **Fixed Multi-Preset Roll Timing:** Running multiple presets together can no longer incorrectly invalidate another account's authoritative roll state and interfere with its scheduled rolls
-          - **Fixed Timed Roll Reconciliation:** Claim-timed roll actions now use the same state validation rules during scheduling and actual execution
+          - **High-Account Boundary Coalescing:** Simultaneous boundary-time status refresh triggers on the same client (claim cooldown, rolls replenishment, status boundary) are now coalesced into a single request, preventing queue explosion
+          - **Post-Pacing Stale Command Revalidation:** Queued status checks revalidate local and shared state after waiting for the global pacing window and safely skip physical commands if already reconciled
+          - **Predictable Boundary Advancement:** Confident reset anchors advance cycles cleanly without producing redundant boundary `$tu` spikes
 
           ### ⚡ Improvements
 
-          - **Stable Pending Roll Actions:** Unrelated status updates such as power, points, DK, or RT changes no longer unnecessarily block a valid normal-roll action
-          - **Safer Shared Reset State:** Shared reset information can update timing without erasing another account's already-authoritative roll count
-          - **More Consistent Scheduler State:** Roll scheduling and execution now agree on exactly when claim/roll state must be reconciled
+          - **Eliminated Queue Starvation in 50+ Account Setups:** Accounts no longer wait minutes in global pacing queues or miss roll execution windows at reset boundaries
+          - **Preserved Authoritative State:** Reconciled state and learned replenishment capacities remain intact while skipping unneeded boundary traffic
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease
