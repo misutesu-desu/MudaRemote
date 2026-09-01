@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.22
+  group: windows-prerelease-v4.9.0-beta.23
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.22
-      RELEASE_TAG: v4.9.0-beta.22
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.22 — Private Roll Sync Hotfix
+      RELEASE_VERSION: 4.9.0-beta.23
+      RELEASE_TAG: v4.9.0-beta.23
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.23 — Reset-Aware Rolling
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,17 +128,15 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.22**
-
-          ### 🐛 Bug Fixes
-          - Fixed predicted reset cycles waiting several minutes before synchronizing required private roll state
-          - Fixed cases where large available roll counts were discovered only after the safe execution window had already expired
-          - Removed background sanity-check delays from roll-enabling private synchronization
+          ### ✨ New
+          - Large roll batches can now use the remaining time before a reset instead of skipping the entire cycle
 
           ### ⚡ Improvements
-          - Accounts with trusted replenishment state can schedule their new rolls immediately without unnecessary `$tu`
-          - Accounts with unknown private roll state now request authoritative synchronization promptly after the reset
-          - Improved large-account reset handling while preserving global `$tu` pacing protection
+          - Added reset-aware roll handoff when a reset happens during an active batch
+          - Old and new cycle roll counts remain separated during the transition
+          - Trusted successor cycles can continue without unnecessary `$tu`
+          - Unknown successor state requests one authoritative private sync
+          - Extra rolls and claim interruptions remain cycle-safe
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease

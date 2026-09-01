@@ -1,26 +1,26 @@
 {
-  "version": "4.9.0-beta.22",
+  "version": "4.9.0-beta.23",
   "changelog": {
-    "Bug Fixes": [
-      "Fixed predicted reset cycles waiting several minutes before synchronizing required private roll state.",
-      "Fixed cases where large available roll counts were discovered only after the safe execution window had already expired.",
-      "Removed background sanity-check delays from roll-enabling private synchronization."
+    "New": [
+      "Large roll batches can now use the remaining time before a reset instead of skipping the entire cycle"
     ],
     "Improvements": [
-      "Accounts with trusted replenishment state can schedule their new rolls immediately without unnecessary $tu.",
-      "Accounts with unknown private roll state now request authoritative synchronization promptly after the reset.",
-      "Improved large-account reset handling while preserving global $tu pacing protection."
+      "Added reset-aware roll handoff when a reset happens during an active batch",
+      "Old and new cycle roll counts remain separated during the transition",
+      "Trusted successor cycles can continue without unnecessary $tu",
+      "Unknown successor state requests one authoritative private sync",
+      "Extra rolls and claim interruptions remain cycle-safe"
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.22/MudaRemote.exe",
-  "exe_sha256": "4f30f3ec011029cb262df75af8c1e81f8990e93016e912db070764352e919929",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.23/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "3600d43518fa9f16ac77a8b8304841cf92979538958e618f8235d6c1eadec179"
+      "sha256": "b42a5dd6ff8aff6e04121b850faa7d9c479a01719faeb74f1a5984cc6ed223c7"
     },
     {
       "path": "mudae_preset_editor.py",
