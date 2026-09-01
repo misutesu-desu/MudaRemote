@@ -85,7 +85,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -95,7 +95,7 @@ try:
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
-        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
@@ -117,7 +117,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -127,7 +127,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
-        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
@@ -1167,6 +1167,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._roll_count_sync_cycle_id = None
     client._roll_count_sync_at_utc = None
     client._roll_count_sync_handle = None
+    client._roll_count_sync_requested_cycle_id = None
     client._roll_count_reconcile_cycle_id = None
     client._roll_count_reconcile_started_at_utc = None
     client._schedule_private_roll_count_sync = None
@@ -1217,6 +1218,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._active_normal_roll_cycle_id = None
     client._active_normal_batch_remaining = 0
     client._normal_roll_action_scheduled_triggers = set()
+    client._last_automation_roll_command_token = None
+    client._normal_roll_handoff_from_cycle_id = None
+    client._normal_roll_handoff_to_cycle_id = None
+    client._normal_roll_handoff_boundary_utc = None
     client._local_boundary_wake_pending = False
     client.predicted_roll_state_valid = False
     client.predicted_roll_cycle_id = None
@@ -2753,6 +2758,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
         cmd = (command_name or "").strip().lstrip('/')
         if not cmd or client.is_paused or is_maintenance_active(): return False
+        # The send-end path and the later character result can both observe a
+        # boundary race.  Keep the correlation token on the client so those
+        # observations can be idempotently attributed to one command.
+        client._last_automation_roll_command_token = None
         owner_id = client.user.id
         owner_name = getattr(client.user, "name", "")
         slash_token = None
@@ -2802,6 +2811,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.roll_command_correlation.finalize(
                 slash_token, receipt, operation=pending_operation
             )
+            client._last_automation_roll_command_token = slash_token
             _check_and_track_boundary_origin(slash_token, send_end_utc)
             if on_sent is not None:
                 on_sent(receipt)
@@ -2844,6 +2854,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.roll_command_correlation.finalize(
                 text_token, receipt, operation=pending_operation
             )
+            client._last_automation_roll_command_token = text_token
             _check_and_track_boundary_origin(text_token, send_end_utc)
             if on_sent is not None:
                 on_sent(receipt)
@@ -3391,7 +3402,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client.roll_speed, client.use_slash_rolls,
                     pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
                 )
-                if not fits_before_reset:
+                has_usable_window = normal_roll_has_usable_window(
+                    now_utc,
+                    client.roll_reset_at_utc,
+                    client.roll_speed,
+                    client.use_slash_rolls,
+                    pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                )
+                if not fits_before_reset and not has_usable_window:
                     # The claim wait has ended; restore the owner to its
                     # eligible pending state before atomically sealing the
                     # exhausted execution window.
@@ -3410,6 +3428,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     window_minutes=client.humanization_window_minutes,
                     persistent_stagger_seconds=client.persistent_stagger_seconds,
                 )
+                if not fits_before_reset and has_usable_window:
+                    if owner.mark_boundary_aware(owner.cycle_id):
+                        BotLogger.log(
+                            "Timing Variation: batch crosses the next reset; starting with reset-aware handoff.",
+                            preset_name,
+                            "DEBUG",
+                            client,
+                        )
                 schedule_owned_normal_roll_action(owner.cycle_id, now_utc)
 
         seconds = max(0.05, (deadline - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
@@ -3530,12 +3556,38 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             getattr(client, "roll_reset_at_utc", None),
         )
 
+    def request_private_roll_count_sync_now(logical_roll_cycle_id):
+        """Promote one unknown successor sync from a timer to an immediate status demand."""
+        if logical_roll_cycle_id is None or not getattr(client, "rolling_enabled", True):
+            return False
+        if logical_roll_cycle_id != getattr(client, "current_roll_cycle_id", None):
+            return False
+        state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
+        if state is not None and state.remaining is not None and not state.count_uncertain:
+            return False
+        if getattr(client, "_roll_count_sync_requested_cycle_id", None) == logical_roll_cycle_id:
+            return False
+        handle = getattr(client, "_roll_count_sync_handle", None)
+        if handle is not None and not handle.cancelled():
+            handle.cancel()
+        client._roll_count_sync_handle = None
+        client._roll_count_sync_at_utc = None
+        client._roll_count_sync_cycle_id = logical_roll_cycle_id
+        client._roll_count_sync_requested_cycle_id = logical_roll_cycle_id
+        request_status_refresh(
+            {"rolls"},
+            reason="private-roll-count-sync",
+            urgent=True,
+        )
+        return True
+
     async def complete_owned_normal_roll_transaction(logical_roll_cycle_id, channel):
-        """Release exactly the executing owner and then promote any trusted successor."""
+        """Release the old owner and hand its lane to one cycle-aware successor."""
         owner = client.normal_roll_action_owner
         if owner.cycle_id != logical_roll_cycle_id or owner.state != "executing":
             return False
         owner.complete(logical_roll_cycle_id)
+        extra_rolls = max(0, int(getattr(client, "_local_extra_rolls_pending", 0) or 0))
         if owner.state == "pending":
             queued_cycle = owner.cycle_id
             client.current_roll_cycle_id = queued_cycle
@@ -3549,6 +3601,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
             if is_uncertain:
                 client.predicted_roll_state_valid = False
+                client.rolls_left = extra_rolls
                 if roll_cycle_uncertainty_requires_status(queued_state):
                     mark_status_dirty(client, {"rolls"}, reason="cross-cycle-roll-uncertainty")
             else:
@@ -3557,12 +3610,51 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if queued_state and queued_state.remaining is not None
                     else client._normal_roll_action_roll_counts.get(queued_cycle, 0)
                 )
-                client.rolls_left = max(0, int(remaining or 0))
+                client.rolls_left = max(0, int(remaining or 0)) + extra_rolls
                 client.predicted_roll_state_valid = True
                 client.predicted_roll_cycle_id = queued_cycle
                 schedule_owned_normal_roll_action(
                     queued_cycle, datetime.datetime.now(timezone.utc)
                 )
+        elif (
+            getattr(client, "current_roll_cycle_id", None) is not None
+            and client.current_roll_cycle_id != logical_roll_cycle_id
+            and owner.cycle_id == logical_roll_cycle_id
+        ):
+            # No trusted successor was queued while the old transaction was
+            # executing (normally because its private count is unknown). Do
+            # not leave the completed owner or its unsent old-cycle count
+            # live; rebase the lane and request exactly one successor sync.
+            successor_cycle_id = client.current_roll_cycle_id
+            owner.rebase_completed(logical_roll_cycle_id, successor_cycle_id)
+            successor_state = get_normal_roll_cycle_state(client, successor_cycle_id)
+            successor_is_clean = bool(
+                successor_state is not None
+                and successor_state.remaining is not None
+                and not successor_state.count_uncertain
+            )
+            if successor_is_clean:
+                client.rolls_left = max(0, int(successor_state.remaining)) + extra_rolls
+                client.predicted_roll_state_valid = True
+                client.predicted_roll_cycle_id = successor_cycle_id
+            else:
+                # Only separately tracked Kakera extras survive this handoff;
+                # unsent normal rolls belong to the expired old cycle.
+                client.rolls_left = extra_rolls
+                client.predicted_roll_state_valid = False
+                request_private_roll_count_sync_now(successor_cycle_id)
+            schedule_owned_normal_roll_action(
+                successor_cycle_id,
+                datetime.datetime.now(timezone.utc),
+            )
+        elif getattr(client, "current_roll_cycle_id", None) == logical_roll_cycle_id:
+            old_state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
+            old_remaining = (
+                old_state.remaining
+                if old_state is not None and old_state.remaining is not None
+                else 0
+            )
+            client.rolls_left = max(0, int(old_remaining or 0)) + extra_rolls
         _prune_normal_action_metadata()
         if getattr(client, "_deferred_independent_known_work", False):
             client._deferred_independent_known_work = False
@@ -3679,7 +3771,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             getattr(client, "_auto_rolls_ack_ambiguous_cycle_id", None),
             getattr(client, "_auto_rolls_reconcile_cycle_id", None),
             getattr(client, "_active_normal_roll_cycle_id", None),
+            getattr(client, "_normal_roll_handoff_from_cycle_id", None),
             getattr(client, "_roll_count_sync_cycle_id", None),
+            getattr(client, "_roll_count_sync_requested_cycle_id", None),
         }
         active_cycles.update(
             cid for cid, st in states.items() if getattr(st, "count_uncertain", False)
@@ -3731,9 +3825,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         existing_handle = getattr(client, "_roll_count_sync_handle", None)
         if existing_cid == logical_roll_cycle_id and existing_handle is not None and not existing_handle.cancelled():
             return
+        if existing_cid == logical_roll_cycle_id:
+            if getattr(client, "_roll_count_sync_requested_cycle_id", None) == logical_roll_cycle_id:
+                return
+            if (
+                "rolls" in status_dirty_fields(client)
+                or getattr(client, "_pending_status_request", None) is not None
+                or getattr(client, "_tu_in_flight", False)
+            ):
+                return
         if existing_handle is not None and not existing_handle.cancelled():
             existing_handle.cancel()
         client._roll_count_sync_handle = None
+        if existing_cid != logical_roll_cycle_id:
+            client._roll_count_sync_requested_cycle_id = None
 
         seed_material = (
             str(preset_name or getattr(client.user, "id", "")),
@@ -3763,28 +3868,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if cycle_id is None or cycle_id != client.current_roll_cycle_id:
                 client._roll_count_sync_cycle_id = None
                 client._roll_count_sync_at_utc = None
+                if getattr(client, "_roll_count_sync_requested_cycle_id", None) == cycle_id:
+                    client._roll_count_sync_requested_cycle_id = None
                 return
             if not getattr(client, "rolling_enabled", True):
                 client._roll_count_sync_cycle_id = None
                 client._roll_count_sync_at_utc = None
+                if getattr(client, "_roll_count_sync_requested_cycle_id", None) == cycle_id:
+                    client._roll_count_sync_requested_cycle_id = None
                 return
             if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):
                 claim_reset = getattr(client, "next_claim_reset_at_utc", None)
                 if claim_reset is not None and (claim_reset - datetime.datetime.now(timezone.utc)).total_seconds() / 60.0 > 60.0:
                     client._roll_count_sync_cycle_id = None
                     client._roll_count_sync_at_utc = None
+                    if getattr(client, "_roll_count_sync_requested_cycle_id", None) == cycle_id:
+                        client._roll_count_sync_requested_cycle_id = None
                     return
             state = get_normal_roll_cycle_state(client, cycle_id)
             if state is None or (state.remaining is not None and not state.count_uncertain):
                 client._roll_count_sync_cycle_id = None
                 client._roll_count_sync_at_utc = None
+                if getattr(client, "_roll_count_sync_requested_cycle_id", None) == cycle_id:
+                    client._roll_count_sync_requested_cycle_id = None
                 return
             if client.normal_roll_action_owner.state == "executing":
                 client._roll_count_sync_handle = client.loop.call_later(
                     10.0, run_private_roll_count_sync
                 )
                 return
-            request_status_refresh({"rolls"}, reason="private-roll-count-sync", urgent=True)
+            request_private_roll_count_sync_now(cycle_id)
 
         client._roll_count_sync_handle = client.loop.call_later(delay, run_private_roll_count_sync)
         BotLogger.log(
@@ -3838,12 +3951,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client.roll_speed, client.use_slash_rolls,
             pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
         )
+        has_usable_window = (
+            fits_before_reset
+            or normal_roll_has_usable_window(
+                actual_now_utc,
+                client.roll_reset_at_utc,
+                client.roll_speed,
+                client.use_slash_rolls,
+                pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+            )
+        )
+        crosses_reset = not fits_before_reset and has_usable_window
         smart_timing_owns_deadline = bool(
             client.time_rolls_to_claim_reset and not client.claim_right_available
         )
         no_extra_humanization = scheduled_trigger or smart_timing_owns_deadline
         if scheduled_trigger and owner.is_pending(logical_roll_cycle_id):
-            if not fits_before_reset:
+            if not has_usable_window:
                 if defer_owned_normal_roll_window(logical_roll_cycle_id):
                     BotLogger.log("Scheduled roll is too late to finish safely; deferring to the next cycle.", preset_name, "WARN", client)
                 return
@@ -3854,6 +3978,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             existing = getattr(client, "_predicted_roll_action_handle", None)
             if existing is not None and not existing.cancelled():
                 existing.cancel()
+            if crosses_reset and owner.mark_boundary_aware(logical_roll_cycle_id):
+                BotLogger.log(
+                    "Timing Variation: batch crosses the next reset; starting with reset-aware handoff.",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
             _schedule_owned_normal_action_callback(logical_roll_cycle_id)
             return
         action_at, created = owner.schedule(
@@ -3864,7 +3995,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             window_minutes=(0 if no_extra_humanization else client.humanization_window_minutes),
             persistent_stagger_seconds=(0 if no_extra_humanization else client.persistent_stagger_seconds),
         )
-        if not fits_before_reset and owner.is_pending(logical_roll_cycle_id):
+        if not has_usable_window and owner.is_pending(logical_roll_cycle_id):
             if defer_owned_normal_roll_window(logical_roll_cycle_id):
                 BotLogger.log(
                     "Timing Variation: no safe batch window remains; deferring normal rolls to the next cycle.",
@@ -3873,6 +4004,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if action_at is None or not owner.is_pending(logical_roll_cycle_id):
             return
+        if crosses_reset and owner.mark_boundary_aware(logical_roll_cycle_id):
+            BotLogger.log(
+                "Timing Variation: batch crosses the next reset; starting with reset-aware handoff.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
         _schedule_owned_normal_action_callback(
             logical_roll_cycle_id,
             (action_at - datetime.datetime.now(timezone.utc)).total_seconds(),
@@ -3883,7 +4021,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._schedule_owned_normal_roll_action = schedule_owned_normal_roll_action
 
     def advance_predicted_reset_cycles(now_utc=None):
-        """Advance trustworthy anchors without turning a boundary into a /tu."""
+        """Advance anchors and hand the normal-roll lane across each boundary once."""
         now_utc = now_utc or datetime.datetime.now(timezone.utc)
         advanced = set()
         claim_anchor = getattr(client, "claim_reset_anchor", None)
@@ -3901,6 +4039,58 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if roll_anchor is not None:
             for cycle_id, boundary in roll_anchor.advance_through(now_utc):
                 advanced.add("rolls")
+                previous_cycle_id = getattr(client, "current_roll_cycle_id", None)
+                owner = getattr(client, "normal_roll_action_owner", None)
+                owner_was_waiting_claim = bool(
+                    owner is not None
+                    and owner.cycle_id == previous_cycle_id
+                    and owner.state == "waiting_claim"
+                )
+                active_cycle_id = getattr(client, "_active_normal_roll_cycle_id", None)
+                handoff_source_cycle_id = (
+                    active_cycle_id
+                    if active_cycle_id is not None and active_cycle_id != cycle_id
+                    else (
+                        owner.cycle_id
+                        if owner is not None
+                        and owner.state == "executing"
+                        and owner.cycle_id != cycle_id
+                        else previous_cycle_id
+                    )
+                )
+                if (
+                    owner is not None
+                    and previous_cycle_id is not None
+                    and owner.cycle_id == previous_cycle_id
+                    and owner.state in {"pending", "waiting_claim"}
+                    and owner.handoff_pending(previous_cycle_id, cycle_id)
+                ):
+                    # A pending old-cycle callback must not wake after reset.
+                    # Rebinding the owner makes both that callback and a stale
+                    # claim-reset wake fail their cycle checks.
+                    predicted_cycle_id = getattr(client, "_predicted_roll_action_cycle_id", None)
+                    if predicted_cycle_id == previous_cycle_id:
+                        handle = getattr(client, "_predicted_roll_action_handle", None)
+                        if handle is not None and not handle.cancelled():
+                            handle.cancel()
+                        client._predicted_roll_action_handle = None
+                        client._predicted_roll_action_cycle_id = None
+                    getattr(client, "_normal_roll_action_scheduled_triggers", set()).discard(
+                        previous_cycle_id
+                    )
+                    if owner_was_waiting_claim:
+                        claim_wake = getattr(client, "_daily_rolls_claim_wake_handle", None)
+                        if claim_wake is not None and not claim_wake.cancelled():
+                            claim_wake.cancel()
+                        client._daily_rolls_claim_wake_handle = None
+                        client._daily_rolls_claim_wake_at_utc = None
+                if (
+                    handoff_source_cycle_id is not None
+                    and handoff_source_cycle_id != cycle_id
+                ):
+                    client._normal_roll_handoff_from_cycle_id = handoff_source_cycle_id
+                    client._normal_roll_handoff_to_cycle_id = cycle_id
+                    client._normal_roll_handoff_boundary_utc = boundary
                 client.current_roll_cycle_id = cycle_id
                 client.roll_reset_at_utc = roll_anchor.next_boundary_at_utc
                 state = get_normal_roll_cycle_state(client, cycle_id)
@@ -3914,16 +4104,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     and state.proven_fresh
                 ):
                     next_cycle_roll_count = max(0, int(client.normal_roll_replenishment_capacity or 0))
-                    state.remaining = next_cycle_roll_count
-                    state.remaining_authoritative = False
+                    if not state.remaining_authoritative or state.remaining is None:
+                        state.remaining = next_cycle_roll_count
+                        state.remaining_authoritative = False
+                    else:
+                        next_cycle_roll_count = max(0, int(state.remaining))
                     client._normal_roll_action_roll_counts[cycle_id] = next_cycle_roll_count
-                    if client.normal_roll_action_owner.state != "executing":
-                        client.rolls_left = next_cycle_roll_count
+                    if owner is None or client.normal_roll_action_owner.state != "executing":
+                        client.rolls_left = next_cycle_roll_count + max(
+                            0,
+                            int(getattr(client, "_local_extra_rolls_pending", 0) or 0),
+                        )
                     client.predicted_roll_state_valid = not state.count_uncertain
                     clear_status_dirty(client, {"rolls"})
                 else:
                     state.remaining = None
                     state.remaining_authoritative = False
+                    if owner is None or client.normal_roll_action_owner.state != "executing":
+                        # Unsent normal rolls belong to the old cycle.  Only
+                        # separately tracked Kakera extras can survive without
+                        # an authoritative successor count.
+                        client.rolls_left = max(
+                            0,
+                            int(getattr(client, "_local_extra_rolls_pending", 0) or 0),
+                        )
                     client.predicted_roll_state_valid = False
                     client._normal_roll_action_roll_counts.pop(cycle_id, None)
                     clear_status_dirty(client, {"rolls"})
@@ -5340,20 +5544,33 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         # Prerequisites (Auto $rolls, $mk, forcedivorce, pacing, and network
         # jitter) may have consumed the window since this action was scheduled.
-        # Revalidate immediately before the first visible normal roll; never
-        # knowingly begin a batch that crosses a trusted roll boundary.
+        # Revalidate immediately before the first visible normal roll.  A full
+        # batch may now cross the boundary safely; only an actually exhausted
+        # one-command admission window is deferred.
         now_utc = datetime.datetime.now(timezone.utc)
-        if (
-            not is_us_pull
-            and client.roll_reset_at_utc is not None
-            and not normal_roll_batch_fits_window(
+        full_batch_fits = (
+            is_us_pull
+            or client.roll_reset_at_utc is None
+            or normal_roll_batch_fits_window(
                 now_utc,
                 client.roll_reset_at_utc,
                 rolls_left,
                 client.roll_speed,
                 client.use_slash_rolls,
             )
-        ):
+        )
+        has_usable_window = (
+            is_us_pull
+            or client.roll_reset_at_utc is None
+            or normal_roll_has_usable_window(
+                now_utc,
+                client.roll_reset_at_utc,
+                client.roll_speed,
+                client.use_slash_rolls,
+                pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+            )
+        )
+        if not full_batch_fits and not has_usable_window:
             if (
                 client.normal_roll_action_owner.cycle_id == logical_roll_cycle_id
                 and defer_owned_normal_roll_window(logical_roll_cycle_id)
@@ -5363,6 +5580,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     preset_name, "WARN", client,
                 )
             return
+        if (
+            not is_us_pull
+            and not full_batch_fits
+            and has_usable_window
+            and client.normal_roll_action_owner.cycle_id == logical_roll_cycle_id
+            and client.normal_roll_action_owner.mark_boundary_aware(logical_roll_cycle_id)
+        ):
+            BotLogger.log(
+                "Timing Variation: batch crosses the next reset; starting with reset-aware handoff.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
 
         BotLogger.log(f"Rolling {rolls_left} times" + (" (Reactive)" if client.enable_reactive_self_snipe else ""), preset_name, "INFO")
         client.is_actively_rolling = True
@@ -5372,7 +5602,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.collected_kakera_rolls = []
 
         remaining_batch_rolls = max(0, int(rolls_left or 0))
-        client._active_normal_roll_cycle_id = logical_roll_cycle_id
+        active_normal_cycle_id = logical_roll_cycle_id or getattr(client, "current_roll_cycle_id", None)
+        client._active_normal_roll_cycle_id = active_normal_cycle_id
         client._active_normal_batch_remaining = remaining_batch_rolls
         if client.current_roll_cycle_id == logical_roll_cycle_id:
             client.rolls_left = remaining_batch_rolls
@@ -5384,9 +5615,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             now_utc = datetime.datetime.now(timezone.utc)
             advance_predicted_reset_cycles(now_utc)
             if (
-                logical_roll_cycle_id is not None
-                and client.current_roll_cycle_id is not None
-                and client.current_roll_cycle_id != logical_roll_cycle_id
+                (
+                    logical_roll_cycle_id is not None
+                    and client.current_roll_cycle_id is not None
+                    and client.current_roll_cycle_id != logical_roll_cycle_id
+                )
+                or (
+                    active_normal_cycle_id is not None
+                    and client.current_roll_cycle_id is not None
+                    and client.current_roll_cycle_id != active_normal_cycle_id
+                )
             ):
                 BotLogger.log(
                     "Roll cycle boundary reached before sending next roll; stopping expired cycle batch.",
@@ -5427,6 +5665,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client._roll_interrupt_reason = None
                 break
             try:
+                client._last_automation_roll_command_token = None
                 if not await send_roll_command(
                     channel, roll_command,
                     logical_roll_cycle_id=logical_roll_cycle_id,
@@ -5444,14 +5683,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 send_end_utc = datetime.datetime.now(timezone.utc)
                 advance_predicted_reset_cycles(send_end_utc)
                 if (
-                    logical_roll_cycle_id is not None
-                    and client.current_roll_cycle_id is not None
-                    and client.current_roll_cycle_id != logical_roll_cycle_id
+                    (
+                        logical_roll_cycle_id is not None
+                        and client.current_roll_cycle_id is not None
+                        and client.current_roll_cycle_id != logical_roll_cycle_id
+                    )
+                    or (
+                        active_normal_cycle_id is not None
+                        and client.current_roll_cycle_id is not None
+                        and client.current_roll_cycle_id != active_normal_cycle_id
+                    )
                 ):
                     mark_roll_cycle_count_uncertain(client, client.current_roll_cycle_id, reason="cross-cycle-roll-send-race")
-                    target_state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
-                    if target_state is not None:
-                        target_state.known_consumed += 1
+                    record_ambiguous_normal_roll_consumption(
+                        client,
+                        client.current_roll_cycle_id,
+                        getattr(client, "_last_automation_roll_command_token", None),
+                    )
                     BotLogger.log(
                         "Roll command crossed reset boundary during send; new cycle roll count marked uncertain.",
                         preset_name, "DEBUG", client
@@ -7440,7 +7688,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             reason="cross-cycle-result-after-reanchor",
                         )
                         if target_state is not None:
-                            target_state.known_consumed += 1
+                            record_ambiguous_normal_roll_consumption(
+                                client,
+                                target_cycle,
+                                pending_token,
+                            )
                         request_roll_count_reconciliation(target_cycle)
                 else:
                     if target_cycle is not None:
@@ -7454,7 +7706,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         else:
                             add_roll_cycle_uncertainty(client, target_cycle, "cross-cycle-roll-result-race", reason="cross-cycle-roll-result-race")
                         if target_state is not None:
-                            target_state.known_consumed += 1
+                            record_ambiguous_normal_roll_consumption(
+                                client,
+                                target_cycle,
+                                pending_token,
+                            )
                         request_roll_count_reconciliation(target_cycle)
                     else:
                         client.cross_cycle_roll_count_uncertain = True
@@ -7747,6 +8003,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     # and diagnostics without duplicating these nested state transitions.
     client._runtime_defer_owned_normal_roll_window = defer_owned_normal_roll_window
     client._runtime_schedule_owned_normal_roll_action = schedule_owned_normal_roll_action
+    client._runtime_advance_predicted_reset_cycles = advance_predicted_reset_cycles
+    client._runtime_complete_owned_normal_roll_transaction = complete_owned_normal_roll_transaction
+    client._runtime_request_private_roll_count_sync_now = request_private_roll_count_sync_now
     client._runtime_start_roll_commands = start_roll_commands
     client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
     client._runtime_check_status = check_status

@@ -19,6 +19,7 @@ from .status import (
 AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
 NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS = 30.0
 NORMAL_ROLL_PREROLL_RESERVE_SECONDS = 30.0
+ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS = 3.0
 
 
 def mk_full_power_wait_is_unchanged(
@@ -102,6 +103,36 @@ def normal_roll_batch_fits_window(now_utc, next_reset_at_utc, roll_count,
         safety_margin_seconds=safety_margin_seconds,
     )
     return fits
+
+
+def normal_roll_has_usable_window(
+    now_utc,
+    next_reset_at_utc,
+    roll_speed,
+    use_slash_rolls=False,
+    *,
+    pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+    boundary_guard_seconds=ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS,
+):
+    """Whether at least one roll can start before the reset race window.
+
+    ``normal_roll_start_window`` answers whether the *entire* requested batch
+    fits.  A cross-reset-capable batch needs a different, deliberately small
+    admission check: leave the same prerequisite reserve and enough time for
+    one command plus the existing attribution guard.  This lets a large batch
+    use the remaining cycle without permitting a command to begin at the
+    boundary itself.
+    """
+    _latest, usable = normal_roll_start_window(
+        now_utc,
+        next_reset_at_utc,
+        1,
+        roll_speed,
+        use_slash_rolls,
+        pre_roll_seconds=pre_roll_seconds,
+        safety_margin_seconds=boundary_guard_seconds,
+    )
+    return usable
 
 
 def normal_action_status_policy(*, owner_cycle_id, current_roll_cycle_id, owner_state,
@@ -232,6 +263,7 @@ class NormalRollActionOwner:
     queued_deadline_utc: datetime.datetime = None
     post_claim_deadline_created: bool = False
     deferred_window_cycle_ids: list = field(default_factory=list)
+    boundary_aware: bool = False
 
     @staticmethod
     def _calculate_deadline(*, now_utc, latest_action_at_utc=None,
@@ -275,6 +307,7 @@ class NormalRollActionOwner:
         self.deadline_utc = deadline
         self.state = "pending"
         self.post_claim_deadline_created = False
+        self.boundary_aware = False
         return deadline, True
 
     def is_pending(self, cycle_id=None):
@@ -291,6 +324,59 @@ class NormalRollActionOwner:
         self.state = "executing"
         return True
 
+    @property
+    def cross_reset_capable(self):
+        """Whether the current action was admitted to cross its reset."""
+        return self.boundary_aware
+
+    def mark_boundary_aware(self, cycle_id):
+        """Mark one owned action as allowed to run until its reset handoff."""
+        if cycle_id != self.cycle_id or self.state not in {"pending", "executing"}:
+            return False
+        changed = not self.boundary_aware
+        self.boundary_aware = True
+        return changed
+
+    def handoff_pending(self, cycle_id, successor_cycle_id):
+        """Invalidate a not-yet-started action at a reset boundary.
+
+        Executing actions stay owned by their original cycle and are queued
+        through ``schedule``.  Pending/waiting actions, however, must not wake
+        after the boundary and send old-cycle commands.  Rebinding the owner
+        to the successor also makes stale timer/claim callbacks harmless.
+        """
+        if (
+            cycle_id != self.cycle_id
+            or successor_cycle_id is None
+            or self.state not in {"pending", "waiting_claim"}
+        ):
+            return False
+        self.timing.mark_completed(cycle_id)
+        self.queued_cycle_id = None
+        self.queued_deadline_utc = None
+        self.cycle_id = successor_cycle_id
+        self.deadline_utc = None
+        self.post_claim_deadline_created = False
+        self.boundary_aware = False
+        self.state = "completed"
+        return True
+
+    def rebase_completed(self, cycle_id, successor_cycle_id):
+        """Move a completed old-cycle owner to an unqueued successor."""
+        if (
+            cycle_id != self.cycle_id
+            or successor_cycle_id is None
+            or self.state != "completed"
+        ):
+            return False
+        self.cycle_id = successor_cycle_id
+        self.deadline_utc = None
+        self.queued_cycle_id = None
+        self.queued_deadline_utc = None
+        self.post_claim_deadline_created = False
+        self.boundary_aware = False
+        return True
+
     def complete(self, cycle_id):
         if cycle_id != self.cycle_id or self.state not in {"pending", "executing", "waiting_claim"}:
             return False
@@ -304,6 +390,7 @@ class NormalRollActionOwner:
             self.cycle_id = queued_cycle
             self.deadline_utc = queued_deadline
             self.state = "pending"
+            self.boundary_aware = False
             self.timing.cycle_key = queued_cycle
             self.timing.deadline_utc = queued_deadline
             self.timing.completed = False
@@ -366,6 +453,7 @@ class NormalRollActionOwner:
         self.deadline_utc = deadline
         self.state = "pending"
         self.post_claim_deadline_created = False
+        self.boundary_aware = False
         return deadline, True
 
     def cancel(self, cycle_id=None):
@@ -374,6 +462,7 @@ class NormalRollActionOwner:
         if self.state == "executing":
             return False
         self.state = "completed"
+        self.boundary_aware = False
         self.queued_cycle_id = None
         self.queued_deadline_utc = None
         self.timing.mark_completed(self.cycle_id)
@@ -559,10 +648,6 @@ class OutgoingRollCommand:
     send_start_utc: datetime.datetime = None
     send_end_utc: datetime.datetime = None
 
-
-ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS = 3.0
-
-
 @dataclass
 class NormalRollCycleState:
     """Per-cycle executable rolls, separate from replenishment capacity.
@@ -577,6 +662,7 @@ class NormalRollCycleState:
     remaining_authoritative: bool = False
     proven_fresh: bool = False
     known_consumed: int = 0
+    ambiguous_consumption_tokens: set = field(default_factory=set)
     uncertainty_reasons: set = field(default_factory=set)
     last_authoritative_at_utc: datetime.datetime = None
     authoritative_revision: int = 0
@@ -862,6 +948,29 @@ def record_definite_normal_roll_consumption(client, cycle_id):
     return True
 
 
+def record_ambiguous_normal_roll_consumption(client, cycle_id, token=None):
+    """Count one boundary-race command at most once for a cycle.
+
+    A command can be recognized as crossing the boundary both when its send
+    completes and later when its character result arrives.  The token makes
+    those two observations idempotent while preserving the conservative
+    ``known_consumed`` evidence used to prevent trusted-capacity learning.
+    """
+    state = get_normal_roll_cycle_state(client, cycle_id)
+    if state is None:
+        return False
+    if token is not None:
+        tokens = getattr(state, "ambiguous_consumption_tokens", None)
+        if tokens is None:
+            tokens = set()
+            state.ambiguous_consumption_tokens = tokens
+        if token in tokens:
+            return False
+        tokens.add(token)
+    state.known_consumed += 1
+    return True
+
+
 def rearm_existing_normal_roll_action(
     client,
     cycle_id,
@@ -1029,6 +1138,8 @@ def reconcile_authoritative_current_roll_count(
         client._roll_count_sync_handle = None
         client._roll_count_sync_cycle_id = None
         client._roll_count_sync_at_utc = None
+        if getattr(client, "_roll_count_sync_requested_cycle_id", None) == cycle_id:
+            client._roll_count_sync_requested_cycle_id = None
 
     owner = getattr(client, "normal_roll_action_owner", None)
     if owner is None or not owner.is_pending(cycle_id):
