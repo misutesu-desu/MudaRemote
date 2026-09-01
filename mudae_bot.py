@@ -168,6 +168,9 @@ TU_GLOBAL_INTERVAL_SECONDS = 20.0
 # rolling) forever; after this much cumulative quiet-channel waiting, send $tu
 # regardless of the last message age.
 TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS = 120.0
+# The first $tu response wait is 5.5s. Reserve a small amount beyond that for
+# response parsing and reconciliation before the humanized roll callback.
+ROLL_STATUS_RESPONSE_RESERVE_SECONDS = 8.0
 
 def _apply_shared_reset_snapshot(client, snapshot):
     """Apply only server-wide reset boundaries, never another user's private state."""
@@ -2263,6 +2266,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return None
 
     async def run_sphere_game(channel, kind, uses):
+        # Sphere boards are administrative commands.  Resolve their channel at
+        # the physical send boundary so a stale per-client Discord cache cannot
+        # turn a configured command channel into the roll-channel fallback.
+        channel = await _resolve_administrative_command_channel(channel)
+        if channel is None:
+            return False
         uses = max(1, int(uses or 1))
         if client._sphere_game_lock is None:
             client._sphere_game_lock = asyncio.Lock()
@@ -3082,6 +3091,42 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     def same_guild(a, b):
         return a is not None and b is not None and getattr(getattr(a, "guild", None), "id", None) == getattr(getattr(b, "guild", None), "id", None)
 
+    async def _resolve_administrative_command_channel(fallback_channel=None):
+        """Resolve a configured command channel, fetching it if this client missed its cache entry."""
+        main = fallback_channel or getattr(client, "_main_channel", None)
+        configured_id = str(getattr(client, "command_channel_id_preset", "") or "").strip()
+        cached = getattr(client, "command_channel", None)
+
+        if not configured_id:
+            return cached if cached is not None and (main is None or same_guild(cached, main)) else main
+
+        if cached is not None and (main is None or same_guild(cached, main)):
+            return cached
+
+        candidate = None
+        try:
+            channel_id = int(configured_id)
+            candidate = client.get_channel(channel_id)
+            if candidate is None:
+                fetch_channel = getattr(client, "fetch_channel", None)
+                if callable(fetch_channel):
+                    candidate = await fetch_channel(channel_id)
+            if candidate is not None and (main is None or same_guild(candidate, main)):
+                client.command_channel = candidate
+                return candidate
+        except Exception:
+            candidate = None
+
+        if not getattr(client, "_command_channel_fallback_logged", False):
+            client._command_channel_fallback_logged = True
+            BotLogger.log(
+                "Configured command channel is unavailable; administrative command is using the normal fallback channel.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
+        return main
+
     def _get_forcedivorce_channel(fallback_channel=None):
         configured = getattr(client, "forcedivorce_channel", None)
         if configured is not None:
@@ -3810,8 +3855,41 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             )
                             request_roll_count_reconciliation(affected_cycle)
 
-    def schedule_private_roll_count_sync(logical_roll_cycle_id, boundary_utc, *, reason="roll-count-unknown"):
-        """Schedule one stable, humanized, non-boundary /tu to resolve unknown roll count."""
+    def _roll_status_preparation_lead_seconds():
+        """Reserve the existing status-pacing work that precedes one planned roll action."""
+        quiet_wait = 0.0
+        if getattr(client, "humanization_enabled", False):
+            quiet_wait = min(
+                TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS,
+                max(0.0, float(getattr(client, "humanization_inactivity_seconds", 0) or 0)) + 0.5,
+            )
+
+        channel = getattr(client, "command_channel", None) or getattr(client, "_main_channel", None)
+        guild_id = getattr(getattr(channel, "guild", None), "id", None)
+        pacing_key = guild_id if guild_id is not None else getattr(channel, "id", None)
+        queued_wait = 0.0
+        estimate_wait = getattr(_tu_interval_coordinator, "estimated_wait", None)
+        if pacing_key is not None and callable(estimate_wait):
+            queued_wait = max(0.0, float(estimate_wait(pacing_key) or 0.0))
+
+        # Keep the lead modest while accounting for the normal pre-roll
+        # reserve, one global slot, configured quiet-channel behavior, and
+        # the current queue depth when it is already congested.
+        return (
+            NORMAL_ROLL_PREROLL_RESERVE_SECONDS
+            + max(TU_GLOBAL_INTERVAL_SECONDS, queued_wait)
+            + quiet_wait
+            + ROLL_STATUS_RESPONSE_RESERVE_SECONDS
+        )
+
+    def schedule_private_roll_count_sync(
+        logical_roll_cycle_id,
+        boundary_utc,
+        *,
+        reason="roll-count-unknown",
+        planned_action_at_utc=None,
+    ):
+        """Schedule one private /tu, optionally as preparation for an owned humanized roll action."""
         if logical_roll_cycle_id is None:
             return
         if not getattr(client, "rolling_enabled", True):
@@ -3821,10 +3899,34 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             now_ref = boundary_utc or datetime.datetime.now(timezone.utc)
             if claim_reset is not None and (claim_reset - now_ref).total_seconds() / 60.0 > 60.0:
                 return
+
+        boundary_dt = boundary_utc or datetime.datetime.now(timezone.utc)
+        now_dt = datetime.datetime.now(timezone.utc)
+        humanized_preparation = planned_action_at_utc is not None
+        if humanized_preparation:
+            preparation_at_utc = planned_action_at_utc - datetime.timedelta(
+                seconds=_roll_status_preparation_lead_seconds()
+            )
+            candidate_utc = max(
+                boundary_dt + datetime.timedelta(seconds=0.1),
+                now_dt + datetime.timedelta(seconds=0.1),
+                preparation_at_utc,
+            )
+        else:
+            seed_material = (
+                str(preset_name or getattr(client.user, "id", "")),
+                getattr(client.user, "id", 0),
+                getattr(client, "target_channel_id", 0),
+                logical_roll_cycle_id,
+                "private-roll-count-sync",
+            )
+            digest = hashlib.sha256(repr(seed_material).encode("utf-8")).digest()
+            fraction = int.from_bytes(digest[:8], "big") / (2**64)
+            delay_seconds = 0.5 + fraction * 2.5
+            candidate_utc = boundary_dt + datetime.timedelta(seconds=delay_seconds)
+
         existing_cid = getattr(client, "_roll_count_sync_cycle_id", None)
         existing_handle = getattr(client, "_roll_count_sync_handle", None)
-        if existing_cid == logical_roll_cycle_id and existing_handle is not None and not existing_handle.cancelled():
-            return
         if existing_cid == logical_roll_cycle_id:
             if getattr(client, "_roll_count_sync_requested_cycle_id", None) == logical_roll_cycle_id:
                 return
@@ -3834,32 +3936,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 or getattr(client, "_tu_in_flight", False)
             ):
                 return
+            if existing_handle is not None and not existing_handle.cancelled():
+                existing_at_utc = getattr(client, "_roll_count_sync_at_utc", None)
+                if (
+                    not humanized_preparation
+                    or existing_at_utc is None
+                    or candidate_utc >= existing_at_utc
+                ):
+                    return
+                # Global pacing grew after the original plan. Advance this
+                # one preparation task rather than discovering the shortage
+                # at the roll deadline.
+                existing_handle.cancel()
+
         if existing_handle is not None and not existing_handle.cancelled():
             existing_handle.cancel()
         client._roll_count_sync_handle = None
         if existing_cid != logical_roll_cycle_id:
             client._roll_count_sync_requested_cycle_id = None
 
-        seed_material = (
-            str(preset_name or getattr(client.user, "id", "")),
-            getattr(client.user, "id", 0),
-            getattr(client, "target_channel_id", 0),
-            logical_roll_cycle_id,
-            "private-roll-count-sync",
-        )
-        digest = hashlib.sha256(repr(seed_material).encode("utf-8")).digest()
-        fraction = int.from_bytes(digest[:8], "big") / (2**64)
-
-        # Private roll count sync is a roll-enabling prerequisite for the current cycle.
-        # It must execute promptly so large-count rolls can finish before the next reset boundary.
-        min_delay = 0.5
-        max_delay = 3.0
-        delay_seconds = min_delay + fraction * (max_delay - min_delay)
-        boundary_dt = boundary_utc or datetime.datetime.now(timezone.utc)
-        candidate_utc = boundary_dt + datetime.timedelta(seconds=delay_seconds)
         client._roll_count_sync_cycle_id = logical_roll_cycle_id
         client._roll_count_sync_at_utc = candidate_utc
-        now_dt = datetime.datetime.now(timezone.utc)
         delay = max(0.1, (candidate_utc - now_dt).total_seconds())
 
         def run_private_roll_count_sync():
@@ -3900,12 +3997,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             request_private_roll_count_sync_now(cycle_id)
 
         client._roll_count_sync_handle = client.loop.call_later(delay, run_private_roll_count_sync)
-        BotLogger.log(
-            f"Scheduled private roll count sync in {max(0, round(delay))}s for cycle {logical_roll_cycle_id}.",
-            preset_name,
-            "DEBUG",
-            client,
-        )
+        if humanized_preparation:
+            BotLogger.log(
+                "Timing Variation: roll-enabling $tu scheduled near humanized action time.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
+        else:
+            BotLogger.log(
+                f"Scheduled private roll count sync in {max(0, round(delay))}s for cycle {logical_roll_cycle_id}.",
+                preset_name,
+                "DEBUG",
+                client,
+            )
 
     client._schedule_private_roll_count_sync = schedule_private_roll_count_sync
 
@@ -3927,8 +4032,77 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         ):
             return
         state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
+        owner = client.normal_roll_action_owner
+        smart_timing_owns_deadline = bool(
+            client.time_rolls_to_claim_reset and not client.claim_right_available
+        )
+        no_extra_humanization = scheduled_trigger or smart_timing_owns_deadline
         if state is None or state.remaining is None:
             if state is None or not state.remaining_authoritative:
+                humanized_roll_preparation = bool(
+                    client.humanization_enabled
+                    and not no_extra_humanization
+                    and (
+                        float(getattr(client, "humanization_window_minutes", 0) or 0) > 0
+                        or float(getattr(client, "persistent_stagger_seconds", 0) or 0) > 0
+                    )
+                    and owner.state != "executing"
+                )
+                if humanized_roll_preparation:
+                    # We do not know the full batch size yet, but one-roll
+                    # admission preserves the beta.23 cross-reset handoff.
+                    # The owner draws its stable humanized target before the
+                    # private status prerequisite is placed.
+                    latest_action, fits_before_reset = normal_roll_start_window(
+                        actual_now_utc,
+                        client.roll_reset_at_utc,
+                        1,
+                        client.roll_speed,
+                        client.use_slash_rolls,
+                        pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                    )
+                    has_usable_window = (
+                        fits_before_reset
+                        or normal_roll_has_usable_window(
+                            actual_now_utc,
+                            client.roll_reset_at_utc,
+                            client.roll_speed,
+                            client.use_slash_rolls,
+                            pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                        )
+                    )
+                    if has_usable_window:
+                        action_at, created = owner.schedule(
+                            cycle_id=logical_roll_cycle_id,
+                            now_utc=boundary_utc,
+                            latest_action_at_utc=latest_action,
+                            humanization_enabled=True,
+                            window_minutes=client.humanization_window_minutes,
+                            persistent_stagger_seconds=client.persistent_stagger_seconds,
+                        )
+                        if action_at is not None and owner.is_pending(logical_roll_cycle_id):
+                            # A stale callback must not execute before its
+                            # authoritative prerequisite completes. Reconciliation
+                            # below re-arms this same, already-drawn deadline.
+                            existing = getattr(client, "_predicted_roll_action_handle", None)
+                            if existing is not None and not existing.cancelled():
+                                existing.cancel()
+                            client._predicted_roll_action_handle = None
+                            client._predicted_roll_action_cycle_id = None
+                            schedule_private_roll_count_sync(
+                                logical_roll_cycle_id,
+                                boundary_utc,
+                                reason="humanized-roll-preparation",
+                                planned_action_at_utc=action_at,
+                            )
+                            if created:
+                                BotLogger.log(
+                                    "Timing Variation: owned normal action scheduled before private roll status sync.",
+                                    preset_name,
+                                    "DEBUG",
+                                    client,
+                                )
+                            return
                 schedule_private_roll_count_sync(logical_roll_cycle_id, boundary_utc, reason="roll-count-unknown")
             return
         roll_count = normal_roll_schedule_count(state)
@@ -3936,7 +4110,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if scheduled_trigger:
             client._normal_roll_action_scheduled_triggers.add(logical_roll_cycle_id)
-        owner = client.normal_roll_action_owner
         if (
             owner.state == "executing" and owner.cycle_id == logical_roll_cycle_id
             and logical_roll_cycle_id in {
@@ -3962,10 +4135,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
         )
         crosses_reset = not fits_before_reset and has_usable_window
-        smart_timing_owns_deadline = bool(
-            client.time_rolls_to_claim_reset and not client.claim_right_available
-        )
-        no_extra_humanization = scheduled_trigger or smart_timing_owns_deadline
         if scheduled_trigger and owner.is_pending(logical_roll_cycle_id):
             if not has_usable_window:
                 if defer_owned_normal_roll_window(logical_roll_cycle_id):
@@ -4335,13 +4504,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if scheduler_cycle_id is None:
                 scheduler_cycle_id = time.time()
                 client.active_cycle_id = scheduler_cycle_id
-            cmd_channel = _get_command_channel() or channel
+            cmd_channel = await _resolve_administrative_command_channel(channel)
 
             if suppress_physical_tu:
                 target_cycle = client.current_roll_cycle_id or action_owner.cycle_id
                 if action_status_policy == "suppress-routine" and action_owner.is_pending(target_cycle):
                     # A complete authoritative $tu is just as trustworthy as a
                     # predicted anchor for preserving the one stable callback.
+                    schedule_owned_normal_roll_action(target_cycle, now_utc)
+                elif private_count_sync_pending and action_owner.is_pending(target_cycle):
+                    # Recheck queue depth while the one target-aligned private
+                    # sync is pending. This may only advance its preparation
+                    # slot; it cannot introduce another $tu request.
                     schedule_owned_normal_roll_action(target_cycle, now_utc)
                 await run_independent_known_work(cmd_channel, scheduler_cycle_id)
                 return
@@ -8008,6 +8182,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._runtime_request_private_roll_count_sync_now = request_private_roll_count_sync_now
     client._runtime_start_roll_commands = start_roll_commands
     client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
+    client._runtime_run_available_sphere_games = run_available_sphere_games
     client._runtime_check_status = check_status
     client._runtime_is_tu_still_required = is_tu_still_required
 

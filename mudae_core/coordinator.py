@@ -21,6 +21,12 @@ class GlobalIntervalCoordinator:
             self._next_slots[key] = slot + interval
             return max(0.0, slot - now)
 
+    def estimated_wait(self, key, now_monotonic=None):
+        """Return the current queue delay without reserving a command slot."""
+        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        with self._lock:
+            return max(0.0, self._next_slots.get(key, now) - now)
+
 
 class ClaimCoordinator:
     """Coordinates message reservations under one lock to prevent deadlocks."""

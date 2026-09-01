@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -89,6 +90,8 @@ def _create_test_client(
     trusted_confidence=False,
     rolling_enabled=True,
     last_tu_snapshot_complete=True,
+    humanization_enabled=True,
+    humanization_window_minutes=30,
 ):
     bot = _MockBot(preset_name=preset_name, user_id=user_id)
     mudae_bot._mobile_runtime_stop_event.clear()
@@ -121,8 +124,8 @@ def _create_test_client(
             kakera_reaction_snipe_delay_preset=0,
             kakera_reaction_snipe_targets=[],
             server_reset_minute_preset=server_reset_minute,
-            humanization_enabled=True,
-            humanization_window_minutes=10,
+            humanization_enabled=humanization_enabled,
+            humanization_window_minutes=humanization_window_minutes,
         )
     bot.loop = _MockLoop()
     bot.last_tu_snapshot_complete = last_tu_snapshot_complete
@@ -135,217 +138,188 @@ def _create_test_client(
     return bot
 
 
-class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
-    """Mandatory regression tests for delayed private roll sync avoidance."""
+class _PacingChannel:
+    def __init__(self, channel_id, guild_id):
+        self.id = channel_id
+        self.guild = SimpleNamespace(id=guild_id)
 
-    def test_mandatory_1_reproduce_delay_failure_and_verify_prompt_recovery(self):
-        """Mandatory Test 1: Predicted reset with unknown roll count requests sync promptly without missing safe roll window."""
+
+def _advance_at_reset(client, now_utc):
+    client.roll_reset_anchor.authoritative_minute = now_utc.minute
+    client.roll_reset_anchor.anchor_at_utc = now_utc
+    client.roll_reset_anchor.next_boundary_at_utc = now_utc
+    client.roll_reset_anchor.confidence = True
+    advanced = client._advance_predicted_reset_cycles(now_utc)
+    assert "rolls" in advanced
+    return client.current_roll_cycle_id
+
+
+class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
+    """Focused production scheduling coverage for humanized roll preparation."""
+
+    def test_mandatory_1_unknown_private_state_syncs_near_humanized_target(self):
+        """Unknown state defers its one physical $tu until just before the owned target."""
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         client = _create_test_client(
-            preset_name="large_account_tester",
+            preset_name="humanized_unknown",
             user_id=9999,
             server_reset_minute=now_utc.minute,
-            trusted_confidence=False,  # Unlearned capacity on startup / unknown
-            last_tu_snapshot_complete=True,
+            trusted_confidence=False,
         )
 
-        client.roll_reset_anchor.authoritative_minute = now_utc.minute
-        client.roll_reset_anchor.anchor_at_utc = now_utc
-        client.roll_reset_anchor.next_boundary_at_utc = now_utc
-        client.roll_reset_anchor.confidence = True
+        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
+            current_cid = _advance_at_reset(client, now_utc)
 
-        # Advance predicted reset cycle at boundary
-        advanced = client._advance_predicted_reset_cycles(now_utc)
-        self.assertIn("rolls", advanced)
-        current_cid = client.current_roll_cycle_id
-        self.assertIsNotNone(current_cid)
-
-        # Assert NEW behavior: Private roll count sync is scheduled promptly (delay <= 5.0s, NOT 444s)
+        owner = client.normal_roll_action_owner
         sync_handle = client._roll_count_sync_handle
+        self.assertEqual(owner.state, "pending")
+        self.assertEqual(owner.cycle_id, current_cid)
+        self.assertAlmostEqual((owner.deadline_utc - now_utc).total_seconds(), 17 * 60, delta=1.0)
         self.assertIsNotNone(sync_handle)
-        self.assertLessEqual(sync_handle.delay, 5.0)
-        self.assertGreaterEqual(sync_handle.delay, 0.1)
+        self.assertGreater(sync_handle.delay, 60.0)
+        self.assertLess(sync_handle.delay, 17 * 60)
+        self.assertLess(client._roll_count_sync_at_utc, owner.deadline_utc)
+        self.assertEqual(status_dirty_fields(client), set())
+        self.assertIsNone(client._roll_count_sync_requested_cycle_id)
+        sync_at_utc = client._roll_count_sync_at_utc
 
-        # Assert private sync pending is recognized while handle is active
-        req_before, reason_before = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertFalse(req_before)
-        self.assertEqual(reason_before, "private-roll-count-sync-pending")
-
-        # Fire the prompt private sync callback (representing 0.5-3s elapsed)
+        # Fake scheduler advances to the planned preparation slot. No wall
+        # sleep is used; this is the point where the physical $tu becomes due.
         sync_handle.fire()
-        self.assertIsNone(client._roll_count_sync_handle)
-
-        # Now status is dirty for rolls and physical $tu is required promptly
         self.assertIn("rolls", status_dirty_fields(client))
-        req_due, reason_due = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertTrue(req_due)
-        self.assertEqual(reason_due, "required")
+        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertTrue(required)
+        self.assertEqual(reason, "required")
 
-        # Simulate authoritative $tu response arriving promptly reporting 1062 rolls
-        tu_time = now_utc + datetime.timedelta(seconds=4)
+        # An authoritative response re-arms the same pre-drawn roll callback.
         reconcile_authoritative_current_roll_count(
             client,
             1062,
-            observation_kind="check-status",
-            observed_at_utc=tu_time,
+            observation_kind="humanized-private-sync",
+            observed_at_utc=sync_at_utc,
             rearm_existing_owner=lambda cid, deadline: client._schedule_owned_normal_roll_action(cid, deadline),
         )
+        action_handle = client._predicted_roll_action_handle
+        self.assertIsNotNone(action_handle)
+        self.assertEqual(owner.deadline_utc, client.normal_roll_action_owner.deadline_utc)
+        self.assertGreater(owner.deadline_utc, sync_at_utc)
 
-        # Verify capacity was learned and state updated
-        self.assertEqual(client.rolls_left, 1062)
-        self.assertEqual(client.normal_roll_replenishment_capacity, 1062)
-        self.assertTrue(client.normal_roll_replenishment_capacity_confidence)
+        # Firing the fake action handle proves the production executor is
+        # dispatched at the selected humanized deadline, not at reset.
+        action_handle.fire()
+        self.assertEqual(len(client.loop.created_tasks), 1)
 
-        # Schedule the normal roll action with 1062 rolls
-        client._schedule_owned_normal_roll_action(current_cid, tu_time)
-
-        # Assert normal roll action is successfully pending and NOT deferred (59.9m remain in cycle, 1062 rolls fit easily)
-        owner = client.normal_roll_action_owner
-        self.assertEqual(owner.state, "pending")
-        self.assertNotEqual(owner.state, "deferred_window")
-        self.assertNotEqual(owner.state, "completed")
-
-        # Conversely, verify that under OLD 444s delay + 734s pacing wait (arriving with only 24.6m left), 1062 rolls would fail safe window
-        late_tu_time = now_utc + datetime.timedelta(seconds=444 + 735)
-        next_reset_time = now_utc + datetime.timedelta(hours=1)
-        _, fits_late = normal_roll_start_window(
-            late_tu_time, next_reset_time, 1062, roll_speed=1.5, use_slash_rolls=True,
-        )
-        self.assertFalse(fits_late)
-
-    def test_mandatory_2_trusted_capacity_path(self):
-        """Mandatory Test 2: Confident predicted reset with trusted replenishment schedules rolls immediately without immediate physical $tu."""
+    def test_mandatory_2_trusted_state_needs_no_roll_preparation_tu(self):
+        """Trusted replenishment keeps the humanized target and skips pre-roll $tu."""
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         client = _create_test_client(
-            preset_name="trusted_account",
+            preset_name="humanized_trusted",
             user_id=2001,
             server_reset_minute=now_utc.minute,
             trusted_capacity=13,
             trusted_confidence=True,
-            last_tu_snapshot_complete=True,
         )
 
-        client.roll_reset_anchor.authoritative_minute = now_utc.minute
-        client.roll_reset_anchor.anchor_at_utc = now_utc
-        client.roll_reset_anchor.next_boundary_at_utc = now_utc
-        client.roll_reset_anchor.confidence = True
+        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
+            current_cid = _advance_at_reset(client, now_utc)
 
-        advanced = client._advance_predicted_reset_cycles(now_utc)
-        self.assertIn("rolls", advanced)
-        current_cid = client.current_roll_cycle_id
-
-        # 1. Normal roll action is scheduled immediately from trusted capacity
         owner = client.normal_roll_action_owner
         self.assertEqual(owner.state, "pending")
         self.assertEqual(owner.cycle_id, current_cid)
-        self.assertEqual(client.rolls_left, 13)
-
-        # 2. No private sync handle is created
+        self.assertAlmostEqual((owner.deadline_utc - now_utc).total_seconds(), 17 * 60, delta=1.0)
         self.assertIsNone(client._roll_count_sync_handle)
-
-        # 3. No physical $tu is required / enqueued
         required, reason = is_tu_still_required(client, proceed_to_rolls=True)
         self.assertFalse(required)
         self.assertIn(reason, ("roll-action-already-pending", "policy-suppress-routine"))
+        self.assertIsNotNone(client._predicted_roll_action_handle)
 
-    def test_mandatory_3_unknown_private_state_requires_prompt_tu(self):
-        """Mandatory Test 3: Unknown private roll state requires physical $tu promptly and preserves rate-limit safety."""
+    def test_mandatory_3_humanization_disabled_preserves_prompt_sync(self):
+        """Normal non-humanized unknown-state reconciliation remains prompt."""
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         client = _create_test_client(
-            preset_name="unknown_state_account",
+            preset_name="non_humanized_unknown",
             user_id=3001,
             server_reset_minute=now_utc.minute,
             trusted_confidence=False,
-            last_tu_snapshot_complete=True,
+            humanization_enabled=False,
+            humanization_window_minutes=0,
         )
 
-        client.roll_reset_anchor.authoritative_minute = now_utc.minute
-        client.roll_reset_anchor.anchor_at_utc = now_utc
-        client.roll_reset_anchor.next_boundary_at_utc = now_utc
-        client.roll_reset_anchor.confidence = True
+        _advance_at_reset(client, now_utc)
 
-        advanced = client._advance_predicted_reset_cycles(now_utc)
-        self.assertIn("rolls", advanced)
-        current_cid = client.current_roll_cycle_id
-
-        # 1. Rolls cannot be scheduled yet (remaining is None)
-        owner = client.normal_roll_action_owner
-        self.assertEqual(owner.state, "idle")
-
-        # 2. Private sync handle is registered promptly (delay <= 5.0s)
+        self.assertEqual(client.normal_roll_action_owner.state, "idle")
         sync_handle = client._roll_count_sync_handle
         self.assertIsNotNone(sync_handle)
-        self.assertLessEqual(sync_handle.delay, 5.0)
+        self.assertGreaterEqual(sync_handle.delay, 0.1)
+        self.assertLessEqual(sync_handle.delay, 3.0)
 
-        # 3. Once callback fires, physical $tu is strictly required and not permanently suppressed
         sync_handle.fire()
         required, reason = is_tu_still_required(client, proceed_to_rolls=True)
         self.assertTrue(required)
         self.assertEqual(reason, "required")
 
-    def test_mandatory_4_high_account_burst_mix(self):
-        """Mandatory Test 4: 60-account burst at predicted reset: trusted accounts do not enqueue $tu, unknown accounts request promptly without queue starvation."""
-        pacer = GlobalIntervalCoordinator()
-        guild_id = 888888
+    def test_mandatory_4_congested_pacer_advances_preparation_before_target(self):
+        """Known global pacing congestion moves preparation forward instead of waiting for the roll deadline."""
         now_utc = datetime.datetime.now(datetime.timezone.utc)
+        client = _create_test_client(
+            preset_name="congested_humanized",
+            user_id=4001,
+            server_reset_minute=now_utc.minute,
+            trusted_confidence=False,
+        )
+        client._main_channel = _PacingChannel(channel_id=9101, guild_id=8801)
 
-        clients = []
-        # Create 55 trusted accounts and 5 genuinely unknown accounts
-        for i in range(60):
-            is_unknown = (i >= 55)
-            c = _create_test_client(
-                preset_name=f"burst_bot_{i}",
-                user_id=4000 + i,
+        original_coordinator = mudae_bot._tu_interval_coordinator
+        coordinator = GlobalIntervalCoordinator()
+        mudae_bot._tu_interval_coordinator = coordinator
+        self.addCleanup(setattr, mudae_bot, "_tu_interval_coordinator", original_coordinator)
+
+        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
+            current_cid = _advance_at_reset(client, now_utc)
+
+        original_handle = client._roll_count_sync_handle
+        self.assertIsNotNone(original_handle)
+        for _ in range(10):
+            coordinator.reserve(8801, 20.0, now_monotonic=time.monotonic())
+
+        # The regular owner recheck uses the new queue depth and advances the
+        # one planned sync; it does not create another logical request.
+        client._runtime_schedule_owned_normal_roll_action(current_cid, now_utc)
+
+        owner = client.normal_roll_action_owner
+        sync_handle = client._roll_count_sync_handle
+        self.assertIsNotNone(sync_handle)
+        self.assertTrue(original_handle.cancelled())
+        # The queued ten global slots are included in the preparation lead,
+        # so this happens materially before the un-congested near-target slot.
+        self.assertLess(sync_handle.delay, 850.0)
+        self.assertLess(client._roll_count_sync_at_utc, owner.deadline_utc - datetime.timedelta(seconds=180))
+
+        sync_handle.fire()
+        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
+        self.assertTrue(required)
+        self.assertEqual(reason, "required")
+
+    def test_mandatory_5_accounts_follow_independent_humanized_targets(self):
+        """Shared-reset accounts retain independent target-aligned preparation work."""
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        clients = [
+            _create_test_client(
+                preset_name=f"humanized_side_{index}",
+                user_id=5000 + index,
                 server_reset_minute=now_utc.minute,
-                trusted_capacity=13 if not is_unknown else None,
-                trusted_confidence=(not is_unknown),
-                last_tu_snapshot_complete=True,
+                trusted_confidence=False,
             )
-            c.roll_reset_anchor.authoritative_minute = now_utc.minute
-            c.roll_reset_anchor.anchor_at_utc = now_utc
-            c.roll_reset_anchor.next_boundary_at_utc = now_utc
-            c.roll_reset_anchor.confidence = True
-            clients.append(c)
+            for index in range(3)
+        ]
 
-        # Reset boundary arrives for all 60 accounts simultaneously
-        for c in clients:
-            c._advance_predicted_reset_cycles(now_utc)
+        with mock.patch.object(mudae_bot.random, "uniform", side_effect=[7 * 60, 12 * 60, 17 * 60]):
+            for client in clients:
+                _advance_at_reset(client, now_utc)
 
-        # Verify trusted clients scheduled roll actions without $tu
-        trusted_pending_roll_actions = sum(
-            1 for c in clients[:55] if c.normal_roll_action_owner.state == "pending"
-        )
-        self.assertEqual(trusted_pending_roll_actions, 55)
-
-        # Verify unknown clients scheduled prompt private syncs
-        unknown_sync_handles = sum(
-            1 for c in clients[55:] if c._roll_count_sync_handle is not None and c._roll_count_sync_handle.delay <= 5.0
-        )
-        self.assertEqual(unknown_sync_handles, 5)
-
-        # Fire unknown client sync callbacks
-        for c in clients[55:]:
-            if c._roll_count_sync_handle:
-                c._roll_count_sync_handle.fire()
-
-        # Simulate pre-pacing validation across all 60 clients
-        pacer_slots_reserved = 0
-        skipped_clients = 0
-        pacer_wait_durations = []
-
-        for c in clients:
-            required, _ = is_tu_still_required(c, proceed_to_rolls=True)
-            if not required:
-                skipped_clients += 1
-                continue
-
-            wait = pacer.reserve(guild_id, 20.0)
-            pacer_slots_reserved += 1
-            pacer_wait_durations.append(wait)
-
-        # Assert: 55 trusted clients never entered the pacer queue
-        self.assertEqual(skipped_clients, 55)
-        # Assert: exactly 5 unknown clients reserved pacer slots
-        self.assertEqual(pacer_slots_reserved, 5)
-        # Max wait in queue is 4 * 20s = 80s (NOT 734s!)
-        self.assertEqual(max(pacer_wait_durations), 80.0)
+        targets = [client.normal_roll_action_owner.deadline_utc for client in clients]
+        preparation_times = [client._roll_count_sync_at_utc for client in clients]
+        self.assertEqual(len(set(targets)), 3)
+        self.assertEqual(len(set(preparation_times)), 3)
+        self.assertTrue(all(handle.delay > 60.0 for handle in (client._roll_count_sync_handle for client in clients)))
+        self.assertTrue(all(sync_at < target for sync_at, target in zip(preparation_times, targets)))
