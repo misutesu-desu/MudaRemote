@@ -14,7 +14,7 @@
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.24/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "a10c13e19e38ad2a2de341ca0c9bb058140eb9918a2af4fa1ca1a4ec757a704d",
   "source_files": [
     {
       "path": "mudae_bot.py",
