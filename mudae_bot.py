@@ -3745,15 +3745,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         digest = hashlib.sha256(repr(seed_material).encode("utf-8")).digest()
         fraction = int.from_bytes(digest[:8], "big") / (2**64)
 
-        roll_interval_seconds = max(60.0, float(client.roll_interval) * 60.0)
-        max_delay = min(600.0, roll_interval_seconds * 0.15)
-        min_delay = min(30.0, max_delay)
-        delay_seconds = min_delay + fraction * max(0.0, max_delay - min_delay)
+        # Private roll count sync is a roll-enabling prerequisite for the current cycle.
+        # It must execute promptly so large-count rolls can finish before the next reset boundary.
+        min_delay = 0.5
+        max_delay = 3.0
+        delay_seconds = min_delay + fraction * (max_delay - min_delay)
         boundary_dt = boundary_utc or datetime.datetime.now(timezone.utc)
         candidate_utc = boundary_dt + datetime.timedelta(seconds=delay_seconds)
-        candidate_utc = ensure_sanity_deadline_safe(
-            candidate_utc, client.roll_reset_anchor, client.claim_reset_anchor, guard_seconds=15.0,
-        )
         client._roll_count_sync_cycle_id = logical_roll_cycle_id
         client._roll_count_sync_at_utc = candidate_utc
         now_dt = datetime.datetime.now(timezone.utc)
