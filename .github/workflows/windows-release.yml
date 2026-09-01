@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.21
+  group: windows-prerelease-v4.9.0-beta.22
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.21
-      RELEASE_TAG: v4.9.0-beta.21
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.21 — Reset Timing & Roll Scheduler Hotfix
+      RELEASE_VERSION: 4.9.0-beta.22
+      RELEASE_TAG: v4.9.0-beta.22
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.22 — Private Roll Sync Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -128,18 +128,17 @@ jobs:
         shell: pwsh
         run: |
           @'
-          **🆕 MudaRemote v4.9.0-beta.21**
+          **🆕 MudaRemote v4.9.0-beta.22**
 
           ### 🐛 Bug Fixes
-          - Fixed local reset prediction triggering rolls on the wrong minute
-          - Fixed pending roll actions falling back into repeated `$tu` status loops
-          - Fixed cases where authoritative rolls were repeatedly rediscovered without the scheduled action executing
+          - Fixed predicted reset cycles waiting several minutes before synchronizing required private roll state
+          - Fixed cases where large available roll counts were discovered only after the safe execution window had already expired
+          - Removed background sanity-check delays from roll-enabling private synchronization
 
-          ### ⚙️ Improvements
-          - Added an optional **Server Reset Minute** setting under Rolling Options
-          - Configured reset minutes now override stale automatic roll-reset anchors
-          - Automatic reset detection remains available when the setting is left empty
-          - Pending roll actions now remain owned while waiting for their scheduled execution
+          ### ⚡ Improvements
+          - Accounts with trusted replenishment state can schedule their new rolls immediately without unnecessary `$tu`
+          - Accounts with unknown private roll state now request authoritative synchronization promptly after the reset
+          - Improved large-account reset handling while preserving global `$tu` pacing protection
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease

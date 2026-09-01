@@ -1,27 +1,26 @@
 {
-  "version": "4.9.0-beta.21",
+  "version": "4.9.0-beta.22",
   "changelog": {
     "Bug Fixes": [
-      "Fixed local reset prediction triggering rolls on the wrong minute.",
-      "Fixed pending roll actions falling back into repeated $tu status loops.",
-      "Fixed cases where authoritative rolls were repeatedly rediscovered without the scheduled action executing."
+      "Fixed predicted reset cycles waiting several minutes before synchronizing required private roll state.",
+      "Fixed cases where large available roll counts were discovered only after the safe execution window had already expired.",
+      "Removed background sanity-check delays from roll-enabling private synchronization."
     ],
     "Improvements": [
-      "Added an optional Server Reset Minute setting under Rolling Options.",
-      "Configured reset minutes now override stale automatic roll-reset anchors.",
-      "Automatic reset detection remains available when the setting is left empty.",
-      "Pending roll actions now remain owned while waiting for their scheduled execution."
+      "Accounts with trusted replenishment state can schedule their new rolls immediately without unnecessary $tu.",
+      "Accounts with unknown private roll state now request authoritative synchronization promptly after the reset.",
+      "Improved large-account reset handling while preserving global $tu pacing protection."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.21/MudaRemote.exe",
-  "exe_sha256": "0c79d7864f5a4efa60667aee66f466e5d3625571bdd19b9f1a96e11e5fd9fc4f",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.22/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "36df562d0d0798ea006ad591e6037812d6fd6974ec0c2ae27a22a8657b44b665"
+      "sha256": "ddf46a94064dded28d57b2126c00d4e476eef883044c36b5c46eedb72ff4b81e"
     },
     {
       "path": "mudae_preset_editor.py",
