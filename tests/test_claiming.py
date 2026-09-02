@@ -3,6 +3,7 @@ import unittest
 
 from mudae_core.claiming import (
     ClaimOutcome,
+    basic_panic_claim_fallback_is_active,
     can_spend_restore_on_character,
     classify_claim_owner,
     classify_claim_text,
@@ -114,6 +115,33 @@ class ClaimingTests(unittest.TestCase):
         self.assertFalse(can_spend_restore_on_character(55, 700, True, False))
         self.assertTrue(can_spend_restore_on_character(55, 700, True, True))
         self.assertTrue(can_spend_restore_on_character(700, 700, False, False))
+
+    def test_basic_panic_fallback_is_limited_to_an_enabled_final_round_with_claim_right(self):
+        now = datetime.datetime(2026, 9, 2, 12, tzinfo=datetime.timezone.utc)
+        self.assertTrue(basic_panic_claim_fallback_is_active(
+            enabled=True,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=30),
+            now_utc=now,
+        ))
+        self.assertFalse(basic_panic_claim_fallback_is_active(
+            enabled=True,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=61),
+            now_utc=now,
+        ))
+        self.assertFalse(basic_panic_claim_fallback_is_active(
+            enabled=False,
+            claim_right_available=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=30),
+            now_utc=now,
+        ))
+        self.assertFalse(basic_panic_claim_fallback_is_active(
+            enabled=True,
+            claim_right_available=False,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=30),
+            now_utc=now,
+        ))
 
 
 if __name__ == "__main__":

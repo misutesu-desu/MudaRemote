@@ -984,7 +984,7 @@ class RollCommandCorrelationBehaviorTests(unittest.IsolatedAsyncioTestCase):
             claim_hour_active=True, now_utc=now,
         ), "execute")
 
-    def test_daily_rolls_rejects_claim_reset_after_roll_interval_and_preserves_bypasses(self):
+    def test_daily_rolls_requires_a_claim_right_and_explicit_key_mode_permission(self):
         now = datetime.datetime(2026, 8, 25, 12, tzinfo=datetime.timezone.utc)
         common = dict(
             enabled=True, only_claim_hour=True, claim_right_available=False,
@@ -1002,7 +1002,34 @@ class RollCommandCorrelationBehaviorTests(unittest.IsolatedAsyncioTestCase):
             **{**common, "key_mode": True, "auto_rolls_in_key_mode": True,
                "next_claim_reset_at_utc": now + datetime.timedelta(minutes=10),
                "roll_reset_at_utc": now + datetime.timedelta(minutes=20)}
+        ), "wait-claim-reset")
+
+        # Round 3 may have an available claim while the next global claim
+        # reset lies outside this roll interval. That is still claim-hour work.
+        self.assertEqual(daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=True,
+            key_mode=True, auto_rolls_in_key_mode=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=3),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
         ), "execute")
+        self.assertEqual(daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=False,
+            key_mode=True, auto_rolls_in_key_mode=True,
+            next_claim_reset_at_utc=now + datetime.timedelta(hours=3),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
+        ), "outside-claim-hour")
+        self.assertEqual(daily_rolls_decision(
+            enabled=True, only_claim_hour=True, claim_right_available=True,
+            key_mode=True, auto_rolls_in_key_mode=False,
+            next_claim_reset_at_utc=now + datetime.timedelta(minutes=10),
+            roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+            used_this_interval=False, limit_reached=False, ack_retry_ready=True,
+            now_utc=now,
+        ), "key-mode-disabled")
 
     def test_snipe_claim_refresh_uses_one_delay_inside_humanization_window(self):
         reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)

@@ -19,7 +19,7 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "bcec1fc7084c4755dfba964aeb1af75441c519c89cb80e380d192b791b90a4c8"
+      "sha256": "cf852cb0c93a050e1499beaa3f5abd9b959eb50c18d5e612613dd92a13b79705"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -29,12 +29,12 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/__init__.py",
-      "sha256": "833421fc07c7f9696fabc4228eba0c1306da5981af441e6cb6d453b4f09a8615"
+      "sha256": "5dafd6da8aed36d1de7efd62ced50ec3ebfb42194163a73d86201b3c094500b4"
     },
     {
       "path": "mudae_core/claiming.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/claiming.py",
-      "sha256": "da498ace24109226ea92646e9968f57ac34829d92a15a8699935019b9a77d5c1"
+      "sha256": "88826316ae9cadcca6f1b8755c8baf2eafa52a4f732ad8bb5f856a8575d728eb"
     },
     {
       "path": "mudae_core/config.py",
@@ -54,7 +54,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/runtime.py",
-      "sha256": "a493cae7cdc608c9a48e5f566828ef1852c1bd90f134dab013bfb5ea9702eb4e"
+      "sha256": "5c9058c1b32b5bb06a016cbb1179f0a05fcf2a76279a1ad0cf356d906e5fe98d"
     },
     {
       "path": "mudae_core/secrets.py",

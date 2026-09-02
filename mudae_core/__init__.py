@@ -4,6 +4,7 @@ from .config import atomic_write_json, load_json, validate_preset
 from .claiming import (
     ClaimEvidence,
     ClaimOutcome,
+    basic_panic_claim_fallback_is_active,
     can_spend_restore_on_character,
     classify_claim_owner,
     classify_claim_text,
@@ -165,6 +166,7 @@ __all__ = [
     "GlobalIntervalCoordinator",
     "ClaimEvidence",
     "ClaimOutcome",
+    "basic_panic_claim_fallback_is_active",
     "can_spend_restore_on_character",
     "CommandPacer",
     "OutgoingRollCommand",

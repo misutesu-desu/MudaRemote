@@ -163,6 +163,21 @@ def cooldown_deadline(
     return now + datetime.timedelta(minutes=max(0, int(minutes)), seconds=max(0.0, safety_seconds))
 
 
+def basic_panic_claim_fallback_is_active(
+    enabled: bool,
+    claim_right_available: bool,
+    next_claim_reset_at_utc: Optional[datetime.datetime],
+    now_utc: Optional[datetime.datetime] = None,
+    final_round_minutes: int = 60,
+) -> bool:
+    """Whether the configured basic panic fallback is active in the final claim round."""
+    if not enabled or not claim_right_available or next_claim_reset_at_utc is None:
+        return False
+    now = now_utc or datetime.datetime.now(datetime.timezone.utc)
+    remaining_seconds = (next_claim_reset_at_utc - now).total_seconds()
+    return 0 < remaining_seconds <= max(0, int(final_round_minutes)) * 60
+
+
 def can_spend_restore_on_character(
     kakera_value: int,
     minimum_kakera: int,

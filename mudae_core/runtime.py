@@ -1577,19 +1577,21 @@ def daily_rolls_decision(
         return "ack-retry-wait"
 
     now = now_utc or datetime.datetime.now(datetime.timezone.utc)
-    in_claim_hour = bool(claim_hour_active) or bool(
+    if key_mode and not auto_rolls_in_key_mode:
+        return "key-mode-disabled"
+
+    in_claim_hour = bool(claim_hour_active) or bool(claim_right_available) or bool(
         next_claim_reset_at_utc
         and roll_reset_at_utc
         and now <= next_claim_reset_at_utc <= roll_reset_at_utc
     )
-    claim_bypass = bool(key_mode and auto_rolls_in_key_mode)
     if only_claim_hour:
         if not in_claim_hour:
             return "outside-claim-hour"
-        if claim_right_available or claim_bypass:
+        if claim_right_available:
             return "execute"
         return "wait-claim-reset"
-    if claim_right_available or claim_bypass:
+    if claim_right_available:
         return "execute"
     return "claim-unavailable"
 
@@ -1878,7 +1880,10 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     last_query_utc = getattr(client, "last_tu_query_utc", None)
 
     rolling_enabled = bool(getattr(client, "rolling_enabled", True) and proceed_to_rolls)
-    if not rolling_enabled and dirty.issubset({"rolls"}):
+    # A disabled roll scheduler may skip roll-only refreshes only after an
+    # authoritative snapshot exists. An empty initial dirty set is a subset
+    # of {"rolls"}, but it still needs the first private-state reconciliation.
+    if not rolling_enabled and last_complete and dirty.issubset({"rolls"}):
         return False, "rolling-disabled"
 
     if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):

@@ -856,6 +856,42 @@ class StatusFreshnessTests(unittest.TestCase):
         self.assertFalse(required)
         self.assertEqual(reason, "rolling-disabled")
 
+    def test_snipe_only_startup_gets_one_authoritative_snapshot_then_reuses_it(self):
+        """A rolling-disabled profile must hydrate private claim/RT state before roll-only suppression applies."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        client = SimpleNamespace(
+            preset_name="snipe_only_startup",
+            is_paused=False,
+            rolling_enabled=False,
+            mudae_prefix="$",
+            time_rolls_to_claim_reset=False,
+            scheduled_roll_due=False,
+            last_tu_snapshot_complete=False,
+            last_tu_query_utc=None,
+            claim_right_available=False,
+            next_claim_reset_at_utc=None,
+            roll_reset_at_utc=now + datetime.timedelta(hours=1),
+            current_roll_cycle_id=("roll", 1700000000, 1),
+            normal_roll_action_owner=None,
+            rolls_left=0,
+            _normal_roll_cycle_state={},
+            _normal_roll_action_roll_counts={},
+            _roll_batch_deferred_status_fields=set(),
+        )
+        initialize_status_tracking(client)
+
+        required, reason = is_tu_still_required(client, proceed_to_rolls=False)
+        self.assertTrue(required)
+        self.assertEqual(reason, "required")
+
+        # Model the one successful, authoritative snipe-only $tu handshake.
+        client.last_tu_snapshot_complete = True
+        client.last_tu_query_utc = now
+        client.claim_right_available = True
+        required, reason = is_tu_still_required(client, proceed_to_rolls=False)
+        self.assertFalse(required)
+        self.assertEqual(reason, "rolling-disabled")
+
     def test_server_reset_minute_anchoring_test_a(self):
         """Issue 1 Test A: server_reset_minute=25 anchors boundaries; stale xx:05 observation cannot advance early."""
         anchor = ResetAnchor("roll", 60, authoritative_minute=25)

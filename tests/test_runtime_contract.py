@@ -1131,6 +1131,26 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("allow_rt=False", source)
         self.assertIn("allow_rt=True", claim_source)
 
+    def test_final_round_basic_panic_fallback_runs_after_hybrid_without_double_claiming(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        }
+        message_source = ast.get_source_segment(self.source, functions["on_message"])
+        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
+
+        self.assertIn("basic_panic_fallback = basic_panic_claim_fallback_active()", message_source)
+        self.assertIn(
+            "elif (basic_panic_fallback or k_val >= client.current_min_kakera_for_roll_claim)",
+            message_source,
+        )
+        self.assertLess(
+            message_source.index("if use_hybrid:"),
+            message_source.index("elif (basic_panic_fallback or k_val"),
+        )
+        self.assertIn("ignore_limit_for_post_roll = True", roll_source)
+
     def test_manual_rt_acknowledgement_is_account_local_and_reuses_rt_transition(self):
         functions = {
             node.name: node

@@ -85,7 +85,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -117,7 +117,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
-        active_stagger_seconds, normal_roll_behavior_flags, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -2577,6 +2577,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 preset_name, "RESET"
             )
 
+    def basic_panic_claim_fallback_active(now_utc=None):
+        """Whether the configured final-hour panic fallback may relax value filtering."""
+        return basic_panic_claim_fallback_is_active(
+            enabled=getattr(client, "snipe_ignore_min_kakera_reset", False),
+            claim_right_available=getattr(client, "claim_right_available", False),
+            next_claim_reset_at_utc=getattr(client, "next_claim_reset_at_utc", None),
+            now_utc=now_utc,
+        )
+
     async def scheduled_roll_task(channel):
         BotLogger.log(f"Scheduled roll mode active. Times: {client.scheduled_roll_times}", preset_name, "INFO")
         while not client.is_closed():
@@ -3342,6 +3351,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             try:
                 await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
                 if client.claim_right_available or client.next_claim_reset_at_utc:
+                    BotLogger.log(
+                        "Snipe-only: authoritative startup state reconciled.",
+                        preset_name,
+                        "DEBUG",
+                        client,
+                    )
                     handshake = True
                     break
                 await _interruptible_sleep(30)
@@ -5694,6 +5709,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.next_claim_reset_at_utc:
             diff = (client.next_claim_reset_at_utc - datetime.datetime.now(timezone.utc)).total_seconds()
             if 0 < diff <= 3600: reset_soon = True
+        if basic_panic_claim_fallback_active():
+            ignore_limit_for_post_roll = True
 
         is_timing_mode_active = False
         if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and reset_soon:
@@ -7937,6 +7954,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             process = True
             use_hybrid = getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour
+            basic_panic_fallback = basic_panic_claim_fallback_active()
 
             if use_hybrid:
                 is_instant_kakera = (k_val >= getattr(client, 'hybrid_panic_instant_claim_min_kakera', 300))
@@ -7966,7 +7984,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             if not await active_delay(client.reactive_snipe_delay + random.uniform(0.05, 0.25)): return
                         if await claim_character(client, message.channel, message, kakera_value=k_val, allow_rt=False):
                             process = False
-                elif k_val >= client.current_min_kakera_for_roll_claim and not is_avoided:
+                elif (basic_panic_fallback or k_val >= client.current_min_kakera_for_roll_claim) and not is_avoided:
                     client.collected_rolls.append(message)
 
                 # Hybrid panic still needs real-time Kakera handling. The
