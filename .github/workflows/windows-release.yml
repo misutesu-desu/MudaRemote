@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.24
+  group: windows-prerelease-v4.9.0-beta.25
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.24
-      RELEASE_TAG: v4.9.0-beta.24
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.24 — Command Routing & Humanized Status Timing
+      RELEASE_VERSION: 4.9.0-beta.25
+      RELEASE_TAG: v4.9.0-beta.25
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.25 — Snipe Startup & Round 3 Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -129,13 +129,16 @@ jobs:
         run: |
           @'
           ### 🐛 Bug Fixes
-          - Fixed `$oh/$oc` occasionally being sent to the roll channel instead of the configured command channel
+          - Fixed snipe-only profiles getting stuck forever during the initial handshake
+          - Restored startup status reconciliation required by snipe and OuroSphere features
+          - Fixed configured Round 3 panic fallback being blocked by normal minimum Kakera filtering
+          - Fixed Auto `$rolls` not recognizing an already available claim as a valid claim-hour condition
+          - Preserved explicit key-mode permission requirements for Auto `$rolls`
 
           ### ⚡ Improvements
-          - Roll-related `$tu` checks are now aligned with the actual humanized roll target instead of always firing near reset
-          - Trusted roll state can proceed without unnecessary pre-roll `$tu`
-          - Unknown private roll state is reconciled closer to execution time
-          - High-account setups retain independently randomized preparation times instead of clustering status work at reset
+          - Snipe-only profiles perform the required authoritative startup check once and then reuse cached status
+          - Hybrid Panic and basic final-round panic fallback now remain distinct and follow their own configured rules
+          - Auto `$rolls` claim-hour logic is more consistent while still refusing to run when no claim is available
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease

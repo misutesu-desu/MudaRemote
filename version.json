@@ -1,25 +1,28 @@
 {
-  "version": "4.9.0-beta.24",
+  "version": "4.9.0-beta.25",
   "changelog": {
     "Bug Fixes": [
-      "Fixed $oh/$oc occasionally being sent to the roll channel instead of the configured command channel"
+      "Fixed snipe-only profiles getting stuck forever during the initial handshake",
+      "Restored startup status reconciliation required by snipe and OuroSphere features",
+      "Fixed configured Round 3 panic fallback being blocked by normal minimum Kakera filtering",
+      "Fixed Auto $rolls not recognizing an already available claim as a valid claim-hour condition",
+      "Preserved explicit key-mode permission requirements for Auto $rolls"
     ],
     "Improvements": [
-      "Roll-related $tu checks are now aligned with the actual humanized roll target instead of always firing near reset",
-      "Trusted roll state can proceed without unnecessary pre-roll $tu",
-      "Unknown private roll state is reconciled closer to execution time",
-      "High-account setups retain independently randomized preparation times instead of clustering status work at reset"
+      "Snipe-only profiles perform the required authoritative startup check once and then reuse cached status",
+      "Hybrid Panic and basic final-round panic fallback now remain distinct and follow their own configured rules",
+      "Auto $rolls claim-hour logic is more consistent while still refusing to run when no claim is available"
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.24/MudaRemote.exe",
-  "exe_sha256": "a10c13e19e38ad2a2de341ca0c9bb058140eb9918a2af4fa1ca1a4ec757a704d",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.25/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "cf852cb0c93a050e1499beaa3f5abd9b959eb50c18d5e612613dd92a13b79705"
+      "sha256": "19ef23aaab4a2b199d1f4067fad87d8a354ce7fe68bf3dcfd556dc1200a40f6d"
     },
     {
       "path": "mudae_preset_editor.py",
