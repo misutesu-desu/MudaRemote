@@ -6188,7 +6188,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             chaos_count=chaos_count,
                             is_snipe=False,
                         )
-                        if threshold is None:
+                        if threshold is None and not (chaos_count > 0):
                             threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                         if threshold is not None and current_pow < threshold:
                             BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
@@ -7341,7 +7341,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     chaos_count=chaos_count,
                                     is_snipe=is_snipe,
                                 )
-                                if threshold is None:
+                                if threshold is None and not (chaos_count > 0 and not is_snipe):
                                     threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                                 if threshold is not None and current_pow < threshold:
                                     BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")

@@ -565,11 +565,10 @@ class KakeraPowerTests(unittest.TestCase):
             100,
         )
 
-        # Case 4: No chaos threshold specified -> falls back to normal kakera threshold
+        # Case 4: No chaos threshold specified -> does NOT fall back to normal kakera threshold (returns None)
         thresholds_normal_only = {"kakeraC": 100}
-        self.assertEqual(
-            resolve_kakera_power_threshold(thresholds_normal_only, "kakeraC", chaos_count=1, is_snipe=False),
-            100,
+        self.assertIsNone(
+            resolve_kakera_power_threshold(thresholds_normal_only, "kakeraC", chaos_count=1, is_snipe=False)
         )
 
         # Case 5: Snipe (is_snipe=True) -> chaos discount does not apply, uses normal threshold
@@ -577,6 +576,57 @@ class KakeraPowerTests(unittest.TestCase):
             resolve_kakera_power_threshold(thresholds_space, "kakeraC", chaos_count=1, is_snipe=True),
             100,
         )
+
+    def test_chaos_power_threshold_isolation_regression(self):
+        """Exact regression test for Chaos power threshold isolation:
+
+        - normal kakeraC @61%, kakeraC=100 -> blocked
+        - chaos kakeraC @61%, only kakeraC=100 -> NOT blocked by 100
+        - chaos kakeraC @61%, chaos_kakeraC=70 -> blocked
+        - chaos kakeraC @75%, chaos_kakeraC=70 -> allowed
+        - explicit chaos_kakeraY=80 remains unchanged
+        """
+        from mudae_core.kakera import resolve_kakera_power_threshold
+
+        def is_blocked(threshold, power):
+            return threshold is not None and power < threshold
+
+        # Configuration 1: kakeraC=100, chaos_kakeraY=80 (no explicit Chaos kakeraC threshold)
+        thresholds_1 = {
+            "kakeraC": 100,
+            "chaos_kakeraY": 80,
+        }
+
+        # 1. normal kakeraC @61%, kakeraC=100 -> blocked
+        thresh_normal = resolve_kakera_power_threshold(thresholds_1, "kakeraC", chaos_count=0, is_snipe=False)
+        self.assertEqual(thresh_normal, 100)
+        self.assertTrue(is_blocked(thresh_normal, 61))
+
+        # 2. chaos kakeraC @61%, only kakeraC=100 -> NOT blocked by 100 (threshold is None / unconfigured)
+        thresh_chaos_c = resolve_kakera_power_threshold(thresholds_1, "kakeraC", chaos_count=1, is_snipe=False)
+        self.assertIsNone(thresh_chaos_c)
+        self.assertFalse(is_blocked(thresh_chaos_c, 61))
+
+        # 5. explicit chaos_kakeraY=80 remains unchanged
+        thresh_chaos_y = resolve_kakera_power_threshold(thresholds_1, "kakeraY", chaos_count=1, is_snipe=False)
+        self.assertEqual(thresh_chaos_y, 80)
+        self.assertTrue(is_blocked(thresh_chaos_y, 61))
+        self.assertFalse(is_blocked(thresh_chaos_y, 85))
+
+        # Configuration 2: kakeraC=100, chaos_kakeraC=70, chaos_kakeraY=80
+        thresholds_2 = {
+            "kakeraC": 100,
+            "chaos_kakeraC": 70,
+            "chaos_kakeraY": 80,
+        }
+
+        # 3. chaos kakeraC @61%, chaos_kakeraC=70 -> blocked
+        thresh_chaos_c_70 = resolve_kakera_power_threshold(thresholds_2, "kakeraC", chaos_count=1, is_snipe=False)
+        self.assertEqual(thresh_chaos_c_70, 70)
+        self.assertTrue(is_blocked(thresh_chaos_c_70, 61))
+
+        # 4. chaos kakeraC @75%, chaos_kakeraC=70 -> allowed
+        self.assertFalse(is_blocked(thresh_chaos_c_70, 75))
 
 
 if __name__ == "__main__":

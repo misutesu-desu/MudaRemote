@@ -499,6 +499,8 @@ def resolve_kakera_power_threshold(
             "chaos_kakera",
             "chaos kakera",
         ])
+        # NOTE: Do NOT fall back to normal base emoji keys (e.g. kakerac) for Chaos self-rolls.
+        # Chaos power thresholds are strictly independent from normal thresholds.
     elif is_snipe:
         # Snipe specific keys
         candidates.extend([
@@ -509,22 +511,21 @@ def resolve_kakera_power_threshold(
             "snipe",
             "snipe_kakera",
             "snipe kakera",
+            base_lower,
+            base_lower.replace("kakera", "kakera_"),
+            raw_name.casefold(),
         ])
     else:
-        # Normal specific keys
+        # Normal specific keys and base emoji keys
         candidates.extend([
             f"normal_{base_lower}",
             f"normal {base_lower}",
             f"normal_{base_lower.replace('kakera', 'kakera_')}",
             f"normal {base_lower.replace('kakera', 'kakera_')}",
+            base_lower,
+            base_lower.replace("kakera", "kakera_"),
+            raw_name.casefold(),
         ])
-
-    # 3. Base emoji keys (e.g. "kakerac", "kakera_c")
-    candidates.extend([
-        base_lower,
-        base_lower.replace("kakera", "kakera_"),
-        raw_name.casefold(),
-    ])
 
     for cand in candidates:
         if cand in norm_map:
