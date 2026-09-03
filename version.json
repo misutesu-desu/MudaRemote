@@ -1,28 +1,31 @@
 {
-  "version": "4.9.0-beta.25",
+  "version": "4.9.0-beta.26",
   "changelog": {
     "Bug Fixes": [
-      "Fixed snipe-only profiles getting stuck forever during the initial handshake",
-      "Restored startup status reconciliation required by snipe and OuroSphere features",
-      "Fixed configured Round 3 panic fallback being blocked by normal minimum Kakera filtering",
-      "Fixed Auto $rolls not recognizing an already available claim as a valid claim-hour condition",
-      "Preserved explicit key-mode permission requirements for Auto $rolls"
+      "Fixed Auto $rolls being used too early in Round 1 and Round 2",
+      "Fixed Round 3 panic claims consuming the available claim before Auto $rolls could extend the final roll pool",
+      "Auto $rolls granted rolls are now processed before the final panic claim",
+      "Preserved collected roll candidates across Auto $rolls extension batches",
+      "Fixed Chaos Kakera drops inheriting normal Kakera power thresholds",
+      "Chaos-specific power thresholds now remain independent from normal Kakera thresholds",
+      "Explicit Chaos thresholds continue to work regardless of spacing or capitalization"
     ],
     "Improvements": [
-      "Snipe-only profiles perform the required authoritative startup check once and then reuse cached status",
-      "Hybrid Panic and basic final-round panic fallback now remain distinct and follow their own configured rules",
-      "Auto $rolls claim-hour logic is more consistent while still refusing to run when no claim is available"
+      "Final-round roll extensions and panic claims now execute in the intended order",
+      "Characters from the normal batch and Auto $rolls extension are evaluated together before the final panic claim",
+      "Chaos Kakera without an explicit Chaos threshold now follows normal Chaos collection behavior instead of falling back to the base crystal threshold",
+      "Normal Kakera thresholds remain unchanged for non-Chaos rolls"
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.25/MudaRemote.exe",
-  "exe_sha256": "4b3cf6b5b995faafefde061d3d45696722ca3bf7276626adee7147e1a4801e1d",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.26/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "cd87cd15111206bc047e0023c7d480d53d3023972c3a7779af58cb3bc5885560"
+      "sha256": "303d5b5964ac0d6712d0cfb5312588f593dd6f56de21f466bc5e28c7cab98961"
     },
     {
       "path": "mudae_preset_editor.py",

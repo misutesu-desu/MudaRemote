@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.25
+  group: windows-prerelease-v4.9.0-beta.26
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.25
-      RELEASE_TAG: v4.9.0-beta.25
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.25 — Snipe Startup & Round 3 Hotfix
+      RELEASE_VERSION: 4.9.0-beta.26
+      RELEASE_TAG: v4.9.0-beta.26
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.26 — Final Round & Chaos Kakera Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -129,16 +129,19 @@ jobs:
         run: |
           @'
           ### 🐛 Bug Fixes
-          - Fixed snipe-only profiles getting stuck forever during the initial handshake
-          - Restored startup status reconciliation required by snipe and OuroSphere features
-          - Fixed configured Round 3 panic fallback being blocked by normal minimum Kakera filtering
-          - Fixed Auto `$rolls` not recognizing an already available claim as a valid claim-hour condition
-          - Preserved explicit key-mode permission requirements for Auto `$rolls`
+          - Fixed Auto `$rolls` being used too early in Round 1 and Round 2
+          - Fixed Round 3 panic claims consuming the available claim before Auto `$rolls` could extend the final roll pool
+          - Auto `$rolls` granted rolls are now processed before the final panic claim
+          - Preserved collected roll candidates across Auto `$rolls` extension batches
+          - Fixed Chaos Kakera drops inheriting normal Kakera power thresholds
+          - Chaos-specific power thresholds now remain independent from normal Kakera thresholds
+          - Explicit Chaos thresholds continue to work regardless of spacing or capitalization
 
           ### ⚡ Improvements
-          - Snipe-only profiles perform the required authoritative startup check once and then reuse cached status
-          - Hybrid Panic and basic final-round panic fallback now remain distinct and follow their own configured rules
-          - Auto `$rolls` claim-hour logic is more consistent while still refusing to run when no claim is available
+          - Final-round roll extensions and panic claims now execute in the intended order
+          - Characters from the normal batch and Auto `$rolls` extension are evaluated together before the final panic claim
+          - Chaos Kakera without an explicit Chaos threshold now follows normal Chaos collection behavior instead of falling back to the base crystal threshold
+          - Normal Kakera thresholds remain unchanged for non-Chaos rolls
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease
