@@ -512,6 +512,72 @@ class KakeraPowerTests(unittest.TestCase):
         )
         self.assertTrue(list_includes_purple(targets_with_purple))
 
+    def test_kakera_power_threshold_resolution_normal_vs_chaos(self):
+        """Tester set: normal kakeraC: 100, chaos kakeraC: 40.
+
+        Verify Chaos threshold strictly overrides normal kakera threshold and handles
+        key variations (space, snake_case, lowercase, chaos fallback).
+        """
+        from mudae_core.kakera import resolve_kakera_power_threshold
+
+        # Case 1: Exact keys from bug report: 'kakeraC': 100, 'chaos kakeraC': 40
+        thresholds_space = {"kakeraC": 100, "chaos kakeraC": 40}
+        # For Chaos kakeraC (own roll, chaos_count > 0): must resolve to 40, NOT 100
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_space, "kakeraC", chaos_count=1, is_snipe=False),
+            40,
+        )
+        # For normal kakeraC: must resolve to 100
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_space, "kakeraC", chaos_count=0, is_snipe=False),
+            100,
+        )
+        # For kakeraC2 (animated button emoji): must also strip '2' and match correctly
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_space, "kakeraC2", chaos_count=1, is_snipe=False),
+            40,
+        )
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_space, "kakeraC2", chaos_count=0, is_snipe=False),
+            100,
+        )
+
+        # Case 2: Snake case and lowercase variations
+        thresholds_snake = {"kakeraC": 100, "chaos_kakera_c": 40}
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_snake, "kakeraC", chaos_count=1, is_snipe=False),
+            40,
+        )
+        thresholds_lower = {"kakeraC": 100, "chaos_kakerac": 40}
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_lower, "kakeraC", chaos_count=1, is_snipe=False),
+            40,
+        )
+
+        # Case 3: Generic chaos threshold: 'chaos': 40
+        thresholds_generic_chaos = {"kakeraC": 100, "chaos": 40}
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_generic_chaos, "kakeraC", chaos_count=1, is_snipe=False),
+            40,
+        )
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_generic_chaos, "kakeraC", chaos_count=0, is_snipe=False),
+            100,
+        )
+
+        # Case 4: No chaos threshold specified -> falls back to normal kakera threshold
+        thresholds_normal_only = {"kakeraC": 100}
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_normal_only, "kakeraC", chaos_count=1, is_snipe=False),
+            100,
+        )
+
+        # Case 5: Snipe (is_snipe=True) -> chaos discount does not apply, uses normal threshold
+        self.assertEqual(
+            resolve_kakera_power_threshold(thresholds_space, "kakeraC", chaos_count=1, is_snipe=True),
+            100,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

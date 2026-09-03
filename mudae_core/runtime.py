@@ -1580,7 +1580,7 @@ def daily_rolls_decision(
     if key_mode and not auto_rolls_in_key_mode:
         return "key-mode-disabled"
 
-    in_claim_hour = bool(claim_hour_active) or bool(claim_right_available) or bool(
+    in_claim_hour = bool(claim_hour_active) or bool(
         next_claim_reset_at_utc
         and roll_reset_at_utc
         and now <= next_claim_reset_at_utc <= roll_reset_at_utc

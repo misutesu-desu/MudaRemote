@@ -97,6 +97,7 @@ try:
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
+        resolve_kakera_power_threshold,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -129,6 +130,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
+        resolve_kakera_power_threshold,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
         normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
@@ -3776,6 +3778,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client._auto_rolls_reconcile_cycle_id = None
             client._rolls_ack_retry_after = 0.0
             post_batch_rolls_decision = "already-used"
+            client._preserve_collected_rolls = True
         else:
             if not owner.start(logical_roll_cycle_id):
                 return
@@ -3798,6 +3801,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             post_batch_rolls_decision = evaluate_daily_rolls()
         if post_batch_rolls_decision == "wait-claim-reset":
             BotLogger.log("Auto $rolls: waiting for locally predicted claim cycle.", preset_name, "DEBUG", client)
+            if client.collected_rolls:
+                try:
+                    await handle_mudae_messages(
+                        client, channel, client.collected_rolls,
+                        client.current_min_kakera_for_roll_claim == 0,
+                        client.key_mode and not client.rt_available and not client.claim_right_available,
+                    )
+                except Exception as e:
+                    BotLogger.log(f"Defer-roll processing error: {e}", preset_name, "ERROR")
+                client.collected_rolls.clear()
             owner.defer(logical_roll_cycle_id)
             client._normal_roll_transaction_cycle_id = None
             return
@@ -3809,6 +3822,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client._rolls_ack_retry_after = time.monotonic() + 30.0
                 client._auto_rolls_ack_ambiguous_cycle_id = logical_roll_cycle_id
                 request_status_refresh({"rolls"}, reason="auto-rolls-ack-ambiguous", urgent=True)
+                if client.collected_rolls:
+                    try:
+                        await handle_mudae_messages(
+                            client, channel, client.collected_rolls,
+                            client.current_min_kakera_for_roll_claim == 0,
+                            client.key_mode and not client.rt_available and not client.claim_right_available,
+                        )
+                    except Exception as e:
+                        BotLogger.log(f"Defer-roll processing error: {e}", preset_name, "ERROR")
+                    client.collected_rolls.clear()
                 return
             client._rolls_ack_retry_after = 0.0
             client.rolls_item_used_count += 1
@@ -3819,6 +3842,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             client._auto_rolls_reconcile_cycle_id = logical_roll_cycle_id
             request_status_refresh({"rolls"}, reason="auto-rolls-command-acknowledged", urgent=True)
             return
+
+        if client.collected_rolls:
+            try:
+                await handle_mudae_messages(
+                    client, channel, client.collected_rolls,
+                    client.current_min_kakera_for_roll_claim == 0,
+                    client.key_mode and not client.rt_available and not client.claim_right_available,
+                )
+            except Exception as e:
+                BotLogger.log(f"Defer-roll processing error: {e}", preset_name, "ERROR")
+            client.collected_rolls.clear()
+
         client._normal_roll_transaction_cycle_id = None
         await complete_owned_normal_roll_transaction(logical_roll_cycle_id, channel)
 
@@ -5789,8 +5824,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.is_actively_rolling = True
         client.interrupt_rolling = False
         client._rolls_sent = client._rolls_received = 0
-        client.collected_rolls = []
-        client.collected_kakera_rolls = []
+        if not getattr(client, "_preserve_collected_rolls", False):
+            client.collected_rolls = []
+            client.collected_kakera_rolls = []
+        client._preserve_collected_rolls = False
 
         remaining_batch_rolls = max(0, int(rolls_left or 0))
         active_normal_cycle_id = logical_roll_cycle_id or getattr(client, "current_roll_cycle_id", None)
@@ -6145,7 +6182,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if cost > 0 and client.kakera_power_thresholds:
                         base_name = name.rstrip('2')
                         spec_name = f"chaos_{base_name}" if chaos_count > 0 else base_name
-                        threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
+                        threshold = resolve_kakera_power_threshold(
+                            client.kakera_power_thresholds,
+                            name,
+                            chaos_count=chaos_count,
+                            is_snipe=False,
+                        )
+                        if threshold is None:
+                            threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                         if threshold is not None and current_pow < threshold:
                             BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
                             continue
@@ -6228,6 +6272,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 should_process_collected = True
             elif getattr(client, 'enable_hybrid_panic_claim', False) and in_panic_hour:
                 should_process_collected = True
+
+            auto_rolls_will_extend = (
+                logical_roll_cycle_id is not None
+                and not is_us_pull
+                and evaluate_daily_rolls() == "execute"
+            )
+            if auto_rolls_will_extend:
+                should_process_collected = False
+                BotLogger.log(
+                    "Auto $rolls is eligible to extend this round; deferring collected rolls panic claim.",
+                    preset_name,
+                    "DEBUG",
+                    client,
+                )
 
             if should_process_collected and client.collected_rolls:
                 BotLogger.log(f"Processing {len(client.collected_rolls)} collected rolls immediately.", preset_name, "INFO")
@@ -7277,7 +7335,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 base_name = name.rstrip('2')
                                 # The 10+ key discount only applies to self-rolls (when is_snipe is False)
                                 spec_name = f"chaos_{base_name}" if (chaos_count > 0 and not is_snipe) else base_name
-                                threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
+                                threshold = resolve_kakera_power_threshold(
+                                    client.kakera_power_thresholds,
+                                    name,
+                                    chaos_count=chaos_count,
+                                    is_snipe=is_snipe,
+                                )
+                                if threshold is None:
+                                    threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                                 if threshold is not None and current_pow < threshold:
                                     BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
                                     continue

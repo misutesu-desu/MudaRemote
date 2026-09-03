@@ -447,3 +447,93 @@ def calculate_kakera_power_cost(
 
     cost = round(cost, 4)
     return int(cost) if cost.is_integer() else cost
+
+
+def resolve_kakera_power_threshold(
+    thresholds: dict,
+    emoji_name: str,
+    *,
+    chaos_count: int = 0,
+    is_snipe: bool = False,
+    default=None,
+):
+    """Resolve the kakera power threshold for a given emoji with chaos/snipe awareness.
+
+    Allows specific chaos threshold configurations (e.g. 'chaos kakeraC', 'chaos_kakerac',
+    'chaos_kakera_c', 'chaos') to override normal thresholds when chaos discount applies.
+    """
+    if not thresholds or not isinstance(thresholds, dict):
+        return default
+
+    # Build a normalized mapping covering spaces, underscores, and casefolding
+    norm_map = {}
+    for k, v in thresholds.items():
+        if v is None:
+            continue
+        sk = str(k).strip().casefold()
+        norm_map[sk] = v
+        norm_map[sk.replace(" ", "_")] = v
+        norm_map[sk.replace("_", " ")] = v
+        norm_map[sk.replace(" ", "").replace("_", "")] = v
+
+    # Clean the emoji name
+    raw_name = str(emoji_name or "").strip().strip(":")
+    base_name = raw_name.rstrip("2")
+    base_lower = base_name.casefold()
+
+    is_chaos = bool(chaos_count > 0 and not is_snipe)
+
+    candidates = []
+    if is_chaos:
+        # 1. Specific chaos emoji keys
+        candidates.extend([
+            f"chaos_{base_lower}",
+            f"chaos {base_lower}",
+            f"chaos_{base_lower.replace('kakera', 'kakera_')}",
+            f"chaos {base_lower.replace('kakera', 'kakera_')}",
+            f"chaos{base_lower}",
+        ])
+        # 2. Generic chaos keys
+        candidates.extend([
+            "chaos",
+            "chaos_kakera",
+            "chaos kakera",
+        ])
+    elif is_snipe:
+        # Snipe specific keys
+        candidates.extend([
+            f"snipe_{base_lower}",
+            f"snipe {base_lower}",
+            f"snipe_{base_lower.replace('kakera', 'kakera_')}",
+            f"snipe {base_lower.replace('kakera', 'kakera_')}",
+            "snipe",
+            "snipe_kakera",
+            "snipe kakera",
+        ])
+    else:
+        # Normal specific keys
+        candidates.extend([
+            f"normal_{base_lower}",
+            f"normal {base_lower}",
+            f"normal_{base_lower.replace('kakera', 'kakera_')}",
+            f"normal {base_lower.replace('kakera', 'kakera_')}",
+        ])
+
+    # 3. Base emoji keys (e.g. "kakerac", "kakera_c")
+    candidates.extend([
+        base_lower,
+        base_lower.replace("kakera", "kakera_"),
+        raw_name.casefold(),
+    ])
+
+    for cand in candidates:
+        if cand in norm_map:
+            return norm_map[cand]
+
+    # Also check exact keys in original mapping if not caught by normalization
+    for cand in candidates:
+        for orig_k, orig_v in thresholds.items():
+            if orig_v is not None and str(orig_k).strip().casefold() == cand:
+                return orig_v
+
+    return default

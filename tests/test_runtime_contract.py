@@ -2162,6 +2162,24 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertEqual(source.count('f"{client.mudae_prefix}rolls"'), 1)
         self.assertIn("_auto_rolls_reconcile_cycle_id = logical_roll_cycle_id", source)
         self.assertIn("post_batch_rolls_decision = evaluate_daily_rolls()", source)
+        self.assertIn("client._preserve_collected_rolls = True", source)
+
+    def test_auto_rolls_defers_collected_rolls_panic_claim_during_normal_roll(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        source = ast.get_source_segment(
+            self.source, functions["start_roll_commands"]
+        )
+        self.assertIn("auto_rolls_will_extend = (", source)
+        self.assertIn('evaluate_daily_rolls() == "execute"', source)
+        self.assertIn("should_process_collected = False", source)
+        self.assertIn("_preserve_collected_rolls", source)
+
+    def test_kakera_power_threshold_resolution_integration(self):
+        self.assertIn("resolve_kakera_power_threshold", self.source)
 
 
 if __name__ == "__main__":
