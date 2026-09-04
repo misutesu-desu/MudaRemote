@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-prerelease-v4.9.0-beta.26
+  group: windows-prerelease-v4.9.0-beta.27
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0-beta.26
-      RELEASE_TAG: v4.9.0-beta.26
-      RELEASE_TITLE: MudaRemote v4.9.0-beta.26 — Final Round & Chaos Kakera Hotfix
+      RELEASE_VERSION: 4.9.0-beta.27
+      RELEASE_TAG: v4.9.0-beta.27
+      RELEASE_TITLE: MudaRemote v4.9.0-beta.27 — Auto Rolls & Perk 8 Chaos Hotfix
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -129,19 +129,15 @@ jobs:
         run: |
           @'
           ### 🐛 Bug Fixes
-          - Fixed Auto `$rolls` being used too early in Round 1 and Round 2
-          - Fixed Round 3 panic claims consuming the available claim before Auto `$rolls` could extend the final roll pool
-          - Auto `$rolls` granted rolls are now processed before the final panic claim
-          - Preserved collected roll candidates across Auto `$rolls` extension batches
-          - Fixed Chaos Kakera drops inheriting normal Kakera power thresholds
-          - Chaos-specific power thresholds now remain independent from normal Kakera thresholds
-          - Explicit Chaos thresholds continue to work regardless of spacing or capitalization
+          - Fixed Round 3 Auto `$rolls` being incorrectly treated as outside the claim hour when normal rolls replenished before the claim reset
+          - Auto `$rolls` can now correctly extend the final-round pool before panic claims consume the available claim
+          - Fixed Perk 8 / 10-key discounted Kakera being misclassified as normal Kakera
+          - Perk 8 Chaos Kakera no longer inherits normal power thresholds when no Chaos-specific threshold is configured
 
           ### ⚡ Improvements
-          - Final-round roll extensions and panic claims now execute in the intended order
-          - Characters from the normal batch and Auto `$rolls` extension are evaluated together before the final panic claim
-          - Chaos Kakera without an explicit Chaos threshold now follows normal Chaos collection behavior instead of falling back to the base crystal threshold
-          - Normal Kakera thresholds remain unchanged for non-Chaos rolls
+          - Normal rolls and Auto `$rolls` extension candidates remain pooled for final panic-claim evaluation
+          - Explicit Chaos thresholds such as `chaos_kakeraY` remain fully respected
+          - Perk 8 discount state is now preserved through the actual Kakera collection path
           '@ | Set-Content -LiteralPath release_notes.md -Encoding utf8
 
       - name: Publish GitHub prerelease
