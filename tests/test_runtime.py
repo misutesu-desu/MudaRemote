@@ -1101,6 +1101,50 @@ class RollCommandCorrelationBehaviorTests(unittest.IsolatedAsyncioTestCase):
             "execute",
         )
 
+    def test_round_three_auto_rolls_executes_when_roll_replenishment_precedes_claim_reset(self):
+        now = datetime.datetime(2026, 8, 25, 12, tzinfo=datetime.timezone.utc)
+        # Recreate Certi's exact conceptual state:
+        # round = 3 (claim resets in 45 min <= 60 min)
+        # claim available = true
+        # normal rolls just reached zero, next replenishment in 20 min (preceding claim reset)
+        # Auto $rolls enabled
+        # Auto $rolls allowed in key mode
+        # claim-hour-only enabled
+        # daily $rolls item unused
+        self.assertEqual(
+            daily_rolls_decision(
+                enabled=True,
+                only_claim_hour=True,
+                claim_right_available=True,
+                key_mode=False,
+                auto_rolls_in_key_mode=False,
+                next_claim_reset_at_utc=now + datetime.timedelta(minutes=45),
+                roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+                used_this_interval=False,
+                limit_reached=False,
+                ack_retry_ready=True,
+                now_utc=now,
+            ),
+            "execute",
+        )
+        # Key mode enabled with permission
+        self.assertEqual(
+            daily_rolls_decision(
+                enabled=True,
+                only_claim_hour=True,
+                claim_right_available=True,
+                key_mode=True,
+                auto_rolls_in_key_mode=True,
+                next_claim_reset_at_utc=now + datetime.timedelta(minutes=45),
+                roll_reset_at_utc=now + datetime.timedelta(minutes=20),
+                used_this_interval=False,
+                limit_reached=False,
+                ack_retry_ready=True,
+                now_utc=now,
+            ),
+            "execute",
+        )
+
     def test_snipe_claim_refresh_uses_one_delay_inside_humanization_window(self):
         reset_at = datetime.datetime(2026, 8, 4, 12, tzinfo=datetime.timezone.utc)
         deadline = humanized_claim_refresh_deadline(

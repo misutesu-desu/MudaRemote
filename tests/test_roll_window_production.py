@@ -570,6 +570,40 @@ class ProductionRollWindowTests(unittest.IsolatedAsyncioTestCase):
             mudae_bot.time.monotonic(),
         )
 
+    async def test_round_three_auto_rolls_defers_panic_claim_when_roll_replenishment_precedes_claim_reset(self):
+        boundary = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=20)
+        _install_authoritative_cycle(self.client, self.cycle_a, boundary, remaining=0)
+        owner = self.client.normal_roll_action_owner
+        owner.schedule(cycle_id=self.cycle_a, now_utc=self.now)
+        self.assertTrue(owner.start(self.cycle_a))
+
+        self.client.auto_rolls_enabled = True
+        self.client.auto_rolls_only_claim_hour = True
+        self.client.claim_right_available = True
+        self.client.next_claim_reset_at_utc = self.now + datetime.timedelta(minutes=45)
+        self.client.roll_reset_at_utc = boundary
+        self.client.enable_reactive_self_snipe = False
+
+        dracula_msg = SimpleNamespace(
+            id=777,
+            embeds=[SimpleNamespace(author=SimpleNamespace(name="Dracula"), description="117<:kakera:123>")],
+            components=[],
+        )
+        self.client.collected_rolls = [dracula_msg]
+        self.client._preserve_collected_rolls = True
+
+        await self.client._runtime_start_roll_commands(
+            self.client,
+            self.channel,
+            0,
+            False,
+            False,
+            self.cycle_a,
+        )
+
+        # Dracula was deferred, NOT processed immediately before Auto $rolls!
+        self.assertEqual(self.client.collected_rolls, [dracula_msg])
+
 
 if __name__ == "__main__":
     unittest.main()

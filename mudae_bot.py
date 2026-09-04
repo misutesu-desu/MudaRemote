@@ -3555,6 +3555,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ack_retry_ready=time.monotonic() >= client._rolls_ack_retry_after,
             claim_hour_active=claim_hour_active,
             now_utc=now_utc,
+            dynamic_round=getattr(client, "_dynamic_claim_round", None),
+            claim_interval=getattr(client, "claim_interval", 180),
         )
         if client.auto_rolls_only_claim_hour and decision in {"wait-claim-reset", "execute"} and client.roll_reset_at_utc is not None:
             client._daily_rolls_claim_hour_until_utc = client.roll_reset_at_utc
@@ -6082,6 +6084,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'is_sphere': is_sphere,
                                     'is_free': is_free,
                                     'chaos_count': chaos_count,
+                                    'has_sp_perk': has_sp_perk,
                                     'has_reaction_cooldown_bypass': (
                                         chaos_count > 0 or has_sp_perk or is_free
                                     ),
@@ -6113,6 +6116,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 is_free = item['is_free']
                 cost = item['cost']
                 chaos_count = item['chaos_count']
+                has_sp_perk = item.get('has_sp_perk', False)
                 has_reaction_cooldown_bypass = item['has_reaction_cooldown_bypass']
                 char_name = item['char_name']
 
@@ -6181,14 +6185,16 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                     if cost > 0 and client.kakera_power_thresholds:
                         base_name = name.rstrip('2')
-                        spec_name = f"chaos_{base_name}" if chaos_count > 0 else base_name
+                        is_chaos = bool(chaos_count > 0 or has_sp_perk)
+                        spec_name = f"chaos_{base_name}" if is_chaos else base_name
                         threshold = resolve_kakera_power_threshold(
                             client.kakera_power_thresholds,
                             name,
                             chaos_count=chaos_count,
+                            has_perk_eight_discount=has_sp_perk,
                             is_snipe=False,
                         )
-                        if threshold is None and not (chaos_count > 0):
+                        if threshold is None and not is_chaos:
                             threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                         if threshold is not None and current_pow < threshold:
                             BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
@@ -7333,15 +7339,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                             if cost > 0 and client.kakera_power_thresholds:
                                 base_name = name.rstrip('2')
-                                # The 10+ key discount only applies to self-rolls (when is_snipe is False)
-                                spec_name = f"chaos_{base_name}" if (chaos_count > 0 and not is_snipe) else base_name
+                                # The 10+ key and Perk 8 discount only applies to self-rolls (when is_snipe is False)
+                                is_chaos = bool((chaos_count > 0 or has_sp_perk) and not is_snipe)
+                                spec_name = f"chaos_{base_name}" if is_chaos else base_name
                                 threshold = resolve_kakera_power_threshold(
                                     client.kakera_power_thresholds,
                                     name,
                                     chaos_count=chaos_count,
+                                    has_perk_eight_discount=has_sp_perk,
                                     is_snipe=is_snipe,
                                 )
-                                if threshold is None and not (chaos_count > 0 and not is_snipe):
+                                if threshold is None and not is_chaos:
                                     threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
                                 if threshold is not None and current_pow < threshold:
                                     BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")

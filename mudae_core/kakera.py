@@ -454,6 +454,7 @@ def resolve_kakera_power_threshold(
     emoji_name: str,
     *,
     chaos_count: int = 0,
+    has_perk_eight_discount: bool = False,
     is_snipe: bool = False,
     default=None,
 ):
@@ -481,7 +482,7 @@ def resolve_kakera_power_threshold(
     base_name = raw_name.rstrip("2")
     base_lower = base_name.casefold()
 
-    is_chaos = bool(chaos_count > 0 and not is_snipe)
+    is_chaos = bool((chaos_count > 0 or has_perk_eight_discount) and not is_snipe)
 
     candidates = []
     if is_chaos:

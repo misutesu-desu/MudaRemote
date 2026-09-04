@@ -13,6 +13,7 @@ from .status import (
     mark_status_dirty,
     status_dirty_fields,
     tu_cache_seconds_remaining,
+    dynamic_claim_round,
 )
 
 
@@ -1560,6 +1561,8 @@ def daily_rolls_decision(
     ack_retry_ready,
     claim_hour_active=False,
     now_utc=None,
+    dynamic_round=None,
+    claim_interval=180,
 ):
     """Classify Auto ``$rolls`` work without conflating timing and claim state.
 
@@ -1580,10 +1583,28 @@ def daily_rolls_decision(
     if key_mode and not auto_rolls_in_key_mode:
         return "key-mode-disabled"
 
-    in_claim_hour = bool(claim_hour_active) or bool(
+    in_claim_round = False
+    if dynamic_round is not None:
+        total_rounds = dynamic_claim_round(claim_interval or 180, None)[1]
+        in_claim_round = dynamic_round >= total_rounds
+    elif next_claim_reset_at_utc is not None:
+        round_num, total_rounds = dynamic_claim_round(
+            claim_interval or 180,
+            next_claim_reset_at_utc,
+            now,
+        )
+        in_claim_round = round_num >= total_rounds
+
+    in_claim_interval = bool(
         next_claim_reset_at_utc
         and roll_reset_at_utc
         and now <= next_claim_reset_at_utc <= roll_reset_at_utc
+    )
+
+    in_claim_hour = (
+        bool(claim_hour_active)
+        or bool(in_claim_interval)
+        or bool(claim_right_available and in_claim_round)
     )
     if only_claim_hour:
         if not in_claim_hour:

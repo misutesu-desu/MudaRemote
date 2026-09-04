@@ -22,6 +22,7 @@ from mudae_core.kakera import (
     should_refill_kakera_power,
     sphere_target_matches,
     unique_messages_by_id,
+    resolve_kakera_power_threshold,
 )
 
 
@@ -627,6 +628,62 @@ class KakeraPowerTests(unittest.TestCase):
 
         # 4. chaos kakeraC @75%, chaos_kakeraC=70 -> allowed
         self.assertFalse(is_blocked(thresh_chaos_c_70, 75))
+
+    def test_perk_eight_chaos_power_threshold_regression(self):
+        """Mandatory regression test for Perk8/Chaos kakera power threshold:
+
+        - Normal kakeraC @29% with kakeraC=60 -> blocked
+        - Chaos/Perk8 kakeraC @29%, no chaos-specific C threshold -> not blocked by normal 60
+        - Chaos/Perk8 kakeraC @29%, chaos_kakeraC=40 -> blocked
+        - Chaos/Perk8 kakeraC @45%, chaos_kakeraC=40 -> allowed
+        - Explicit chaos_kakeraY=70 at power66 -> blocked, unchanged
+        """
+        def is_blocked(threshold, power):
+            return threshold is not None and power < threshold
+
+        # Configuration 1: kakeraC=60, chaos_kakeraY=70 (NO explicit chaos_kakeraC threshold)
+        thresholds_1 = {
+            "kakeraC": 60,
+            "chaos_kakeraY": 70,
+        }
+
+        # Control 1: Normal kakeraC @29% with kakeraC=60 -> blocked
+        thresh_normal = resolve_kakera_power_threshold(
+            thresholds_1, "kakeraC", chaos_count=0, has_perk_eight_discount=False, is_snipe=False,
+        )
+        self.assertEqual(thresh_normal, 60)
+        self.assertTrue(is_blocked(thresh_normal, 29))
+
+        # Regression: Chaos/Perk8 kakeraC @29%, no chaos-specific C threshold -> not blocked by normal 60
+        thresh_perk8_c = resolve_kakera_power_threshold(
+            thresholds_1, "kakeraC", chaos_count=0, has_perk_eight_discount=True, is_snipe=False,
+        )
+        self.assertIsNone(thresh_perk8_c)
+        self.assertFalse(is_blocked(thresh_perk8_c, 29))
+
+        # Control 5: Explicit chaos_kakeraY=70 at power66 -> blocked, unchanged
+        thresh_chaos_y = resolve_kakera_power_threshold(
+            thresholds_1, "kakeraY", chaos_count=0, has_perk_eight_discount=True, is_snipe=False,
+        )
+        self.assertEqual(thresh_chaos_y, 70)
+        self.assertTrue(is_blocked(thresh_chaos_y, 66))
+
+        # Configuration 2: kakeraC=60, chaos_kakeraC=40, chaos_kakeraY=70
+        thresholds_2 = {
+            "kakeraC": 60,
+            "chaos_kakeraC": 40,
+            "chaos_kakeraY": 70,
+        }
+
+        # Control 3: Chaos/Perk8 kakeraC @29%, chaos_kakeraC=40 -> blocked
+        thresh_perk8_c_40 = resolve_kakera_power_threshold(
+            thresholds_2, "kakeraC", chaos_count=0, has_perk_eight_discount=True, is_snipe=False,
+        )
+        self.assertEqual(thresh_perk8_c_40, 40)
+        self.assertTrue(is_blocked(thresh_perk8_c_40, 29))
+
+        # Control 4: Chaos/Perk8 kakeraC @45%, chaos_kakeraC=40 -> allowed
+        self.assertFalse(is_blocked(thresh_perk8_c_40, 45))
 
 
 if __name__ == "__main__":
