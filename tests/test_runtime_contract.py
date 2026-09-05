@@ -1291,7 +1291,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
         kakera_block = handler_source[
-            handler_source.index("kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages"):
+            handler_source.index("allow_kakera = is_manual_self_roll or client.kakera_reaction_snipe_mode_active"):
         ]
 
         # Purple Kakera used to escape target validation entirely.
@@ -1304,6 +1304,22 @@ class RuntimeSourceContractTests(unittest.TestCase):
             kakera_block,
         )
         self.assertIn("is_snipe=not is_manual_self_roll", kakera_block)
+
+    def test_snipe_mode_allows_own_roll_kakera_when_reaction_snipe_disabled(self):
+        functions = {
+            node.name: node
+            for node in ast.walk(self.tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        handler_source = ast.get_source_segment(self.source, functions["on_message"])
+        self.assertIn(
+            "allow_kakera = is_manual_self_roll or client.kakera_reaction_snipe_mode_active",
+            handler_source,
+        )
+        self.assertIn(
+            "if allow_kakera and message.id not in client.kakera_reaction_sniped_messages:",
+            handler_source,
+        )
 
     def test_post_claim_purple_collection_keeps_its_special_allowance(self):
         functions = {

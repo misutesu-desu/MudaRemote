@@ -1,27 +1,24 @@
 {
-  "version": "4.9.0-beta.27",
+  "version": "4.9.0-beta.28",
   "changelog": {
     "Bug Fixes": [
-      "Fixed Round 3 Auto $rolls being incorrectly treated as outside the claim hour when normal rolls replenished before the claim reset",
-      "Auto $rolls can now correctly extend the final-round pool before panic claims consume the available claim",
-      "Fixed Perk 8 / 10-key discounted Kakera being misclassified as normal Kakera",
-      "Perk 8 Chaos Kakera no longer inherits normal power thresholds when no Chaos-specific threshold is configured"
+      "Fixed snipe-only mode disabling own-roll Kakera collection when external Kakera reaction snipe toggle is disabled",
+      "Ensured manual chat rolls and non-rolling preset rolls collect Kakera from their own rolls regardless of other-user snipe settings"
     ],
     "Improvements": [
-      "Normal rolls and Auto $rolls extension candidates remain pooled for final panic-claim evaluation",
-      "Explicit Chaos thresholds such as chaos_kakeraY remain fully respected",
-      "Perk 8 discount state is now preserved through the actual Kakera collection path"
+      "Decoupled self-roll Kakera collection from external user reaction sniping in passive message processing",
+      "Preserved all existing target user filters and reaction delays for other players' rolls"
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.27/MudaRemote.exe",
-  "exe_sha256": "c1a8690bbbb8f21bb462baf9ff191b65c31fe648c1c502594f39ca32d8579e6a",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0-beta.28/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "e4de64c3f37d051ebe0d1c864dd741adf3498d8e1658c3544dfb2ae3ad81fbe3"
+      "sha256": "e059fafb576406c59bfa8a33afbe1b8bfac85d37d6dae3ae449fab386066ea86"
     },
     {
       "path": "mudae_preset_editor.py",

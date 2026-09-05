@@ -149,7 +149,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0-beta.27"
+CURRENT_VERSION = "4.9.0-beta.28"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -8177,7 +8177,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if await claim_character(client, message.channel, message, kakera_value=k_val):
                             process = False
 
-            if client.kakera_reaction_snipe_mode_active and message.id not in client.kakera_reaction_sniped_messages:
+            # Own rolls collect Kakera independently of other-user snipe toggle.
+            allow_kakera = is_manual_self_roll or client.kakera_reaction_snipe_mode_active
+            if allow_kakera and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = get_all_collectible_kakera_emojis()
                  has_btn = has_collectible_kakera_button(message.components, all_k)
                  if has_btn:
