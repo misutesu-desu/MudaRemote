@@ -149,7 +149,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.0"
+CURRENT_VERSION = "4.9.1-beta.1"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -7716,6 +7716,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             resolve_kakera_result_waiters(kakera_result.emoji_name, kakera_result.amount)
             confirmed_cost = confirm_kakera_power_click(kakera_result.emoji_name)
             if confirmed_cost is not None:
+                if kakera_result.emoji_name.rstrip("2").casefold() == "kakerad":
+                    # Dark outcomes can refund power through a consolation prize.
+                    # Reconcile the estimate with Mudae's authoritative status.
+                    request_status_refresh(
+                        {"power"}, reason="dark-kakera-result", urgent=True,
+                    )
                 if kakera_result.emoji_name.rstrip("2").casefold() == "kakerac":
                     client._confirmed_kakera_c_bonus_until = time.monotonic() + 10.0
                 remaining = get_current_dk_power()

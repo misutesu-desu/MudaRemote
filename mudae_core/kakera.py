@@ -23,6 +23,13 @@ _KAKERA_RESULT_RE = re.compile(
 )
 
 
+_DARK_KAKERA_TRANSFORMATION_RE = re.compile(
+    r"(?:^|\n)[ \t]*<a?:(?P<source>kakeraD2?):\d+>[ \t]*"
+    r"turns into[ \t]*<a?:(?P<reward>kakera[A-Za-z0-9_]*):\d+>\s*\Z",
+    re.IGNORECASE,
+)
+
+
 class KakeraResult(NamedTuple):
     amount: int
     emoji_name: str
@@ -203,7 +210,11 @@ class KakeraPowerLedger:
 
 
 def parse_kakera_result(content: object, identities: object):
-    """Return the amount and emoji from Mudae's confirmation for this account."""
+    """Return the amount and clicked emoji from this account's confirmation.
+
+    Dark Kakera rewards display the transformed color. Only an immediately
+    preceding transformation into that color identifies the original button.
+    """
     known_identities = {
         str(identity).strip().casefold()
         for identity in identities or ()
@@ -211,12 +222,20 @@ def parse_kakera_result(content: object, identities: object):
     }
     if not known_identities:
         return None
-    for match in _KAKERA_RESULT_RE.finditer(str(content or "")):
+    text = str(content or "")
+    for match in _KAKERA_RESULT_RE.finditer(text):
         if match.group("user").strip().casefold() not in known_identities:
             continue
         digits = re.sub(r"\D", "", match.group("amount"))
         if digits:
-            return KakeraResult(int(digits), match.group("emoji"))
+            emoji_name = match.group("emoji")
+            transformation = _DARK_KAKERA_TRANSFORMATION_RE.search(text[:match.start()])
+            if transformation is not None and (
+                _normalize_kakera_emoji(transformation.group("reward"))
+                == _normalize_kakera_emoji(emoji_name)
+            ):
+                emoji_name = transformation.group("source")
+            return KakeraResult(int(digits), emoji_name)
     return None
 
 

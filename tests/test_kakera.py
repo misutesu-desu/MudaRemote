@@ -148,6 +148,49 @@ class KakeraPowerTests(unittest.TestCase):
         self.assertEqual(result.amount, 421)
         self.assertEqual(result.emoji_name, "kakeraY")
 
+    def test_dark_transformation_confirms_original_button_and_power(self):
+        for source in ("kakeraD", "kakeraD2"):
+            for reward in (
+                "kakeraP", "kakeraL", "kakeraT", "kakeraG", "kakeraY",
+                "kakeraO", "kakeraR", "kakeraW", "kakeraC", "kakeraD",
+                "kakeraC2",
+            ):
+                with self.subTest(source=source, reward=reward):
+                    content = (
+                        f"<a:{source}:123> turns into <:{reward}:456>\n"
+                        f"<:{reward}:456> **ymegatrolls +431** ($k)\n"
+                        "Consolation prize: **5%** discount on the react power used for this dark kakera."
+                    )
+                    result = parse_kakera_result(content, ["ymegatrolls"])
+                    self.assertEqual(result.amount, 431)
+                    self.assertEqual(result.emoji_name, source)
+                    ledger = KakeraPowerLedger()
+                    ledger.reserve("kakeraD2", 36)
+                    yellow_token = ledger.reserve("kakeraY", 36)
+                    self.assertEqual(ledger.confirm(result.emoji_name), 36)
+                    self.assertTrue(ledger.cancel(yellow_token))
+                    self.assertFalse(ledger.has_pending)
+
+    def test_dark_transformation_still_requires_own_reward(self):
+        content = (
+            "<:kakeraD:123> turns into <:kakeraY:456>\n"
+            "<:kakeraY:456> **someone_else +431** ($k)"
+        )
+        self.assertIsNone(parse_kakera_result(content, ["ymegatrolls"]))
+
+    def test_unrelated_dark_transformation_does_not_confirm_dark(self):
+        for prefix in (
+            "<:kakeraD:123> turns into <:kakeraR:456>\n",
+            "<:kakeraD:123> turns into <:kakeraY:456>\n"
+            "<:kakeraY:456> **someone_else +431** ($k)\n",
+        ):
+            result = parse_kakera_result(
+                prefix + "<:kakeraY:456> **ymegatrolls +470** ($k)",
+                ["ymegatrolls"],
+            )
+            self.assertEqual(result.emoji_name, "kakeraY")
+            self.assertEqual(result.amount, 470)
+
     def test_dynamic_dk_refill_requires_authoritative_power(self):
         self.assertFalse(
             should_refill_kakera_power(

@@ -173,6 +173,41 @@ def _build_roll_message(channel, message_id, roll_owner_id, roll_owner_name, kak
 
 
 class KakeraSnipeOwnershipRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_dark_transformation_confirms_click_without_retry(self):
+        bot, channel = _create_test_client()
+        message, btn = _build_roll_message(
+            channel=channel,
+            message_id=1010,
+            roll_owner_id=bot.user.id,
+            roll_owner_name=bot.user.name,
+            kakera_emoji="kakeraD2",
+        )
+        bot.kakera_emojis = ["kakeraD"]
+        bot.dk_consumption = 36
+        result = SimpleNamespace(
+            id=1011, channel=channel, author=message.author,
+            content=(
+                "<:kakeraD:123> turns into <:kakeraY:456>\n"
+                "<:kakeraY:456> **snipe-bot +431** ($k)\n"
+                "Consolation prize: **5%** discount on the react power used for this dark kakera."
+            ),
+            created_at=message.created_at, embeds=[], components=[],
+            interaction=None,
+        )
+
+        async def deliver_result():
+            await bot.events["on_message"](result)
+
+        btn.click.side_effect = deliver_result
+        await bot.events["on_message"](message)
+
+        btn.click.assert_awaited_once()
+        self.assertIn(message.id, bot.kakera_reaction_sniped_messages)
+        self.assertFalse(bot.kakera_power_ledger.has_pending)
+        self.assertEqual(bot.current_dk_power, 64)
+        self.assertFalse(bot._kakera_result_waiters)
+        self.assertIn("dark-kakera-result", mudae_bot.status_refresh_reasons(bot))
+
     async def test_1_snipe_only_disabled_auto_kakera_still_collects_own_kakera(self):
         """TEST 1: In snipe-only mode with Auto-Collect Kakera OFF, own-roll Kakera must be collected."""
         bot, channel = _create_test_client(

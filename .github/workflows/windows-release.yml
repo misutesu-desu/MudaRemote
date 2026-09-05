@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-release-v4.9.0
+  group: windows-release-v4.9.1-beta.1
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.0
-      RELEASE_TAG: v4.9.0
-      RELEASE_TITLE: MudaRemote v4.9.0
+      RELEASE_VERSION: 4.9.1-beta.1
+      RELEASE_TAG: v4.9.1-beta.1
+      RELEASE_TITLE: MudaRemote v4.9.1-beta.1
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -126,23 +126,23 @@ jobs:
 
       - name: Write release notes
         shell: pwsh
-        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.0.md -Destination .\release_notes.md
+        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.1-beta.1.md -Destination .\release_notes.md
 
-      - name: Publish GitHub stable release
+      - name: Publish GitHub beta release
         shell: pwsh
         run: |
           gh release create $env:RELEASE_TAG .\dist\MudaRemote.exe `
-            --latest `
+            --prerelease `
             --target "${{ steps.finalize.outputs.release_sha }}" `
             --title $env:RELEASE_TITLE `
             --notes-file .\release_notes.md
 
-      - name: Verify published stable release
+      - name: Verify published beta release
         shell: pwsh
         run: |
           $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
           if ($release.draft) { throw "Release is unexpectedly a draft." }
-          if ($release.prerelease) { throw "Release is unexpectedly marked as a prerelease." }
+          if (-not $release.prerelease) { throw "Beta release must be marked as a prerelease." }
           if ($release.name -ne $env:RELEASE_TITLE) { throw "Unexpected release title: $($release.name)" }
           $asset = @($release.assets | Where-Object { $_.name -eq "MudaRemote.exe" })
           if ($asset.Count -ne 1) { throw "Expected exactly one MudaRemote.exe asset." }
