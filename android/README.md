@@ -14,9 +14,12 @@ app from battery optimization.
    [Android pre-release](https://github.com/misutesu-desu/MudaRemote/releases)
    (or build it locally as below) on an Android 8.0 or newer device. Android
    will ask you to allow installs from the file manager used to open the APK.
-2. Open MudaRemote and use **Import presets.json**. Every top-level preset is
-   added to the profile selector, and every field in each preset becomes an
-   editable Android control. Tokens are kept in a separate encrypted store.
+2. Open MudaRemote and use **Import presets.json**. The app supports:
+   - **Flat Single Preset JSON**: Direct output from desktop **Share Preset** or Android **Export** creates a new unique `profile-N` branch without overwriting active profiles. Command prefixes (`prefix`, `mudae_prefix` such as `/` or `$`) and custom/nested settings remain completely intact.
+   - **Named Multi-Preset Map**: Standard `presets.json` maps (and `{ "presets": { ... } }` wrapper) import all top-level profiles with same-name replacement and safe existing/imported token merging. Malformed maps with non-object entries are rejected atomically before any state changes.
+   Tokens are kept in a separate encrypted store.
+
+   > **Upgrade Note (Native APK Update)**: The fix for flat preset parsing (`prefix` string conversion) is in native Android Kotlin code and requires installing a new APK; it cannot be delivered via the in-app Python updater. This fix requires Android app v1.2.6 (android-pre9) or later.
 3. Use **Import secrets** for an Android/Termux-compatible secrets JSON. A
    Windows `.mudae-secrets.json` normally contains DPAPI blobs, which are tied
    to the original Windows account and cannot be decrypted on Android; those

@@ -41,8 +41,8 @@ android {
         applicationId = "com.mudaremote.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.2.5"
+        versionCode = 14
+        versionName = "1.2.6"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -114,4 +114,7 @@ tasks.matching { it.name.endsWith("Assets") }.configureEach {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.10.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
 }

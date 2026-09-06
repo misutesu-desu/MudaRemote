@@ -1889,11 +1889,18 @@ class MainActivity : ComponentActivity() {
         if (!ensureWritableStorage()) return
         val text = readUri(uri) ?: return
         runCatching {
-            var root = JSONObject(text)
-            if (root.opt("presets") is JSONObject) root = root.getJSONObject("presets")
+            var counter = profiles.size + 1
+            var candidate = "profile-$counter"
+            while (profiles.containsKey(candidate)) {
+                counter++
+                candidate = "profile-$counter"
+            }
+
+            val staged = PresetImportParser.parse(text, schemaFields, candidate)
+            if (staged.isEmpty()) return@runCatching
+
             val importedNames = mutableListOf<String>()
-            root.keys().asSequence().forEach { name ->
-                val data = root.getJSONObject(name)
+            staged.forEach { (name, data) ->
                 val existingTokens = allTokensForProfile(name)
                 val importedTokens = LinkedHashSet<String>().apply {
                     addAll(decodeTokenValues(data.opt("token")))

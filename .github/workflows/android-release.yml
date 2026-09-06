@@ -56,7 +56,7 @@ jobs:
 
       - name: Build ux APK
         working-directory: android
-        run: gradle :app:assembleUx --no-daemon --stacktrace
+        run: gradle :app:testUxUnitTest :app:assembleUx --no-daemon --stacktrace
 
       - name: Stage release APK
         run: |
@@ -68,15 +68,18 @@ jobs:
       - name: Write release notes
         run: |
           cat > release_notes.md <<'EOF'
-          Pre-release of the MudaRemote Android app.
+          **🆕 MudaRemote Android v1.2.6 Beta**
 
-          - Adds explicit masked Remove controls for every account token
-          - Runs multiple presets and multi-account profiles in one supervised session
-          - Makes Stop all authoritative and queues the next Run until teardown completes
-          - Preserves tokens safely across imports while excluding them from shared preset JSON
-          - Requires Android 8.0+ (arm64-v8a or x86_64)
-          - Tokens are stored encrypted in Android Keystore-backed app storage
-          - For reliable background operation, exempt the app from battery optimization (Battery Guide button)
+          ### 🐛 Bug Fixes
+          - **Shared Preset Import:** Shared preset import accepts desktop Share Preset and Android Export single presets without rejection.
+          - **Command Prefix Preservation:** `/` and `$` command prefixes are preserved as authored in the preset with no need to change command choices.
+          - **Multi-Preset Support:** Multi-preset configuration imports remain fully supported.
+
+          ### 📲 Installation & Upgrades
+          - Download and install `Mudaremote.apk` over the existing app. The self-updating Python engine alone cannot apply native Android fixes; a new APK install is required.
+          - Requires Android 8.0+ (arm64-v8a or x86_64).
+          - Tokens are stored encrypted in Android Keystore-backed app storage and remain excluded from exported presets.
+          - For reliable background operation, exempt the app from battery optimization (Battery Guide button).
           EOF
 
       - uses: actions/upload-artifact@v4

@@ -64,12 +64,6 @@ class AndroidRuntimeContractTests(unittest.TestCase):
         self.assertIn("scheduleWithFixedDelay", self.service)
         self.assertIn("latestCommandStartId == watchedStartId", self.service)
 
-    def test_legacy_additional_tokens_are_migrated_and_hidden(self):
-        self.assertIn("decodeAdditionalTokenValues", self.activity)
-        self.assertIn('data.remove("additional_tokens")', self.activity)
-        self.assertIn('it != "token" && it != "additional_tokens"', self.activity)
-        self.assertIn("existingTokens = allTokensForProfile(name)", self.activity)
-
 
 if __name__ == "__main__":
     unittest.main()

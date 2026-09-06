@@ -1,0 +1,386 @@
+# Progress
+
+## Android v1.2.6 (android-pre9) — Flat Preset Import & Prefix String Parsing Fix
+- **Root Cause & Pure Shape Parser Fix**:
+  - Resolved `JSONException: Value / at prefix of type java.lang.String cannot be converted to JSONObject` on the reported Android installation (Python Engine v4.8.10) when importing flat single-preset exports from desktop **Share Preset** or Android **Export**.
+  - Added pure shape parser `PresetImportParser.kt` detecting flat vs named map inputs based on schema field presence and non-`JSONObject` value-shape.
+  - Flat presets stage under a safe, non-colliding `profile-N` branch; named maps and `{ "presets": ... }` wrappers retain existing replacement and token merge behavior with atomic upfront validation.
+- **Verification & Status**:
+  - 6/6 Kotlin behavioral tests passing (`gradle :app:testUxUnitTest`).
+  - Production JVM smoke test executed against real generated schema and compiled production class (`PresetImportParser.class`).
+  - Full Python test suite passing (526/526 tests OK in 28.895s).
+  - Assembled `app-ux.apk` (43,361,513 bytes) with `versionCode = 14` and `versionName = "1.2.6"`.
+  - Zero physical device or visual verification performed (no device/emulator attached).
+  - Planned release: `android-pre9` (forthcoming; not yet published).
+
+## v4.9.1-beta.2 — Claim Verification & Discord ACK Response Handling
+- **Claim Verification & Response Observation Hotfix**:
+  - Refactored `send_claim_click` to observe authoritative Mudae gateway evidence (text confirmation or cooldown rejection) immediately while awaiting Discord interaction ACKs, eliminating artificial 2.0s delays and false delayed-ACK warnings.
+  - Eliminated lost wakeups in `verify_snipe_outcome` by clearing evidence events prior to message fetches, and added post-fetch/post-deadline text evidence rechecks to prevent redundant roll retries when confirmation text is already present.
+  - Verified one-click dispatch protection across error races, timeouts, and cancellations.
+  - Added 11 deterministic async tests to `tests/test_claiming.py` (24/24 passing). Full test suite (527/527 passing) and clean compilation confirmed.
+  - Executed simulated orchestration smoke test through `_runtime_claim_character` with zero live Discord calls, no version bump, and no executable release.
+
+## Codebase Deduplication & AI Token Consumption Reduction
+- Streamlined duplicate boilerplate and logic across `mudae_bot.py`, `mudae_preset_editor.py`, and `mudae_core/` modules.
+- Maintained full backwards compatibility, configuration defaults, UI widgets, and runtime behavior.
+- Verified all 518 automated tests passing (100% OK), updated source integrity hashes in `version.json`, and documented exact differential savings (-492 lines, -3,366 Python tokens).
+
+## Completed
+- **[v4.9.1-beta.2] Claim Verification & Discord ACK Response Handling Release Preparation**:
+  - Prepared prerelease `MudaRemote v4.9.1-beta.2 — Claim Verification & Discord ACK Response Handling`.
+  - Version bumped `mudae_bot.py` to `4.9.1-beta.2` and updated `version.json`, `packaging/windows_version_info.txt`, and release workflow.
+  - Created `packaging/release-notes-v4.9.1-beta.2.md` and restored `v4.9.1-beta.1` notes.
+  - All 527 tests passing (100% OK), clean compilation, and validated release manifest.
+- **[v4.9.0-beta.28] Snipe-Only Own-Roll Kakera Fix Release**:
+  - Published prerelease `MudaRemote v4.9.0-beta.28 — Snipe-Only Own-Roll Kakera Fix`.
+  - Built and attached Windows executable `MudaRemote.exe` (SHA256: `4c46f9d427d7fb4826d72de7f1c9166fc28de059e0f7eb132cf24f51e5d3facc`).
+  - Contains hotfix commit `01b10491e216c294a34a4a2ead569901d27c79c4` and checksum finalization `269091d4fdabddad1c29747ffff74bb4c5a29b5a`.
+  - 513/513 automated unit and contract tests passing (100% OK).
+- **Snipe-Only & Manual Roll Kakera Ownership Fix**:
+  - Restored own-roll Kakera collection in snipe-only mode and manual chat rolls when "Auto-Collect Kakera (Click crystals on other people's rolls)" is disabled.
+  - Refactored `on_message` Kakera collection gate to decouple own rolls (`is_manual_self_roll`) from the external snipe toggle (`kakera_reaction_snipe_mode_active`).
+  - Retained existing target user filtering and delays for other users' rolls without blocking own-roll Kakera.
+  - Added 5 production regression tests covering all specified profiles and edge cases in `tests/test_kakera_snipe_ownership.py`. All 513 unit and contract tests passing (100% OK).
+- **[v4.9.0-beta.27] Auto Rolls & Perk 8 Chaos Hotfix Release**:
+  - Published prerelease `MudaRemote v4.9.0-beta.27 — Auto Rolls & Perk 8 Chaos Hotfix`.
+  - Attached Windows executable `MudaRemote.exe` (SHA256: `c1a8690bbbb8f21bb462baf9ff191b65c31fe648c1c502594f39ca32d8579e6a`).
+  - Contains hotfix commit `f02dc82` and checksum finalization `aa7bb57`.
+  - 507/507 automated unit and contract tests passing (100% OK).
+- **Final-Round Auto $rolls Restoration & Perk 8 Chaos Kakera Detection**:
+  - Restored Auto `$rolls` execution in Round 3 when roll replenishment precedes claim reset (`roll_reset_at_utc < next_claim_reset_at_utc`).
+  - Evaluated `in_claim_hour` accurately via `dynamic_claim_round` and claim availability, eliminating false `"outside-claim-hour"` determinations.
+  - Corrected Perk 8 discounted Kakera C button classification so Perk 8 self-rolls are identified as Chaos context and are not blocked by normal `kakeraC` power thresholds.
+  - Maintained explicit Chaos thresholds and normal Kakera behavior for non-chaos rolls.
+  - Added full regression test coverage across `test_runtime.py`, `test_roll_window_production.py`, and `test_kakera.py` (507/507 tests passing, 100% OK).
+- **[v4.9.0-beta.26] Final Round & Chaos Kakera Hotfix Release**:
+  - Published prerelease `MudaRemote v4.9.0-beta.26 — Final Round & Chaos Kakera Hotfix`.
+  - Attached Windows executable `MudaRemote.exe` (SHA256: `94b4ba2ea8af2ab7b674345057c1d7b460ca5a764c8d1066187f53a943c5f6ff`).
+  - Contains both hotfix commits `803a80b` and `e600424`.
+  - 504/504 automated unit and contract tests passing (100% OK).
+- **Auto $rolls vs Round 3 Panic Claim Order & Chaos Kakera Power Thresholds**:
+  - **Issue 1 (Auto $rolls vs Round 3 Panic Claim Order)**:
+    - Fixed `in_claim_hour` calculation in `mudae_core/runtime.py` to prevent treating non-reset hours as claim hours.
+    - Deferred panic claims in `start_roll_commands` when `evaluate_daily_rolls() == "execute"`, preventing premature claim consumption before `$rolls` expands the roll pool.
+    - Preserved `collected_rolls` across Auto `$rolls` execution and subsequent batch rolling so all candidates are considered for panic claim.
+  - **Issue 2 (Normal vs Chaos Kakera Power Thresholds)**:
+    - Created `resolve_kakera_power_threshold` in `mudae_core/kakera.py` supporting flexible naming formats (`"chaos kakeraC"`, `"chaos_kakerac"`, `"chaos_kakera_c"`, `"chaos"`, etc.).
+    - Ensured independent power thresholds for Chaos Kakera rolls: Chaos self-rolls do not inherit or fall back to higher normal thresholds when no Chaos-specific threshold is configured, while maintaining proper fallback for snipes and normal rolls.
+    - 504/504 tests passing (100% OK).
+- **[v4.9.0-beta.22] Private Roll Sync Hotfix Release**:
+  - Published prerelease `MudaRemote v4.9.0-beta.22 — Private Roll Sync Hotfix`.
+  - Built Windows executable `MudaRemote.exe` (SHA256: `4f30f3ec011029cb262df75af8c1e81f8990e93016e912db070764352e919929`).
+  - Fixed predicted reset cycles waiting several minutes before synchronizing required private roll state.
+  - Eliminated artificial background sanity delays from roll-enabling private synchronization.
+  - Verified tag `v4.9.0-beta.22`, release assets, and manifest integrity; 483/483 tests passing (100% OK).
+- **Delayed Private Roll Sync Starvation Prevention**:
+  - Eliminated artificial 30s-600s periodic sanity deadline offset and `ensure_sanity_deadline_safe` boundary push-away from `schedule_private_roll_count_sync`.
+  - Accounts with genuinely unknown roll counts now request authoritative private status promptly (0.5s - 3.0s jitter) upon cycle advancement, enabling large roll batches (e.g. 1000+ rolls) to execute within the safe window instead of being deferred.
+  - Preserved immediate local scheduling for accounts with trusted replenishment capacity (`normal_roll_replenishment_capacity_confidence = True`) without issuing immediate `$tu` queries or creating global pacer bottlenecks.
+  - Added 4 comprehensive regression tests (`tests/test_private_roll_sync_delay.py`); 483/483 tests passing (100% OK).
+- **[v4.9.0-beta.21] Reset Timing & Roll Scheduler Hotfix Release**:
+  - Published prerelease `MudaRemote v4.9.0-beta.21 — Reset Timing & Roll Scheduler Hotfix`.
+  - Built Windows executable `MudaRemote.exe` (SHA256: `0c79d7864f5a4efa60667aee66f466e5d3625571bdd19b9f1a96e11e5fd9fc4f`).
+  - Added optional authoritative `server_reset_minute` configuration to preset editor & core scheduler.
+  - Fixed pending roll actions falling back into repeated `$tu` loops.
+- **Server Reset Timing Anchoring & Pending Roll Action Preservation**:
+  - Implemented optional authoritative `server_reset_minute` (0..59) across `ResetAnchor`, `config.py`, `mudae_bot.py`, and `mudae_preset_editor.py`.
+  - Prevented learned/stale `$tu` reset observations from shifting local roll boundaries or scheduling actions early when `server_reset_minute` is set.
+  - Unified cycle ID resolution across `reconcile_authoritative_current_roll_count`, `NormalRollActionOwner`, `normal_action_status_policy`, and `is_tu_still_required` to prevent repeated `$tu` loops when an owned normal roll action is pending.
+  - Added full test coverage for both issues; 479/479 tests passing (100% OK).
+- **High-Account $tu Boundary Coalescing & Post-Pacing Revalidation**:
+  - Implemented per-client status request coalescing (`coalesce_status_request`, `PendingStatusRequest`) to merge multiple simultaneous boundary refresh demands into a single physical check.
+  - Implemented post-pacing status revalidation (`is_tu_still_required`) to skip stale queued `$tu` commands after the global 20s pacing wait when state was already reconciled.
+  - Cleared dirty flags in `advance_predicted_reset_cycles` on cycle advancement so confident anchors avoid manufactured boundary `$tu` spikes.
+  - Added 4 focused regression tests; 470/470 tests passing (100% OK).
+- **[v4.9.0-beta.18] Roll Scheduler & Multi-Preset Hotfix Release**:
+  - Prepared and finalized release metadata, changelog, version files, and GitHub Actions workflow for v4.9.0-beta.18.
+- **Roll Executor Reconciliation Alignment with Scheduler State**:
+  - Unified dirtiness rules between scheduler (`check_status`) and executor (`execute_owned_normal_roll_action`) via `normal_roll_action_state_is_dirty`.
+  - Ensured claim dirtiness blocks rolling when `time_rolls_to_claim_reset` is active while allowing ordinary rolling when claim timing is inactive.
+  - Isolated normal action routine suppression and execution checks from unrelated dirty fields (`power`, `points`, `dk`, `rt`).
+  - Strengthened production-path regression tests (Tests A-F and edge cases) across 466 passing unit tests (100% OK).
+- **[v4.9.0-beta.15] Final Runtime Correctness, Uncertainty Supersession & Capacity Isolation Pass:**
+  - **Auto $rolls with Unknown Count Protection (Blocker 1)**: Guarded `schedule_owned_normal_roll_action` so that when `remaining is None`, the bot immediately schedules a humanized private roll-count sync and returns without scheduling or executing normal actions with `roll_count = 0`. When `remaining == 0` (authoritative zero) and Auto `$rolls` is enabled, the owned action is scheduled to evaluate `$rolls`.
+  - **Successor Evidence Preservation Across Reset Advancement (Blocker 2)**: `advance_predicted_reset_cycles` preserves pre-existing `known_consumed` counts and uncertainty reasons for materialized cycles, setting `proven_fresh = (not had_uncertainty and known_consumed_before == 0)`. Unfresh cycles leave `remaining = None` to trigger private count sync rather than falsely predicting full replenishment capacity.
+  - **Cold Startup Parser Ordering in `check_status` (Blocker 3)**: Parsed `parsed_rolls` and `roll_reset_minutes` into locals first to establish `roll_reset_anchor` and `current_roll_cycle_id` before invoking roll-count reconciliation, ensuring initial startup `Rolls: 8` is never lost when `current_roll_cycle_id` is initially `None`.
+  - **Authoritative Status Supersession & Delayed Roll-Result Correlation (Blocker 4)**: Extended `NormalRollCycleState` with `last_authoritative_at_utc` and `authoritative_revision`. In `on_message`, roll results created at or before `last_authoritative_at_utc` are superseded by the authoritative snapshot, clearing pending origin tokens without marking confirmed ambiguity or incrementing `known_consumed`.
+  - **Production Shared Reset Callback Registration (Blocker 5)**: Bound `client._schedule_private_roll_count_sync = schedule_private_roll_count_sync` and `client._advance_predicted_reset_cycles = advance_predicted_reset_cycles` in `run_bot()`. In `_apply_shared_reset_snapshot`, unanchored peers invoke `_schedule_private_roll_count_sync` to perform private count sync without issuing immediate un-staggered `/tu` commands.
+  - **Multi-Cycle Uncertainty Retention in Pruning (Blocker 6)**: `_prune_normal_action_metadata` dynamically retains all cycles where `st.count_uncertain` is True and all pending origin `affected_cycle_id`s, preventing multiple uncertain cycles from premature garbage collection.
+  - **Isolated Capacity Learning & Centralized Reconciler (Blocker 7)**: Cycle capacity learning in `apply_authoritative_roll_remaining` checks strictly cycle-local `st.proven_fresh and st.known_consumed == 0 and not st.count_uncertain` and learns only from `base_normal_remaining` (excluding `$us` bonus rolls). Centralized roll status updates into `reconcile_authoritative_current_roll_count`.
+  - **Testing & Verification**: 375/375 automated unit, contract, and behavioral tests passing (100% OK). Generated production build `dist/MudaRemote.exe` (SHA256: `6202ca880bff2889876ff751c1e54ff89c15f57ae098a33795f77878fd7cb2fe`), updated `version.json`, and generated `codex-changes.diff`.
+- **Smart Timing Sleep Prioritization, Premature Roll Reset Wakeups & Roll Parsing Fixes:**
+  - Resolved an issue where Smart Timing (`time_rolls_to_claim_reset`) accounts with claim on cooldown (>60m) chose 1-hour `rolls replenishment` sleeps instead of sleeping directly until `timing threshold arrival` (`claim_reset - 60m`).
+  - Added `timing_delay_active` guard in `_apply_shared_reset_snapshot` to prevent server-wide roll boundary notifications from waking up sleeping accounts during claim cooldown.
+  - Implemented direct parsing of `ROLLS_COUNT` and `ROLL_RESET_TU` in `check_status` to ensure `client.rolls_left` is updated on every `$tu` response.
+  - Manifest and executable hashes updated; all 258 automated unit tests pass.
+- **[v4.9.0-beta.7] Claim Candidate Fallback, Roll Reset Crossing & Instant Purple Kakera:**
+  - Resolved an issue in `handle_mudae_messages` where an early failed claim verification (e.g. character sniped by another player) aborted the claim loop for the hour. The bot now iterates through remaining wishlist and high-value candidates to claim the next eligible character.
+  - Resolved an issue in `start_roll_commands` where roll batches crossing the hourly reset boundary did not refresh rolls status, skipping newly replenished rolls.
+  - Enhanced deferred Kakera collection (`immediate_kakera_click = False`) to immediately click free Purple Kakera as it drops while keeping colored crystals deferred for priority selection.
+  - Manifest and executable hash updated; all 255 automated unit tests pass.
+- **[v4.9.0-beta.6] Deferred Spheres / Free Buttons Cooldown Bypass Hotfix:**
+  - Resolved an issue in deferred Kakera collection (`immediate_kakera_click = False`) where character spheres (`spG`, `spY`, etc.) and free buttons were erroneously blocked by Kakera reaction cooldown checks.
+  - Character spheres and free buttons now explicitly bypass Kakera reaction cooldown in both immediate and deferred collection loops.
+  - Manifest and executable hash updated; all 255 automated unit tests pass.
+- **Smart Timing Bypass Deadlock, Maintenance Status Loop & Forcedivorce Retry Fixes:**
+  - Resolved an issue where Smart Timing (`time_rolls_to_claim_reset`) with zero cached rolls bypassed `$tu` queries even after entering the active pre-reset window (`<= 60m`), causing accounts to sleep indefinitely and miss roll cycles.
+  - Resolved infinite `$tu` query loop triggered by `mudae-maintenance` or reconnects where non-core missing categories prevented dirty status clearance on complete `$tu` responses.
+  - Added automated retry logic in `execute_farm_forcedivorce` when Mudae responds with "A harem related command is being processed, please wait and try again."
+  - Updated manifest hashes in `version.json`; all 255 automated unit tests pass.
+- **Smart Timing Claim Resolution at Reset Boundary Fix:**
+  - Resolved an issue where rolls saved during Smart Timing were not claimed after the roll batch completed.
+  - Expanded post-roll claim reset boundary waiting window up to 120s with explicit claim right restoration.
+  - Hardened `handle_mudae_messages` to ensure all claimable character embeds/buttons are processed and return execution outcome.
+  - Preserved pending collected rolls across `$tu` refresh cycles so unfinalized claims trigger upon `$tu` status ready.
+- **[v4.8.10] Stable Release:**
+  - Published stable release `v4.8.10` and pushed `main`, `beta`, and `v4.8.10` tag to GitHub with verified `MudaRemote.exe` binary.
+  - Resolved Smart Timing pre-reset roll abortion: rolls cleanly collect qualifying cards and resolve claims at the claim reset boundary.
+  - Reduced idle status traffic by trusting known claim and roll reset times instead of checking status every 30 minutes.
+  - Stabilized `$us` (saved rolls) recovery and refresh after complete and partially observed roll batches.
+  - Synchronized server boundary roll limits and isolated snipe-only account reset state.
+  - Enhanced forcedivorce farming with snipe channel observation, edited embed target detection, and serialized confirmations.
+  - Added kakera retry and Portuguese `$daily` recognition.
+  - Synchronized documentation and version badges to v4.8.10 across 7 README languages.
+- **GitHub Dark & Primer Theme Transformation (Android):**
+  - Completely restyled the Android application ([`MainActivity.kt`](file:///c:/Users/Admin/Downloads/MudaRemote/android/app/src/main/java/com/mudaremote/android/MainActivity.kt), [`UiTheme.kt`](file:///c:/Users/Admin/Downloads/MudaRemote/android/app/src/main/java/com/mudaremote/android/UiTheme.kt), [`ChipListView.kt`](file:///c:/Users/Admin/Downloads/MudaRemote/android/app/src/main/java/com/mudaremote/android/ChipListView.kt), [`styles.xml`](file:///c:/Users/Admin/Downloads/MudaRemote/android/app/src/main/res/values/styles.xml)) with the authentic **GitHub Dark / Primer Design System**.
+  - Implemented GitHub repository header with repo breadcrumb (`🐙 misutesu-desu / MudaRemote`), `Public` tag, and GitHub repo buttons.
+  - Redesigned profile selection into GitHub Branch Pills (`🌿 branch: MAIN`).
+  - Styled token credentials into GitHub Repository Secrets (`🔑 Repository Secrets / Token`).
+  - Formatted settings cards into GitHub Primer `Box` containers with crisp `#161b22` headers and `#30363d` borders.
+  - Styled array inputs into GitHub Label chips (`ChipListView.kt`).
+  - Redesigned bottom action dock with GitHub Green action buttons (`💾 Commit`, `▶️ Run workflow`, `⏹️ Cancel`).
+  - Styled runtime console as GitHub Actions workflow step log viewer (`⚡ Actions Workflow: mudae-runtime`).
+  - Reassembled `app-ux.apk` and verified all 243 unit tests pass.
+- **Android UI Inset Handling & Updater Permission Denied Fix:**
+  - Integrated `WindowInsetsCompat` and `WindowCompat.setDecorFitsSystemWindows(window, false)` in `MainActivity.kt`: dynamically applies top status bar, camera notch, and bottom 3-button/gesture navigation insets as safe padding, preventing UI overlap and dock occlusion across all Android versions (Android 8 to 15).
+  - Resolved `PermissionError: [Errno 13] Permission denied` in `android_bridge.py`: replaced `shutil.copy2` (which attempted POSIX `copystat` metadata/chmod writes restricted on Android SELinux) with direct binary stream copying and anchored `presets.json` path explicitly to `files_dir`.
+  - Successfully reassembled and verified `app-ux.apk` and confirmed all 243 unit tests pass.
+- **Android UI/UX Elevation & Modern Dashboard:**
+  - Redesigned the Android application (`MainActivity.kt`, `UiTheme.kt`, `ChipListView.kt`, `styles.xml`) with a modern OLED dark theme inspired by Catppuccin Mocha and Discord Dark.
+  - Implemented interactive `ChipListView` converting string/array lists (wishlists, avoid lists, targets) into visual chips with instant tap-to-remove, inline "+ Add" bar, and raw JSON editor mode.
+  - Added a full Profile Management Hub with pill tabs, "+ New Profile", "Clone / Duplicate", "Delete" (with confirmation), and "Share / Export Preset" (copies sanitized JSON to clipboard).
+  - Added Discord Account Token security card with password eye reveal/hide toggle, one-tap clipboard paste, and Keystore AES-GCM encryption badge.
+  - Implemented real-time settings search across labels, descriptions, and keys with auto-expanding category cards and matching result count badge.
+  - Added Category Filter Pills (`All`, `Connection`, `Rolling`, `Claiming`, `Sniping`, `Kakera`, `Farming`, `Spheres`, `Timing`, `Advanced`).
+  - Added a Sticky Bottom Floating Action Dock (Save Profile, Start Profile, Start All, and Stop Runtime).
+  - Added a color-coded Live Terminal Console with syntax highlighting (`💖 [CLAIM]`, `💎 [KAKERA]`, `✨ [SPHERE]`, `ℹ️ [INFO]`, `⚠️ [WARN]`, `❌ [ERROR]`), "Copy All Logs", "Clear View", and "Auto-scroll Lock".
+  - Successfully assembled `app-ux.apk` with Gradle and verified all 243 unit tests pass.
+- **Official GitHub Pages Website (`docs/`):**
+  - Created a modern, high-performance, dark glassmorphism website in `docs/` (`docs/index.html`, `docs/css/style.css`, `docs/js/app.js`, `docs/assets/`).
+  - Added an interactive Discord live simulation with simulated rolls (`/wa`), Kakera clicks, instant wishlist claims, sound effects (Web Audio API), and `$oh`/`$oc` sphere mini-game solver demos.
+  - Implemented an interactive Preset Generator that live-previews and formats `presets.json` with one-click copy.
+  - Built an interactive Kakera & Spheres Codex showcasing all 24 crystals and spheres with value guidelines and filters.
+  - Integrated a 7-language localization engine (English, Türkçe, Français, 日本語, 한국어, 简体中文, Português Brasileiro).
+  - Added multi-platform installation guides (Windows `.exe`, Python / CLI, Android App), community donation progress bar, crypto copy cards, and FAQ accordions.
+  - Added automated GitHub Pages deployment workflow `.github/workflows/pages.yml`. Verified 100% in browser testing and all 238 unit tests pass.
+- **Android Dynamic Python Self-Updater:**
+  - Implemented an automated in-app Python self-update pipeline (`android_bridge.py`, `MainActivity.kt`, `mudae_bot.py`, `mudae_core/updater.py`).
+  - Python scripts are dynamically downloaded, SHA-256 verified, syntax compiled with `py_compile`, and transactionally staged into app-private storage (`files_dir/python_code`).
+  - Added `sys.path` runtime prioritization so updated modules take precedence over the APK-bundled code without reinstalling the APK.
+  - Added UI controls in `MainActivity.kt`: live engine version badge ("Python Engine: vX.X.X"), "Check for Python updates", and "Revert Python" reset.
+  - Handled automatic update checks on foreground service start, network timeout fallbacks, and corrupted code rollback.
+  - Added full test suite `tests/test_android_updater.py`; all 243 unit tests pass and the Android APK (`app-ux.apk`) compiles successfully.
+- **Android 1.0 Application:**
+  - Added a native Kotlin client with a profile selector, full dynamic field editor, bulk `presets.json` import, and secrets-file import.
+  - Added selected-profile/all-profile launch actions and an in-app live log panel backed by the foreground service log file.
+  - Added a build-time schema generator which derives Android labels, defaults, sections, and descriptions from `mudae_preset_editor.py`; blank profiles now show the complete desktop settings surface.
+  - Embedded the existing Python 3.11 runtime with Chaquopy, `discord.py-self` 2.0.1, and Android `aiohttp` wheels for ARM64 phones and x86_64 emulators.
+  - Added a foreground-service lifecycle, persistent notification/Stop action, partial wake lock, battery-optimization guidance, and Android Keystore AES-GCM token storage with backup disabled.
+  - Built `app-debug.apk` and verified its manifest, ARM64/x86_64 native Python payload, and source/runtime packaging.
+  - Physical-device and screen-off validation remain pending because no device or AVD was available. Windows DPAPI secrets remain non-portable and require token re-entry on Android.
+- **Multilingual README Trust and Support Flow:**
+  - Added consistent voluntary LTC and USDT TRC20 support sections to English, Turkish, French, Japanese, Korean, Brazilian Portuguese, and Simplified Chinese documentation.
+  - Added a truthful initial `$40 / $100` progress milestone, optional donation reference points, concrete development-impact details, optional Donator recognition, and wallet privacy warnings.
+  - Updated all version badges to v4.7.9, surfaced language navigation, removed inline changelogs in favor of GitHub Releases, and removed contradictory anti-ban guarantees from the translated marketing copy.
+  - Revised the full multilingual copy for a more natural maintainer voice, removed every em/en dash and SEO keyword footer, and replaced hype or detection-evasion wording with specific descriptions of actual behavior.
+- **Smart Timing (Time Rolls to Claim Reset) Synchronization & Claim Resolution:**
+  - Fixed pre-reset roll abortion where rolls were halted due to failed immediate reactive claim checks before the claim cooldown expired.
+  - Eligible wishlist and value cards rolled during the pre-reset window are now collected and automatically claimed at the exact moment of claim reset.
+  - Enabled resumption of remaining rolls during timed rolling mode via `can_resume_claim_interrupted_rolls`.
+  - Added deterministic contract and runtime regression tests.
+- **[v4.7.9] Kakera and Preset Stability:**
+  - Fixed preset navigation snapping back when an incomplete draft could not pass token/channel runtime validation; draft saves now allow missing runtime credentials while Save & Start remains strict.
+  - Preserved sidebar selection across focus changes and replaced full chip/emoji widget rebuilds with batched, in-place refreshes (about 25x faster in the local real-Tk transition harness).
+  - Prevented missing Chaos/Perk 8 overrides from re-enabling Kakera colours disabled in the regular list.
+  - Applied Perk 8 selections consistently to own and external rolls and expanded marker discovery across embed text locations.
+  - Stabilized four-button refresh matching with position-plus-emoji identity before custom IDs.
+  - Unified `sp`/`spR` red sphere targeting and preserved explicitly empty sphere selections.
+  - Removed delayed preset callbacks, preserved the active sidebar selection, stabilized Quick/Advanced transitions, and added `wx`, `hx`, `mx` to Quick Setup.
+  - Added pure and source-contract regressions for each corrected path.
+- **Multi-Account Claim and Shared Reset Coordination:**
+  - Kept verified and already-taken claim message IDs terminal in a bounded cross-preset cache.
+  - Shared only server-wide claim and roll reset deadlines from visible `$tu` snapshots.
+  - Removed redundant `$tu` checks after authoritative manual cooldown rejections while preserving pending automated-claim recovery.
+  - Replaced substring account matching with exact username, mention, global display name, and server nickname matching.
+  - Added regression coverage; all 161 automated tests pass.
+- **[v4.6.0] Automatic Context Generator Script:**
+  - Added `generate_context.py` in the project root allowing single-click or CLI regeneration of `PROJECT_FULL_CONTEXT.md` containing all current application runtime source files.
+- **[v4.6.0] Full Project Context Document Filtering:**
+  - Updated `PROJECT_FULL_CONTEXT.md` to contain strictly the complete, unabridged, verbatim runtime application source files (`mudae_bot.py`, `mudae_preset_editor.py`, `build.py`, `mudae_core/*.py`) and core configuration files, excluding unit tests and documentation.
+- **[v4.6.0] Reliability, Security, and Automation Overhaul:**
+  - Published commit `5004e5b` to `main` and released `v4.6.0` as the latest GitHub Release with a SHA-256-verified `MudaRemote.exe` asset.
+  - Added configurable pre-roll or post-verified-claim forcedivorce timing for solo and shared-server farming strategies.
+  - Prevented farm forcedivorce from sending a bare `y`, running before verified claims in shared mode, or colliding with generic auto-divorce and auto-`$rt` actions.
+  - Applied 10+ key and `💎/2` Perk 8 power reductions independently in both immediate and deferred Kakera collection.
+  - Separated loop wakeups from true state invalidation and tracked dirty status by field.
+  - Removed redundant `$tu` requests after authoritative cooldown messages, idle pause/resume, exact extra rolls, and fully observed saved-roll cycles.
+  - Kept correctness-critical checks after reconnect, `$rt`, reset boundaries, interrupted rolls, maintenance, and inconclusive claims.
+  - Matched only live/new `$tu` responses, limited one acquisition cycle to two commands, and applied bounded exponential failure backoff.
+  - Added an urgent claim-verification bypass that can override backoff once without reopening command spam.
+  - Added regression coverage for status freshness, pause scoping, cooldown wakeups, bonus rolls, response ordering, and retry budgets.
+  - Built and inspected the v4.6.0 Windows executable; all 46 automated tests pass.
+  - Made pause interrupt active rolls, `$mk`, slash/text commands, reactions, button clicks, scheduled delays, and post-claim actions across all active clients.
+  - Preserved passive Mudae responses during pause and forced a fresh `$tu` synchronization after resume.
+  - Replaced the boolean-by-assumption claim flow with evidence from confirmation text, edited embed ownership, recent history, and `$tu` state.
+  - Added a bounded one-time retry when `$tu` proves a ready claim was not consumed and the original character button remains active.
+  - Removed early cooldown rounding, accelerated zero-minute reset verification, and prevented claim reset checks from receiving long humanization jitter.
+  - Replaced the 30-minute `/tu` slash failure stall with reliable text fallback.
+  - Hardened the modular bootstrap so partial installations with an older `mudae_core` repair missing new symbols automatically.
+  - Added claim parser, runtime pause, and guarded-action regression tests.
+  - Added secure token storage (Windows DPAPI/system keyring/environment override), atomic JSON writes, and preset validation.
+  - Added a verified, transactionally applied source-file manifest so modularization does not create partial updates; Git worktrees are protected from overwrite.
+  - Removed multi-account lock inversion and stale reservations with `ClaimCoordinator`.
+  - Fixed scheduled-roll triggers, free-event claims, retry exhaustion, blank descriptions, deferred Kakera discounts, and zero-valued power thresholds.
+  - Added fixed editor actions, process feedback/stop control, immediate preset persistence, and dynamic-round value preservation.
+  - Added automated tests, GitHub Actions CI, requirements manifests, portable build configuration, rotating logs, and traceback diagnostics.
+- **[v4.5.8] Stuck Roll Interrupt Infinite Loop Fix:**
+  - Reset `client.interrupt_rolling = False` at the very beginning of the `start_roll_commands` function right after the initial `is_maintenance_active()` check. This prevents `client.interrupt_rolling` from remaining stuck as `True` after a real-time claim, resolving the infinite loop where the bot endlessly queried `$tu` without rolling or sleeping.
+- **[v4.5.7] Preset Editor Saving/Loading and Maintenance Spam Fixes:**
+  - Added `ChipListWidget` to `_select_preset_impl` isinstance check to correctly clear and populate custom list widgets when switching presets, avoiding configuration leaks or wipes.
+  - Updated maintenance regex to support non-numeric terms like "some".
+  - Made the maintenance detector in `on_message` case-insensitive.
+  - Added strict `is_maintenance_active()` checks inside `main_status_loop`, `check_status`, `process_mk_rolls`, `start_roll_commands`, and `snipe_only_status_loop` loops to exit/sleep quietly and prevent command spamming.
+- **[v4.5.6] Snipe Kakera Power Cost Fix & Stability Adjustments:**
+  - Restricted 10+ keys benefits (50% power discount, cooldown bypass, power threshold name mapping) inside `claim_character` to self-rolls only (`is_snipe` is False).
+  - Fixed `$dk` command double-triggering by parsing state variables from `$tu` response before executing power management.
+  - Added support for Perk 8 / Diamond Emoji (`"💎/2"`) discount on self-rolls to charge half power instead of full power.
+  - Added a guard in `claim_character` button clicking loop to prevent clicking regular/paid kakeras when `only_chaos` is active and chaos count is zero.
+- **[v4.5.5] UX/UI Usability Enhancements in Preset Editor:**
+  - Implemented interactive `ChipListWidget` list tag editor transforming comma-separated lists into modern visually-isolated tag chips.
+  - Implemented Unsaved Changes warning system, displaying a confirm/save/discard dialog upon preset switching or window closing, and showing a dirty indicator (`*`) in the editor title.
+  - Added a "Show Token" / "Hide Token" eye-toggle button next to the Discord Account Token input field.
+  - Implemented comprehensive numeric validation on save, focusing on the invalid field and raising an explicit alert dialog.
+- **[v4.5.4] Refactored Kakera Sorting, Dynamic Rolls, and Termux Compatibility:**
+  - Implemented Global Kakera Priority Sorting of deferred buttons when `immediate_kakera_click` is set to `False`.
+  - Added dynamic `while` loop inside `start_roll_commands` to process extra rolls dynamically.
+  - Updated `on_message` extra roll notification parser to dynamically increment `client.rolls_left` and wake up the rolling cycle when extra rolls are gained.
+  - Resolved Termux startup and console hangs by bypassing stdin mapping wrappers and raw termios attributes.
+  - Registered missing configuration defaults (`max_claim_rank` and `auto_p_enabled`) in the Preset Editor.
+- **[v4.5.3] Fixed Footer Layout for Action Buttons:**
+  - Restructured settings container layout in Preset Editor to use a static footer frame.
+  - Pinned "Save Changes", "Launch Bot", and "Delete Config" buttons at the bottom of the container.
+  - Handled cleanup of the footer frame dynamically when switching presets or rebuilding forms.
+- **[v4.5.2] Share Preset and Auto-Divorce Blacklists:**
+  - Added "Share Preset" sidebar button to export config to clipboard without Discord tokens.
+  - Implemented `auto_divorce_blacklist` and `auto_divorce_blacklist_series` configurations.
+  - Integrated lists with Preset Editor settings loading, saving, and defaults.
+  - Implemented checks in bot `verify_snipe_outcome` to check character name and series against the divorce blacklists, logging keeping character information and skipping divorce when matched.
+- **[v4.5.1] Green Kakera Buttons & Cooldown Parsing Enhancements:**
+  - Globalized `check_is_green` helper function in `mudae_bot.py`.
+  - Added detection support for messages with green buttons containing "kakera" in emoji name.
+  - Allowed green buttons containing "kakera" inside target claim lists.
+  - Added `'kakera'` to all default kakera, chaos, and sphere perk emoji lists in bot and preset editor.
+  - Added `DK_COOLDOWN` pattern to bypass false positive missing dk category warnings.
+  - Refactored Tkinter GUI settings form to implement collapsible sections (via a new `CollapsibleLabelFrame` class, built without the unsupported button `anchor` parameter to ensure broad platform compatibility) to reduce cognitive load and GUI clutter.
+  - Reorganized form sections so that "Connection" starts open and all others start closed.
+  - Split the "Sniping & Stealing" section into "Character Sniping & Stealing" and "Kakera Reaction Collection" collapsible frames.
+  - Added inline contextual help labels for kakera snipe thresholds, claim/like rank limits, and immediate kakera clicks.
+- **[v4.4.9] Precise Roll Owner Detection & Target Sniping Filters:**
+  - Implemented `detect_roll_owner` async helper to accurately resolve who triggered a roll (checking slash command interaction, recent command channel history, or embed footer ownership fallback).
+  - Added `character_snipe_targets` configuration parameter to restrict character sniping (wishlist, series, value sniping) to specific target users.
+  - Linked `character_snipe_targets` into the Preset Editor GUI under the "Sniping & Stealing" section.
+  - Resolved Python 3.10 specific syntax dependency (`|` in type hints) to ensure backwards compatibility with older versions of Python.
+- **[v4.4.8] $tu Validation & Deferred Kakera priority clicking:**
+  - Added warnings for missing `$tuarrange` sections (claim, rolls, rt, kakerapower, dk) to handle custom layouts gracefully.
+  - Implemented `immediate_kakera_click` config checkbox and backend logic to defer kakera button collection until the end of the roll cycle and click strictly in priority order.
+- **[v4.4.6] Maintenance Rolling Fix & Customizable Sphere Targets:**
+  - Added detection of `"Command under maintenance!"` message in `on_message` and instantly set `client.interrupt_rolling = True` to halt ongoing rolls.
+  - Implemented configurable `"sphere_click_targets"` (default: `["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]`) in `mudae_preset_editor.py` UI list fields, loading, and saving logic.
+  - Configured `mudae_bot.py` to parse and store `client.sphere_click_targets` as a lowercase set, filtering active sphere button reactions to only click matching target emojis (including doubled types by stripping the `"2"` suffix).
+- **[v4.4.4] Snipe-only post-claim Auto-$rt Fix:**
+  - Fixed the post-claim validation logic in `verify_snipe_outcome()` to verify if rolling is enabled (`client.rolling_enabled` is True) before skipping the `$rt` command. This ensures Snipe-only (non-rolling) clients correctly execute Auto-$rt after a verified successful claim.
+- **[v4.4.3] Automated Staggering, $rt Prevention, and Stability Overhaul:**
+  - Automated the persistent stagger offset calculation deterministically based on the alphabetical index of the preset name (20s delay gap), removing the manual setting from the GUI preset editor.
+  - Added randomized staggering delay and message claim verification before sending `$rt` restoration commands to prevent multi-bot command collisions.
+  - Fixed Perk 8 multiple clicking bug by removing the deduplication check and tracking buttons by `custom_id` and position.
+  - Added Hybrid Smart Panic Claiming with configuration for instant claiming high-value rolls during the last hour while collecting/comparing moderate ones.
+  - Implemented Dynamic Hourly Claim Rounds letting users define custom thresholds per remaining hours of claim cooldown.
+  - Resolved `send_roll_command` silent discard issue when `/slash` roll command triggers fail.
+  - Eliminated `UnboundLocalError` crash in `check_status()` by declaring and initializing `can_claim`, `claim_ready`, and `wait_time` at function start.
+  - Restored cleanup of StreamHandler for the discord logger in `run_bot` to fix duplicate console output in multi-account environments.
+  - Restricted smart timing choices and sleep schedules to execute only when claims are on cooldown (`claim_right_available` is False).
+  - Modified the `auto_rolls_only_claim_hour` checks in `check_status` and `check_rolls_left_tu` to strictly enforce the claim reset hour by removing the claim available fallback.
+- **[v4.4.2] AttributeError, Concurrency Race, and Desync Fixes:**
+  - Resolved `AttributeError` for `roll_reset_at_utc` and `is_claiming` by explicitly initializing them in `run_bot()`.
+  - Added try-finally structure for `client.is_claiming` in `claim_character()` and check guard in `check_status()` to prevent race conditions during claim verification.
+  - Set `client.desync_detected = True` on roll interruptions or auto `$us`/`$rolls` actions to force fresh `$tu` checks and prevent desynchronization-induced infinite sleeps.
+- **[v4.4.2] Refactoring, Compression, and Optimization:**
+  - Consolidated logging functions under a static `BotLogger` class for cleaner outputs and logs writing.
+  - Centralized all regex matches and timer-parsing logic into a module-level `REGEX_PATTERNS` dictionary and `parse_timer_minutes` helper.
+  - Simplified button-clicking and interaction flows, and optimized multi-click concurrency handling.
+  - Hardened and restored startup self-updates checks and backup cleanup tasks.
+- **[v4.3.7] Free Kakera Buttons Recognition:**
+  - Added support to detect success-styled (green) buttons representing free kakera reaction unlocks.
+  - Automatically bypasses active kakera power limits, reaction cooldowns, and `only_chaos` filters for green buttons.
+- **[v4.3.6] auto rolls bypass fix:**
+  - Resolved a regression where automatic saved rolls (`$us`), daily rolls (`$rolls`), and `$mk` rolls were skipped due to the minimized `$tu` status cache logic.
+  - Dynamically disables `$tu` caching/bypass when there are pending rolls that need execution.
+- **[v4.3.5] claim-hour rolls & upgraded UX logging:**
+  - Added `auto_rolls_only_claim_hour` setting to restrict the daily `$rolls` command exclusively to the hour when the claim resets.
+  - Redesigned status logs with bright color coding and unique emojis for each log type (`ℹ️ [INFO]`, `💖 [CLAIM]`, `💎 [KAKERA]`, etc.).
+  - Implemented left-padding alignment (12 chars width) for preset names to guarantee perfectly structured, tabular console output.
+  - Cleaned redundant bot and preset name brackets (e.g. `[MudaRemote]`) automatically from all messages.
+  - Added `print_system_log` for preset-independent system prints (startup, update checks, pause toggles, error states).
+- **[v4.4.1] $tu Frequency Reduction, Smart Kakera Refill & Real-time Roll Sync:**
+  - Implemented local state variables (`client.last_tu_query_utc`, `client.desync_detected`, and `client.rolls_left`) to skip physical `$tu` checks when cached status is valid.
+  - Implemented smart kakera refill using `$dk` during active roll clicks when power is low.
+  - Replaced the post-roll channel history scanning logic with a real-time message tracking counter (`_rolls_sent`/`_rolls_received`) and a collector list.
+  - Supports conditional deferral: if reactive sniping is disabled, rolls are collected in real-time and processed immediately after the final roll finishes (no 5-second sleep). If enabled, claims and reactions are executed immediately on the fly.
+  - Added a smart claim reset transition wait for timed rolls.
+- **[v4.3.4] Ghost Mode Reconnect & Loop Lifecycle Fix:**
+  - Assigned `snipe_only_status_loop` task to `client._main_loop_task` on startup to ensure it is recognized as active during health checks.
+  - Corrected gateway reconnect recovery logic in `on_ready()` to restart the correct status loop (`main_status_loop` or `snipe_only_status_loop`) depending on the `rolling_enabled` setting.
+  - Added an infinite loop safety throttle (`await asyncio.sleep(1.5)`) at the end of each status loop iteration to prevent zero-delay tight loops in edge cases.
+- **[v4.3.3] macOS Virtual Keyboard & Unix Stdin Fix:**
+  - Resolved Unix fallback keyboard listener terminal configuration conflicts by restoring default termios attributes when inquirer menus are active.
+  - Implemented `StdinEnterMapper` to map LF (`\n`) to CR (`\r`) to ensure virtual keyboards sending newline inputs trigger inquirer selection submits.
+  - Flushed terminal input buffers post-prompting to discard trailing newline characters from CRLF sequences and prevent menu skipping.
+- **[v4.3.2] Saved Rolls Smart Timing Fix:**
+  - Prevented saved rolls ($us) from expiring during smart timing waits by introducing an `is_us_pull` parameter to bypass claim reset sleeps.
+- **[v4.4.0] Multi-Channel Sniping & Rank-Based Claiming:**
+  - Added support for monitoring and sniping on external channels using `snipe_channels` configuration.
+  - Implemented popularity rank-based claiming logic using `max_claim_rank` and `max_like_rank` parsed via regex from Mudae embeds.
+  - Updated GUI Preset Editor to expose, validate, and serialize these new parameters.
+- **[v4.2.10] op_perk_5_only Free Buttons Bypass:**
+  - Modified `claim_character` logic to bypass the `op_perk_5_only` description text check if a free button (spheres/kakeraP) is physically present on the message components.
+- **[v4.2.9] Incremental $us (Saved Rolls) Refactoring:**
+  - Refactored automatic saved rolls execution into incremental batch-by-batch execution (max 20) with immediate loop checks.
+  - Added checkbox option for `bulk_us_enabled` (legacy bulk-pulling behavior) in GUI preset editor and bot lifecycle parameter mapping.
+- **[v4.2.8] Claim & Key Fixes:**
+  - Resolved multi-click stale message component race condition in `claim_character` by dynamically re-fetching fresh message state on secondary/later clicks.
+  - Included `sphere_perk_emojis` in `on_message` Kakera pre-check list (`all_k`).
+  - Optimized `count_chaos_keys` regex to support regular key emoji (🔑) and optional bold parenthesis patterns.
+- **[v4.2.7] check_status Scoping Fix:** Fixed points status check UnboundLocalError by defining `now_utc` at the top of the function.
+- **[v4.2.6] Auto $p Automation:** Points command claiming when available.
+- **[v4.2.6] Roll Fallback:** Dynamic hourly roll fallback on $us exhaustion/limit.
+- **[v4.2.6] Bulk Pulling Loop:** Saved rolls pulled in chunks of 20 with delays.
+- **[v4.2.6] Startup Delays:** Startup delays decoupled from rolling options in UI/bot.
+- **[v4.2.5] EXE Update Hardening:** Refactored frozen-mode update logic to pre-delete stale files, fallback to timestamped filenames on PermissionError, and gracefully continue on total failure.
+- **[v4.2.4] Claim Verification Overhaul:** Implemented fallback parsing in `verify_snipe_outcome` to support custom hyperlink claim messages.
+- **[v4.2.4] Display Name Recognition:** The bot now accurately verifies snipes using its Discord Display Name alongside its base Username.
+- **[v4.2.3] Terminal Robustness:** Cross-platform pause listener fixes using non-blocking terminal I/O for Linux/macOS.
+- **[v4.2.3] MK Bypass:** `mk_bypass_power_check` feature implementation across backend logic and UI.
+
+## Working On
+- Live validation of v4.6.0 query reasons, custom `$tuarrange` formats, and latency backoff behavior.
+
+## Recent Changes (v4.7.8 humanized snipe status and editor selection)
+- Snipe-only claim status refreshes now choose one cached random deadline between the shared claim reset and the configured humanization-window end, avoiding exact synchronized `$tu` commands without repeatedly rerolling the delay.
+- The preset editor now retains a newer selection event that arrives during the unsaved-changes transition and prevents the older transition from overwriting it.
+- Added deterministic runtime, source-contract, and simulated Tk event regression coverage for both behaviors.
+
+## Pending
+- Validate the embedded Android Discord runtime on physical ARM64 hardware before publishing a signed production APK.
+- Cleanup logic for orphaned timestamped update `.exe` files on startup.
+- Future enhancements based on user requests (e.g., deeper integration with other bot features and additional custom message formats).
