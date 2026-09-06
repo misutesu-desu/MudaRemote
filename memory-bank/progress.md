@@ -11,7 +11,7 @@
   - Full Python test suite passing (526/526 tests OK in 28.895s).
   - Assembled `app-ux.apk` (43,361,513 bytes) with `versionCode = 14` and `versionName = "1.2.6"`.
   - Zero physical device or visual verification performed (no device/emulator attached).
-  - Planned release: `android-pre9` (forthcoming; not yet published).
+- Published release: [android-pre9](https://github.com/misutesu-desu/MudaRemote/releases/tag/android-pre9) (commit `e6252436f34edf8c3265c53ea1ae572f419683fe`, CI run [34047464294](https://github.com/misutesu-desu/MudaRemote/actions/runs/34047464294)). Verified versionCode 14, versionName 1.2.6, SHA-256 digest, and matching v2 release signing certificate.
 
 ## v4.9.1-beta.2 — Claim Verification & Discord ACK Response Handling
 - **Claim Verification & Response Observation Hotfix**:

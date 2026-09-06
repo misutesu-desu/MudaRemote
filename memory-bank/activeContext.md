@@ -11,7 +11,7 @@
   - Full Python test suite verified: 526/526 tests passing in 28.895s (legacy source-only assertion `test_legacy_additional_tokens_are_migrated_and_hidden` removed from `tests/test_android_runtime_contract.py`).
   - Production APK successfully compiled and packaged via `gradle :app:assembleUx` (`app-ux.apk`, 43,361,513 bytes).
   - Note: No physical device or Android emulator was available; no visual verification was performed.
-- **Planned Release**: Version `1.2.6` (`versionCode = 14`), tag `android-pre9` (forthcoming).
+- **Published Release**: Version 1.2.6 (versionCode 14), tag [android-pre9](https://github.com/misutesu-desu/MudaRemote/releases/tag/android-pre9) (commit `e6252436f34edf8c3265c53ea1ae572f419683fe`, CI run [34047464294](https://github.com/misutesu-desu/MudaRemote/actions/runs/34047464294)). Verified asset SHA-256 and exact matching signature certificate.
 
 ## v4.9.1-beta.2 — Claim Verification & Discord ACK Response Handling
 - **Authoritative Evidence-First Claim Resolution**:
