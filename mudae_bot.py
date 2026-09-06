@@ -149,7 +149,7 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.1-beta.1"
+CURRENT_VERSION = "4.9.1-beta.2"
 
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
@@ -6628,13 +6628,27 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         verification_seconds = 1.0 if is_own_roll_fast_retry else 5.0
         deadline = time.monotonic() + verification_seconds
 
+        def current_text_evidence():
+            if client.pending_claim is not pending:
+                return None
+            text_ev = getattr(client, '_claim_text_evidence', None)
+            if text_ev is not None and getattr(text_ev, 'outcome', None) in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE):
+                return text_ev
+            return None
+
         while time.monotonic() < deadline:
+            event = getattr(client, '_claim_evidence_event', None)
+            if event is not None:
+                event.clear()
+
             if client.pending_claim is not pending:
                 return ClaimOutcome.SUCCESS if pending.get("finalized") else ClaimOutcome.INCONCLUSIVE
-            text_evidence = getattr(client, '_claim_text_evidence', None)
-            if text_evidence is not None and text_evidence.outcome != ClaimOutcome.INCONCLUSIVE:
+
+            text_evidence = current_text_evidence()
+            if text_evidence is not None:
                 evidence = text_evidence
                 break
+
             try:
                 refreshed = await channel.fetch_message(msg.id)
                 if refreshed.embeds:
@@ -6644,27 +6658,46 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         claim_identities(),
                         user_id=getattr(client.user, 'id', None),
                     )
-                    if owner_evidence.outcome != ClaimOutcome.INCONCLUSIVE:
+                    if owner_evidence.outcome in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE):
                         evidence = owner_evidence
                         break
             except Exception:
                 pass
 
+            if client.pending_claim is not pending:
+                return ClaimOutcome.SUCCESS if pending.get("finalized") else ClaimOutcome.INCONCLUSIVE
+
+            text_evidence = current_text_evidence()
+            if text_evidence is not None:
+                evidence = text_evidence
+                break
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            event = getattr(client, '_claim_evidence_event', None)
+
             if event is None:
                 await asyncio.sleep(min(0.75, remaining))
             else:
-                event.clear()
                 try:
                     await asyncio.wait_for(event.wait(), timeout=min(0.75, remaining))
                 except asyncio.TimeoutError:
                     pass
 
+            if client.pending_claim is not pending:
+                return ClaimOutcome.SUCCESS if pending.get("finalized") else ClaimOutcome.INCONCLUSIVE
+
+            text_evidence = current_text_evidence()
+            if text_evidence is not None:
+                evidence = text_evidence
+                break
+
         if client.pending_claim is not pending:
             return ClaimOutcome.SUCCESS if pending.get("finalized") else ClaimOutcome.INCONCLUSIVE
+
+        text_evidence = current_text_evidence()
+        if text_evidence is not None:
+            evidence = text_evidence
 
         if evidence is None:
             try:
@@ -6679,11 +6712,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         claim_identities(),
                         user_id=getattr(client.user, 'id', None),
                     )
-                    if candidate.outcome != ClaimOutcome.INCONCLUSIVE:
+                    if candidate.outcome in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE):
                         evidence = candidate
                         break
             except Exception:
                 pass
+
+        if client.pending_claim is not pending:
+            return ClaimOutcome.SUCCESS if pending.get("finalized") else ClaimOutcome.INCONCLUSIVE
+
+        text_evidence = current_text_evidence()
+        if text_evidence is not None:
+            evidence = text_evidence
 
         if evidence is not None and evidence.outcome == ClaimOutcome.SUCCESS:
             await finalize_successful_claim(pending, channel, evidence.source)
@@ -6712,7 +6752,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         else:
             clear_pending_claim(pending)
         return ClaimOutcome.INCONCLUSIVE
-
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
         char_claims = []
         wl_claims = []
@@ -6995,23 +7034,67 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         allowed = {str(item) for item in target_list or ()}
         return filter_reason is None and (name in allowed or clean in allowed)
 
-    async def send_claim_click(button, timeout=2.0):
-        """Start a claim immediately without treating a missing Discord ACK as a failed send."""
-        task = client.loop.create_task(guarded_click(button))
-        try:
-            return bool(await asyncio.wait_for(asyncio.shield(task), timeout=timeout)), True
-        except asyncio.TimeoutError:
-            # discord.py-self can raise its own "no response" error much later,
-            # after Discord already received the interaction. Verification is
-            # safer than issuing a delayed duplicate click.
-            def consume_late_result(done_task):
-                try:
-                    done_task.exception()
-                except (asyncio.CancelledError, Exception):
-                    pass
+    async def send_claim_click(button, pending, timeout=2.0):
+        """Start a claim immediately without treating a missing Discord ACK as a failed send.
 
-            task.add_done_callback(consume_late_result)
-            return True, False
+        Returns (click_sent, response_observed), where response_observed is True
+        if either Discord acknowledged the interaction or Mudae supplied an
+        authoritative claim response (text confirmation or cooldown rejection).
+        """
+        task = client.loop.create_task(guarded_click(button))
+
+        def consume_late_result(done_task):
+            try:
+                done_task.exception()
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        task.add_done_callback(consume_late_result)
+
+        def has_conclusive_evidence():
+            if client.pending_claim is not pending:
+                return bool(pending.get("finalized"))
+            if pending.get("rejected_by_cooldown"):
+                return True
+            text_ev = getattr(client, "_claim_text_evidence", None)
+            return text_ev is not None and getattr(text_ev, "outcome", None) in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE)
+
+        event = getattr(client, "_claim_evidence_event", None)
+        deadline = time.monotonic() + timeout
+        while True:
+            if has_conclusive_evidence():
+                return True, True
+
+            if task.done():
+                return bool(task.result()), True
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+
+            event_waiter = None
+            if event is not None:
+                event.clear()
+                event_waiter = client.loop.create_task(event.wait())
+                wait_targets = (task, event_waiter)
+            else:
+                wait_targets = (task,)
+
+            try:
+                await asyncio.wait(
+                    wait_targets,
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            finally:
+                if event_waiter is not None and not event_waiter.done():
+                    event_waiter.cancel()
+                    try:
+                        await event_waiter
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+        return True, False
 
     async def collect_refreshed_purple_after_claim(channel, msg, is_snipe=False):
         """Collect a purple button that appears only after Mudae updates a claimed roll."""
@@ -7429,11 +7512,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             BotLogger.log(f"Claim attempt: {char_name}{kakera_str}", preset_name, "CLAIM" if not is_free_claim else "INFO")
                             for attempt in range(3):
                                 try:
-                                    click_sent, acknowledged = await send_claim_click(btn)
+                                    click_sent, response_observed = await send_claim_click(btn, pending)
                                     if not click_sent:
                                         break
                                     claim_success = True
-                                    if not acknowledged:
+                                    if not response_observed:
                                         BotLogger.log(
                                             f"Claim click sent for {char_name}; Discord ACK is delayed, verifying without a duplicate click.",
                                             preset_name,
@@ -7449,7 +7532,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                         BotLogger.log(f"Claim click failed after 3 attempts: {e}", preset_name, "ERROR")
 
                             if claim_success:
-                                BotLogger.log(f"Claiming {char_name}{kakera_str}", preset_name, "CLAIM" if not is_free_claim else "INFO")
+                                BotLogger.log(f"Verifying claim outcome: {char_name}{kakera_str}", preset_name, "CLAIM" if not is_free_claim else "INFO")
                                 clicked_claim = True
                                 claim_outcome = await verify_snipe_outcome(client, channel, msg, pending)
                                 if claim_outcome == ClaimOutcome.SUCCESS:
@@ -8284,6 +8367,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._runtime_run_available_sphere_games = run_available_sphere_games
     client._runtime_check_status = check_status
     client._runtime_is_tu_still_required = is_tu_still_required
+    client._runtime_send_claim_click = send_claim_click
+    client._runtime_verify_snipe_outcome = verify_snipe_outcome
+    client._runtime_claim_character = claim_character
+    client._runtime_record_claim_text_evidence = record_claim_text_evidence
+    client._runtime_prepare_pending_claim = prepare_pending_claim
 
     # Stop may be requested while this client is being configured but before
     # discord.py owns a running loop. Check again immediately before the

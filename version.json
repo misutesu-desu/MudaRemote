@@ -1,20 +1,19 @@
 {
-  "version": "4.9.1-beta.1",
+  "version": "4.9.1-beta.2",
   "changelog": {
     "Bug Fixes": [
-      "**Dark Kakera confirmation:** Successful Dark Kakera clicks are now recognized regardless of which Kakera color they turn into, avoiding false failure warnings and unnecessary retries.",
-      "**Reaction power tracking:** Power spent on Dark Kakera is now recorded correctly, and a fresh status check accounts for consolation discounts."
+      "**Claim verification & ACK response handling:** Authoritative Mudae claim and cooldown outcomes arriving while awaiting Discord interaction ACKs are now observed immediately without waiting for full transport timeouts or emitting false delayed-ACK warnings, and verification rechecks text evidence after slow message refreshes to prevent redundant roll retries."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.1/MudaRemote.exe",
-  "exe_sha256": "d34835c9c482fa48081867c49eb9e46359870d10e0e3667bb67275333cb24c0b",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.2/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "68b04e29ebb147eed01f51e4f543c4592afbc77da75bbb864d7af0f99f47b284"
+      "sha256": "06397f87c0fd5cac3690a9452ad51595998b016733cb49485d8bb0540aeb6fdb"
     },
     {
       "path": "mudae_preset_editor.py",

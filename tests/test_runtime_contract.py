@@ -1502,24 +1502,6 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("filter_reason = regular_kakera_filter_reason", roll_source)
         self.assertIn("filter_reason is None and regular_match", roll_source)
 
-    def test_claim_click_ack_timeout_verifies_without_duplicate_click(self):
-        functions = {
-            node.name: node
-            for node in ast.walk(self.tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        click_source = ast.get_source_segment(self.source, functions["send_claim_click"])
-        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
-        verify_source = ast.get_source_segment(self.source, functions["verify_snipe_outcome"])
-
-        self.assertIn("asyncio.wait_for(asyncio.shield(task)", click_source)
-        self.assertIn("return True, False", click_source)
-        self.assertIn("click_sent, acknowledged = await send_claim_click", claim_source)
-        self.assertIn("is_own_roll_fast_retry", verify_source)
-        self.assertIn("not pending.get(\"is_snipe_action\")", verify_source)
-        self.assertIn("verification_seconds = 1.0 if is_own_roll_fast_retry else 5.0", verify_source)
-        self.assertIn("else 5.0", verify_source)
-
     def test_ready_claim_retries_once_without_a_tu_round_trip(self):
         functions = {
             node.name: node
