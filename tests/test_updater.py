@@ -220,20 +220,21 @@ class UpdaterTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt" and shutil.which("powershell"), "requires Windows PowerShell")
     def test_powershell_helper_execution_moves_and_verifies_hash(self):
         import json, subprocess, sys, time
+        comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+        with open(comspec, "rb") as cf:
+            cmd_bytes = cf.read()
+        cmd_hash = hashlib.sha256(cmd_bytes).hexdigest()
+
         with tempfile.TemporaryDirectory() as td:
             current = os.path.join(td, "app.exe")
             with open(current, "wb") as f:
                 f.write(b"OLD_BINARY")
 
-            with open(sys.executable, "rb") as ef:
-                py_bytes = ef.read()
-            py_hash = hashlib.sha256(py_bytes).hexdigest()
-
-            session = _Session({"dummy": py_bytes})
+            session = _Session({"dummy": cmd_bytes})
             manifest = {
                 "version": "9.9.9",
                 "exe_download_url": "dummy",
-                "exe_sha256": py_hash,
+                "exe_sha256": cmd_hash,
             }
             with mock.patch("mudae_core.updater.subprocess.Popen"):
                 apply_update(session, manifest, "1.0.0", td, frozen=True, executable=current)
@@ -246,16 +247,16 @@ class UpdaterTests(unittest.TestCase):
             with open(payload_path, "r", encoding="utf-8") as f:
                 p = json.load(f)
             p["pid"] = 9999999
-            p["arguments"] = ["-c", "import sys; sys.exit(0)"]
+            p["arguments"] = ["/c", "exit", "0"]
             with open(payload_path, "w", encoding="utf-8") as f:
                 json.dump(p, f)
 
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ps_path, "-PayloadPath", payload_path]
             run_res = subprocess.run(cmd, capture_output=True, text=True)
-            self.assertEqual(run_res.returncode, 0)
+            self.assertEqual(run_res.returncode, 0, msg=f"PS failed: {run_res.stderr}\nstdout: {run_res.stdout}")
 
             with open(current, "rb") as f:
-                self.assertEqual(f.read(), py_bytes)
+                self.assertEqual(f.read(), cmd_bytes)
             self.assertFalse(os.path.exists(stage_path))
             time.sleep(1.0)
 
@@ -348,6 +349,13 @@ class UpdaterTests(unittest.TestCase):
             with open(current, "wb") as f:
                 f.write(b"OLD_BYTES")
 
+            dll_name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+            for candidate in [sys.prefix, os.path.dirname(sys.executable), getattr(sys, "base_prefix", "")]:
+                p_dll = os.path.join(candidate, dll_name)
+                if os.path.isfile(p_dll):
+                    shutil.copy2(p_dll, os.path.join(td, dll_name))
+                    break
+
             with open(sys.executable, "rb") as ef:
                 py_bytes = ef.read()
             py_hash = hashlib.sha256(py_bytes).hexdigest()
@@ -393,14 +401,12 @@ class UpdaterTests(unittest.TestCase):
 
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ps_path, "-PayloadPath", payload_path]
             run_res = subprocess.run(cmd, capture_output=True, text=True)
-            self.assertEqual(run_res.returncode, 0)
+            self.assertEqual(run_res.returncode, 0, msg=f"PS failed: {run_res.stderr}\nstdout: {run_res.stdout}")
             time.sleep(1.0)
 
             with open(out_file, "r", encoding="utf-8") as f:
                 received = json.load(f)
             self.assertEqual(received, test_args[1:])
-
-    @unittest.skipUnless(os.name == "nt" and shutil.which("powershell"), "requires Windows PowerShell")
     def test_powershell_helper_launch_failure_restores_backup_and_exits_5(self):
         import json, subprocess
         with tempfile.TemporaryDirectory() as td:
