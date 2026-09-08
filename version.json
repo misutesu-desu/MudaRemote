@@ -80,7 +80,7 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/updater.py",
-      "sha256": "901e585446ef9689c3f68992f49e77230c4c6a0fccad2affafe598e8adced310"
+      "sha256": "a950daf34506e83834e175e1fc06a65b662183aaecbcf12e0a177b46d02b67f4"
     },
     {
       "path": "mudae_core/versioning.py",
