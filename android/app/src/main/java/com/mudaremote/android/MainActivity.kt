@@ -1908,7 +1908,7 @@ class MainActivity : ComponentActivity() {
                 }
                 isUpdateInFlight = false
                 loadEngineVersion()
-                refreshLogs()
+            }
         }.start()
     }
 
@@ -2058,9 +2058,6 @@ class MainActivity : ComponentActivity() {
                 isUpdateInFlight = false
             }
         }.start()
-    }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun resetPythonRuntime() {
