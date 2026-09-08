@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-release-v4.9.1-beta.3
+  group: windows-release-v4.9.1-beta.4
   cancel-in-progress: false
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.1-beta.3
-      RELEASE_TAG: v4.9.1-beta.3
-      RELEASE_TITLE: MudaRemote v4.9.1-beta.3
+      RELEASE_VERSION: 4.9.1-beta.4
+      RELEASE_TAG: v4.9.1-beta.4
+      RELEASE_TITLE: MudaRemote v4.9.1-beta.4
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -126,7 +126,7 @@ jobs:
 
       - name: Write release notes
         shell: pwsh
-        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.1-beta.3.md -Destination .\release_notes.md
+        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.1-beta.4.md -Destination .\release_notes.md
 
       - name: Publish GitHub beta release
         shell: pwsh

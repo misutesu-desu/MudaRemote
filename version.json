@@ -1,5 +1,5 @@
 {
-  "version": "4.9.1-beta.3",
+  "version": "4.9.1-beta.4",
   "changelog": {
     "Improvements": [
       "**Transactional frozen updates (PC):** Frozen Windows updates now use isolated per-attempt staging directories and kernel-level exclusive file locking (`update_frozen_install.lock`), cleanly rejecting conflicting concurrent updates without file corruption.",
@@ -9,9 +9,8 @@
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-  "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.3/MudaRemote.exe",
-  "exe_sha256": "46a9ca79290d7bd1a08bb60b2238c1c150426f83060f7a7cb59854d98c3598dc",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.4/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
@@ -86,7 +85,7 @@
     {
       "path": "mudae_core/versioning.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/versioning.py",
-      "sha256": "c8d7a6560e0162cdc416dd49b71ec9c0ca0edd61b66f1a0e89b24da1350337a2"
+      "sha256": "e0a74bd13d7d25bea3047a55c1a8f20ab325f1b7d4f4c51d5b061ca7d403afb2"
     },
     {
       "path": "requirements.txt",
