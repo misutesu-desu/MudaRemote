@@ -198,6 +198,29 @@ class AndroidUpdaterTests(unittest.TestCase):
         self.assertEqual(res["channel"], "beta")
         self.assertEqual(android_bridge.get_update_channel(self.temp_dir), "beta")
 
+    def test_fetch_available_versions_and_install_specific_version(self):
+        rels = json.loads(android_bridge.fetch_available_versions("android"))
+        self.assertIsInstance(rels, list)
+        self.assertTrue(len(rels) > 0)
+        self.assertIn("version", rels[0])
+
+        dummy_manifest = {
+            "version": "4.8.10",
+            "source_files": [
+                {
+                    "path": path,
+                    "url": "https://example.com/" + path,
+                    "sha256": hashlib.sha256("# test\n".encode("utf-8")).hexdigest(),
+                }
+                for path in sorted(REQUIRED_SOURCE_PATHS)
+            ],
+        }
+        with mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=dummy_manifest), \
+             mock.patch("android_bridge._download_file", return_value="# test\n".encode("utf-8")):
+            res_json = android_bridge.install_specific_version(self.temp_dir, "v4.8.10")
+            res = json.loads(res_json)
+            self.assertEqual(res["status"], "updated")
+            self.assertEqual(res["version"], "4.8.10")
     def test_reset_to_bundled_code_blocks_when_running(self):
         with mock.patch("android_bridge._running", True):
             result = json.loads(android_bridge.reset_to_bundled_code(self.temp_dir))

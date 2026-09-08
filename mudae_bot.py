@@ -275,6 +275,13 @@ if "--beta" in sys.argv:
     os.environ["MUDAREMOTE_UPDATE_CHANNEL"] = "beta"
 elif "--stable" in sys.argv or "--main" in sys.argv:
     os.environ["MUDAREMOTE_UPDATE_CHANNEL"] = "main"
+if "--version" in sys.argv:
+    try:
+        _v_idx = sys.argv.index("--version")
+        if _v_idx + 1 < len(sys.argv):
+            os.environ["MUDAREMOTE_TARGET_VERSION"] = sys.argv[_v_idx + 1]
+    except Exception:
+        pass
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
 # Global Pause State
@@ -691,43 +698,43 @@ def _confirm_update_in_console(latest_version, changelog):
     return answer in {"y", "yes"}
 
 
-def check_for_updates(confirm_update=None, channel=None):
+def check_for_updates(confirm_update=None, channel=None, target_version=None):
     if not UPDATE_URL:
         return "disabled"
     is_frozen = getattr(sys, 'frozen', False)
     is_android = os.environ.get("TERMUX_VERSION") == "MudaRemote-Android" or bool(os.environ.get("MUDAREMOTE_RUNTIME_HOME"))
     base_path = get_base_path()
-    resolved_channel = resolve_update_channel(channel, CURRENT_VERSION, base_path)
-    channel_label = "Beta" if resolved_channel == "beta" else "Stable"
-    print_system_log(f"Checking for updates... (Channel: {channel_label}, Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
+    target_ver = target_version or os.environ.get("MUDAREMOTE_TARGET_VERSION")
+
     try:
-        discovery = discover_update_manifest(
-            requests,
-            current_version=CURRENT_VERSION,
-            channel=resolved_channel,
-            frozen=is_frozen,
-            timeout=(3.05, 8.0),
-        )
-        if discovery.get("status") == "error":
-            print_system_log(discovery.get("error", "Update check failed."), "WARN")
-            return "failed"
-        if discovery.get("status") != "available":
-            print_system_log("You are up to date.", "INFO")
-            return "current"
-        data = discovery["manifest"]
-        latest_version = discovery["version"]
-
+        if target_ver:
+            print_system_log(f"Target version requested: {target_ver}. Fetching release manifest...", "RESET")
+            from mudae_core.versioning import fetch_manifest_for_version
+            data = fetch_manifest_for_version(requests, target_ver)
+            latest_version = data.get("version") or str(target_ver)
+        else:
+            resolved_channel = resolve_update_channel(channel, CURRENT_VERSION, base_path)
+            channel_label = "Beta" if resolved_channel == "beta" else "Stable"
+            print_system_log(f"Checking for updates... (Channel: {channel_label}, Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
+            discovery = discover_update_manifest(
+                requests,
+                current_version=CURRENT_VERSION,
+                channel=resolved_channel,
+                frozen=is_frozen,
+                timeout=(3.05, 8.0),
+            )
+            if discovery.get("status") == "error":
+                print_system_log(discovery.get("error", "Update check failed."), "WARN")
+                return "failed"
+            if discovery.get("status") != "available":
+                print_system_log("You are up to date.", "INFO")
+                return "current"
+            data = discovery["manifest"]
+            latest_version = discovery["version"]
         changelog = format_update_changelog(data)
-        base_path = get_base_path()
-        if not is_frozen and not is_android and os.path.isdir(os.path.join(base_path, ".git")):
-            print(f"\nChangelog for v{latest_version}:\n{changelog}\n")
-            print_system_log(f"v{latest_version} is available. This is a Git checkout; run 'git pull' so local changes are never overwritten.", "WARN")
-            return "git"
-
         confirmation = confirm_update or (
             (lambda v, c: True) if is_android else _confirm_update_in_console
         )
-        print_system_log(f"v{latest_version} is available. Waiting for update confirmation.", "RESET")
         if not confirmation(latest_version, changelog):
             print_system_log(f"Update to v{latest_version} was skipped. Your current files and presets were not changed.", "INFO")
             return "skipped"
@@ -753,6 +760,7 @@ def check_for_updates(confirm_update=None, channel=None):
             base_path,
             frozen=is_frozen,
             executable=sys.executable,
+            force=bool(target_ver),
         )
         if result == "frozen":
             print_system_log("Verified update staged. Restarting via updater...", "RESET")
@@ -761,16 +769,11 @@ def check_for_updates(confirm_update=None, channel=None):
         if os.name == 'nt':
             subprocess.Popen([sys.executable] + sys.argv, cwd=base_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
             sys.exit()
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except UpdateError as e:
-        print_system_log(f"Update was not applied safely: {e}", "WARN")
-        return "failed"
+        else:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         print_system_log(f"Update failed: {e}", "ERROR")
         return "failed"
-
-def cleanup_after_update():
-    """Recover any interrupted update and ensure clean state."""
     try:
         recover_interrupted_update(get_base_path())
     except Exception:

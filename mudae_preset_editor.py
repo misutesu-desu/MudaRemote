@@ -811,6 +811,171 @@ def build_recommended_preset():
     return data
 
 
+class VersionSelectorDialog:
+    def __init__(self, parent, on_install):
+        self.parent = parent
+        self.on_install = on_install
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("MudaRemote - Select Target Version")
+        self.dialog.geometry("450x420")
+        self.dialog.configure(bg=BG_DARK)
+        self.dialog.resizable(False, False)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        self.dialog.update_idletasks()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        self.dialog.geometry(f"+{px + max(0, (pw - 450) // 2)}+{py + max(0, (ph - 420) // 2)}")
+
+        header = tk.Frame(self.dialog, bg=BG_DARK)
+        header.pack(fill=tk.X, padx=15, pady=(15, 5))
+        tk.Label(
+            header,
+            text="🎯 Select Target Release",
+            font=("Segoe UI", 12, "bold"),
+            bg=BG_DARK,
+            fg=TEXT_MAIN,
+        ).pack(anchor=tk.W)
+
+        tk.Label(
+            header,
+            text=f"Current installed version: v{CURRENT_VERSION}",
+            font=("Segoe UI", 9),
+            bg=BG_DARK,
+            fg=TEXT_MUTED,
+        ).pack(anchor=tk.W, pady=(2, 0))
+
+        list_frame = tk.Frame(self.dialog, bg=BORDER_COLOR, bd=0, highlightbackground=BORDER_COLOR, highlightthickness=1)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+
+        self.listbox = tk.Listbox(
+            list_frame,
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            selectbackground=ACCENT,
+            selectforeground=BG_DARK,
+            font=("Segoe UI", 9),
+            borderwidth=0,
+            highlightthickness=0,
+            relief="flat",
+        )
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
+        sb = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.listbox.config(yscrollcommand=sb.set)
+
+        self.releases = []
+        self.listbox.insert(tk.END, "Loading releases from GitHub...")
+
+        manual_frame = tk.Frame(self.dialog, bg=BG_DARK)
+        manual_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+        tk.Label(
+            manual_frame,
+            text="Or enter specific tag / branch:",
+            font=("Segoe UI", 8, "bold"),
+            bg=BG_DARK,
+            fg=TEXT_MUTED,
+        ).pack(anchor=tk.W, pady=(0, 2))
+
+        self.manual_var = tk.StringVar()
+        entry = tk.Entry(
+            manual_frame,
+            textvariable=self.manual_var,
+            bg=BG_INPUT,
+            fg=TEXT_MAIN,
+            insertbackground=TEXT_MAIN,
+            font=("Segoe UI", 9),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=ACCENT,
+            relief="flat",
+        )
+        entry.pack(fill=tk.X, ipady=4)
+
+        btn_frame = tk.Frame(self.dialog, bg=BG_DARK)
+        btn_frame.pack(fill=tk.X, padx=15, pady=(5, 15))
+
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Cancel",
+            command=self.dialog.destroy,
+            bg=BG_PANEL,
+            fg=TEXT_MAIN,
+            activebackground=BG_INPUT,
+            activeforeground=TEXT_MAIN,
+            font=("Segoe UI", 9, "bold"),
+            bd=0,
+            relief="flat",
+            padx=12,
+            pady=6,
+            cursor="hand2",
+        )
+        cancel_btn.pack(side=tk.LEFT)
+
+        install_btn = tk.Button(
+            btn_frame,
+            text="🚀 Install Selected Version",
+            command=self._do_install,
+            bg=ACCENT,
+            fg=BG_DARK,
+            activebackground=ACCENT_ALT,
+            activeforeground=BG_DARK,
+            font=("Segoe UI", 9, "bold"),
+            bd=0,
+            relief="flat",
+            padx=14,
+            pady=6,
+            cursor="hand2",
+        )
+        install_btn.pack(side=tk.RIGHT)
+
+        threading.Thread(target=self._fetch_releases, daemon=True).start()
+
+    def _fetch_releases(self):
+        try:
+            from mudae_core.versioning import fetch_available_releases
+            rels = fetch_available_releases(platform="pc")
+            self.dialog.after(0, lambda: self._populate(rels))
+        except Exception:
+            self.dialog.after(0, lambda: self._populate([]))
+
+    def _populate(self, rels):
+        self.releases = rels
+        self.listbox.delete(0, tk.END)
+        if not rels:
+            self.listbox.insert(tk.END, "v4.9.1-beta.3 [Beta]")
+            self.listbox.insert(tk.END, "v4.9.0 [Stable]")
+            self.listbox.insert(tk.END, "v4.8.10 [Stable]")
+            return
+        for r in rels:
+            tag = r.get("tag", "")
+            pre = " [Beta]" if r.get("prerelease") else " [Stable]"
+            self.listbox.insert(tk.END, f"{tag}{pre}")
+        self.listbox.bind("<<ListboxSelect>>", self._on_select)
+
+    def _on_select(self, event=None):
+        sel = self.listbox.curselection()
+        if sel and sel[0] < len(self.releases):
+            tag = self.releases[sel[0]].get("tag", "")
+            self.manual_var.set(tag)
+
+    def _do_install(self):
+        target = self.manual_var.get().strip()
+        if not target:
+            sel = self.listbox.curselection()
+            if sel and sel[0] < len(self.releases):
+                target = self.releases[sel[0]].get("tag", "")
+        if not target:
+            messagebox.showwarning("Warning", "Please select or enter a version tag to install.", parent=self.dialog)
+            return
+        self.dialog.destroy()
+        self.on_install(target)
+
+
 class PresetEditor:
     def __init__(self, root):
         self.root = root
@@ -1376,6 +1541,19 @@ class PresetEditor:
             hover_bg=BG_INPUT,
             font=("Segoe UI", 8, "bold"),
         ).pack(fill=tk.X)
+
+        self.create_flat_button(
+            update_frame,
+            "🎯 Switch / Pick Version...",
+            self.open_version_selector,
+            bg_color=BG_PANEL,
+            fg_color=TEXT_MAIN,
+            hover_bg=BG_INPUT,
+            font=("Segoe UI", 8, "bold"),
+        ).pack(fill=tk.X, pady=(4, 0))
+
+        # Right side - Settings panel
+        self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
         self.settings_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # First-run users start in the guided flow. The existing form remains
@@ -3699,10 +3877,34 @@ class PresetEditor:
         except Exception as e:
             messagebox.showerror("Update Error", f"Update check failed:\n{e}", parent=self.root)
 
+    def open_version_selector(self):
+        """Open the version selector dialog to install any target release."""
+        def on_install(target_version):
+            confirm = messagebox.askyesno(
+                "Confirm Version Switch",
+                f"Switch MudaRemote installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
+                parent=self.root,
+            )
+            if not confirm:
+                return
+            try:
+                import mudae_bot
+                res = mudae_bot.check_for_updates(target_version=target_version)
+                if res in {"source", "frozen"}:
+                    messagebox.showinfo("Updating", f"Installation of {target_version} initiated.", parent=self.root)
+                elif res == "current":
+                    messagebox.showinfo("MudaRemote", f"Already running {target_version}.", parent=self.root)
+                elif res == "failed":
+                    messagebox.showerror("Error", f"Failed to switch to {target_version}. Check logs.", parent=self.root)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to install {target_version}:\n{e}", parent=self.root)
+
+        VersionSelectorDialog(self.root, on_install)
+
+
 def launch_gui():
     """Launch the Tkinter GUI preset editor."""
     # When built with --console (needed for headless bot mode), hide the console
-    # window in GUI mode so double-clicking the .exe looks clean.
     if sys.platform == "win32" and getattr(sys, 'frozen', False):
         try:
             import ctypes

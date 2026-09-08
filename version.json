@@ -4,7 +4,8 @@
     "Improvements": [
       "**Transactional frozen updates (PC):** Frozen Windows updates now use isolated per-attempt staging directories and kernel-level exclusive file locking (`update_frozen_install.lock`), cleanly rejecting conflicting concurrent updates without file corruption.",
       "**Literal argument preservation:** Arguments are safely transported via structured JSON and passed directly through Win32 `CreateProcessW`, preserving spaces, quotes, `%PATH%`, ampersands, and Unicode without batch interpolation or environment expansion vulnerabilities.",
-      "**Immutable generations & staged activation (Android):** Android Python runtime updates are placed into versioned, immutable generation directories (`generations/gen_<timestamp>`). Live sessions remain pinned to their active generation while new updates are staged cleanly (`vX.Y.Z staged`) until the next application restart."
+      "**Immutable generations & staged activation (Android):** Android Python runtime updates are placed into versioned, immutable generation directories (`generations/gen_<timestamp>`). Live sessions remain pinned to their active generation while new updates are staged cleanly (`vX.Y.Z staged`) until the next application restart.",
+      "**Target version selection (PC & Android):** Pick and switch to any release version directly from the GUI on both PC (Preset Editor sidebar) and Android (Python Engine card), with full preset and data safety."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
@@ -15,17 +16,17 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "04d7e9dde0aa9b645cf19d41629b30ac622c76c63b8a10bc92426a852e73697f"
+      "sha256": "aae161b8c9e5f108b59c57b685a8a101f2844872e11742d43853e7467469d53b"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-      "sha256": "34f15a8634f40015ae205cb444bc6ea99a2284599bd1c0aa025f8233d7af7c0e"
+      "sha256": "e0f1cb944f5857e0689cc8bc0630c53927551af6a0240c01148c0a480c2ed9d8"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/__init__.py",
-      "sha256": "7bbe460c381c6d17520522ec9771502c05351436e000b9968257d5ca74044c00"
+      "sha256": "9afccc2aebcc9e3d3073ed44da6f17fb20c71811125f99281c44a8be669295da"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -80,12 +81,12 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/updater.py",
-      "sha256": "a950daf34506e83834e175e1fc06a65b662183aaecbcf12e0a177b46d02b67f4"
+      "sha256": "a9ba64180d8e8ae912b5f05a5f96e920b1b4ae623742d994b24ac74817d7aeef"
     },
     {
       "path": "mudae_core/versioning.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/versioning.py",
-      "sha256": "a57879efb9661e231e37ce9e6b10b49401a3ac4d0ceb332ffc36355d64bcc47e"
+      "sha256": "c8d7a6560e0162cdc416dd49b71ec9c0ca0edd61b66f1a0e89b24da1350337a2"
     },
     {
       "path": "requirements.txt",

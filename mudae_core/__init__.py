@@ -154,10 +154,19 @@ from .status import (
     tu_cache_seconds_remaining,
     tu_retry_wait,
 )
-from .updater import UpdateError, apply_update, format_update_changelog, discover_update_manifest, recover_interrupted_update
+from .updater import (
+    UpdateError,
+    apply_update,
+    discover_update_manifest,
+    format_update_changelog,
+    install_specific_version,
+    recover_interrupted_update,
+)
 from .versioning import (
     CURRENT_VERSION,
     compare_versions,
+    fetch_available_releases,
+    fetch_manifest_for_version,
     get_update_manifest_url,
     get_update_manifest_urls,
     is_newer_version,
@@ -330,5 +339,8 @@ __all__ = [
     "validate_preset",
     "load_update_channel_setting",
     "save_update_channel_setting",
+    "fetch_available_releases",
+    "fetch_manifest_for_version",
+    "install_specific_version",
     "wait_until_resumed",
 ]

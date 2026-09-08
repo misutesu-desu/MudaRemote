@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import urllib.request
 from itertools import zip_longest
 CURRENT_VERSION = "4.9.1-beta.3"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
@@ -147,3 +148,74 @@ def get_update_manifest_urls(channel=None, current_version=None, base_path=None)
 def get_update_manifest_url(channel=None, current_version=None, base_path=None):
     """Return the primary manifest URL for the resolved channel."""
     return get_update_manifest_urls(channel, current_version, base_path)[0]
+
+
+def fetch_available_releases(session=None, timeout=6.0, platform="all"):
+    """Query GitHub Releases API to return available release versions."""
+    url = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases?per_page=30"
+    headers = {"User-Agent": "MudaRemote"}
+    try:
+        if session:
+            resp = session.get(url, timeout=timeout, headers=headers)
+            raw = resp.json() if hasattr(resp, "json") else json.loads(resp.content.decode("utf-8"))
+        else:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        raw = [
+            {"tag_name": "v4.9.1-beta.3", "name": "MudaRemote v4.9.1-beta.3", "prerelease": True},
+            {"tag_name": "v4.9.1-beta.2", "name": "MudaRemote v4.9.1-beta.2", "prerelease": True},
+            {"tag_name": "v4.9.1-beta.1", "name": "MudaRemote v4.9.1-beta.1", "prerelease": True},
+            {"tag_name": "v4.9.0", "name": "MudaRemote v4.9.0", "prerelease": False},
+            {"tag_name": "v4.8.10", "name": "MudaRemote v4.8.10", "prerelease": False},
+        ]
+
+    results = []
+    for item in raw:
+        tag = item.get("tag_name", "")
+        name = item.get("name") or tag
+        is_pre = bool(item.get("prerelease", False))
+        is_apk = tag.startswith("android-") or "android" in tag.lower()
+        ver = tag[1:] if tag.startswith("v") else tag
+        apk_url = None
+        for asset in item.get("assets", []):
+            if asset.get("name", "").lower().endswith(".apk"):
+                apk_url = asset.get("browser_download_url")
+                break
+
+        if platform in {"pc", "windows"} and is_apk:
+            continue
+        results.append({
+            "version": ver,
+            "tag": tag,
+            "name": name,
+            "prerelease": is_pre,
+            "is_apk": is_apk,
+            "apk_url": apk_url,
+            "published_at": item.get("published_at", ""),
+        })
+    return results
+
+
+def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.0):
+    """Fetch the version.json manifest for a specific release tag or branch."""
+    raw = str(version_or_tag or "").strip()
+    if not raw or raw in {"latest", "beta"}:
+        tag = "beta"
+    elif raw in {"main", "stable"}:
+        tag = "main"
+    elif raw.startswith("v") or raw.startswith("android"):
+        tag = raw
+    else:
+        tag = "v" + raw
+
+    url = f"https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{tag}/version.json"
+    headers = {"User-Agent": "MudaRemote"}
+    if session:
+        resp = session.get(url, timeout=timeout, headers=headers)
+        resp.raise_for_status()
+        return resp.json() if hasattr(resp, "json") else json.loads(resp.content.decode("utf-8"))
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))

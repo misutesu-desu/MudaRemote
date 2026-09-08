@@ -468,6 +468,7 @@ def _download_file(url, timeout_seconds=15.0):
         with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
             return resp.read()
 
+
 def _format_changelog(manifest):
     changelog = manifest.get("changelog") if isinstance(manifest, dict) else None
     if isinstance(changelog, str):
@@ -484,7 +485,35 @@ def _format_changelog(manifest):
         if sections:
             return "\n\n".join(sections)
     return "No changelog provided."
-def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=None):
+
+
+def fetch_available_versions(platform="android"):
+    """Return JSON string of available releases for Android."""
+    try:
+        from mudae_core.versioning import fetch_available_releases
+        releases = fetch_available_releases(platform=platform)
+    except Exception:
+        releases = [
+            {"version": "4.9.1-beta.3", "tag": "v4.9.1-beta.3", "name": "v4.9.1-beta.3", "prerelease": True},
+            {"version": "4.9.0", "tag": "v4.9.0", "name": "v4.9.0", "prerelease": False},
+        ]
+    return json.dumps(releases, ensure_ascii=False)
+
+
+def install_specific_version(files_dir, version_or_tag):
+    """Download, stage, and activate a specific version in android app storage."""
+    files_dir = str(files_dir)
+    with _lock:
+        _configure_storage(files_dir)
+        try:
+            from mudae_core.versioning import fetch_manifest_for_version
+            manifest = fetch_manifest_for_version(version_or_tag=version_or_tag)
+        except Exception as e:
+            return json.dumps({"status": "error", "error": f"Failed to fetch manifest for {version_or_tag}: {e}"}, ensure_ascii=False)
+        return check_and_apply_update(files_dir, force=True, manifest_override=manifest)
+
+
+def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=None, manifest_override=None):
     """Check remote version and download/compile updated Python modules into android app storage."""
     files_dir = str(files_dir)
     with _lock:
@@ -503,8 +532,12 @@ def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=
                 return {"status": "available", "manifest": _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel), "version": "unknown"}
 
         try:
-            _log("Checking for Python runtime updates (installed: v{}, channel: {})...".format(current_version, channel), "UPDATER", "INFO")
-            manifest = _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel)
+            if manifest_override and isinstance(manifest_override, dict):
+                manifest = manifest_override
+                _log("Applying targeted version manifest (v{})...".format(manifest.get("version")), "UPDATER", "INFO")
+            else:
+                _log("Checking for Python runtime updates (installed: v{}, channel: {})...".format(current_version, channel), "UPDATER", "INFO")
+                manifest = _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel)
             if not isinstance(manifest, dict):
                 return json.dumps({"status": "error", "error": "Invalid update manifest.", "version": current_version}, ensure_ascii=False)
             latest_version = str(manifest.get("version") or "").strip()

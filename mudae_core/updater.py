@@ -693,10 +693,10 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable):
         handle.write(batch)
 
     return batch_path
-def apply_update(session, manifest, current_version, base_path, frozen=False, executable=None):
-    """Apply a newer verified update. Return one of: current, git, source, frozen."""
+def apply_update(session, manifest, current_version, base_path, frozen=False, executable=None, force=False):
+    """Apply a newer verified update (or force a specific version). Return one of: current, git, source, frozen."""
     latest_version = manifest.get("version")
-    if not latest_version or not is_newer_version(latest_version, current_version):
+    if not latest_version or (not force and not is_newer_version(latest_version, current_version)):
         return "current"
     if frozen:
         batch_path = _stage_frozen_update(session, manifest, base_path, executable or sys.executable)
@@ -715,3 +715,22 @@ def apply_update(session, manifest, current_version, base_path, frozen=False, ex
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)
     return "source"
+
+
+def install_specific_version(session, version_or_tag, current_version, base_path, frozen=False, executable=None):
+    """Fetch the manifest for a specific release version and apply it transactionally."""
+    from .versioning import fetch_manifest_for_version
+    manifest = fetch_manifest_for_version(session, version_or_tag)
+    target_ver = manifest.get("version")
+    if not target_ver:
+        raise UpdateError(f"Could not load valid update manifest for version '{version_or_tag}'.")
+    status = apply_update(
+        session,
+        manifest,
+        current_version,
+        base_path,
+        frozen=frozen,
+        executable=executable,
+        force=True,
+    )
+    return status, manifest

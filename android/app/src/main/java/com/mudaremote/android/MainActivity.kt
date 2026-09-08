@@ -735,6 +735,18 @@ class MainActivity : ComponentActivity() {
         actionRow.addView(btnRevert, LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(actionRow)
 
+        val selectVersionBtn = TextView(this).apply {
+            text = "🎯 Switch / Pick Version..."
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            gravity = Gravity.CENTER
+            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
+            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
+            setOnClickListener { promptSelectVersion() }
+        }
+        card.addView(selectVersionBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 6) })
+
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = UiTheme.dp(this@MainActivity, 8)
@@ -1897,7 +1909,6 @@ class MainActivity : ComponentActivity() {
                 isUpdateInFlight = false
                 loadEngineVersion()
                 refreshLogs()
-            }
         }.start()
     }
 
@@ -1906,6 +1917,148 @@ class MainActivity : ComponentActivity() {
             .setTitle("Restore Bundled Version")
             .setMessage("Restore Python runtime to the bundled APK version? Staged update cache will be cleared.")
             .setPositiveButton("Restore") { _, _ -> resetPythonRuntime() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptSelectVersion() {
+        toast("Fetching available releases...")
+        Thread {
+            try {
+                PythonRuntime.ensureStarted(applicationContext)
+                val relsJson = Python.getInstance().getModule("android_bridge")
+                    .callAttr("fetch_available_versions", "android")
+                    .toString()
+                val array = JSONArray(relsJson)
+                val items = mutableListOf<Pair<String, String>>()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val tag = obj.optString("tag", "")
+                    val isPre = obj.optBoolean("prerelease", false)
+                    val isApk = obj.optBoolean("is_apk", false)
+                    val typeLabel = if (isApk) "[APK]" else if (isPre) "[Beta]" else "[Stable]"
+                    items.add(Pair(tag, "$tag $typeLabel"))
+                }
+                if (items.isEmpty()) {
+                    items.add(Pair("v4.9.1-beta.3", "v4.9.1-beta.3 [Beta]"))
+                    items.add(Pair("v4.9.0", "v4.9.0 [Stable]"))
+                    items.add(Pair("v4.8.10", "v4.8.10 [Stable]"))
+                }
+                runOnUiThread {
+                    val displayNames = items.map { it.second }.toTypedArray()
+                    AlertDialog.Builder(this)
+                        .setTitle("🎯 Switch Target Version")
+                        .setItems(displayNames) { _, which ->
+                            val selectedTag = items[which].first
+                            if (selectedTag.startsWith("android-")) {
+                                toast("Opening APK download for $selectedTag...")
+                                val url = "https://github.com/misutesu-desu/MudaRemote/releases/tag/$selectedTag"
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                } catch (e: Exception) {
+                                    toast("Could not open browser: ${e.message}")
+                                }
+                            } else {
+                                promptConfirmInstallVersion(selectedTag)
+                            }
+                        }
+                        .setNeutralButton("Custom Tag") { _, _ ->
+                            promptCustomVersionInput()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    toast("Failed to fetch releases: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
+    private fun promptConfirmInstallVersion(tag: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Confirm Version Switch")
+            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.")
+            .setPositiveButton("Install") { _, _ ->
+                installSpecificPythonVersion(tag)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptCustomVersionInput() {
+        val input = EditText(this).apply {
+            hint = "e.g. v4.9.0 or v4.9.1-beta.2"
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Enter Version Tag")
+            .setView(input)
+            .setPositiveButton("Install") { _, _ ->
+                val tag = input.text.toString().trim()
+                if (tag.isNotBlank()) {
+                    installSpecificPythonVersion(tag)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun installSpecificPythonVersion(tag: String) {
+        if (isUpdateInFlight) {
+            toast("Another runtime operation is in progress...")
+            return
+        }
+        isUpdateInFlight = true
+        updateStatusBadge("● Installing $tag...", UiTheme.ACCENT_YELLOW)
+        beginLogSession()
+        toast("Installing $tag...")
+
+        Thread {
+            try {
+                PythonRuntime.ensureStarted(applicationContext)
+                val resultJson = Python.getInstance().getModule("android_bridge")
+                    .callAttr("install_specific_version", filesDir.absolutePath, tag)
+                    .toString()
+                val result = JSONObject(resultJson)
+                val status = result.optString("status", "")
+                val ver = result.optString("version", tag)
+                val error = result.optString("error", "")
+
+                runOnUiThread {
+                    when (status) {
+                        "updated" -> {
+                            updateStatusBadge("● Updated v$ver", UiTheme.ACCENT_GREEN_BRIGHT)
+                            toast("Successfully updated to v$ver! 🌟")
+                        }
+                        "staged" -> {
+                            updateStatusBadge("● Staged v$ver", UiTheme.ACCENT_YELLOW)
+                            toast("v$ver staged — restart runtime to apply.")
+                        }
+                        "current" -> {
+                            updateStatusBadge("● Active v$ver", UiTheme.ACCENT_BLUE)
+                            toast("Already running v$ver.")
+                        }
+                        else -> {
+                            updateStatusBadge("● Error", UiTheme.ACCENT_RED_BRIGHT)
+                            toast(if (error.isNotBlank()) "Error: $error" else "Install failed.")
+                        }
+                    }
+                    loadEngineVersion()
+                    refreshLogs()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    updateStatusBadge("● Error", UiTheme.ACCENT_RED_BRIGHT)
+                    toast("Install error: ${e.message}")
+                    refreshLogs()
+                }
+            } finally {
+                isUpdateInFlight = false
+            }
+        }.start()
+    }
             .setNegativeButton("Cancel", null)
             .show()
     }
