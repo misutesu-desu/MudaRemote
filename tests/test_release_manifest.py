@@ -32,11 +32,18 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_runtime_and_manifest_versions_match(self):
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
             version = json.load(handle)["version"]
-        with open(os.path.join(PROJECT_ROOT, "mudae_bot.py"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(PROJECT_ROOT, "mudae_core", "versioning.py"), "r", encoding="utf-8") as handle:
             match = re.search(r'^CURRENT_VERSION = "([^"]+)"', handle.read(), re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), version)
 
+        import mudae_bot
+        self.assertEqual(mudae_bot.CURRENT_VERSION, version)
+
+        from mudae_core.versioning import CURRENT_VERSION as VERSIONING_VERSION
+        from mudae_core import CURRENT_VERSION as CORE_VERSION
+        self.assertEqual(VERSIONING_VERSION, version)
+        self.assertEqual(CORE_VERSION, version)
     def test_manifest_includes_changelog_for_update_confirmation(self):
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
             changelog = json.load(handle).get("changelog")

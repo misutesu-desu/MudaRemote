@@ -11,10 +11,11 @@ from unittest import mock
 
 # Ensure android python directory is in path for testing
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 ANDROID_PYTHON_DIR = os.path.join(PROJECT_ROOT, "android", "app", "src", "main", "python")
 if ANDROID_PYTHON_DIR not in sys.path:
     sys.path.insert(0, ANDROID_PYTHON_DIR)
-
 if os.path.isfile(os.path.join(ANDROID_PYTHON_DIR, "android_bridge.py")):
     import android_bridge
 else:
@@ -44,7 +45,13 @@ class AndroidUpdaterTests(unittest.TestCase):
     def tearDown(self):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
-
+        for p in list(sys.path):
+            if "android-test-" in p:
+                sys.path.remove(p)
+        for m in list(sys.modules.keys()):
+            if m == "mudae_bot" or m.startswith("mudae_core"):
+                sys.modules.pop(m, None)
+        import mudae_core.updater
     def test_get_installed_version_defaults_to_bundled(self):
         info_json = android_bridge.get_runtime_info(self.temp_dir)
         info = json.loads(info_json)
@@ -70,7 +77,7 @@ class AndroidUpdaterTests(unittest.TestCase):
             ],
         }
 
-        def mock_download_manifest(timeout_seconds=8.0):
+        def mock_download_manifest(*args, **kwargs):
             return manifest
 
         def mock_download_file(url, timeout_seconds=15.0):
@@ -86,7 +93,7 @@ class AndroidUpdaterTests(unittest.TestCase):
         self.assertEqual(result["version"], "9.9.9")
 
         # Verify files were staged and written
-        code_dir = os.path.join(self.temp_dir, "python_code")
+        code_dir = android_bridge._get_python_code_dir(self.temp_dir)
         self.assertTrue(os.path.isfile(os.path.join(code_dir, "mudae_bot.py")))
         self.assertTrue(os.path.isfile(os.path.join(code_dir, ".version")))
         with open(os.path.join(code_dir, ".version"), "r", encoding="utf-8") as vh:
@@ -130,6 +137,162 @@ class AndroidUpdaterTests(unittest.TestCase):
         self.assertEqual(res["status"], "reset")
         self.assertFalse(os.path.exists(code_dir))
 
+
+    def test_check_and_apply_update_includes_apk_update_metadata(self):
+        dummy_files = {
+            path: "# module content for {}\n".format(path).encode("utf-8")
+            for path in sorted(REQUIRED_SOURCE_PATHS)
+        }
+        manifest = {
+            "version": "9.9.9",
+            "apk_version": "1.3.0",
+            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.3.0/Mudaremote.apk",
+            "apk_version_code": 15,
+            "source_files": [
+                {
+                    "path": path,
+                    "url": "https://example.com/" + path,
+                    "sha256": hashlib.sha256(dummy_files[path]).hexdigest(),
+                }
+                for path in sorted(REQUIRED_SOURCE_PATHS)
+            ],
+        }
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._download_file", side_effect=lambda url, **kw: dummy_files[url.replace("https://example.com/", "")]):
+            result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
+        self.assertEqual(result["status"], "updated")
+        self.assertIsNotNone(result.get("apk_update"))
+        self.assertEqual(result["apk_update"]["version"], "1.3.0")
+        self.assertEqual(result["apk_update"]["version_code"], 15)
+
+    def test_check_and_apply_update_rejects_missing_required_files(self):
+        manifest = {
+            "version": "9.9.9",
+            "source_files": [
+                {
+                    "path": "mudae_bot.py",
+                    "url": "https://example.com/mudae_bot.py",
+                    "sha256": hashlib.sha256(b"content").hexdigest(),
+                }
+            ],
+        }
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._download_file", return_value=b"content"):
+            result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("incomplete", result["error"].lower())
+    def test_get_and_set_update_channel(self):
+        # Default channel
+        ch = android_bridge.get_update_channel(self.temp_dir)
+        self.assertIn(ch, {"beta", "main"})
+
+        # Toggle to main/stable
+        res = json.loads(android_bridge.set_update_channel(self.temp_dir, "main"))
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res["channel"], "main")
+        self.assertEqual(android_bridge.get_update_channel(self.temp_dir), "main")
+
+        # Toggle back to beta
+        res = json.loads(android_bridge.set_update_channel(self.temp_dir, "beta"))
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res["channel"], "beta")
+        self.assertEqual(android_bridge.get_update_channel(self.temp_dir), "beta")
+
+    def test_reset_to_bundled_code_blocks_when_running(self):
+        with mock.patch("android_bridge._running", True):
+            result = json.loads(android_bridge.reset_to_bundled_code(self.temp_dir))
+            self.assertEqual(result["status"], "error")
+            self.assertIn("Cannot reset", result["error"])
+
+    def test_load_mudae_bot_reloads_when_installed_version_differs(self):
+        code_dir = os.path.join(self.temp_dir, "python_code")
+        os.makedirs(code_dir, exist_ok=True)
+        bot_file = os.path.join(code_dir, "mudae_bot.py")
+        with open(bot_file, "w") as f:
+            f.write("CURRENT_VERSION = '2.0.0'\n")
+        with open(os.path.join(code_dir, ".version"), "w") as f:
+            f.write("2.0.0")
+
+        fake_old_mod = mock.MagicMock()
+        fake_old_mod.__file__ = bot_file
+        fake_old_mod.CURRENT_VERSION = "1.0.0"  # Stale loaded module version
+
+        with mock.patch.dict("sys.modules", {"mudae_bot": fake_old_mod}):
+            with mock.patch("android_bridge._evict_mudae_modules") as mock_evict:
+                # Should detect version difference and call evict
+                android_bridge._load_mudae_bot(self.temp_dir)
+                mock_evict.assert_called_once()
+
+    def test_apk_update_included_when_python_is_current(self):
+        manifest = {
+            "version": "1.0.0",  # older or equal
+            "apk_version": "1.4.0",
+            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.4.0/Mudaremote.apk",
+            "apk_version_code": 16,
+        }
+        with mock.patch("android_bridge._download_manifest", return_value=manifest):
+            result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=False))
+        self.assertEqual(result["status"], "current")
+        self.assertIsNotNone(result.get("apk_update"))
+        self.assertEqual(result["apk_update"]["version"], "1.4.0")
+
+    def test_load_mudae_bot_cleans_poisoned_version_on_import_failure(self):
+        gen_dir = os.path.join(self.temp_dir, "python_code", "generations", "bad_gen")
+        os.makedirs(gen_dir, exist_ok=True)
+        # Corrupted mudae_bot that cannot be imported
+        with open(os.path.join(gen_dir, "mudae_bot.py"), "w") as f:
+            f.write("raise RuntimeError('Fatal syntax/import error in updated code')\n")
+        android_bridge._write_selection(self.temp_dir, "bad_gen", "9.9.9")
+
+        # When loaded, it should catch the failure, remove selection, and fall back to bundled
+        android_bridge._load_mudae_bot(self.temp_dir)
+        self.assertIsNone(android_bridge._read_selection(self.temp_dir))
+        info = json.loads(android_bridge.get_runtime_info(self.temp_dir))
+        self.assertFalse(info["is_updated"])
+        self.assertEqual(info["installed_version"], android_bridge.get_bundled_version())
+
+    def test_generation_isolation_during_active_runtime(self):
+        dummy_files = {
+            path: "# module content for {}\n".format(path).encode("utf-8")
+            for path in sorted(REQUIRED_SOURCE_PATHS)
+        }
+        manifest = {
+            "version": "10.0.0",
+            "source_files": [
+                {
+                    "path": path,
+                    "url": "https://example.com/" + path,
+                    "sha256": hashlib.sha256(dummy_files[path]).hexdigest(),
+                }
+                for path in sorted(REQUIRED_SOURCE_PATHS)
+            ],
+        }
+        # Pin active generation
+        android_bridge._active_generation_dir = os.path.join(self.temp_dir, "python_code", "generations", "pinned_gen")
+        os.makedirs(android_bridge._active_generation_dir, exist_ok=True)
+        with open(os.path.join(android_bridge._active_generation_dir, "mudae_bot.py"), "w") as f:
+            f.write("# pinned generation\n")
+
+        with mock.patch("android_bridge._running", True), \
+             mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._download_file", side_effect=lambda url, **kw: dummy_files[url.replace("https://example.com/", "")]):
+            res = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
+
+        self.assertEqual(res["status"], "staged")
+        # Active generation must NOT have been overwritten
+        with open(os.path.join(android_bridge._active_generation_dir, "mudae_bot.py"), "r") as f:
+            self.assertEqual(f.read(), "# pinned generation\n")
+        # Selection points to the new generation
+        sel = android_bridge._read_selection(self.temp_dir)
+        self.assertIsNotNone(sel)
+        self.assertEqual(sel["version"], "10.0.0")
+        self.assertNotEqual(sel["selected_generation"], "pinned_gen")
+        android_bridge._active_generation_dir = None
+
+    def test_download_manifest_raises_on_discovery_error(self):
+        with mock.patch("mudae_core.updater.discover_update_manifest", return_value={"status": "error", "error": "Simulated primary outage"}):
+            with self.assertRaisesRegex(RuntimeError, "Simulated primary outage"):
+                android_bridge._download_manifest()
     def test_mudae_bot_mobile_hooks_and_run_cli(self):
         self.assertTrue(hasattr(mudae_bot, "shutdown_mobile_runtime"))
         self.assertTrue(hasattr(mudae_bot, "reset_mobile_runtime"))

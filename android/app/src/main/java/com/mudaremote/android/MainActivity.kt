@@ -667,10 +667,49 @@ class MainActivity : ComponentActivity() {
         }
         card.addView(desc)
 
+        val channelRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 8))
+        }
+        val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
+        val isBeta = prefs.getBoolean("pref_beta_channel", true)
+
+        val channelLabel = TextView(this).apply {
+            text = if (isBeta) "Channel: Beta (Previews)" else "Channel: Stable (Official)"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (isBeta) UiTheme.ACCENT_PURPLE else UiTheme.TEXT_MUTED)
+        }
+
+        val betaSwitch = Switch(this).apply {
+            text = "🧪 Beta Updates"
+            textSize = 12f
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            isChecked = isBeta
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("pref_beta_channel", checked).apply()
+                val ch = if (checked) "beta" else "main"
+                channelLabel.text = if (checked) "Channel: Beta (Previews)" else "Channel: Stable (Official)"
+                channelLabel.setTextColor(if (checked) UiTheme.ACCENT_PURPLE else UiTheme.TEXT_MUTED)
+                Thread {
+                    try {
+                        PythonRuntime.ensureStarted(applicationContext)
+                        Python.getInstance().getModule("android_bridge")
+                            .callAttr("set_update_channel", filesDir.absolutePath, ch)
+                    } catch (_: Exception) {}
+                }.start()
+                val msg = if (checked) "Beta channel enabled. Preview releases will be checked." else "Stable channel enabled. Only official releases will be checked."
+                toast(msg)
+                loadEngineVersion()
+            }
+        }
+        channelRow.addView(betaSwitch, LinearLayout.LayoutParams(0, -2, 1f))
+        channelRow.addView(channelLabel, LinearLayout.LayoutParams(-2, -2))
+        card.addView(channelRow)
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-
         val btnUpdate = TextView(this).apply {
             text = "🔄 Pull & Apply Updates"
             textSize = 12f
@@ -1728,9 +1767,16 @@ class MainActivity : ComponentActivity() {
                     .callAttr("get_runtime_info", filesDir.absolutePath)
                     .toString()
                 val info = JSONObject(infoJson)
-                val current = info.optString("current_version", "1.0.0")
+                val installed = info.optString("installed_version", info.optString("current_version", "4.9.1-beta.2"))
+                val live = info.optString("live_version", "")
                 val isUpdated = info.optBoolean("is_updated", false)
-                val label = "🐍 Python Engine: v$current ${if (isUpdated) "(Live Release)" else "(Bundled)"}"
+                val isStaged = info.optBoolean("is_staged", false)
+                val displayVer = if (live.isNotBlank()) live else installed
+                val statusTag = if (isStaged) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
+                val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
+                val isBeta = prefs.getBoolean("pref_beta_channel", true)
+                val channelBadge = if (isBeta) "[Beta]" else "[Stable]"
+                val label = "🐍 Python Engine: v$displayVer $statusTag $channelBadge"
                 lastEngineLabel = label
                 runOnUiThread {
                     if (::engineVersionText.isInitialized) {
@@ -1764,16 +1810,45 @@ class MainActivity : ComponentActivity() {
             var badgeText = "● Fetch failed"
             var badgeColor = UiTheme.ACCENT_RED_BRIGHT
             var message = ""
+            var apkNoticeUrl = ""
+            var apkNoticeVer = ""
             try {
                 PythonRuntime.ensureStarted(applicationContext)
+                val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
+                val isBeta = prefs.getBoolean("pref_beta_channel", true)
+                val ch = if (isBeta) "beta" else "main"
                 val resultJson = Python.getInstance().getModule("android_bridge")
-                    .callAttr("check_and_apply_update", filesDir.absolutePath, force, 10.0)
+                    .callAttr("check_and_apply_update", filesDir.absolutePath, force, 10.0, ch)
                     .toString()
                 val result = JSONObject(resultJson)
                 val resStatus = result.optString("status", "")
                 val version = result.optString("version", "")
                 val error = result.optString("error", "")
-
+                val apkObj = result.optJSONObject("apk_update")
+                if (apkObj != null) {
+                    val rawUrl = apkObj.optString("url", "")
+                    val rawVer = apkObj.optString("version", "")
+                    val rawCode = apkObj.optLong("version_code", 0L)
+                    var isEligible = false
+                    if (rawCode > 0L && rawUrl.isNotBlank()) {
+                        try {
+                            val pInfo = packageManager.getPackageInfo(packageName, 0)
+                            val installedCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                pInfo.longVersionCode
+                            } else {
+                                @Suppress("DEPRECATION")
+                                pInfo.versionCode.toLong()
+                            }
+                            isEligible = rawCode > installedCode
+                        } catch (_: Exception) {
+                            isEligible = false
+                        }
+                    }
+                    if (isEligible) {
+                        apkNoticeUrl = rawUrl
+                        apkNoticeVer = rawVer
+                    }
+                }
                 when (resStatus) {
                     "updated" -> {
                         badgeText = "● Updated v$version"; badgeColor = UiTheme.ACCENT_GREEN_BRIGHT
@@ -1799,9 +1874,26 @@ class MainActivity : ComponentActivity() {
             val finalBadge = badgeText
             val finalColor = badgeColor
             val finalMessage = message
+            val finalApkUrl = apkNoticeUrl
+            val finalApkVer = apkNoticeVer
             runOnUiThread {
                 updateStatusBadge(finalBadge, finalColor)
                 if (finalMessage.isNotBlank()) toast(finalMessage)
+                if (finalApkUrl.isNotBlank() && !isFinishing) {
+                    AlertDialog.Builder(this)
+                        .setTitle("📱 New Android APK Available")
+                        .setMessage("A newer MudaRemote Android APK (v$finalApkVer) is available. Native UI and service updates require installing the APK.\n\nOpen the download page?")
+                        .setPositiveButton("Download") { _, _ ->
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalApkUrl))
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                toast("Could not open browser: ${e.message}")
+                            }
+                        }
+                        .setNegativeButton("Later", null)
+                        .show()
+                }
                 isUpdateInFlight = false
                 loadEngineVersion()
                 refreshLogs()

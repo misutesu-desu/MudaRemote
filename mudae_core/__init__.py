@@ -154,8 +154,18 @@ from .status import (
     tu_cache_seconds_remaining,
     tu_retry_wait,
 )
-from .updater import UpdateError, apply_update, format_update_changelog
-from .versioning import compare_versions, is_newer_version
+from .updater import UpdateError, apply_update, format_update_changelog, discover_update_manifest, recover_interrupted_update
+from .versioning import (
+    CURRENT_VERSION,
+    compare_versions,
+    get_update_manifest_url,
+    get_update_manifest_urls,
+    is_newer_version,
+    is_prerelease,
+    load_update_channel_setting,
+    resolve_update_channel,
+    save_update_channel_setting,
+)
 from .webhooks import WebhookDispatcher
 
 __all__ = [
@@ -216,9 +226,18 @@ __all__ = [
     "ServerResetCoordinator",
     "ServerResetSnapshot",
     "ResetAnchor",
+    "CURRENT_VERSION",
     "UpdateError",
     "apply_update",
     "format_update_changelog",
+    "discover_update_manifest",
+    "recover_interrupted_update",
+    "compare_versions",
+    "is_newer_version",
+    "is_prerelease",
+    "resolve_update_channel",
+    "get_update_manifest_url",
+    "get_update_manifest_urls",
     "active_stagger_seconds",
     "normal_roll_behavior_flags",
     "estimate_roll_batch_seconds",
@@ -309,5 +328,7 @@ __all__ = [
     "tu_cache_seconds_remaining",
     "tu_retry_wait",
     "validate_preset",
+    "load_update_channel_setting",
+    "save_update_channel_setting",
     "wait_until_resumed",
 ]

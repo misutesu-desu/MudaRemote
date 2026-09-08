@@ -26,17 +26,28 @@ try:
         validate_preset,
     )
     from mudae_core.secrets import SecretStoreError
+    from mudae_core.versioning import (
+        CURRENT_VERSION,
+        load_update_channel_setting,
+        resolve_update_channel,
+        save_update_channel_setting,
+    )
 except (ModuleNotFoundError, ImportError) as core_error:
     missing_module = str(getattr(core_error, "name", ""))
     if missing_module and not missing_module.startswith("mudae_core"):
         raise
     if not missing_module and "mudae_core" not in str(core_error):
         raise
-    # Legacy source updaters only fetched the bot/editor pair. Importing the
-    # updated bot runs its one-time verified bridge, then these imports succeed.
     import mudae_bot  # noqa: F401
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import atomic_write_json, load_json, parse_inactive_hours, parse_scheduled_times, validate_preset
+    from mudae_core.secrets import SecretStoreError
+    from mudae_core.versioning import (
+        CURRENT_VERSION,
+        load_update_channel_setting,
+        resolve_update_channel,
+        save_update_channel_setting,
+    )
     from mudae_core.secrets import SecretStoreError
 
 def get_base_path():
@@ -1311,8 +1322,60 @@ class PresetEditor:
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
         ).pack(fill=tk.X, pady=(5, 0))
 
-        # Right side - Settings panel
-        self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
+        # Update Channel & Manual Check
+        update_frame = tk.Frame(sidebar, bg=BG_DARK)
+        update_frame.pack(fill=tk.X, pady=(15, 0))
+
+        sep = tk.Frame(update_frame, height=1, bg=BORDER_COLOR)
+        sep.pack(fill=tk.X, pady=(0, 10))
+
+        channel_header = tk.Frame(update_frame, bg=BG_DARK)
+        channel_header.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(
+            channel_header,
+            text="Update Channel",
+            font=("Segoe UI", 9, "bold"),
+            bg=BG_DARK,
+            fg=TEXT_MAIN,
+        ).pack(side=tk.LEFT)
+
+        current_channel = resolve_update_channel()
+        self.beta_channel_var = tk.BooleanVar(value=(current_channel == "beta"))
+
+        def on_toggle_channel():
+            new_c = "beta" if self.beta_channel_var.get() else "main"
+            save_update_channel_setting(new_c)
+            self.channel_status_lbl.config(
+                text="Channel: Beta (Previews)" if new_c == "beta" else "Channel: Stable (Official)",
+                fg=ACCENT if new_c == "beta" else TEXT_MUTED,
+            )
+
+        self.beta_check = ttk.Checkbutton(
+            update_frame,
+            text="Include Beta Releases",
+            variable=self.beta_channel_var,
+            command=on_toggle_channel,
+        )
+        self.beta_check.pack(anchor=tk.W, pady=(0, 4))
+
+        self.channel_status_lbl = tk.Label(
+            update_frame,
+            text="Channel: Beta (Previews)" if current_channel == "beta" else "Channel: Stable (Official)",
+            font=("Segoe UI", 8),
+            bg=BG_DARK,
+            fg=ACCENT if current_channel == "beta" else TEXT_MUTED,
+        )
+        self.channel_status_lbl.pack(anchor=tk.W, pady=(0, 8))
+
+        self.create_flat_button(
+            update_frame,
+            "🔍 Check for Updates",
+            self.manual_check_updates,
+            bg_color=BG_PANEL,
+            fg_color=TEXT_MAIN,
+            hover_bg=BG_INPUT,
+            font=("Segoe UI", 8, "bold"),
+        ).pack(fill=tk.X)
         self.settings_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # First-run users start in the guided flow. The existing form remains
@@ -3602,6 +3665,39 @@ class PresetEditor:
         process.terminate()
         self.run_status_label.configure(text=f"Stopping: {self.current_preset}", fg=TEXT_MUTED)
 
+    def manual_check_updates(self):
+        """Check for updates using the currently selected update channel."""
+        try:
+            import mudae_bot
+            channel = "beta" if self.beta_channel_var.get() else "main"
+
+            def confirm_update(latest_version, changelog):
+                return messagebox.askyesno(
+                    "MudaRemote Update Available",
+                    (
+                        f"MudaRemote v{latest_version} is available.\n\n"
+                        f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
+                        f"Changelog:\n{changelog}\n\n"
+                        "Install this update now?\n\n"
+                        "Your saved presets will be kept."
+                    ),
+                    parent=self.root,
+                )
+
+            result = mudae_bot.check_for_updates(confirm_update=confirm_update, channel=channel)
+            if result == "current":
+                channel_name = "Beta (Previews)" if channel == "beta" else "Stable (Official)"
+                messagebox.showinfo(
+                    "MudaRemote Up to Date",
+                    f"You are running the latest version (v{CURRENT_VERSION}).\n\nActive Channel: {channel_name}",
+                    parent=self.root,
+                )
+            elif result == "disabled":
+                messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+            elif result == "failed":
+                messagebox.showerror("MudaRemote", "Update check encountered an error. Check console/logs.", parent=self.root)
+        except Exception as e:
+            messagebox.showerror("Update Error", f"Update check failed:\n{e}", parent=self.root)
 
 def launch_gui():
     """Launch the Tkinter GUI preset editor."""

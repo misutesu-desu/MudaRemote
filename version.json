@@ -1,29 +1,31 @@
 {
-  "version": "4.9.1-beta.2",
+  "version": "4.9.1-beta.3",
   "changelog": {
-    "Bug Fixes": [
-      "**Claim verification & ACK response handling:** Authoritative Mudae claim and cooldown outcomes arriving while awaiting Discord interaction ACKs are now observed immediately without waiting for full transport timeouts or emitting false delayed-ACK warnings, and verification rechecks text evidence after slow message refreshes to prevent redundant roll retries."
+    "Improvements": [
+      "**Transactional frozen updates (PC):** Frozen Windows updates now use isolated per-attempt staging directories and kernel-level exclusive file locking (`update_frozen_install.lock`), cleanly rejecting conflicting concurrent updates without file corruption.",
+      "**Literal argument preservation:** Arguments are safely transported via structured JSON and passed directly through Win32 `CreateProcessW`, preserving spaces, quotes, `%PATH%`, ampersands, and Unicode without batch interpolation or environment expansion vulnerabilities.",
+      "**Immutable generations & staged activation (Android):** Android Python runtime updates are placed into versioned, immutable generation directories (`generations/gen_<timestamp>`). Live sessions remain pinned to their active generation while new updates are staged cleanly (`vX.Y.Z staged`) until the next application restart."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
   "editor_download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.2/MudaRemote.exe",
-  "exe_sha256": "31ac77ca8914a820c1a5e05f5d0853e0e2c181b29545cb60c660903ce5f1e0c9",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.3/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "06397f87c0fd5cac3690a9452ad51595998b016733cb49485d8bb0540aeb6fdb"
+      "sha256": "04d7e9dde0aa9b645cf19d41629b30ac622c76c63b8a10bc92426a852e73697f"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-      "sha256": "e352db351d0678cdbfbb194a79a81a5ecff01f4f0f159f756d2fc0f134a98e54"
+      "sha256": "34f15a8634f40015ae205cb444bc6ea99a2284599bd1c0aa025f8233d7af7c0e"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/__init__.py",
-      "sha256": "2153ab6541b23984944d3b0bb24e5a8c7d57ef8089b2fa90148c1b9d4faa3ad0"
+      "sha256": "7bbe460c381c6d17520522ec9771502c05351436e000b9968257d5ca74044c00"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -78,12 +80,12 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/updater.py",
-      "sha256": "8de11ce43623d6fa45663e21f205f19da02607b7502c2c8c32042b27ae48cf12"
+      "sha256": "28e6a824c90b7df3dfa60e85591d8647bb32fc351954b7422a51606e4a491bec"
     },
     {
       "path": "mudae_core/versioning.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/versioning.py",
-      "sha256": "0f6294c3273842b95f4e03231d03d51c39045420435aaa561b4da913162cbdf3"
+      "sha256": "a57879efb9661e231e37ce9e6b10b49401a3ac4d0ceb332ffc36355d64bcc47e"
     },
     {
       "path": "requirements.txt",

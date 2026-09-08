@@ -20,6 +20,112 @@ import shutil
 from typing import Tuple
 
 
+def _recover_interrupted_source_update(base_path):
+    """Pure-stdlib crash recovery executed before any core packages are imported."""
+    journal_path = os.path.join(base_path, "update_journal.json")
+    if not os.path.isfile(journal_path):
+        return
+    lock_path = os.path.join(base_path, "update_transaction.lock")
+    fd = None
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+        if os.name == "nt":
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, IOError):
+        if fd is not None:
+            try: os.close(fd)
+            except OSError: pass
+            fd = None
+        for _ in range(20):
+            time.sleep(0.5)
+            if not os.path.isfile(journal_path):
+                return
+            try:
+                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+                if os.name == "nt":
+                    import msvcrt
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (OSError, IOError):
+                if fd is not None:
+                    try: os.close(fd)
+                    except OSError: pass
+                    fd = None
+        else:
+            sys.exit("An update transaction is currently in progress. Exiting to prevent corruption.")
+
+    restored_bot = False
+    try:
+        if not os.path.isfile(journal_path):
+            return
+        try:
+            with open(journal_path, "r", encoding="utf-8") as h:
+                j = json.load(h)
+        except Exception as e:
+            sys.exit(f"Update recovery failed: corrupt update journal {journal_path!r}: {e}")
+
+        b_dir = j.get("backup_dir")
+        if not b_dir or not os.path.isdir(b_dir):
+            sys.exit(f"Update recovery failed: backup directory {b_dir!r} is missing.")
+
+        errors = False
+        restored_files = []
+        for rel in reversed(j.get("replaced", [])):
+            dst = os.path.join(base_path, rel)
+            src = os.path.join(b_dir, rel)
+            if os.path.isfile(src):
+                try:
+                    shutil.copyfile(src, dst)
+                    restored_files.append(rel)
+                except OSError:
+                    errors = True
+            else:
+                errors = True
+        for rel in j.get("created", []):
+            dst = os.path.join(base_path, rel)
+            if os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except OSError:
+                    errors = True
+
+        if errors:
+            sys.exit(f"Update recovery failed: could not restore all files from {b_dir!r}.")
+
+        try:
+            os.remove(journal_path)
+        except OSError:
+            sys.exit(f"Update recovery failed: could not remove journal {journal_path!r}.")
+
+        shutil.rmtree(b_dir, ignore_errors=True)
+        if any(rel.replace("\\", "/") == "mudae_bot.py" for rel in restored_files):
+            restored_bot = True
+    finally:
+        if fd is not None:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+            except OSError:
+                pass
+
+    if restored_bot:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+_recover_interrupted_source_update(os.path.dirname(os.path.abspath(__file__)))
 def _bootstrap_modular_core():
     """Bridge legacy two-file updaters to the first modular release."""
     base_path = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +151,8 @@ def _bootstrap_modular_core():
             relative_path = os.path.normpath(str(entry["path"]).replace("/", os.sep))
             if os.path.isabs(relative_path) or os.pardir in relative_path.split(os.sep):
                 raise RuntimeError("Unsafe source path in update manifest.")
+            if relative_path.replace("\\", "/").casefold() == "presets.json":
+                raise RuntimeError("Bootstrap manifest may not replace presets.json.")
             content_response = requests.get(entry["url"], timeout=30)
             content_response.raise_for_status()
             content = content_response.content
@@ -68,15 +176,22 @@ def _bootstrap_modular_core():
                 os.replace(os.path.join(stage_dir, relative_path), destination)
                 replaced.append(relative_path)
         except Exception:
+            rollback_errors = []
             for relative_path in reversed(replaced):
                 destination = os.path.join(base_path, relative_path)
                 backup = os.path.join(backup_dir, relative_path)
-                if os.path.exists(backup):
-                    os.replace(backup, destination)
-                elif os.path.exists(destination):
-                    os.remove(destination)
+                try:
+                    if os.path.exists(backup):
+                        shutil.copyfile(backup, destination)
+                    elif os.path.exists(destination):
+                        os.remove(destination)
+                except OSError as err:
+                    rollback_errors.append((relative_path, str(err)))
+            if rollback_errors:
+                raise RuntimeError("Bootstrap update failed and rollback encountered errors (backup preserved at {!r})".format(backup_dir))
+            shutil.rmtree(backup_dir, ignore_errors=True)
             raise
-        finally:
+        else:
             shutil.rmtree(backup_dir, ignore_errors=True)
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)
@@ -84,7 +199,7 @@ def _bootstrap_modular_core():
 
 try:
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
@@ -117,7 +232,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         if loaded_module == "mudae_core" or loaded_module.startswith("mudae_core."):
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
-        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update,
+        ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
@@ -149,8 +264,17 @@ except ImportError:
 
 # Bot Identification
 BOT_NAME = "MudaRemote"
-CURRENT_VERSION = "4.9.1-beta.2"
+from mudae_core.versioning import (
+    CURRENT_VERSION,
+    load_update_channel_setting,
+    resolve_update_channel,
+    save_update_channel_setting,
+)
 
+if "--beta" in sys.argv:
+    os.environ["MUDAREMOTE_UPDATE_CHANNEL"] = "beta"
+elif "--stable" in sys.argv or "--main" in sys.argv:
+    os.environ["MUDAREMOTE_UPDATE_CHANNEL"] = "main"
 IS_TERMUX = "TERMUX_VERSION" in os.environ or ("PREFIX" in os.environ and "com.termux" in os.environ["PREFIX"])
 
 # Global Pause State
@@ -550,7 +674,7 @@ try:
 except Exception:
     pass
 
-UPDATE_URL = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/"
+UPDATE_URL = get_update_manifest_url()
 
 def _confirm_update_in_console(latest_version, changelog):
     print(f"\nMudaRemote v{latest_version} is available.\n")
@@ -567,20 +691,31 @@ def _confirm_update_in_console(latest_version, changelog):
     return answer in {"y", "yes"}
 
 
-def check_for_updates(confirm_update=None):
+def check_for_updates(confirm_update=None, channel=None):
     if not UPDATE_URL:
         return "disabled"
     is_frozen = getattr(sys, 'frozen', False)
     is_android = os.environ.get("TERMUX_VERSION") == "MudaRemote-Android" or bool(os.environ.get("MUDAREMOTE_RUNTIME_HOME"))
-    print_system_log(f"Checking for updates... (Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
+    base_path = get_base_path()
+    resolved_channel = resolve_update_channel(channel, CURRENT_VERSION, base_path)
+    channel_label = "Beta" if resolved_channel == "beta" else "Stable"
+    print_system_log(f"Checking for updates... (Channel: {channel_label}, Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
     try:
-        response = requests.get(f"{UPDATE_URL}version.json", timeout=(3.05, 8.0))
-        response.raise_for_status()
-        data = response.json()
-        latest_version = data.get("version")
-        if not latest_version or not is_newer_version(latest_version, CURRENT_VERSION):
+        discovery = discover_update_manifest(
+            requests,
+            current_version=CURRENT_VERSION,
+            channel=resolved_channel,
+            frozen=is_frozen,
+            timeout=(3.05, 8.0),
+        )
+        if discovery.get("status") == "error":
+            print_system_log(discovery.get("error", "Update check failed."), "WARN")
+            return "failed"
+        if discovery.get("status") != "available":
             print_system_log("You are up to date.", "INFO")
             return "current"
+        data = discovery["manifest"]
+        latest_version = discovery["version"]
 
         changelog = format_update_changelog(data)
         base_path = get_base_path()
@@ -599,21 +734,18 @@ def check_for_updates(confirm_update=None):
 
         if is_android:
             runtime_home = os.environ.get("MUDAREMOTE_RUNTIME_HOME") or os.environ.get("HOME") or base_path
-            target_path = os.path.join(runtime_home, "python_code")
-            os.makedirs(target_path, exist_ok=True)
-            result = apply_update(
-                requests,
-                data,
-                CURRENT_VERSION,
-                target_path,
-                frozen=False,
-                executable=sys.executable,
-            )
-            with open(os.path.join(target_path, ".version"), "w", encoding="utf-8") as vh:
-                vh.write(str(latest_version))
-            print_system_log(f"Verified Python source update v{latest_version} applied to Android storage. Will be used on next start.", "INFO")
-            return "source"
-
+            try:
+                import android_bridge
+                result_raw = android_bridge.check_and_apply_update(runtime_home, force=True)
+                result_json = json.loads(result_raw)
+                if result_json.get("status") in {"updated", "staged"}:
+                    print_system_log(f"Verified Python source update v{latest_version} applied to Android storage. Will be used on next start.", "INFO")
+                    return "source"
+                if result_json.get("status") == "error":
+                    raise UpdateError(result_json.get("error", "Android update failed"))
+                return "current"
+            except ImportError:
+                raise UpdateError("Android updates must be applied through the Android runtime bridge.")
         result = apply_update(
             requests,
             data,
@@ -627,7 +759,7 @@ def check_for_updates(confirm_update=None):
             os._exit(0)
         print_system_log("Verified full source update applied. Restarting...", "RESET")
         if os.name == 'nt':
-            subprocess.Popen([sys.executable] + sys.argv, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen([sys.executable] + sys.argv, cwd=base_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
             sys.exit()
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except UpdateError as e:
@@ -638,8 +770,11 @@ def check_for_updates(confirm_update=None):
         return "failed"
 
 def cleanup_after_update():
-    """Compatibility hook retained for older launchers; updates are now transactional."""
-
+    """Recover any interrupted update and ensure clean state."""
+    try:
+        recover_interrupted_update(get_base_path())
+    except Exception:
+        pass
 presets = {}
 presets_path = os.path.join(get_base_path(), "presets.json")
 if not os.path.exists(presets_path):
