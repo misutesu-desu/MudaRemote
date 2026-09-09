@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.7**\n\n### 🐛 Bug Fixes\n- **Slash commands recover automatically:** Temporary Discord errors no longer leave slash-enabled presets using text commands for the rest of a long session. MudaRemote retries slash commands after a short cooldown.\n- **Windows update installation:** Updates and version switching can now find the built-in Windows PowerShell even when it is missing from PATH, and also support PowerShell 7.\n- **Correct stable update version:** The updater now checks the published stable release as well as the stable branch, so it recognizes v4.9.0 instead of being stuck on v4.8.10.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.7/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.7/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "c826cb26b39f69d45de3a0e03135c0e0866293f014ba9019f45499ab068c60ad",
   "source_files": [
     {
       "path": "mudae_bot.py",
