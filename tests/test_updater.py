@@ -64,7 +64,8 @@ class UpdaterTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             executable = os.path.join(directory, "MudaRemote.exe")
-            with mock.patch("mudae_core.updater.subprocess.Popen"):
+            with mock.patch("mudae_core.updater.subprocess.Popen"), \
+                    mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(
                     session, manifest, "4.0.0", directory,
                     frozen=True, executable=executable,
@@ -165,7 +166,8 @@ class UpdaterTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             executable = os.path.join(directory, "MudaRemote.exe")
-            with mock.patch("mudae_core.updater.subprocess.Popen"):
+            with mock.patch("mudae_core.updater.subprocess.Popen"), \
+                    mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(session, manifest, "4.0.0", directory, frozen=True, executable=executable)
             self.assertEqual(result, "frozen")
 
@@ -410,6 +412,7 @@ class UpdaterTests(unittest.TestCase):
             with open(out_file, "r", encoding="utf-8") as f:
                 received = json.load(f)
             self.assertEqual(received, test_args[1:])
+    @unittest.skipUnless(os.name == "nt" and shutil.which("powershell"), "requires Windows PowerShell")
     def test_powershell_helper_launch_failure_restores_backup_and_exits_5(self):
         import json, subprocess
         with tempfile.TemporaryDirectory() as td:
@@ -863,7 +866,8 @@ class UpdateProgressAndDiagnosticsTests(unittest.TestCase):
         events = []
         with tempfile.TemporaryDirectory() as directory:
             executable = os.path.join(directory, "MudaRemote.exe")
-            with mock.patch("mudae_core.updater.subprocess.Popen"):
+            with mock.patch("mudae_core.updater.subprocess.Popen"), \
+                    mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(
                     session, manifest, "4.0.0", directory,
                     frozen=True, executable=executable,
@@ -910,7 +914,8 @@ class UpdateProgressAndDiagnosticsTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             executable = os.path.join(directory, "MudaRemote.exe")
-            with mock.patch("mudae_core.updater.subprocess.Popen") as popen:
+            with mock.patch("mudae_core.updater.subprocess.Popen") as popen, \
+                    mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 with self.assertRaises(UpdateError) as ctx:
                     apply_update(
                         session, manifest, "4.0.0", directory,
