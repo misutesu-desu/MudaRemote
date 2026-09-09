@@ -1304,6 +1304,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     client.use_slash_rolls = bool(use_slash_rolls and Route is not None)
     client.slash_fallback_active = False
+    client.slash_retry_at = 0.0
     client.mudae_slash_cache = {}
     client.mudae_slash_missing = set()
     client.mudae_session_id = None
@@ -2803,6 +2804,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 BotLogger.log(f"Scheduled roll error: {e}", preset_name, "ERROR")
                 await pause_interruptible_sleep(client, 60)
 
+    def _activate_slash_fallback():
+        client.slash_fallback_active = True
+        client.slash_retry_at = time.monotonic() + 60.0
+
+    def _slash_ready():
+        if not client.use_slash_rolls:
+            return False
+        if client.slash_fallback_active:
+            if time.monotonic() < client.slash_retry_at:
+                return False
+            client.slash_fallback_active = False
+            client.slash_fail_streak = 0
+            client.mudae_slash_cache.clear()
+            BotLogger.log("Retrying slash commands after temporary text fallback.", preset_name, "INFO")
+        return True
+
     async def _fetch_mudae_slash_commands(channel):
         guild = getattr(channel, 'guild', None)
         if not guild: return None
@@ -2861,7 +2878,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not can_slash:
             if not client.slash_fallback_active:
                 BotLogger.log(f"Slash {cmd_display}: FAIL - {perm_reason}. Activating text fallback.", preset_name, "ERROR")
-                client.slash_fallback_active = True
+                _activate_slash_fallback()
             return False
 
         now_ts = time.time()
@@ -2937,13 +2954,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return False
             elif getattr(e, "status", 0) in (401, 403):
                 BotLogger.log(f"Slash {cmd_display}: FAIL - HTTP {e.status} (Permission Denied). Switching to text fallback.", preset_name, "ERROR")
-                client.slash_fallback_active = True
+                _activate_slash_fallback()
             client.slash_fail_streak += 1
         except Exception:
             client.slash_fail_streak += 1
         client.mudae_slash_cache.pop((channel.guild.id, channel.id), None)
         if client.slash_fail_streak >= client.slash_fail_threshold and not client.slash_fallback_active:
-            client.slash_fallback_active = True
+            _activate_slash_fallback()
             BotLogger.log(f"Slash: {client.slash_fail_streak} failures. Switching to text commands ({client.mudae_prefix}).", preset_name, "WARN")
         return False
 
@@ -3011,7 +3028,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if on_sent is not None:
                 on_sent(receipt)
 
-        if client.use_slash_rolls and not client.slash_fallback_active:
+        if _slash_ready():
             override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
             if await _trigger_mudae_slash(
                 channel,
@@ -3206,7 +3223,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client,
                 )
                 return False
-            if client.use_slash_rolls and not client.slash_fallback_active:
+            if _slash_ready():
                 for attempt in range(1, 4):
                     if not await wait_for_tu_send_window(): return False
                     required, skip_reason = is_tu_still_required(
@@ -3233,7 +3250,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     if client.slash_fallback_active: break
                     if attempt < 3 and not await active_delay(5.0): return False
                 if not client.slash_fallback_active:
-                    client.slash_fallback_active = True
+                    _activate_slash_fallback()
                     BotLogger.log("/tu failed after 3 attempts. Switching to text $tu so status tracking can continue.", preset_name, "WARN")
             if not await wait_for_tu_send_window(): return False
             required, skip_reason = is_tu_still_required(

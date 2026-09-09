@@ -60,12 +60,12 @@ class VersioningTests(unittest.TestCase):
 
     def test_get_update_manifest_urls(self):
         beta_urls = get_update_manifest_urls("beta")
-        self.assertEqual(len(beta_urls), 2)
+        self.assertEqual(len(beta_urls), 3)
         self.assertIn("/beta/", beta_urls[0])
         self.assertIn("/main/", beta_urls[1])
 
         main_urls = get_update_manifest_urls("main")
-        self.assertEqual(len(main_urls), 1)
+        self.assertEqual(len(main_urls), 2)
         self.assertIn("/main/", main_urls[0])
         self.assertEqual(get_update_manifest_url("main"), main_urls[0])
 

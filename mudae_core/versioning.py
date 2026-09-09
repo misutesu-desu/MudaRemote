@@ -6,8 +6,9 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "4.9.1-beta.6"
+CURRENT_VERSION = "4.9.1-beta.7"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
+STABLE_RELEASE_MANIFEST_URL = "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/version.json"
 MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{ref}/version.json"
 
 _VERSION_RE = re.compile(
@@ -142,8 +143,9 @@ def get_update_manifest_urls(channel=None, current_version=None, base_path=None)
         return (
             UPDATE_BRANCH_URL_TEMPLATE.format(branch="beta"),
             UPDATE_BRANCH_URL_TEMPLATE.format(branch="main"),
+            STABLE_RELEASE_MANIFEST_URL,
         )
-    return (UPDATE_BRANCH_URL_TEMPLATE.format(branch="main"),)
+    return (UPDATE_BRANCH_URL_TEMPLATE.format(branch="main"), STABLE_RELEASE_MANIFEST_URL)
 
 
 def get_update_manifest_url(channel=None, current_version=None, base_path=None):

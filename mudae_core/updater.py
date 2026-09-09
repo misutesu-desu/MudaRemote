@@ -645,6 +645,21 @@ def _replace_transactionally_locked(base_path, stage_dir, relative_paths):
 
 
 
+def _find_update_powershell():
+    """Find Windows PowerShell even when the launcher's PATH omits it."""
+    for name in ("powershell", "pwsh"):
+        found = shutil.which(name)
+        if found:
+            return found
+    root = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
+    if root:
+        for system_dir in ("Sysnative", "System32"):
+            candidate = os.path.join(root, system_dir, "WindowsPowerShell", "v1.0", "powershell.exe")
+            if os.path.isfile(candidate):
+                return candidate
+    raise UpdateError("PowerShell could not be found on PATH or in the Windows system directory. Install PowerShell, then retry the update.")
+
+
 def _stage_frozen_update(session, manifest, base_path, executable, progress=None):
     lock_path = os.path.join(base_path, "update_frozen.lock")
     with _ExclusiveLock(lock_path):
@@ -690,8 +705,7 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable, progre
         except (ValueError, OSError):
             pass
 
-    if not shutil.which("powershell"):
-        raise UpdateError("Windows PowerShell 5.1+ is required to install frozen updates safely. Please install PowerShell or update from source.")
+    powershell = _find_update_powershell()
 
     url = manifest.get("exe_download_url")
     expected_hash = manifest.get("exe_sha256")
@@ -856,7 +870,7 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable, progre
     batch = (
         "@echo off\r\n"
         "setlocal\r\n"
-        'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0update_helper.ps1" -PayloadPath "%~dp0update_payload.json"\r\n'
+        '"' + powershell.replace("%", "%%") + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0update_helper.ps1" -PayloadPath "%~dp0update_payload.json"\r\n'
         "set PS_ERR=%ERRORLEVEL%\r\n"
         'del "%~f0" >nul 2>&1\r\n'
         "exit /b %PS_ERR%\r\n"
