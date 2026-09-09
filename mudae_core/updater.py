@@ -405,6 +405,141 @@ def _recover_interrupted_update_locked(base_path, journal_path):
     return True
 
 
+def _read_pid_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return int(handle.read().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _load_frozen_payload(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _recover_frozen_swap(payload):
+    """Repair an executable left missing by a helper that died mid-swap."""
+    actions = []
+    current = str(payload.get("current") or "")
+    if not current or os.path.isfile(current):
+        return actions
+    try:
+        owner_pid = int(payload.get("pid"))
+    except (TypeError, ValueError):
+        owner_pid = 0
+    backup = "{}.{}.bak".format(current, owner_pid)
+    if owner_pid and os.path.isfile(backup):
+        try:
+            os.replace(backup, current)
+            actions.append("restored previous executable from backup after an interrupted update")
+            return actions
+        except OSError:
+            return actions
+    staged = str(payload.get("staged") or "")
+    expected_hash = str(payload.get("expected_hash") or "").lower()
+    if staged and os.path.isfile(staged) and expected_hash:
+        try:
+            with open(staged, "rb") as handle:
+                actual_hash = hashlib.sha256(handle.read()).hexdigest()
+            if actual_hash == expected_hash:
+                os.replace(staged, current)
+                actions.append("completed the verified staged executable after a helper crash")
+        except OSError:
+            pass
+    return actions
+
+
+def cleanup_update_artifacts(base_path, executable=None):
+    """Sweep leftover files from a crashed frozen-update helper.
+
+    Only touches known frozen-update artifacts (``update_payload.json``,
+    ``update_helper.pid``, ``mudae-frozen-update-*`` staging directories, and
+    helper-created ``.<pid>.bak`` executable backups). Live transactions are
+    never disturbed. Returns a list of human-readable action strings;
+    never raises.
+    """
+    actions = []
+    try:
+        base_path = os.path.abspath(str(base_path))
+        helper_pid_file = os.path.join(base_path, "update_helper.pid")
+        root_payload_path = os.path.join(base_path, "update_payload.json")
+
+        helper_pid = _read_pid_file(helper_pid_file) if os.path.isfile(helper_pid_file) else None
+        if helper_pid and _is_pid_alive(helper_pid):
+            return actions + ["update helper (PID {}) still running; cleanup skipped".format(helper_pid)]
+        if os.path.isfile(helper_pid_file):
+            try:
+                os.remove(helper_pid_file)
+                actions.append("removed stale update_helper.pid")
+            except OSError:
+                pass
+
+        if os.path.isfile(root_payload_path):
+            payload = _load_frozen_payload(root_payload_path)
+            payload_pid = payload.get("pid") if payload else None
+            if payload_pid and _is_pid_alive(int(payload_pid)):
+                return actions + ["live frozen update transaction still running; cleanup skipped"]
+            try:
+                os.remove(root_payload_path)
+                actions.append("removed stale update_payload.json")
+            except OSError:
+                pass
+
+        try:
+            entries = sorted(os.listdir(base_path))
+        except OSError:
+            entries = []
+        for name in entries:
+            if not name.startswith("mudae-frozen-update-"):
+                continue
+            stage_dir = os.path.join(base_path, name)
+            if not os.path.isdir(stage_dir):
+                continue
+            payload = _load_frozen_payload(os.path.join(stage_dir, "update_payload.json"))
+            if payload and payload.get("pid") and _is_pid_alive(int(payload["pid"])):
+                actions.append("skipped {} (originating process still alive)".format(name))
+                continue
+            if payload:
+                actions.extend(_recover_frozen_swap(payload))
+            try:
+                shutil.rmtree(stage_dir)
+                actions.append("removed leftover staging directory {}".format(name))
+            except OSError as exc:
+                actions.append("could not remove {}: {}".format(name, exc))
+
+        # Stale executable backups are only safe to delete when the live
+        # executable exists beside them (the swap finished installing).
+        backup_root = ""
+        if executable and os.path.isfile(str(executable)):
+            backup_root = os.path.abspath(str(executable))
+        if backup_root:
+            backup_dir = os.path.dirname(backup_root)
+            backup_prefix = os.path.basename(backup_root) + "."
+            try:
+                candidates = sorted(os.listdir(backup_dir))
+            except OSError:
+                candidates = []
+            for name in candidates:
+                if not name.startswith(backup_prefix) or not name.endswith(".bak"):
+                    continue
+                middle = name[len(backup_prefix):-len(".bak")]
+                if not middle.isdigit():
+                    continue
+                try:
+                    os.remove(os.path.join(backup_dir, name))
+                    actions.append("removed stale executable backup {}".format(name))
+                except OSError:
+                    pass
+    except Exception as exc:  # cleanup must never block startup
+        actions.append("cleanup aborted: {}".format(exc))
+    return actions
+
+
 def _replace_transactionally(base_path, stage_dir, relative_paths):
     lock_path = os.path.join(base_path, "update_transaction.lock")
     journal_path = os.path.join(base_path, "update_journal.json")

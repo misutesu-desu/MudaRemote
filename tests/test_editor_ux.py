@@ -134,10 +134,17 @@ class EditorUxContractTests(unittest.TestCase):
         self.assertIn("Save & Start Bot", self.readme)
         self.assertNotIn("hit **▶ Launch Bot**", self.readme)
 
-    def test_quick_setup_uses_the_active_scroll_target_and_dark_combobox_style(self):
+    def test_wheel_routing_scopes_to_owning_canvas_and_dark_combobox_style(self):
         self.assertIn('"Quick.TCombobox"', self.editor)
-        self.assertIn('scroll_target = self.quick_canvas if self.editor_mode == "quick" else self.canvas', self.editor)
         self.assertIn('style="Quick.TCombobox"', self.editor)
+        wheel_source = self.editor[
+            self.editor.index("def _on_mousewheel"):
+            self.editor.index("def rebuild_rounds_frame")
+        ]
+        self.assertIn("widget.winfo_toplevel() is not self.root", wheel_source)
+        self.assertIn('getattr(self, "quick_canvas", None)', wheel_source)
+        self.assertIn('getattr(self, "canvas", None)', wheel_source)
+
 
     def test_mode_switch_updates_flat_button_hover_and_pressed_colours(self):
         self.assertIn("def set_flat_button_colors", self.editor)

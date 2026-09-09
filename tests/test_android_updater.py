@@ -198,11 +198,26 @@ class AndroidUpdaterTests(unittest.TestCase):
         self.assertEqual(res["channel"], "beta")
         self.assertEqual(android_bridge.get_update_channel(self.temp_dir), "beta")
 
-    def test_fetch_available_versions_and_install_specific_version(self):
-        rels = json.loads(android_bridge.fetch_available_versions("android"))
-        self.assertIsInstance(rels, list)
-        self.assertTrue(len(rels) > 0)
-        self.assertIn("version", rels[0])
+    def test_fetch_available_versions_reports_channel_and_honest_errors(self):
+        fake_releases = [
+            {
+                "version": "4.9.0", "tag": "v4.9.0", "name": "v4.9.0",
+                "prerelease": False, "is_apk": False, "apk_url": None,
+            },
+        ]
+        with mock.patch("mudae_core.versioning.fetch_available_releases", return_value=fake_releases) as fetch:
+            envelope = json.loads(android_bridge.fetch_available_versions("android", "main"))
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["releases"], fake_releases)
+        self.assertEqual(fetch.call_args.kwargs["platform"], "android")
+        self.assertEqual(fetch.call_args.kwargs["channel"], "main")
+
+        with mock.patch("mudae_core.versioning.fetch_available_releases", side_effect=OSError("network down")):
+            failed = json.loads(android_bridge.fetch_available_versions("android", "beta"))
+        self.assertEqual(failed["status"], "error")
+        self.assertIn("network down", failed["error"])
+        self.assertNotIn("releases", failed)
+
 
         dummy_manifest = {
             "version": "4.8.10",
@@ -221,6 +236,10 @@ class AndroidUpdaterTests(unittest.TestCase):
             res = json.loads(res_json)
             self.assertEqual(res["status"], "updated")
             self.assertEqual(res["version"], "4.8.10")
+
+        apk_route = json.loads(android_bridge.install_specific_version(self.temp_dir, "android-pre9"))
+        self.assertEqual(apk_route["status"], "error")
+        self.assertIn("APK", apk_route["error"])
     def test_reset_to_bundled_code_blocks_when_running(self):
         with mock.patch("android_bridge._running", True):
             result = json.loads(android_bridge.reset_to_bundled_code(self.temp_dir))

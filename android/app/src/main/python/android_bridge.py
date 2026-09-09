@@ -487,29 +487,40 @@ def _format_changelog(manifest):
     return "No changelog provided."
 
 
-def fetch_available_versions(platform="android"):
-    """Return JSON string of available releases for Android."""
+def fetch_available_versions(platform="android", channel=None):
+    """Return a JSON envelope for the Android release picker.
+
+    ``{"status": "ok", "releases": [...]}`` on success or
+    ``{"status": "error", "error": "..."}`` on failure — never fabricated
+    releases. ``channel='main'`` excludes prereleases; ``'beta'`` includes them.
+    """
     try:
         from mudae_core.versioning import fetch_available_releases
-        releases = fetch_available_releases(platform=platform)
-    except Exception:
-        releases = [
-            {"version": "4.9.1-beta.3", "tag": "v4.9.1-beta.3", "name": "v4.9.1-beta.3", "prerelease": True},
-            {"version": "4.9.0", "tag": "v4.9.0", "name": "v4.9.0", "prerelease": False},
-        ]
-    return json.dumps(releases, ensure_ascii=False)
+        releases = fetch_available_releases(platform=platform, channel=channel)
+    except Exception as exc:
+        return json.dumps(
+            {"status": "error", "error": str(exc) or exc.__class__.__name__},
+            ensure_ascii=False,
+        )
+    return json.dumps({"status": "ok", "releases": releases}, ensure_ascii=False)
 
 
 def install_specific_version(files_dir, version_or_tag):
     """Download, stage, and activate a specific version in android app storage."""
     files_dir = str(files_dir)
+    tag = str(version_or_tag or "").strip()
+    if tag.lower().startswith("android-"):
+        return json.dumps({
+            "status": "error",
+            "error": "That release is an Android APK build. Install it from its release page; the Python runtime updater does not apply APK releases.",
+        }, ensure_ascii=False)
     with _lock:
         _configure_storage(files_dir)
         try:
             from mudae_core.versioning import fetch_manifest_for_version
-            manifest = fetch_manifest_for_version(version_or_tag=version_or_tag)
+            manifest = fetch_manifest_for_version(version_or_tag=tag)
         except Exception as e:
-            return json.dumps({"status": "error", "error": f"Failed to fetch manifest for {version_or_tag}: {e}"}, ensure_ascii=False)
+            return json.dumps({"status": "error", "error": f"Failed to fetch manifest for {tag}: {e}"}, ensure_ascii=False)
         return check_and_apply_update(files_dir, force=True, manifest_override=manifest)
 
 

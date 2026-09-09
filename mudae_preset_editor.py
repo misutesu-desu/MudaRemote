@@ -812,12 +812,18 @@ def build_recommended_preset():
 
 
 class VersionSelectorDialog:
-    def __init__(self, parent, on_install):
+    """Channel-aware release picker backed by the real GitHub release catalog."""
+
+    def __init__(self, parent, on_install, channel="main"):
         self.parent = parent
         self.on_install = on_install
+        self.releases = []
+        self._closed = False
+        self._fetch_generation = 0
+        self._results = {}
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("MudaRemote - Select Target Version")
-        self.dialog.geometry("450x420")
+        self.dialog.geometry("450x460")
         self.dialog.configure(bg=BG_DARK)
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
@@ -828,7 +834,7 @@ class VersionSelectorDialog:
         ph = parent.winfo_height()
         px = parent.winfo_rootx()
         py = parent.winfo_rooty()
-        self.dialog.geometry(f"+{px + max(0, (pw - 450) // 2)}+{py + max(0, (ph - 420) // 2)}")
+        self.dialog.geometry(f"+{px + max(0, (pw - 450) // 2)}+{py + max(0, (ph - 460) // 2)}")
 
         header = tk.Frame(self.dialog, bg=BG_DARK)
         header.pack(fill=tk.X, padx=15, pady=(15, 5))
@@ -848,6 +854,25 @@ class VersionSelectorDialog:
             fg=TEXT_MUTED,
         ).pack(anchor=tk.W, pady=(2, 0))
 
+        channel_frame = tk.Frame(self.dialog, bg=BG_DARK)
+        channel_frame.pack(fill=tk.X, padx=15)
+        self.beta_var = tk.BooleanVar(value=(str(channel).lower() == "beta"))
+        ttk.Checkbutton(
+            channel_frame,
+            text="Include Beta Releases",
+            variable=self.beta_var,
+            command=self._reload,
+        ).pack(side=tk.LEFT)
+        self.create_flat_button(
+            channel_frame,
+            "Reload",
+            self._reload,
+            bg_color=BG_PANEL,
+            fg_color=TEXT_MAIN,
+            hover_bg=BG_INPUT,
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side=tk.RIGHT)
+
         list_frame = tk.Frame(self.dialog, bg=BORDER_COLOR, bd=0, highlightbackground=BORDER_COLOR, highlightthickness=1)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
 
@@ -866,10 +891,14 @@ class VersionSelectorDialog:
         sb = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.listbox.config(yscrollcommand=sb.set)
+        self.listbox.bind("<<ListboxSelect>>", self._on_select)
+        # Keep wheel events inside this dialog's list; never let them reach
+        # the background editor canvas behind the picker.
+        self.listbox.bind("<MouseWheel>", self._on_wheel)
+        self.listbox.bind("<Button-4>", self._on_wheel)
+        self.listbox.bind("<Button-5>", self._on_wheel)
 
-        self.releases = []
-        self.listbox.insert(tk.END, "Loading releases from GitHub...")
-
+        self.manual_var = tk.StringVar()
         manual_frame = tk.Frame(self.dialog, bg=BG_DARK)
         manual_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
         tk.Label(
@@ -880,7 +909,6 @@ class VersionSelectorDialog:
             fg=TEXT_MUTED,
         ).pack(anchor=tk.W, pady=(0, 2))
 
-        self.manual_var = tk.StringVar()
         entry = tk.Entry(
             manual_frame,
             textvariable=self.manual_var,
@@ -902,7 +930,7 @@ class VersionSelectorDialog:
         cancel_btn = tk.Button(
             btn_frame,
             text="Cancel",
-            command=self.dialog.destroy,
+            command=self._close,
             bg=BG_PANEL,
             fg=TEXT_MAIN,
             activebackground=BG_INPUT,
@@ -933,35 +961,125 @@ class VersionSelectorDialog:
         )
         install_btn.pack(side=tk.RIGHT)
 
-        threading.Thread(target=self._fetch_releases, daemon=True).start()
+        self.dialog.protocol("WM_DELETE_WINDOW", self._close)
+        self._reload()
 
-    def _fetch_releases(self):
+    def create_flat_button(self, parent, text, command, bg_color, fg_color, hover_bg, font):
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=bg_color,
+            fg=fg_color,
+            activebackground=hover_bg,
+            activeforeground=fg_color,
+            font=font,
+            bd=0,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+        )
+
+        def _enter(_event=None):
+            try:
+                button.config(bg=hover_bg)
+            except tk.TclError:
+                pass
+
+        def _leave(_event=None):
+            try:
+                button.config(bg=bg_color)
+            except tk.TclError:
+                pass
+
+        button.bind("<Enter>", _enter)
+        button.bind("<Leave>", _leave)
+        return button
+
+    def _close(self):
+        self._closed = True
+        try:
+            self.dialog.destroy()
+        except tk.TclError:
+            pass
+
+    def _reload(self):
+        if self._closed:
+            return
+        self._fetch_generation += 1
+        generation = self._fetch_generation
+        channel = "beta" if self.beta_var.get() else "main"
+        self.releases = []
+        self.listbox.delete(0, tk.END)
+        self.listbox.insert(tk.END, "Loading releases from GitHub...")
+        threading.Thread(target=self._fetch_releases, args=(channel, generation), daemon=True).start()
+        self._schedule_poll(generation)
+
+    def _fetch_releases(self, channel, generation):
+        rels = []
+        error = None
         try:
             from mudae_core.versioning import fetch_available_releases
-            rels = fetch_available_releases(platform="pc")
-            self.dialog.after(0, lambda: self._populate(rels))
-        except Exception:
-            self.dialog.after(0, lambda: self._populate([]))
+            rels = fetch_available_releases(platform="pc", channel=channel)
+        except Exception as exc:
+            error = str(exc) or exc.__class__.__name__
+        # Hand the result back to the UI through a main-thread poller; worker
+        # threads must never call into tkinter directly.
+        self._results[generation] = (rels, error, channel)
 
-    def _populate(self, rels):
+    def _schedule_poll(self, generation):
+        try:
+            self.dialog.after(60, lambda: self._poll(generation))
+        except tk.TclError:
+            pass
+
+    def _poll(self, generation):
+        if self._closed:
+            return
+        if generation not in self._results:
+            self._schedule_poll(generation)
+            return
+        rels, error, channel = self._results.pop(generation)
+        if generation != self._fetch_generation:
+            return
+        self._populate(rels, error, channel, generation)
+
+    def _populate(self, rels, error, channel, generation):
+        if self._closed or generation != self._fetch_generation:
+            return
         self.releases = rels
         self.listbox.delete(0, tk.END)
+        if error:
+            self.listbox.insert(tk.END, "Failed to load releases:")
+            for line in str(error).splitlines()[:3]:
+                self.listbox.insert(tk.END, "   " + line)
+            self.listbox.insert(tk.END, "Press Reload to retry, or type a tag below.")
+            return
         if not rels:
-            self.listbox.insert(tk.END, "v4.9.1-beta.3 [Beta]")
-            self.listbox.insert(tk.END, "v4.9.0 [Stable]")
-            self.listbox.insert(tk.END, "v4.8.10 [Stable]")
+            label = "beta or stable" if channel == "beta" else "stable"
+            self.listbox.insert(tk.END, f"No {label} releases were published yet.")
             return
         for r in rels:
-            tag = r.get("tag", "")
             pre = " [Beta]" if r.get("prerelease") else " [Stable]"
-            self.listbox.insert(tk.END, f"{tag}{pre}")
-        self.listbox.bind("<<ListboxSelect>>", self._on_select)
+            self.listbox.insert(tk.END, f"{r.get('tag', '')}{pre}")
 
     def _on_select(self, event=None):
         sel = self.listbox.curselection()
         if sel and sel[0] < len(self.releases):
-            tag = self.releases[sel[0]].get("tag", "")
-            self.manual_var.set(tag)
+            self.manual_var.set(self.releases[sel[0]].get("tag", ""))
+
+    def _on_wheel(self, event):
+        if getattr(event, "num", None) == 4:
+            delta = -1
+        elif getattr(event, "num", None) == 5:
+            delta = 1
+        else:
+            raw_delta = getattr(event, "delta", 0)
+            delta = -1 if raw_delta > 0 else 1 if raw_delta < 0 else 0
+        if delta:
+            self.listbox.yview_scroll(delta, "units")
+        return "break"
 
     def _do_install(self):
         target = self.manual_var.get().strip()
@@ -970,11 +1088,10 @@ class VersionSelectorDialog:
             if sel and sel[0] < len(self.releases):
                 target = self.releases[sel[0]].get("tag", "")
         if not target:
-            messagebox.showwarning("Warning", "Please select or enter a version tag to install.", parent=self.dialog)
+            messagebox.showwarning("Warning", "Please select a real release or enter a version tag to install.", parent=self.dialog)
             return
-        self.dialog.destroy()
-        self.on_install(target)
-
+        self._close()
+        self.on_install(target, "beta" if self.beta_var.get() else "main")
 
 class PresetEditor:
     def __init__(self, root):
@@ -2057,6 +2174,33 @@ class PresetEditor:
         )
 
     def _on_mousewheel(self, event):
+        # The wheel only scrolls the editor canvas that received the event
+        # inside the main window. Dialogs, listboxes, and text widgets keep
+        # their own scrolling; the background never moves for them.
+        try:
+            widget = event.widget
+            if widget is None or widget.winfo_toplevel() is not self.root:
+                return
+        except tk.TclError:
+            return
+        scroll_target = None
+        node = widget
+        while node is not None:
+            try:
+                widget_class = node.winfo_class()
+            except tk.TclError:
+                return
+            if widget_class in ("Text", "Listbox", "Treeview", "Spinbox", "ComboBox", "Menu"):
+                return  # these widgets own their wheel behaviour
+            if node is getattr(self, "quick_canvas", None):
+                scroll_target = self.quick_canvas
+                break
+            if node is getattr(self, "canvas", None):
+                scroll_target = self.canvas
+                break
+            node = getattr(node, "master", None)
+        if scroll_target is None:
+            return
         if getattr(event, "num", None) == 4:
             delta = -1
         elif getattr(event, "num", None) == 5:
@@ -2065,7 +2209,6 @@ class PresetEditor:
             raw_delta = getattr(event, "delta", 0)
             delta = -1 if raw_delta > 0 else 1 if raw_delta < 0 else 0
         if delta:
-            scroll_target = self.quick_canvas if self.editor_mode == "quick" else self.canvas
             scroll_target.yview_scroll(delta, "units")
 
     def rebuild_rounds_frame(self, claim_interval_mins, preserve=True):
@@ -3843,6 +3986,32 @@ class PresetEditor:
         process.terminate()
         self.run_status_label.configure(text=f"Stopping: {self.current_preset}", fg=TEXT_MUTED)
 
+    def _handle_update_outcome(self, result, subject):
+        """Carry out the follow-up each desktop update outcome requires."""
+        if result == "frozen":
+            # The helper only waits ~30s for this process to release the exe;
+            # a modal dialog here can break the handoff. Exit immediately —
+            # the helper's confirmed relaunch of the new version IS the feedback.
+            try:
+                self.root.destroy()
+            except tk.TclError:
+                pass
+        elif result == "source":
+            messagebox.showinfo(
+                "Update Installed",
+                f"{subject} has been installed. MudaRemote is restarting with the updated files.\n\nYour presets and settings were preserved.",
+                parent=self.root,
+            )
+            _relaunch_editor()
+            self.root.destroy()
+        elif result == "git":
+            messagebox.showinfo(
+                "Git Checkout Detected",
+                "This MudaRemote installation is managed by Git, so no files were changed.\n\nRun 'git pull' in the project folder to update.",
+                parent=self.root,
+            )
+        # "skipped" means the user cancelled; nothing to do.
+
     def manual_check_updates(self):
         """Check for updates using the currently selected update channel."""
         try:
@@ -3857,6 +4026,7 @@ class PresetEditor:
                         f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
                         f"Changelog:\n{changelog}\n\n"
                         "Install this update now?\n\n"
+                        "MudaRemote will close and restart itself once the update is ready.\n"
                         "Your saved presets will be kept."
                     ),
                     parent=self.root,
@@ -3874,12 +4044,16 @@ class PresetEditor:
                 messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
             elif result == "failed":
                 messagebox.showerror("MudaRemote", "Update check encountered an error. Check console/logs.", parent=self.root)
+            else:
+                self._handle_update_outcome(result, f"MudaRemote v{CURRENT_VERSION}")
         except Exception as e:
             messagebox.showerror("Update Error", f"Update check failed:\n{e}", parent=self.root)
 
     def open_version_selector(self):
         """Open the version selector dialog to install any target release."""
-        def on_install(target_version):
+        channel = "beta" if self.beta_channel_var.get() else "main"
+
+        def on_install(target_version, selected_channel="main"):
             confirm = messagebox.askyesno(
                 "Confirm Version Switch",
                 f"Switch MudaRemote installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
@@ -3889,17 +4063,31 @@ class PresetEditor:
                 return
             try:
                 import mudae_bot
-                res = mudae_bot.check_for_updates(target_version=target_version)
-                if res in {"source", "frozen"}:
-                    messagebox.showinfo("Updating", f"Installation of {target_version} initiated.", parent=self.root)
-                elif res == "current":
+                res = mudae_bot.check_for_updates(
+                    target_version=target_version,
+                    channel=selected_channel,
+                    confirm_update=lambda latest_version, changelog: True,
+                )
+                if res == "current":
                     messagebox.showinfo("MudaRemote", f"Already running {target_version}.", parent=self.root)
                 elif res == "failed":
                     messagebox.showerror("Error", f"Failed to switch to {target_version}. Check logs.", parent=self.root)
+                elif res == "disabled":
+                    messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+                else:
+                    self._handle_update_outcome(res, target_version)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to install {target_version}:\n{e}", parent=self.root)
 
-        VersionSelectorDialog(self.root, on_install)
+        VersionSelectorDialog(self.root, on_install, channel=channel)
+
+
+def _relaunch_editor():
+    """Start a fresh editor process on the updated files (source mode)."""
+    try:
+        subprocess.Popen([sys.executable] + sys.argv, cwd=get_base_path())
+    except Exception as e:
+        print(f"[MudaRemote] Relaunch failed after update: {e}. Start MudaRemote manually.")
 
 
 def launch_gui():
@@ -3928,12 +4116,29 @@ def launch_gui():
                     f"MudaRemote v{latest_version} is available.\n\n"
                     f"Changelog:\n{changelog}\n\n"
                     "Install this update now?\n\n"
+                    "MudaRemote will close and restart itself once the update is ready.\n"
                     "Your saved presets will be kept."
                 ),
                 parent=root,
             )
 
-        mudae_bot.check_for_updates(confirm_update=confirm_update)
+        startup_result = mudae_bot.check_for_updates(confirm_update=confirm_update)
+        if startup_result == "frozen":
+            # The updater helper only waits ~30s for this process to release
+            # the executable; exit immediately so it can swap and relaunch.
+            root.destroy()
+            return
+        if startup_result == "source":
+            messagebox.showinfo(
+                "Update Installed",
+                "MudaRemote was updated. Restarting with the new files...",
+                parent=root,
+            )
+            _relaunch_editor()
+            root.destroy()
+            return
+        if startup_result == "git":
+            print("[MudaRemote] This install is managed by Git; run 'git pull' to update.")
     except Exception as e:
         print(f"[MudaRemote] Update check failed: {e}")
 

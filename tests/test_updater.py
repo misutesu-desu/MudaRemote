@@ -1,10 +1,13 @@
+import ast
 import hashlib
+import json
 import os
+import re
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
-
 from mudae_core.updater import (
     REQUIRED_SOURCE_PATHS,
     UpdateError,
@@ -565,6 +568,247 @@ class UpdaterTests(unittest.TestCase):
                 with self.assertRaises(UpdateError) as cm:
                     _replace_transactionally(base_dir, stage_dir, ["a.py", "b.py"])
                 self.assertIn("backup preserved at", str(cm.exception))
+
+
+class FrozenUpdateCleanupTests(unittest.TestCase):
+    DEAD_PID = 999999999
+
+    def _write_json(self, path, data):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+
+    def _stage(self, base, payload, staged_content=b"garbage"):
+        stage = os.path.join(base, "mudae-frozen-update-test")
+        os.makedirs(stage, exist_ok=True)
+        staged_path = os.path.join(stage, "MudaRemote_update.exe")
+        with open(staged_path, "wb") as handle:
+            handle.write(staged_content)
+        if payload is not None:
+            payload = dict(payload)
+            payload.setdefault("staged", staged_path)
+            self._write_json(os.path.join(stage, "update_payload.json"), payload)
+        return stage, staged_path
+
+    def test_removes_stale_artifacts_after_dead_helper(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            with open(os.path.join(base, "update_helper.pid"), "w") as handle:
+                handle.write(str(self.DEAD_PID))
+            self._write_json(os.path.join(base, "update_payload.json"), {"pid": self.DEAD_PID})
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaRemote.exe"), "expected_hash": "0" * 64})
+            actions = cleanup_update_artifacts(base)
+            joined = " | ".join(actions)
+            self.assertIn("removed stale update_helper.pid", joined)
+            self.assertIn("removed stale update_payload.json", joined)
+            self.assertIn("removed leftover staging directory", joined)
+            self.assertFalse(os.path.exists(stage))
+            self.assertFalse(os.path.isfile(os.path.join(base, "update_payload.json")))
+            self.assertFalse(os.path.isfile(os.path.join(base, "update_helper.pid")))
+
+    def test_live_helper_pid_blocks_the_sweep(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            with open(os.path.join(base, "update_helper.pid"), "w") as handle:
+                handle.write(str(os.getpid()))
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaRemote.exe")})
+            actions = cleanup_update_artifacts(base)
+            self.assertIn("still running", actions[0])
+            self.assertTrue(os.path.isdir(stage))
+
+    def test_missing_executable_is_restored_from_backup(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            exe = os.path.join(base, "MudaRemote.exe")
+            backup = exe + ".{}.bak".format(self.DEAD_PID)
+            with open(backup, "wb") as handle:
+                handle.write(b"old executable")
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": exe, "expected_hash": "0" * 64})
+            actions = cleanup_update_artifacts(base)
+            self.assertIn("restored previous executable from backup", " | ".join(actions))
+            with open(exe, "rb") as handle:
+                self.assertEqual(handle.read(), b"old executable")
+            self.assertFalse(os.path.isdir(stage))
+
+    def test_verified_staged_executable_completes_the_swap(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            exe = os.path.join(base, "MudaRemote.exe")
+            staged_content = b"brand new executable"
+            digest = hashlib.sha256(staged_content).hexdigest()
+            stage, staged_path = self._stage(base, {"pid": self.DEAD_PID, "current": exe, "expected_hash": digest}, staged_content)
+            actions = cleanup_update_artifacts(base)
+            self.assertIn("completed the verified staged executable", " | ".join(actions))
+            with open(exe, "rb") as handle:
+                self.assertEqual(handle.read(), staged_content)
+
+    def test_unverified_staged_executable_never_becomes_the_app(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            exe = os.path.join(base, "MudaRemote.exe")
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": exe, "expected_hash": "f" * 64}, b"corrupted download")
+            cleanup_update_artifacts(base)
+            self.assertFalse(os.path.exists(exe))
+
+    def test_stale_backup_removed_only_beside_existing_executable(self):
+        from mudae_core.updater import cleanup_update_artifacts
+        with tempfile.TemporaryDirectory() as base:
+            exe = os.path.join(base, "MudaRemote.exe")
+            with open(exe, "wb") as handle:
+                handle.write(b"current install")
+            with open(exe + ".4242.bak", "wb") as handle:
+                handle.write(b"crumb")
+            with open(exe + ".notes.bak", "wb") as handle:
+                handle.write(b"not an update backup")
+            actions = cleanup_update_artifacts(base, executable=exe)
+            self.assertIn("removed stale executable backup", " | ".join(actions))
+            self.assertFalse(os.path.exists(exe + ".4242.bak"))
+            self.assertTrue(os.path.exists(exe + ".notes.bak"))
+            with open(exe, "rb") as handle:
+                self.assertEqual(handle.read(), b"current install")
+
+
+class DesktopUpdateInterfaceTests(unittest.TestCase):
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _module_functions(self, filename):
+        path = os.path.join(self.PROJECT_ROOT, filename)
+        with open(path, "r", encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), filename=path)
+        return {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+    def test_mudae_bot_exposes_the_desktop_update_orchestration(self):
+        functions = self._module_functions("mudae_bot.py")
+        self.assertIn("check_for_updates", functions)
+        self.assertIn("cleanup_after_update", functions)
+
+    def test_editor_only_calls_defined_mudae_bot_entry_points(self):
+        functions = self._module_functions("mudae_bot.py")
+        with open(os.path.join(self.PROJECT_ROOT, "mudae_preset_editor.py"), "r", encoding="utf-8") as handle:
+            editor_source = handle.read()
+        referenced = set(re.findall(r"mudae_bot\.([A-Za-z_][A-Za-z0-9_]*)\(", editor_source))
+        self.assertIn("check_for_updates", referenced)
+        self.assertIn("cleanup_after_update", referenced)
+        undefined = referenced - functions
+        self.assertEqual(undefined, set(), "editor calls undefined mudae_bot functions: {}".format(sorted(undefined)))
+
+    def test_cleanup_after_update_is_startup_safe(self):
+        import mudae_bot
+        with tempfile.TemporaryDirectory() as base:
+            with mock.patch("mudae_bot.get_base_path", return_value=base):
+                mudae_bot.cleanup_after_update()
+
+
+class CheckForUpdatesFacadeTests(unittest.TestCase):
+    def _env(self):
+        return mock.patch.dict(
+            os.environ,
+            {"TERMUX_VERSION": "", "MUDAREMOTE_RUNTIME_HOME": "", "MUDAREMOTE_TARGET_VERSION": ""},
+        )
+
+    def _target_install(self, apply_result):
+        import mudae_bot
+        manifest = {"version": "9.9.9", "changelog": "test"}
+        with self._env(), \
+                mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=manifest), \
+                mock.patch("mudae_bot.apply_update", return_value=apply_result) as apply_mock, \
+                mock.patch("mudae_bot.get_base_path", return_value=tempfile.mkdtemp()):
+            result = mudae_bot.check_for_updates(
+                confirm_update=lambda version, changelog: True,
+                target_version="v9.9.9",
+            )
+        return result, apply_mock
+
+    def test_targeted_install_forces_verified_apply_and_reports_source(self):
+        result, apply_mock = self._target_install("source")
+        self.assertEqual(result, "source")
+        self.assertTrue(apply_mock.call_args.kwargs["force"])
+
+    def test_frozen_outcome_returns_without_killing_the_process(self):
+        result, _ = self._target_install("frozen")
+        self.assertEqual(result, "frozen")
+
+    def test_git_outcome_is_visible_and_non_destructive(self):
+        result, _ = self._target_install("git")
+        self.assertEqual(result, "git")
+
+    def test_cancellation_never_downloads_or_applies(self):
+        import mudae_bot
+        manifest = {"version": "9.9.9", "changelog": "test"}
+        with self._env(), \
+                mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=manifest), \
+                mock.patch("mudae_bot.apply_update") as apply_mock:
+            result = mudae_bot.check_for_updates(
+                confirm_update=lambda version, changelog: False,
+                target_version="v9.9.9",
+            )
+        self.assertEqual(result, "skipped")
+        apply_mock.assert_not_called()
+
+    def test_startup_discovery_path_has_no_attribute_errors(self):
+        import mudae_bot
+        discovery = {"status": "current"}
+        with self._env(), \
+                mock.patch("mudae_bot.discover_update_manifest", return_value=discovery) as discover_mock:
+            result = mudae_bot.check_for_updates(confirm_update=lambda v, c: True, channel="main")
+        self.assertEqual(result, "current")
+        self.assertEqual(discover_mock.call_args.kwargs["channel"], "main")
+
+    def test_android_facade_installs_the_confirmed_manifest(self):
+        import mudae_bot
+        import types
+        manifest = {"version": "9.9.9", "changelog": "test"}
+        calls = {}
+
+        def _apply(files_dir, force=False, manifest_override=None):
+            calls["override"] = manifest_override
+            return json.dumps({"status": "updated", "version": "9.9.9"})
+
+        fake_bridge = types.SimpleNamespace(check_and_apply_update=_apply)
+        with mock.patch.dict(
+                os.environ,
+                {
+                    "TERMUX_VERSION": "",
+                    "MUDAREMOTE_TARGET_VERSION": "",
+                    "MUDAREMOTE_RUNTIME_HOME": "/tmp/fake-runtime",
+                },
+            ), \
+                mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=manifest), \
+                mock.patch.dict(sys.modules, {"android_bridge": fake_bridge}):
+            result = mudae_bot.check_for_updates(
+                confirm_update=lambda version, changelog: True,
+                target_version="v9.9.9",
+            )
+        self.assertEqual(result, "source")
+        self.assertIs(calls["override"], manifest)
+
+    def test_android_facade_refuses_apk_targets_before_staging(self):
+        import mudae_bot
+        import types
+        called = []
+        fake_bridge = types.SimpleNamespace(
+            check_and_apply_update=lambda *a, **k: called.append((a, k)) or json.dumps({"status": "updated"})
+        )
+        manifest = {"version": "1.2.7", "changelog": "apk"}
+        with mock.patch.dict(
+                os.environ,
+                {
+                    "TERMUX_VERSION": "",
+                    "MUDAREMOTE_TARGET_VERSION": "",
+                    "MUDAREMOTE_RUNTIME_HOME": "/tmp/fake-runtime",
+                },
+            ), \
+                mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=manifest), \
+                mock.patch.dict(sys.modules, {"android_bridge": fake_bridge}):
+            result = mudae_bot.check_for_updates(
+                confirm_update=lambda version, changelog: True,
+                target_version="android-pre12",
+            )
+        self.assertEqual(result, "failed")
+        self.assertEqual(called, [])
 
 if __name__ == "__main__":
     unittest.main()

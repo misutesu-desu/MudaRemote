@@ -1926,37 +1926,56 @@ class MainActivity : ComponentActivity() {
         Thread {
             try {
                 PythonRuntime.ensureStarted(applicationContext)
+                val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
+                val isBeta = prefs.getBoolean("pref_beta_channel", true)
+                val channel = if (isBeta) "beta" else "main"
                 val relsJson = Python.getInstance().getModule("android_bridge")
-                    .callAttr("fetch_available_versions", "android")
+                    .callAttr("fetch_available_versions", "android", channel)
                     .toString()
-                val array = JSONArray(relsJson)
-                val items = mutableListOf<Pair<String, String>>()
+                val envelope = JSONObject(relsJson)
+                if (envelope.optString("status") != "ok") {
+                    val reason = envelope.optString("error", "unknown error")
+                    runOnUiThread { toast("Failed to fetch releases: $reason") }
+                    return@Thread
+                }
+                val array = envelope.optJSONArray("releases") ?: JSONArray()
+                val items = mutableListOf<Triple<String, String, String>>()
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
                     val tag = obj.optString("tag", "")
+                    if (tag.isEmpty()) continue
                     val isPre = obj.optBoolean("prerelease", false)
                     val isApk = obj.optBoolean("is_apk", false)
+                    val apkUrl = obj.optString("apk_url", "")
                     val typeLabel = if (isApk) "[APK]" else if (isPre) "[Beta]" else "[Stable]"
-                    items.add(Pair(tag, "$tag $typeLabel"))
+                    items.add(Triple(tag, "$tag $typeLabel", apkUrl))
                 }
                 if (items.isEmpty()) {
-                    items.add(Pair("v4.9.1-beta.3", "v4.9.1-beta.3 [Beta]"))
-                    items.add(Pair("v4.9.0", "v4.9.0 [Stable]"))
-                    items.add(Pair("v4.8.10", "v4.8.10 [Stable]"))
+                    runOnUiThread {
+                        toast(
+                            if (isBeta) "No releases are available yet."
+                            else "No stable releases available yet. Enable Beta Updates to see previews."
+                        )
+                    }
+                    return@Thread
                 }
                 runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
                     val displayNames = items.map { it.second }.toTypedArray()
                     AlertDialog.Builder(this)
-                        .setTitle("🎯 Switch Target Version")
+                        .setTitle(if (isBeta) "🎯 Switch Target Version (Beta)" else "🎯 Switch Target Version (Stable)")
                         .setItems(displayNames) { _, which ->
-                            val selectedTag = items[which].first
+                            val (selectedTag, _, apkUrl) = items[which]
                             if (selectedTag.startsWith("android-")) {
-                                toast("Opening APK download for $selectedTag...")
-                                val url = "https://github.com/misutesu-desu/MudaRemote/releases/tag/$selectedTag"
-                                try {
-                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                } catch (e: Exception) {
-                                    toast("Could not open browser: ${e.message}")
+                                if (apkUrl.isNotBlank()) {
+                                    toast("Opening APK download for $selectedTag...")
+                                    try {
+                                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
+                                    } catch (e: Exception) {
+                                        toast("Could not open browser: ${e.message}")
+                                    }
+                                } else {
+                                    toast("No APK file was published for $selectedTag.")
                                 }
                             } else {
                                 promptConfirmInstallVersion(selectedTag)

@@ -698,6 +698,27 @@ def _confirm_update_in_console(latest_version, changelog):
     return answer in {"y", "yes"}
 
 
+
+def cleanup_after_update():
+    """Run interrupted-update recovery and sweep stale frozen-update leftovers.
+
+    The frozen PowerShell helper cleans up after itself on every exit path it
+    survives; this only repairs artifacts from a helper that was killed
+    mid-transaction. Safe to call at every startup.
+    """
+    base_path = get_base_path()
+    try:
+        recover_interrupted_update(base_path)
+    except Exception as e:
+        print_system_log(f"Interrupted update recovery skipped: {e}", "WARN")
+    try:
+        from mudae_core.updater import cleanup_update_artifacts
+        for action in cleanup_update_artifacts(base_path, sys.executable if getattr(sys, 'frozen', False) else None):
+            print_system_log(f"Update cleanup: {action}", "INFO")
+    except Exception as e:
+        print_system_log(f"Update artifact cleanup skipped: {e}", "WARN")
+
+
 def check_for_updates(confirm_update=None, channel=None, target_version=None):
     if not UPDATE_URL:
         return "disabled"
@@ -710,7 +731,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
         if target_ver:
             print_system_log(f"Target version requested: {target_ver}. Fetching release manifest...", "RESET")
             from mudae_core.versioning import fetch_manifest_for_version
-            data = fetch_manifest_for_version(requests, target_ver)
+            data = fetch_manifest_for_version(requests, target_ver, channel=channel)
             latest_version = data.get("version") or str(target_ver)
         else:
             resolved_channel = resolve_update_channel(channel, CURRENT_VERSION, base_path)
@@ -740,10 +761,12 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
             return "skipped"
 
         if is_android:
+            if str(target_ver or "").strip().lower().startswith("android-"):
+                raise UpdateError("APK releases cannot be installed into the Android Python runtime. Install the APK from its release page.")
             runtime_home = os.environ.get("MUDAREMOTE_RUNTIME_HOME") or os.environ.get("HOME") or base_path
             try:
                 import android_bridge
-                result_raw = android_bridge.check_and_apply_update(runtime_home, force=True)
+                result_raw = android_bridge.check_and_apply_update(runtime_home, force=True, manifest_override=data)
                 result_json = json.loads(result_raw)
                 if result_json.get("status") in {"updated", "staged"}:
                     print_system_log(f"Verified Python source update v{latest_version} applied to Android storage. Will be used on next start.", "INFO")
@@ -763,21 +786,19 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
             force=bool(target_ver),
         )
         if result == "frozen":
-            print_system_log("Verified update staged. Restarting via updater...", "RESET")
-            os._exit(0)
-        print_system_log("Verified full source update applied. Restarting...", "RESET")
-        if os.name == 'nt':
-            subprocess.Popen([sys.executable] + sys.argv, cwd=base_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            sys.exit()
-        else:
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            print_system_log("Verified update staged. The updater helper replaces MudaRemote and relaunches it once this process exits.", "RESET")
+            return "frozen"
+        if result == "git":
+            print_system_log("This installation is managed by Git. No files were changed; run 'git pull' to update.", "INFO")
+            return "git"
+        if result == "current":
+            print_system_log("You are up to date.", "INFO")
+            return "current"
+        print_system_log("Verified full source update applied to disk.", "RESET")
+        return "source"
     except Exception as e:
         print_system_log(f"Update failed: {e}", "ERROR")
         return "failed"
-    try:
-        recover_interrupted_update(get_base_path())
-    except Exception:
-        pass
 presets = {}
 presets_path = os.path.join(get_base_path(), "presets.json")
 if not os.path.exists(presets_path):
@@ -8840,7 +8861,21 @@ def parse_args(argv=None):
 
 def run_cli(argv=None):
     cleanup_after_update()
-    check_for_updates()
+    update_result = check_for_updates()
+    if update_result == "frozen":
+        print_system_log("Exiting so the updater helper can replace MudaRemote and relaunch it.", "RESET")
+        sys.exit(0)
+    if update_result == "source" and not (
+        os.environ.get("TERMUX_VERSION") == "MudaRemote-Android"
+        or os.environ.get("MUDAREMOTE_RUNTIME_HOME")
+    ):
+        print_system_log("Relaunching with the updated files...", "RESET")
+        if os.name == "nt":
+            subprocess.Popen([sys.executable] + sys.argv, cwd=get_base_path(), creationflags=subprocess.CREATE_NEW_CONSOLE)
+            sys.exit(0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    if update_result == "git":
+        print_system_log("Running from a Git checkout: update manually with 'git pull'; files were not changed.", "INFO")
     args = parse_args(argv)
     if args.preset:
         if args.preset in presets:

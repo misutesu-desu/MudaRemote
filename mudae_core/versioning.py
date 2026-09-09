@@ -6,8 +6,9 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "4.9.1-beta.4"
+CURRENT_VERSION = "4.9.1-beta.5"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
+MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{ref}/version.json"
 
 _VERSION_RE = re.compile(
     r"^\s*[vV]?(?P<release>\d+(?:\.\d+)*)"
@@ -150,42 +151,109 @@ def get_update_manifest_url(channel=None, current_version=None, base_path=None):
     return get_update_manifest_urls(channel, current_version, base_path)[0]
 
 
-def fetch_available_releases(session=None, timeout=6.0, platform="all"):
-    """Query GitHub Releases API to return available release versions."""
-    url = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases?per_page=30"
-    headers = {"User-Agent": "MudaRemote"}
-    try:
-        if session:
-            resp = session.get(url, timeout=timeout, headers=headers)
-            raw = resp.json() if hasattr(resp, "json") else json.loads(resp.content.decode("utf-8"))
+class ReleaseDiscoveryError(RuntimeError):
+    """Raised when the GitHub release catalog or a release manifest cannot be fetched."""
+
+
+RELEASES_API_URL = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases"
+RELEASES_PAGE_SIZE = 100
+RELEASES_MAX_PAGES = 10
+
+
+def _release_request_headers():
+    return {
+        "User-Agent": "MudaRemote",
+        "Accept": "application/vnd.github+json",
+    }
+
+
+def _fetch_release_page(session, url, headers, timeout):
+    """Return (items, link_header) for one releases API page; raise on any failure."""
+    if session is not None:
+        resp = session.get(url, timeout=timeout, headers=headers)
+        if hasattr(resp, "raise_for_status"):
+            resp.raise_for_status()
+        if hasattr(resp, "json"):
+            raw = resp.json()
         else:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        raw = [
-            {"tag_name": "v4.9.1-beta.3", "name": "MudaRemote v4.9.1-beta.3", "prerelease": True},
-            {"tag_name": "v4.9.1-beta.2", "name": "MudaRemote v4.9.1-beta.2", "prerelease": True},
-            {"tag_name": "v4.9.1-beta.1", "name": "MudaRemote v4.9.1-beta.1", "prerelease": True},
-            {"tag_name": "v4.9.0", "name": "MudaRemote v4.9.0", "prerelease": False},
-            {"tag_name": "v4.8.10", "name": "MudaRemote v4.8.10", "prerelease": False},
-        ]
+            raw = json.loads(resp.content.decode("utf-8"))
+        link = resp.headers.get("Link", "") if getattr(resp, "headers", None) else ""
+    else:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+            link = resp.headers.get("Link", "") if hasattr(resp, "headers") else ""
+    if not isinstance(raw, list):
+        raise ReleaseDiscoveryError(
+            "Unexpected response shape from the GitHub releases API (expected a list of releases)."
+        )
+    return raw, str(link or "")
+
+
+def _next_page_number(link_header):
+    match = re.search(r'<[^>]*[?&]page=(\d+)[^>]*>\s*;\s*rel="next"', link_header)
+    return int(match.group(1)) if match else None
+
+
+def fetch_available_releases(session=None, timeout=6.0, platform="all", channel=None):
+    """Query the GitHub Releases API across every page.
+
+    - ``channel='main'`` (stable) excludes prereleases; ``'beta'`` (or ``None``)
+      keeps eligible stable and prerelease rows.
+    - ``platform in {'pc', 'windows'}`` excludes Android-only releases.
+    - Transport/API failures raise :class:`ReleaseDiscoveryError` instead of
+      fabricating historical releases; an empty list means genuinely nothing
+      eligible was published.
+    """
+    resolved_channel = resolve_update_channel(channel) if channel is not None else None
+    headers = _release_request_headers()
+
+    items = []
+    page = 1
+    link = ""
+    while page <= RELEASES_MAX_PAGES:
+        url = "{}?per_page={}&page={}".format(RELEASES_API_URL, RELEASES_PAGE_SIZE, page)
+        try:
+            raw, link = _fetch_release_page(session, url, headers, timeout)
+        except ReleaseDiscoveryError:
+            raise
+        except Exception as exc:
+            raise ReleaseDiscoveryError(
+                "Failed to load the release list from GitHub (page {}): {}".format(page, exc)
+            ) from exc
+        items.extend(item for item in raw if isinstance(item, dict))
+        if len(raw) < RELEASES_PAGE_SIZE:
+            break
+        next_page = _next_page_number(link)
+        if not next_page or next_page <= page:
+            break
+        if page >= RELEASES_MAX_PAGES:
+            raise ReleaseDiscoveryError(
+                "Release history is too large to enumerate (page limit reached)."
+            )
+        page = next_page
 
     results = []
-    for item in raw:
-        tag = item.get("tag_name", "")
-        name = item.get("name") or tag
+    seen_tags = set()
+    for item in items:
+        tag = str(item.get("tag_name", ""))
+        name = str(item.get("name") or tag)
         is_pre = bool(item.get("prerelease", False))
         is_apk = tag.startswith("android-") or "android" in tag.lower()
         ver = tag[1:] if tag.startswith("v") else tag
         apk_url = None
-        for asset in item.get("assets", []):
-            if asset.get("name", "").lower().endswith(".apk"):
+        for asset in item.get("assets", []) or []:
+            if str(asset.get("name", "")).lower().endswith(".apk"):
                 apk_url = asset.get("browser_download_url")
                 break
 
         if platform in {"pc", "windows"} and is_apk:
             continue
+        if resolved_channel == "main" and is_pre:
+            continue
+        if not tag or tag in seen_tags:
+            continue
+        seen_tags.add(tag)
         results.append({
             "version": ver,
             "tag": tag,
@@ -198,24 +266,82 @@ def fetch_available_releases(session=None, timeout=6.0, platform="all"):
     return results
 
 
-def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.0):
-    """Fetch the version.json manifest for a specific release tag or branch."""
-    raw = str(version_or_tag or "").strip()
-    if not raw or raw in {"latest", "beta"}:
-        tag = "beta"
-    elif raw in {"main", "stable"}:
-        tag = "main"
-    elif raw.startswith("v") or raw.startswith("android"):
-        tag = raw
-    else:
-        tag = "v" + raw
+def _pin_manifest_source_urls(manifest, ref):
+    """Re-point release-manifest source URLs at the immutable tag ref.
 
-    url = f"https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{tag}/version.json"
-    headers = {"User-Agent": "MudaRemote"}
-    if session:
-        resp = session.get(url, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-        return resp.json() if hasattr(resp, "json") else json.loads(resp.content.decode("utf-8"))
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    Older published manifests fetched their ``source_files`` from the mutable
+    ``beta``/``main`` branches; installing such a release later would download
+    current branch files and fail their recorded checksums. The tag contents
+    are frozen and match those hashes, so pinning keeps targeted installs
+    possible without weakening verification.
+    """
+    base = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/"
+
+    def _pin(url):
+        text = str(url or "")
+        for branch in ("beta", "main"):
+            prefix = base + branch + "/"
+            if text.startswith(prefix):
+                return base + ref + "/" + text[len(prefix):]
+        return url
+
+    files = manifest.get("source_files")
+    if isinstance(files, list):
+        for entry in files:
+            if isinstance(entry, dict) and entry.get("url"):
+                entry["url"] = _pin(entry["url"])
+    if manifest.get("download_url"):
+        manifest["download_url"] = _pin(manifest["download_url"])
+
+
+def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.0, channel=None):
+    """Fetch and validate the version.json manifest for a tag, branch, or alias.
+
+    Symbolic targets: ``latest`` honors the selected channel, ``beta``/``main``/
+    ``stable`` map to their branches. Anything else is tried verbatim (exact
+    release tag or branch), then with a ``v`` prefix for bare versions.
+    """
+    raw = str(version_or_tag or "").strip()
+    if not raw or raw == "latest":
+        resolved = resolve_update_channel(channel, CURRENT_VERSION)
+        candidates = ["beta" if resolved == "beta" else "main"]
+    elif raw == "beta":
+        candidates = ["beta"]
+    elif raw in {"main", "stable"}:
+        candidates = ["main"]
+    else:
+        candidates = [raw]
+        if not raw.startswith(("v", "V", "android")):
+            candidates.append("v" + raw)
+
+    headers = _release_request_headers()
+    last_error = None
+    for tag in candidates:
+        url = MANIFEST_REF_URL_TEMPLATE.format(ref=tag)
+        try:
+            if session is not None:
+                resp = session.get(url, timeout=timeout, headers=headers)
+                if hasattr(resp, "raise_for_status"):
+                    resp.raise_for_status()
+                data = resp.json() if hasattr(resp, "json") else json.loads(resp.content.decode("utf-8"))
+            else:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+        except ReleaseDiscoveryError:
+            raise
+        except Exception as exc:
+            last_error = exc
+            continue
+        if not isinstance(data, dict) or not str(data.get("version") or "").strip():
+            raise ReleaseDiscoveryError(
+                "The manifest for '{}' is not a valid release manifest.".format(tag)
+            )
+        if tag not in {"main", "beta"}:
+            _pin_manifest_source_urls(data, tag)
+        return data
+    raise ReleaseDiscoveryError(
+        "No release manifest was found for '{}' (tried: {}). Last error: {}".format(
+            raw or "latest", ", ".join(candidates), last_error
+        )
+    )

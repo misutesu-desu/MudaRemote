@@ -1,26 +1,33 @@
 {
-  "version": "4.9.1-beta.4",
+  "version": "4.9.1-beta.5",
   "changelog": {
+    "Bug Fixes": [
+      "**Startup update check restored:** the [MudaRemote] Update check failed startup error is gone; updates are checked properly on every launch.",
+      "**Full release history in the picker:** version selection now paginates GitHub releases; older versions are reachable and Android-only releases no longer crowd out PC releases.",
+      "**Beta setting respected in the version picker:** the list follows the chosen channel, with an in-dialog beta toggle and Reload button.",
+      "**Honest errors instead of fake releases:** network/API failures are shown with a retry option; no fabricated entries can fail during install.",
+      "**Mouse wheel isolation:** scrolling affects only the panel under the pointer; dialogs and lists no longer scroll the background editor.",
+      "**Old releases installable again:** release manifests pin their download URLs to the immutable tag, so targeted installs no longer hit checksum mismatches."
+    ],
     "Improvements": [
-      "**Transactional frozen updates (PC):** Frozen Windows updates now use isolated per-attempt staging directories and kernel-level exclusive file locking (`update_frozen_install.lock`), cleanly rejecting conflicting concurrent updates without file corruption.",
-      "**Literal argument preservation:** Arguments are safely transported via structured JSON and passed directly through Win32 `CreateProcessW`, preserving spaces, quotes, `%PATH%`, ampersands, and Unicode without batch interpolation or environment expansion vulnerabilities.",
-      "**Immutable generations & staged activation (Android):** Android Python runtime updates are placed into versioned, immutable generation directories (`generations/gen_<timestamp>`). Live sessions remain pinned to their active generation while new updates are staged cleanly (`vX.Y.Z staged`) until the next application restart.",
-      "**Target version selection (PC & Android):** Pick and switch to any release version directly from the GUI on both PC (Preset Editor sidebar) and Android (Python Engine card), with full preset and data safety."
+      "**Clear update outcomes:** Git checkouts are reported instead of modified, source installs restart cleanly with the new files, and the EXE updater relaunches the app automatically.",
+      "**Better Android version picker:** channel-aware lists, real APK asset links, and explicit unavailable/failed states.",
+      "**Self-repair after interrupted Windows updates:** leftovers from a killed update helper are restored or swept at next startup."
     ]
   },
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.4/MudaRemote.exe",
-  "exe_sha256": "c57fea46c5726f920d81fe9dab6ab720598ee2775161d34a3bef23784d8d1c03",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.5/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
-      "sha256": "aae161b8c9e5f108b59c57b685a8a101f2844872e11742d43853e7467469d53b"
+      "sha256": "0e5e5cad1c94ace12c170d4b5de81e19763a417ea76392be7706c7ef293b294e"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_preset_editor.py",
-      "sha256": "e0f1cb944f5857e0689cc8bc0630c53927551af6a0240c01148c0a480c2ed9d8"
+      "sha256": "80c1dab3791ac602f45b2edb53523887f3fba8ba122dd440ec85eadf66cd2578"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -80,12 +87,12 @@
     {
       "path": "mudae_core/updater.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/updater.py",
-      "sha256": "a9ba64180d8e8ae912b5f05a5f96e920b1b4ae623742d994b24ac74817d7aeef"
+      "sha256": "03054b087a80cc4b4135c62ec5973ed829b2b30b1bbe5310120b75ffb2324f9b"
     },
     {
       "path": "mudae_core/versioning.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_core/versioning.py",
-      "sha256": "e0a74bd13d7d25bea3047a55c1a8f20ab325f1b7d4f4c51d5b061ca7d403afb2"
+      "sha256": "13a5a0311fcebd80f610f65cc4bd1ad93b50299923bb852c86483011e335f9fb"
     },
     {
       "path": "requirements.txt",
