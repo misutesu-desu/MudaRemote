@@ -810,5 +810,189 @@ class CheckForUpdatesFacadeTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertEqual(called, [])
 
+
+class UpdateProgressAndDiagnosticsTests(unittest.TestCase):
+    def _source_files(self):
+        return {
+            "file-{}".format(index): b"# generated test source\n"
+            for index, _ in enumerate(sorted(REQUIRED_SOURCE_PATHS))
+        }
+
+    def _source_manifest(self, files):
+        return {
+            "version": "5.0.0",
+            "source_files": [
+                _entry(path, key, files[key])
+                for key, path in zip(files, sorted(REQUIRED_SOURCE_PATHS))
+            ],
+        }
+
+    def test_source_apply_reports_phase_progress_per_artifact(self):
+        files = self._source_files()
+        manifest = self._source_manifest(files)
+        events = []
+        total = len(files)
+        with tempfile.TemporaryDirectory() as directory:
+            result = apply_update(
+                _Session(files), manifest, "4.0.0", directory,
+                progress=lambda phase, message: events.append((phase, message)),
+            )
+        self.assertEqual(result, "source")
+        phases = [phase for phase, _ in events]
+        messages = "\n".join(message for _, message in events)
+        # Every downloaded artifact is named with its manifest position...
+        self.assertEqual(phases.count("download"), total)
+        for index, path in enumerate(sorted(REQUIRED_SOURCE_PATHS), 1):
+            self.assertIn("source file {} ({}/{})".format(path.replace("/", os.sep), index, total), messages)
+        # ...verification and staging follow downloading, and the transaction
+        # application is its own honest phase (never "complete" from staging).
+        self.assertLess(phases.index("download"), phases.index("applying"))
+        self.assertIn("verifying", phases)
+        self.assertIn("Compiling staged Python files...", messages)
+        self.assertIn("Applying the verified files to disk...", messages)
+        self.assertNotIn("complete", messages.lower())
+
+    def test_frozen_apply_reports_executable_and_helper_phases(self):
+        content = b"fake executable"
+        session = _Session({"exe": content})
+        manifest = {
+            "version": "5.0.0",
+            "exe_download_url": "exe",
+            "exe_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        events = []
+        with tempfile.TemporaryDirectory() as directory:
+            executable = os.path.join(directory, "MudaRemote.exe")
+            with mock.patch("mudae_core.updater.subprocess.Popen"):
+                result = apply_update(
+                    session, manifest, "4.0.0", directory,
+                    frozen=True, executable=executable,
+                    progress=lambda phase, message: events.append((phase, message)),
+                )
+        self.assertEqual(result, "frozen")
+        phases = [phase for phase, _ in events]
+        messages = "\n".join(message for _, message in events)
+        self.assertIn("download", phases)
+        self.assertIn("staging", phases)
+        self.assertIn("executable exe", messages)
+        self.assertIn("Preparing the one-shot updater helper...", messages)
+
+    def test_checksum_failure_names_artifact_url_and_full_hashes(self):
+        files = {"bot": b"VALUE = 'new'\n", "editor": b"X=1\n", "core": b"X=1\n"}
+        manifest = {
+            "version": "5.0.0",
+            "source_files": [
+                _entry("mudae_bot.py", "bot", files["bot"], checksum="0" * 64),
+                _entry("mudae_preset_editor.py", "editor", files["editor"]),
+                _entry("mudae_core/__init__.py", "core", files["core"]),
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            bot_path = os.path.join(directory, "mudae_bot.py")
+            with open(bot_path, "wb") as handle:
+                handle.write(b"VALUE = 'old'\n")
+            with self.assertRaises(UpdateError) as ctx:
+                apply_update(_Session(files), manifest, "4.0.0", directory)
+        message = str(ctx.exception)
+        received = hashlib.sha256(files["bot"]).hexdigest()
+        self.assertIn("source file mudae_bot.py (1/3)", message)
+        self.assertIn("URL: bot", message)
+        self.assertIn("Expected SHA-256: " + "0" * 64, message)
+        self.assertIn("Received SHA-256: " + received, message)
+        self.assertIn("current installation was kept unchanged", message)
+
+    def test_frozen_checksum_failure_names_the_executable_url(self):
+        session = _Session({"exe-url": b"some other release's bytes"})
+        manifest = {
+            "version": "5.0.0",
+            "exe_download_url": "exe-url",
+            "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            executable = os.path.join(directory, "MudaRemote.exe")
+            with mock.patch("mudae_core.updater.subprocess.Popen") as popen:
+                with self.assertRaises(UpdateError) as ctx:
+                    apply_update(
+                        session, manifest, "4.0.0", directory,
+                        frozen=True, executable=executable,
+                    )
+            popen.assert_not_called()
+            # No staged helper may be launched for an unverified executable.
+            leftover = [n for n in os.listdir(directory) if n.startswith("mudae-frozen-update-")]
+            self.assertEqual(leftover, [])
+        message = str(ctx.exception)
+        self.assertIn("executable exe-url", message)
+        self.assertIn("URL: exe-url", message)
+        self.assertIn(
+            "Expected SHA-256: d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+            message,
+        )
+
+    def test_matching_older_release_installs_only_when_forced(self):
+        files = self._source_files()
+        manifest = {
+            "version": "4.6.4",
+            "source_files": [
+                _entry(path, key, files[key])
+                for key, path in zip(files, sorted(REQUIRED_SOURCE_PATHS))
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(
+                apply_update(_Session(files), manifest, "4.9.1", directory), "current"
+            )
+            self.assertFalse(os.path.isfile(os.path.join(directory, ".version")))
+            result = apply_update(
+                _Session(files), manifest, "4.9.1", directory, force=True
+            )
+            self.assertEqual(result, "source")
+            with open(os.path.join(directory, ".version"), "r", encoding="utf-8") as handle:
+                self.assertEqual(handle.read().strip(), "4.6.4")
+
+    def test_broken_progress_listener_never_aborts_an_update(self):
+        files = self._source_files()
+        manifest = self._source_manifest(files)
+
+        def angry(phase, message):
+            raise RuntimeError("listener is broken")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = apply_update(
+                _Session(files), manifest, "4.0.0", directory, progress=angry,
+            )
+        self.assertEqual(result, "source")
+
+
+class CheckForUpdatesProgressFacadeTests(unittest.TestCase):
+    def test_target_failure_reason_is_reported_through_progress(self):
+        import mudae_bot
+        events = []
+        failure = UpdateError(
+            "The published download for executable MudaRemote.exe does not match its checksum."
+        )
+        manifest = {"version": "4.6.4", "changelog": "old release"}
+        with mock.patch.dict(
+                os.environ,
+                {"TERMUX_VERSION": "", "MUDAREMOTE_RUNTIME_HOME": "", "MUDAREMOTE_TARGET_VERSION": ""},
+            ), \
+                mock.patch("mudae_core.versioning.fetch_manifest_for_version", return_value=manifest), \
+                mock.patch("mudae_bot.apply_update", side_effect=failure) as apply_mock, \
+                mock.patch("mudae_bot.get_base_path", return_value=tempfile.mkdtemp()):
+            result = mudae_bot.check_for_updates(
+                confirm_update=lambda version, changelog: True,
+                target_version="v4.6.4",
+                progress=lambda phase, message: events.append((phase, message)),
+            )
+        self.assertEqual(result, "failed")
+        phases = dict(events)
+        self.assertIn("Fetching release manifest for v4.6.4...", phases["manifest"])
+        self.assertIn("does not match its checksum", phases["error"])
+        self.assertIn(("applying", "Installing update..."), events)
+        # The callback is forwarded so the updater's own phases reach the GUI too.
+        self.assertTrue(callable(apply_mock.call_args.kwargs["progress"]))
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

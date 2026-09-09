@@ -13,6 +13,7 @@ import sys
 import argparse
 import time
 import threading
+import queue
 import math
 import re
 
@@ -1118,6 +1119,9 @@ class PresetEditor:
         self.subframe_controls = {}  # Map of subframe -> control_key
         self.secret_store = SecretStore(get_base_path())
         self.bot_processes = {}
+        self._update_busy = False
+        self._update_events = queue.Queue()
+        self._update_last_error = None
         self._round_count = 0
         self.editor_mode = "quick"
         self.quick_widgets = {}
@@ -1649,7 +1653,7 @@ class PresetEditor:
         )
         self.channel_status_lbl.pack(anchor=tk.W, pady=(0, 8))
 
-        self.create_flat_button(
+        self.check_updates_btn = self.create_flat_button(
             update_frame,
             "🔍 Check for Updates",
             self.manual_check_updates,
@@ -1657,9 +1661,10 @@ class PresetEditor:
             fg_color=TEXT_MAIN,
             hover_bg=BG_INPUT,
             font=("Segoe UI", 8, "bold"),
-        ).pack(fill=tk.X)
+        )
+        self.check_updates_btn.pack(fill=tk.X)
 
-        self.create_flat_button(
+        self.version_switch_btn = self.create_flat_button(
             update_frame,
             "🎯 Switch / Pick Version...",
             self.open_version_selector,
@@ -1667,7 +1672,26 @@ class PresetEditor:
             fg_color=TEXT_MAIN,
             hover_bg=BG_INPUT,
             font=("Segoe UI", 8, "bold"),
-        ).pack(fill=tk.X, pady=(4, 0))
+        )
+        self.version_switch_btn.pack(fill=tk.X, pady=(4, 0))
+
+        # Busy/progress row for the off-thread update worker. Hidden until an
+        # update starts; while visible the update actions are locked so no
+        # second install can be launched and the running one is never lost.
+        self.update_status_lbl = tk.Label(
+            update_frame,
+            text="",
+            font=("Segoe UI", 8),
+            bg=BG_DARK,
+            fg=ACCENT,
+            justify=tk.LEFT,
+            wraplength=220,
+        )
+        self.update_progress_bar = ttk.Progressbar(
+            update_frame,
+            mode="indeterminate",
+            length=220,
+        )
 
         # Right side - Settings panel
         self.settings_container = tk.Frame(main_frame, bg=BG_DARK)
@@ -4012,27 +4036,120 @@ class PresetEditor:
             )
         # "skipped" means the user cancelled; nothing to do.
 
+    def _begin_update_task(self, message):
+        """Lock the update actions and show the indeterminate progress row."""
+        self._update_busy = True
+        self._update_last_error = None
+        self.check_updates_btn.config(state=tk.DISABLED)
+        self.version_switch_btn.config(state=tk.DISABLED)
+        self.update_status_lbl.config(text=message)
+        self.update_status_lbl.pack(fill=tk.X, pady=(6, 0))
+        self.update_progress_bar.pack(fill=tk.X, pady=(2, 0))
+        self.update_progress_bar.start(18)
+        self.root.after(50, self._poll_update_events)
+
+    def _end_update_task(self):
+        """Restore busy controls and dismiss the progress row."""
+        self._update_busy = False
+        try:
+            self.update_progress_bar.stop()
+            self.update_progress_bar.pack_forget()
+            self.update_status_lbl.pack_forget()
+            self.check_updates_btn.config(state=tk.NORMAL)
+            self.version_switch_btn.config(state=tk.NORMAL)
+        except tk.TclError:
+            pass
+
+    def _queue_update_progress(self, phase, message):
+        # Called from the worker thread: only enqueue; never touch Tk here.
+        self._update_events.put(("phase", phase, message))
+
+    def _request_confirm_on_gui(self, latest_version, changelog, channel):
+        """Ask the GUI thread to show the confirmation dialog and wait for it.
+
+        Runs on the worker thread; tkinter dialogs must be created on the GUI
+        thread, so the answer is delivered back through the event queue.
+        """
+        done = threading.Event()
+        answer = {}
+        self._update_events.put(("confirm", latest_version, changelog, channel, done, answer))
+        done.wait()
+        return bool(answer.get("value"))
+
+    def _run_update_worker(self, work, on_done):
+        """Run ``work()`` off the Tk thread and post its outcome to the GUI."""
+        def _wrapped():
+            try:
+                result = work()
+            except Exception as exc:
+                self._update_events.put(("phase", "error", str(exc)))
+                result = "failed"
+            self._update_events.put(("done", result, on_done))
+        threading.Thread(target=_wrapped, daemon=True).start()
+
+    def _poll_update_events(self):
+        """Consume worker notifications on the GUI event loop."""
+        if not self._update_busy:
+            return
+        try:
+            while True:
+                try:
+                    item = self._update_events.get_nowait()
+                except queue.Empty:
+                    break
+                kind = item[0]
+                if kind == "phase":
+                    if item[1] == "error":
+                        self._update_last_error = item[2]
+                    self.update_status_lbl.config(text=item[2])
+                elif kind == "confirm":
+                    _version, _changelog, channel, done, answer = item[1:]
+                    answer["value"] = messagebox.askyesno(
+                        "MudaRemote Update Available",
+                        (
+                            f"MudaRemote v{_version} is available.\n\n"
+                            f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
+                            f"Changelog:\n{_changelog}\n\n"
+                            "Install this update now?\n\n"
+                            "MudaRemote will close and restart itself once the update is ready.\n"
+                            "Your saved presets will be kept."
+                        ),
+                        parent=self.root,
+                    )
+                    done.set()
+                elif kind == "done":
+                    _kind, result, on_done = item
+                    self._end_update_task()
+                    on_done(result)
+                    return
+        except tk.TclError:
+            self._update_busy = False
+            return
+        self.root.after(80, self._poll_update_events)
+
     def manual_check_updates(self):
-        """Check for updates using the currently selected update channel."""
+        """Check for updates on a worker thread so the GUI stays responsive."""
+        if self._update_busy:
+            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            return
         try:
             import mudae_bot
-            channel = "beta" if self.beta_channel_var.get() else "main"
+        except Exception as e:
+            messagebox.showerror("Update Error", f"Update check failed:\n{e}", parent=self.root)
+            return
+        channel = "beta" if self.beta_channel_var.get() else "main"
+        self._begin_update_task("Checking for updates...")
 
-            def confirm_update(latest_version, changelog):
-                return messagebox.askyesno(
-                    "MudaRemote Update Available",
-                    (
-                        f"MudaRemote v{latest_version} is available.\n\n"
-                        f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
-                        f"Changelog:\n{changelog}\n\n"
-                        "Install this update now?\n\n"
-                        "MudaRemote will close and restart itself once the update is ready.\n"
-                        "Your saved presets will be kept."
-                    ),
-                    parent=self.root,
-                )
+        def work():
+            return mudae_bot.check_for_updates(
+                confirm_update=lambda latest_version, changelog: self._request_confirm_on_gui(
+                    latest_version, changelog, channel
+                ),
+                channel=channel,
+                progress=self._queue_update_progress,
+            )
 
-            result = mudae_bot.check_for_updates(confirm_update=confirm_update, channel=channel)
+        def on_done(result):
             if result == "current":
                 channel_name = "Beta (Previews)" if channel == "beta" else "Stable (Official)"
                 messagebox.showinfo(
@@ -4043,14 +4160,22 @@ class PresetEditor:
             elif result == "disabled":
                 messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
             elif result == "failed":
-                messagebox.showerror("MudaRemote", "Update check encountered an error. Check console/logs.", parent=self.root)
+                detail = "\n\n" + self._update_last_error if self._update_last_error else " Check console/logs."
+                messagebox.showerror(
+                    "MudaRemote",
+                    "Update check encountered an error." + detail,
+                    parent=self.root,
+                )
             else:
                 self._handle_update_outcome(result, f"MudaRemote v{CURRENT_VERSION}")
-        except Exception as e:
-            messagebox.showerror("Update Error", f"Update check failed:\n{e}", parent=self.root)
+
+        self._run_update_worker(work, on_done)
 
     def open_version_selector(self):
         """Open the version selector dialog to install any target release."""
+        if self._update_busy:
+            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            return
         channel = "beta" if self.beta_channel_var.get() else "main"
 
         def on_install(target_version, selected_channel="main"):
@@ -4063,21 +4188,35 @@ class PresetEditor:
                 return
             try:
                 import mudae_bot
-                res = mudae_bot.check_for_updates(
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to install {target_version}:\n{e}", parent=self.root)
+                return
+            self._begin_update_task(f"Preparing switch to {target_version}...")
+
+            def work():
+                return mudae_bot.check_for_updates(
                     target_version=target_version,
                     channel=selected_channel,
                     confirm_update=lambda latest_version, changelog: True,
+                    progress=self._queue_update_progress,
                 )
+
+            def on_done(res):
                 if res == "current":
                     messagebox.showinfo("MudaRemote", f"Already running {target_version}.", parent=self.root)
                 elif res == "failed":
-                    messagebox.showerror("Error", f"Failed to switch to {target_version}. Check logs.", parent=self.root)
+                    detail = self._update_last_error or "Check logs."
+                    messagebox.showerror(
+                        "Error",
+                        f"Failed to switch to {target_version}:\n\n{detail}",
+                        parent=self.root,
+                    )
                 elif res == "disabled":
                     messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
                 else:
                     self._handle_update_outcome(res, target_version)
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to install {target_version}:\n{e}", parent=self.root)
+
+            self._run_update_worker(work, on_done)
 
         VersionSelectorDialog(self.root, on_install, channel=channel)
 

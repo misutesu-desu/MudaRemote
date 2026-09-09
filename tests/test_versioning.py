@@ -37,10 +37,14 @@ class VersioningTests(unittest.TestCase):
 
     def test_resolve_update_channel(self):
         import os
-        # Default from CURRENT_VERSION (beta)
-        self.assertEqual(resolve_update_channel(), "beta")
-        # Stable version defaults to main
-        self.assertEqual(resolve_update_channel(current_version="4.8.10"), "main")
+        import tempfile
+        # Empty base path keeps the test hermetic: a real settings.json in the
+        # working tree must not leak a saved channel into default resolution.
+        with tempfile.TemporaryDirectory() as base:
+            # Default from CURRENT_VERSION (beta)
+            self.assertEqual(resolve_update_channel(base_path=base), "beta")
+            # Stable version defaults to main
+            self.assertEqual(resolve_update_channel(current_version="4.8.10", base_path=base), "main")
         # Explicit argument overrides
         self.assertEqual(resolve_update_channel(channel="main"), "main")
         self.assertEqual(resolve_update_channel(channel="stable"), "main")
@@ -292,6 +296,100 @@ class ManifestTargetResolutionTests(unittest.TestCase):
         session = _FakeSession(routes)
         data = fetch_manifest_for_version(session, "beta")
         self.assertTrue(data["source_files"][0]["url"].endswith("/beta/mudae_bot.py"))
+
+
+class TargetReleaseIntegrityTests(unittest.TestCase):
+    """An exact release selection must resolve to that release's own metadata."""
+
+    @staticmethod
+    def _manifest_url(ref):
+        from mudae_core.versioning import MANIFEST_REF_URL_TEMPLATE
+        return MANIFEST_REF_URL_TEMPLATE.format(ref=ref)
+
+    def test_manifest_with_disagreeing_identity_is_refused(self):
+        # A tag serving a manifest that names a different version would mix
+        # channel-head metadata into a historical install; refuse it outright.
+        routes = {self._manifest_url("v4.6.4"): _FakeResponse({"version": "4.9.0"})}
+        session = _FakeSession(routes)
+        with self.assertRaises(ReleaseDiscoveryError) as ctx:
+            fetch_manifest_for_version(session, "v4.6.4")
+        self.assertIn("identifies itself as version '4.9.0'", str(ctx.exception))
+
+    def test_bare_version_skips_mismatched_ref_and_uses_the_real_tag(self):
+        routes = {
+            self._manifest_url("4.6.4"): _FakeResponse({"version": "4.9.0"}),
+            self._manifest_url("v4.6.4"): _FakeResponse({"version": "4.6.4"}),
+        }
+        session = _FakeSession(routes)
+        data = fetch_manifest_for_version(session, "4.6.4")
+        self.assertEqual(data["version"], "4.6.4")
+        self.assertEqual(session.calls, [self._manifest_url("4.6.4"), self._manifest_url("v4.6.4")])
+
+    def test_every_candidate_mismatched_surfaces_the_identity_error(self):
+        routes = {
+            self._manifest_url("4.6.4"): _FakeResponse({"version": "4.9.0"}),
+            self._manifest_url("v4.6.4"): _FakeResponse({"version": "4.9.0"}),
+        }
+        session = _FakeSession(routes)
+        with self.assertRaises(ReleaseDiscoveryError) as ctx:
+            fetch_manifest_for_version(session, "4.6.4")
+        self.assertIn("identifies itself as version", str(ctx.exception))
+
+    def test_historical_manifest_releases_latest_exe_url_is_pinned_to_the_tag(self):
+        # Reproduction of the v4.6.4 incident: that published manifest points
+        # its executable at the mutable /releases/latest alias, so the pinned
+        # historical checksum was compared against a NEWER release's bytes.
+        manifest = {
+            "version": "4.6.4",
+            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
+            "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+        }
+        routes = {self._manifest_url("v4.6.4"): _FakeResponse(manifest)}
+        session = _FakeSession(routes)
+        data = fetch_manifest_for_version(session, "v4.6.4")
+        self.assertEqual(
+            data["exe_download_url"],
+            "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.6.4/MudaRemote.exe",
+        )
+        self.assertEqual(
+            data["exe_sha256"],
+            "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+        )
+
+    def test_exe_url_naming_a_different_explicit_release_is_refused(self):
+        manifest = {
+            "version": "4.6.4",
+            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0/MudaRemote.exe",
+            "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
+        }
+        routes = {self._manifest_url("v4.6.4"): _FakeResponse(manifest)}
+        session = _FakeSession(routes)
+        with self.assertRaises(ReleaseDiscoveryError) as ctx:
+            fetch_manifest_for_version(session, "v4.6.4")
+        self.assertIn("points its executable at release 'v4.9.0'", str(ctx.exception))
+
+    def test_channel_head_manifests_keep_mutable_urls(self):
+        # The 'beta'/'main' aliases ARE the channel head; no identity check and
+        # no pinning may rewrite their mutable artifacts.
+        manifest = {
+            "version": "4.9.1-beta.5",
+            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
+        }
+        routes = {self._manifest_url("beta"): _FakeResponse(manifest)}
+        session = _FakeSession(routes)
+        data = fetch_manifest_for_version(session, "beta")
+        self.assertTrue(data["exe_download_url"].endswith("/releases/latest/download/MudaRemote.exe"))
+
+    def test_android_release_tags_are_not_pc_version_checked(self):
+        # Android tracks have their own version numbers; the historical APK
+        # tag must still resolve.
+        manifest = {"version": "1.2.7"}
+        routes = {self._manifest_url("android-pre9"): _FakeResponse(manifest)}
+        session = _FakeSession(routes)
+        data = fetch_manifest_for_version(session, "android-pre9")
+        self.assertEqual(data["version"], "1.2.7")
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,21 @@ class UpdateError(RuntimeError):
     pass
 
 
+def emit_update_progress(progress, phase, message):
+    """Fire a best-effort toolkit-independent update phase notification.
+
+    ``progress`` is an optional callable ``(phase, message)`` supplied by the
+    desktop GUI. Callback problems must never abort or corrupt an update, so
+    exceptions raised by the listener are swallowed here.
+    """
+    if progress is None:
+        return
+    try:
+        progress(phase, message)
+    except Exception:
+        pass
+
+
 # Keep startup failures short. ``requests`` applies these as separate connect
 # and read-idle limits, including redirected GitHub release downloads.
 UPDATE_DOWNLOAD_TIMEOUT = (5.0, 20.0)
@@ -158,7 +173,9 @@ def sha256_bytes(content):
     return hashlib.sha256(content).hexdigest()
 
 
-def _download(session, url, timeout):
+def _download(session, url, timeout, progress=None, artifact=None):
+    if artifact:
+        emit_update_progress(progress, "download", "Downloading {}...".format(artifact))
     response = session.get(url, timeout=timeout)
     response.raise_for_status()
     return response.content
@@ -173,30 +190,40 @@ def _validate_relative_path(relative_path):
         raise UpdateError("Unsafe update path: {!r}".format(relative_path))
     return normalized
 
-def _verified_download(session, url, expected_hash, timeout=UPDATE_DOWNLOAD_TIMEOUT):
+def _verified_download(session, url, expected_hash, timeout=UPDATE_DOWNLOAD_TIMEOUT, progress=None, artifact=None):
+    label = artifact or "the update"
     if not expected_hash:
-        raise UpdateError("The update manifest is missing a SHA-256 checksum.")
-    content = _download(session, url, timeout)
+        raise UpdateError("The update manifest is missing a SHA-256 checksum for {}.".format(label))
+    content = _download(session, url, timeout, progress=progress, artifact=label)
+    emit_update_progress(progress, "verifying", "Verifying checksum for {}...".format(label))
     actual_hash = sha256_bytes(content)
     if actual_hash.lower() != str(expected_hash).lower():
         raise UpdateError(
-            "The published download does not match its checksum "
-            "(expected {}..., received {}...). Your current installation was kept unchanged; "
-            "please retry after the release is corrected.".format(
-                str(expected_hash)[:12], actual_hash[:12]
+            "The published download for {label} does not match its checksum.\n"
+            "Artifact: {label}\n"
+            "URL: {url}\n"
+            "Expected SHA-256: {expected}\n"
+            "Received SHA-256: {received}\n"
+            "Your current installation was kept unchanged; please retry after the "
+            "release is corrected.".format(
+                label=label,
+                url=url,
+                expected=str(expected_hash).lower(),
+                received=actual_hash.lower(),
             )
         )
     return content
 
 
-def _stage_source_manifest(session, manifest, stage_dir):
+def _stage_source_manifest(session, manifest, stage_dir, progress=None):
     files = manifest.get("source_files")
     if not isinstance(files, list) or not files:
         raise UpdateError("No source_files manifest was published for this update.")
 
     staged_paths = []
     seen_paths = set()
-    for entry in files:
+    total_files = len(files)
+    for index, entry in enumerate(files, 1):
         if not isinstance(entry, dict):
             raise UpdateError("The source_files manifest contains an invalid entry.")
         relative_path = _validate_relative_path(entry.get("path", ""))
@@ -210,7 +237,11 @@ def _stage_source_manifest(session, manifest, stage_dir):
         seen_paths.add(canonical_key)
         target_path = os.path.join(stage_dir, relative_path)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        content = _verified_download(session, entry.get("url"), entry.get("sha256"))
+        content = _verified_download(
+            session, entry.get("url"), entry.get("sha256"),
+            progress=progress,
+            artifact="source file {} ({}/{})".format(relative_path, index, total_files),
+        )
         with open(target_path, "wb") as handle:
             handle.write(content)
         staged_paths.append(relative_path)
@@ -218,6 +249,7 @@ def _stage_source_manifest(session, manifest, stage_dir):
     if not REQUIRED_SOURCE_PATHS.issubset({path.replace("\\", "/") for path in staged_paths}):
         raise UpdateError("The source manifest is incomplete; update was not applied.")
 
+    emit_update_progress(progress, "verifying", "Compiling staged Python files...")
     for relative_path in staged_paths:
         if relative_path.endswith(".py"):
             py_compile.compile(os.path.join(stage_dir, relative_path), doraise=True)
@@ -613,13 +645,13 @@ def _replace_transactionally_locked(base_path, stage_dir, relative_paths):
 
 
 
-def _stage_frozen_update(session, manifest, base_path, executable):
+def _stage_frozen_update(session, manifest, base_path, executable, progress=None):
     lock_path = os.path.join(base_path, "update_frozen.lock")
     with _ExclusiveLock(lock_path):
-        return _stage_frozen_update_locked(session, manifest, base_path, executable)
+        return _stage_frozen_update_locked(session, manifest, base_path, executable, progress=progress)
 
 
-def _stage_frozen_update_locked(session, manifest, base_path, executable):
+def _stage_frozen_update_locked(session, manifest, base_path, executable, progress=None):
     payload_path = os.path.join(base_path, "update_payload.json")
     if os.path.isfile(payload_path):
         try:
@@ -665,7 +697,12 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable):
     expected_hash = manifest.get("exe_sha256")
     if not url or not expected_hash:
         raise UpdateError("A verified executable is not available for this release.")
-    content = _verified_download(session, url, expected_hash)
+    content = _verified_download(
+        session, url, expected_hash,
+        progress=progress,
+        artifact="executable {}".format(str(url).rsplit("/", 1)[-1]),
+    )
+    emit_update_progress(progress, "staging", "Preparing the one-shot updater helper...")
 
     # Isolated per-attempt staging directory ensures concurrent attempts never collide
     stage_dir = tempfile.mkdtemp(prefix="mudae-frozen-update-", dir=base_path)
@@ -828,13 +865,13 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable):
         handle.write(batch)
 
     return batch_path
-def apply_update(session, manifest, current_version, base_path, frozen=False, executable=None, force=False):
+def apply_update(session, manifest, current_version, base_path, frozen=False, executable=None, force=False, progress=None):
     """Apply a newer verified update (or force a specific version). Return one of: current, git, source, frozen."""
     latest_version = manifest.get("version")
     if not latest_version or (not force and not is_newer_version(latest_version, current_version)):
         return "current"
     if frozen:
-        batch_path = _stage_frozen_update(session, manifest, base_path, executable or sys.executable)
+        batch_path = _stage_frozen_update(session, manifest, base_path, executable or sys.executable, progress=progress)
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen([batch_path], creationflags=creation_flags, shell=True)
         return "frozen"
@@ -845,7 +882,8 @@ def apply_update(session, manifest, current_version, base_path, frozen=False, ex
     os.makedirs(base_path, exist_ok=True)
     stage_dir = tempfile.mkdtemp(prefix="mudae-update-", dir=base_path)
     try:
-        relative_paths = _stage_source_manifest(session, manifest, stage_dir)
+        relative_paths = _stage_source_manifest(session, manifest, stage_dir, progress=progress)
+        emit_update_progress(progress, "applying", "Applying the verified files to disk...")
         _replace_transactionally(base_path, stage_dir, relative_paths)
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)

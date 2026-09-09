@@ -719,7 +719,17 @@ def cleanup_after_update():
         print_system_log(f"Update artifact cleanup skipped: {e}", "WARN")
 
 
-def check_for_updates(confirm_update=None, channel=None, target_version=None):
+def _emit_update_progress(progress, phase, message):
+    """Forward one best-effort toolkit-independent update phase to the caller."""
+    if progress is None:
+        return
+    try:
+        progress(phase, message)
+    except Exception:
+        pass
+
+
+def check_for_updates(confirm_update=None, channel=None, target_version=None, progress=None):
     if not UPDATE_URL:
         return "disabled"
     is_frozen = getattr(sys, 'frozen', False)
@@ -730,6 +740,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
     try:
         if target_ver:
             print_system_log(f"Target version requested: {target_ver}. Fetching release manifest...", "RESET")
+            _emit_update_progress(progress, "manifest", "Fetching release manifest for {}...".format(target_ver))
             from mudae_core.versioning import fetch_manifest_for_version
             data = fetch_manifest_for_version(requests, target_ver, channel=channel)
             latest_version = data.get("version") or str(target_ver)
@@ -737,6 +748,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
             resolved_channel = resolve_update_channel(channel, CURRENT_VERSION, base_path)
             channel_label = "Beta" if resolved_channel == "beta" else "Stable"
             print_system_log(f"Checking for updates... (Channel: {channel_label}, Current: v{CURRENT_VERSION}, Mode: {'Android' if is_android else ('EXE' if is_frozen else 'Script')})", "RESET")
+            _emit_update_progress(progress, "manifest", "Checking {} channel for updates...".format(channel_label))
             discovery = discover_update_manifest(
                 requests,
                 current_version=CURRENT_VERSION,
@@ -746,6 +758,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
             )
             if discovery.get("status") == "error":
                 print_system_log(discovery.get("error", "Update check failed."), "WARN")
+                _emit_update_progress(progress, "error", discovery.get("error", "Update check failed."))
                 return "failed"
             if discovery.get("status") != "available":
                 print_system_log("You are up to date.", "INFO")
@@ -776,6 +789,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
                 return "current"
             except ImportError:
                 raise UpdateError("Android updates must be applied through the Android runtime bridge.")
+        _emit_update_progress(progress, "applying", "Installing update...")
         result = apply_update(
             requests,
             data,
@@ -784,6 +798,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
             frozen=is_frozen,
             executable=sys.executable,
             force=bool(target_ver),
+            progress=progress,
         )
         if result == "frozen":
             print_system_log("Verified update staged. The updater helper replaces MudaRemote and relaunches it once this process exits.", "RESET")
@@ -798,6 +813,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None):
         return "source"
     except Exception as e:
         print_system_log(f"Update failed: {e}", "ERROR")
+        _emit_update_progress(progress, "error", str(e))
         return "failed"
 presets = {}
 presets_path = os.path.join(get_base_path(), "presets.json")

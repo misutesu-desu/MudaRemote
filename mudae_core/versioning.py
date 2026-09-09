@@ -6,7 +6,7 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "4.9.1-beta.5"
+CURRENT_VERSION = "4.9.1-beta.6"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
 MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{ref}/version.json"
 
@@ -266,14 +266,48 @@ def fetch_available_releases(session=None, timeout=6.0, platform="all", channel=
     return results
 
 
-def _pin_manifest_source_urls(manifest, ref):
-    """Re-point release-manifest source URLs at the immutable tag ref.
+_LATEST_RELEASE_ASSET_RE = re.compile(
+    r"^(?P<base>https://github\.com/[^/]+/[^/]+/releases)/latest/download/(?P<asset>[^/?#]+)$"
+)
+_TAGGED_RELEASE_ASSET_RE = re.compile(
+    r"^(?P<base>https://github\.com/[^/]+/[^/]+/releases)/download/(?P<tag>[^/]+)/(?P<asset>[^/?#]+)$"
+)
+
+
+def _normalize_release_ref(ref):
+    text = str(ref or "").strip().lower()
+    return text[1:] if text.startswith("v") else text
+
+
+def is_version_like_ref(ref):
+    """True when a selected ref names a release version, not an arbitrary branch."""
+    return bool(re.match(r"^[vV]?\d", str(ref or "").strip()))
+
+
+def release_identity_matches(ref, manifest_version):
+    ref_n = _normalize_release_ref(ref)
+    ver_n = _normalize_release_ref(manifest_version)
+    if not ref_n or not ver_n:
+        return False
+    if ref_n == ver_n:
+        return True
+    if ref_n.startswith("android-"):
+        return _normalize_release_ref(ref_n[len("android-"):]) == ver_n
+    return False
+
+
+def _align_manifest_to_ref(manifest, ref):
+    """Re-point release-manifest artifact URLs at the immutable selected ref.
 
     Older published manifests fetched their ``source_files`` from the mutable
-    ``beta``/``main`` branches; installing such a release later would download
-    current branch files and fail their recorded checksums. The tag contents
-    are frozen and match those hashes, so pinning keeps targeted installs
-    possible without weakening verification.
+    ``beta``/``main`` branches, and some pointed ``exe_download_url`` at the
+    mutable ``releases/latest`` alias (the v4.6.4 incident: the historical
+    checksum was compared against the newest stable executable). Installing
+    such a release later would download current channel-head files and fail
+    their recorded checksums — or, worse, verify and install the wrong
+    release. Pinning to the tag keeps targeted installs possible without
+    weakening verification; an executable that names a *different* explicit
+    release is a broken publication and is refused before any download.
     """
     base = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/"
 
@@ -292,6 +326,24 @@ def _pin_manifest_source_urls(manifest, ref):
                 entry["url"] = _pin(entry["url"])
     if manifest.get("download_url"):
         manifest["download_url"] = _pin(manifest["download_url"])
+
+    exe_url = str(manifest.get("exe_download_url") or "")
+    if exe_url:
+        latest = _LATEST_RELEASE_ASSET_RE.match(exe_url)
+        if latest:
+            manifest["exe_download_url"] = "{}/download/{}/{}".format(
+                latest.group("base"), ref, latest.group("asset"),
+            )
+        else:
+            tagged = _TAGGED_RELEASE_ASSET_RE.match(exe_url)
+            if tagged and not release_identity_matches(tagged.group("tag"), ref):
+                raise ReleaseDiscoveryError(
+                    "The release manifest for '{}' points its executable at release "
+                    "'{}'; these releases disagree, so nothing was downloaded. The "
+                    "published metadata for that release must be corrected.".format(
+                        ref, tagged.group("tag"),
+                    )
+                )
 
 
 def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.0, channel=None):
@@ -316,6 +368,7 @@ def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.
 
     headers = _release_request_headers()
     last_error = None
+    identity_error = None
     for tag in candidates:
         url = MANIFEST_REF_URL_TEMPLATE.format(ref=tag)
         try:
@@ -338,8 +391,21 @@ def fetch_manifest_for_version(session=None, version_or_tag="latest", timeout=6.
                 "The manifest for '{}' is not a valid release manifest.".format(tag)
             )
         if tag not in {"main", "beta"}:
-            _pin_manifest_source_urls(data, tag)
+            if is_version_like_ref(tag) and not release_identity_matches(tag, data.get("version")):
+                identity_error = ReleaseDiscoveryError(
+                    "The manifest published for '{}' identifies itself as version '{}'; "
+                    "installing it under the selected name would mix release metadata, "
+                    "so nothing was downloaded.".format(tag, data.get("version"))
+                )
+                continue
+            try:
+                _align_manifest_to_ref(data, tag)
+            except ReleaseDiscoveryError as exc:
+                identity_error = exc
+                continue
         return data
+    if identity_error is not None:
+        raise identity_error
     raise ReleaseDiscoveryError(
         "No release manifest was found for '{}' (tried: {}). Last error: {}".format(
             raw or "latest", ", ".join(candidates), last_error
