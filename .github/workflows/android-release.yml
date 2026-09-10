@@ -66,21 +66,7 @@ jobs:
           ls -lh Mudaremote.apk
 
       - name: Write release notes
-        run: |
-          cat > release_notes.md <<'EOF'
-          **🆕 MudaRemote Android v1.2.6 Beta**
-
-          ### 🐛 Bug Fixes
-          - **Shared Preset Import:** Shared preset import accepts desktop Share Preset and Android Export single presets without rejection.
-          - **Command Prefix Preservation:** `/` and `$` command prefixes are preserved as authored in the preset with no need to change command choices.
-          - **Multi-Preset Support:** Multi-preset configuration imports remain fully supported.
-
-          ### 📲 Installation & Upgrades
-          - Download and install `Mudaremote.apk` over the existing app. The self-updating Python engine alone cannot apply native Android fixes; a new APK install is required.
-          - Requires Android 8.0+ (arm64-v8a or x86_64).
-          - Tokens are stored encrypted in Android Keystore-backed app storage and remain excluded from exported presets.
-          - For reliable background operation, exempt the app from battery optimization (Battery Guide button).
-          EOF
+        run: cp packaging/release-notes-v4.9.1-beta.8.md release_notes.md
 
       - uses: actions/upload-artifact@v4
         with:
@@ -95,6 +81,7 @@ jobs:
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" Mudaremote.apk --clobber
+            gh release edit "$TAG" --prerelease --title "$TITLE" --notes-file release_notes.md
             echo "Updated asset on existing release $TAG"
           else
             gh release create "$TAG" Mudaremote.apk \
@@ -104,3 +91,19 @@ jobs:
               --notes-file release_notes.md
             echo "Created pre-release $TAG"
           fi
+
+      - name: Verify published release notes and APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          gh release view "$TAG" --json body,isPrerelease,assets > published-release.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          release = json.loads(Path("published-release.json").read_text())
+          assert release["isPrerelease"]
+          assert release["body"].strip() == Path("release_notes.md").read_text().strip()
+          assets = [a for a in release["assets"] if a["name"] == "Mudaremote.apk"]
+          assert len(assets) == 1 and assets[0]["size"] == Path("Mudaremote.apk").stat().st_size
+          PY

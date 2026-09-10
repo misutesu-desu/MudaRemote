@@ -703,7 +703,10 @@ def _load_mudae_bot(files_dir, generation_dir=None):
     installed_ver = get_installed_version(files_dir)
     current_mod = sys.modules.get("mudae_bot")
 
-    should_reload = False
+    # Update discovery imports mudae_core before the engine is loaded. A cold
+    # start must discard those cached modules too, or the selected bot can use
+    # the bundled package's older APIs despite the new sys.path entry.
+    should_reload = current_mod is None
     if target_dir and os.path.isfile(os.path.join(target_dir, "mudae_bot.py")):
         if current_mod is not None:
             mod_file = getattr(current_mod, "__file__", "")

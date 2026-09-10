@@ -265,6 +265,39 @@ class AndroidUpdaterTests(unittest.TestCase):
                 android_bridge._load_mudae_bot(self.temp_dir)
                 mock_evict.assert_called_once()
 
+    def test_cold_start_discards_cached_core_before_loading_selected_engine(self):
+        import shutil
+        import types
+
+        gen_dir = os.path.join(self.temp_dir, "python_code", "generations", "selected")
+        core_dir = os.path.join(gen_dir, "mudae_core")
+        os.makedirs(core_dir)
+        with open(os.path.join(core_dir, "__init__.py"), "w") as handle:
+            handle.write("")
+        shutil.copyfile(os.path.join(PROJECT_ROOT, "mudae_core", "status.py"),
+                        os.path.join(core_dir, "status.py"))
+        with open(os.path.join(gen_dir, "mudae_bot.py"), "w") as handle:
+            handle.write("from mudae_core.status import ServerResetCoordinator\n"
+                         "coordinator = ServerResetCoordinator()\n")
+        android_bridge._write_selection(self.temp_dir, "selected", "9.9.9")
+
+        stale_status = types.ModuleType("mudae_core.status")
+        class OldCoordinator:
+            def observe(self, server_id, message_id, observed_at_utc):
+                return None, False
+        stale_status.ServerResetCoordinator = OldCoordinator
+        sys.modules.pop("mudae_bot", None)
+        sys.modules["mudae_core.status"] = stale_status
+        loaded = android_bridge._load_mudae_bot(self.temp_dir)
+        snapshot, changed = loaded.coordinator.observe(
+            1, 2, None, roll_reset_at_utc=None,
+        )
+        self.assertEqual((snapshot, changed), (None, False))
+        self.assertIsNot(sys.modules["mudae_core.status"], stale_status)
+        self.assertEqual(os.path.abspath(sys.modules["mudae_core.status"].__file__),
+                         os.path.abspath(os.path.join(core_dir, "status.py")))
+        self.assertIs(android_bridge._load_mudae_bot(self.temp_dir), loaded)
+
     def test_apk_update_included_when_python_is_current(self):
         manifest = {
             "version": "1.0.0",  # older or equal
