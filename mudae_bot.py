@@ -1637,8 +1637,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         match = re.match(REGEX_PATTERNS["USER_BOLD"], text)
         if not match:
             return False
-        identities = [identity.lower() for identity in claim_identities() if identity]
-        if match.group(1).strip().lower() not in identities:
+        identities = [identity.casefold() for identity in claim_identities(getattr(message, 'guild', None)) if identity]
+        if match.group(1).strip().casefold() not in identities:
             return False
         lowered = text.lower()
         status_markers = ("roll", "$rt", "$dk", "$daily", "$p", "$us", "claim", "react")
@@ -3154,6 +3154,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def send_tu_command(channel):
         if client.is_paused or is_maintenance_active(): return False
+        def response_already_received():
+            future = getattr(client, '_tu_response_future', None)
+            return future is not None and future.done() and not future.cancelled()
+
         async def wait_for_global_tu_slot():
             required, skip_reason = is_tu_still_required(
                 client,
@@ -3178,6 +3182,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return await active_delay(global_wait)
 
         async def wait_for_tu_send_window():
+            if response_already_received():
+                return False
             required, skip_reason = is_tu_still_required(
                 client,
                 proceed_to_rolls=client.rolling_enabled,
@@ -3196,13 +3202,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not ready:
                 return False
             while True:
+                if response_already_received():
+                    return False
                 if not await wait_for_global_tu_slot():
                     return False
                 ready, inactivity_delayed = await wait_for_tu_inactivity(channel)
                 if not ready:
                     return False
                 if not inactivity_delayed:
-                    return True
+                    return not response_already_received()
                 # The reserved global slot expired while channel activity was
                 # settling. Reserve a new slot so another account cannot send
                 # $tu too close to this one.
@@ -4935,7 +4943,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client._tu_request_started_at = request_started_at
                 try:
                     for attempt in range(2):
+                        if response_future.done():
+                            tu_content = response_future.result()
+                            break
                         if not await send_tu_command(cmd_channel):
+                            # A delayed reply can arrive while the retry waits
+                            # for channel inactivity or its global pacing slot.
+                            if response_future.done():
+                                tu_content = response_future.result()
+                                break
                             if getattr(client, "_tu_skipped_stale", False):
                                 client._tu_skipped_stale = False
                                 return
