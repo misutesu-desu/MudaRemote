@@ -6682,7 +6682,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if (consumes_claim and client.auto_rt_after_claim and client.rt_available
                 and not client.is_paused and not farm_character_claimed):
             mins_to_reset = ((client.next_claim_reset_at_utc - now).total_seconds() / 60.0) if client.next_claim_reset_at_utc else None
-            if mins_to_reset is not None and mins_to_reset < 60:
+            # Preserve the default cycle's final-third saving window without
+            # blocking every post-claim $rt on hourly (or shorter) cycles.
+            rt_saving_window = min(60.0, client.claim_interval / 3.0)
+            if mins_to_reset is not None and mins_to_reset < rt_saving_window:
                 BotLogger.log(f"Auto $rt: SKIPPED — resets soon ({mins_to_reset:.0f}m).", preset_name, "INFO")
             elif client.rolling_enabled and not client.is_actively_rolling:
                 BotLogger.log("Auto $rt: SKIPPED — rolling sequence finished.", preset_name, "INFO")

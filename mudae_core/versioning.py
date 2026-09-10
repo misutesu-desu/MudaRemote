@@ -6,7 +6,7 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "4.9.1-beta.10"
+CURRENT_VERSION = "4.9.1-beta.11"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
 STABLE_RELEASE_MANIFEST_URL = "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/version.json"
 MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{ref}/version.json"
