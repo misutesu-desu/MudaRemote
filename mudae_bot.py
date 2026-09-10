@@ -1996,6 +1996,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 message_id,
             )
             BotLogger.log("Manual $rt detected; waiting for Mudae acknowledgement.", preset_name, "INFO")
+            if message_id in client._recent_mudae_command_acks:
+                apply_rt_acknowledgement(source='manual')
         return True
 
     def observe_manual_rt_command(message):
@@ -2060,6 +2062,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         clear_rt_command_in_flight()
         wake_status_loop()
         if source == 'manual':
+            BotLogger.log("Manual $rt acknowledged; character claims are available again.", preset_name, "CLAIM")
             client.loop.create_task(retry_manual_rt_pending_claims())
 
     async def send_rt_command(channel, source='automated'):
@@ -2567,7 +2570,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         refresh_predicted_claim_and_rt()
 
         rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
-        return client.claim_right_available or rt_usable
+        return client.claim_right_available or rt_usable or rt_command_in_flight('manual')
 
     def refresh_predicted_claim_and_rt():
         """Use known cooldown deadlines during long rolls without waiting for another $tu."""
@@ -7364,6 +7367,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if not is_kakera and not is_rt_claim and not is_free_claim and not is_character_snipe_allowed(is_external_snipe=is_snipe):
             return False
 
+        if not is_kakera and not is_free_claim and not is_rt_claim and not client.claim_right_available:
+            if defer_claim_until_manual_rt_ack(msg, is_snipe, kakera_value):
+                BotLogger.log("Claim deferred while this account's manual $rt awaits acknowledgement.", preset_name, "INFO")
+                return False
+
         if not is_kakera:
             # Check lock and register
             needs_rt = (
@@ -7938,6 +7946,43 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             break
         return False
 
+    edited_wish_attempts = set()
+
+    async def process_edited_wish(message):
+        """Recheck delayed wish pings without replaying roll accounting or rewards."""
+        if (getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID
+                or not client.snipe_mode
+                or message.channel.id not in {client.target_channel_id, *client.snipe_channels}
+                or client.is_paused or is_maintenance_active() or is_inactive_hour()):
+            return
+        if not message.embeds or not is_character_embed(message.embeds[0]):
+            return
+        embed = message.embeds[0]
+        name = embed.author.name.lower()
+        if (not is_wished_by_self(message, client.user.id)
+                or name in client.avoid_list or get_character_owner(embed) is not None
+                or not has_claim_option(message, embed, client.claim_emojis)
+                or message.id in edited_wish_attempts or _claim_coordinator.is_reserved(message.id)):
+            return
+        owner_id, owner_name = await detect_roll_owner(client, message)
+        if client.character_snipe_targets and owner_id != client.user.id:
+            if str(owner_id) not in client.character_snipe_targets and owner_name not in client.character_snipe_targets:
+                return
+        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True):
+            return
+        # Both cached and raw updates may arrive while the claim delay is running.
+        if message.id in edited_wish_attempts:
+            return
+        edited_wish_attempts.add(message.id)
+        try:
+            BotLogger.log(f"Wish detected on edited roll: {embed.author.name}. Checking claim.", preset_name, "CLAIM")
+            if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)):
+                return
+            if await claim_character(client, message.channel, message, is_snipe=True):
+                client.snipe_happened = True
+        finally:
+            edited_wish_attempts.discard(message.id)
+
     @client.event
     async def on_message_edit(before, after):
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
@@ -7945,6 +7990,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             update_event.set()
         capture_sphere_game_bonus(after)
         schedule_farm_release_after_other_claim(after, previous_message=before)
+        await process_edited_wish(after)
 
     @client.event
     async def on_raw_reaction_add(payload):
@@ -7967,6 +8013,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         update_event = client._sphere_board_update_events.get(getattr(payload, 'message_id', None))
         if update_event is not None:
             update_event.set()
+        # Cached edits are handled by on_message_edit with the complete message.
+        if getattr(payload, 'cached_message', None) is not None:
+            return
+        channel_id = getattr(payload, 'channel_id', None)
+        if not client.snipe_mode or channel_id not in {client.target_channel_id, *client.snipe_channels}:
+            return
+        data = getattr(payload, 'data', {})
+        if not any(key in data for key in ('content', 'embeds', 'components')):
+            return
+        author_id = data.get('author', {}).get('id')
+        if author_id is not None and str(author_id) != str(TARGET_BOT_ID):
+            return
+        try:
+            channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+            message = await channel.fetch_message(payload.message_id)
+        except (discord.HTTPException, AttributeError):
+            return
+        await process_edited_wish(message)
 
     @client.event
     async def on_command_error(ctx, error):
