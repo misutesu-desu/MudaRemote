@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.9**\n\n### 🐛 Bug Fixes\n- **Fewer repeated $tu commands:** Fixed missed status replies when Mudae uses your server nickname, preventing unnecessary retries on mobile and desktop.\n- **Delayed reply handling:** A status reply received while a retry is waiting now cancels the extra command, keeping your channel quieter.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.9/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.9/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "0fce4dd05e9664050ca49f732ef744cc0bece2f40d83c147bfe44fffe8eb4186",
   "source_files": [
     {
       "path": "mudae_bot.py",
