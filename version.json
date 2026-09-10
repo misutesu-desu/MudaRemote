@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.8**\n\n### 🐛 Bug Fixes\n- **Android startup reliability:** Fixed an issue where an updated engine could start with older components, causing errors while processing Mudae status messages.\n- **Reliable engine switching:** Android now clears leftover components before loading the engine on a fresh start, helping updates and version changes work consistently.\n\n### 📲 Android Update\n- **Install APK v1.2.8:** Install the new `Mudaremote.apk` over your existing app, then restart the bot. An engine-only update cannot apply this fix.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "5ead7822545f71c6eec42f4fb89c8776e579e85ff69d811b8daa86928f06521f",
   "source_files": [
     {
       "path": "mudae_bot.py",
