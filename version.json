@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.11**\n\n### 🐛 Bug Fixes\n- **Auto $rt on shorter claim timers:** Auto $rt After Claim now works with a 60-minute claim cycle, including the reported case with 40 minutes left until reset. Keep claiming without needing to restore your claim manually.\n### ⚡ Improvements\n- **Smarter $rt saving:** The near-reset saving window now adjusts to your configured claim interval: 20 minutes for an hourly cycle. The usual three-hour cycle keeps its existing 60-minute saving window.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.11/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.11/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "0805f5ffe0376472c1ad0ede0b67feff4a8a4865bbee32227335e3cae35bd165",
   "source_files": [
     {
       "path": "mudae_bot.py",
