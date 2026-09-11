@@ -108,7 +108,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         # the narrow Auto $rolls reconciliation exception.
         self.assertIn("normal_action_status_policy(", status_source)
         self.assertIn('action_status_policy in {"suppress-routine", "defer-executing"}', status_source)
-        self.assertIn("if suppress_physical_tu:", status_source)
+        self.assertIn("if suppress_physical_tu and not client._pre_roll_status_required:", status_source)
         self.assertIn("reconciliation_cycle_ids=", status_source)
         # A reset queues the next-cycle count without replacing an executing
         # batch's remaining local roll counter.
@@ -237,7 +237,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("is_inactive_hour()", inactivity_source)
         self.assertIn("seconds_until_active()", inactivity_source)
         self.assertIn("client.humanization_inactivity_seconds", inactivity_source)
-        self.assertIn("channel.history(limit=1)", inactivity_source)
+        self.assertIn("channel.history(limit=15 if before_roll else 1)", inactivity_source)
         self.assertIn("TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS", inactivity_source)
         self.assertIn("sending anyway", inactivity_source)
         self.assertIn("wait_for_tu_send_window()", send_source)
@@ -373,7 +373,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         }
         source = ast.get_source_segment(self.source, functions["check_status"])
         self.assertIn(
-            'required_fields = {"claim", "rolls"} if proceed_to_rolls else {"claim"}',
+            'required_fields = {"claim", "rolls"} if proceed_to_rolls or client._pre_roll_status_required else {"claim"}',
             source,
         )
         self.assertIn('"rt" not in getattr(client, "_tu_missing_categories", set())', source)

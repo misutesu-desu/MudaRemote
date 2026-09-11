@@ -214,7 +214,7 @@ try:
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
-        normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
+        normalize_sphere_emoji, parse_sphere_game_status, SphereButtonBudget, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
@@ -247,7 +247,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
-        normalize_sphere_emoji, parse_sphere_game_status, WebhookDispatcher,
+        normalize_sphere_emoji, parse_sphere_game_status, SphereButtonBudget, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
@@ -458,7 +458,7 @@ REGEX_PATTERNS = {
     "CLAIMS_RANK": r"Claims:\s*#\s*([\d,.]+)",
     "LIKES_RANK": r"Likes:\s*#\s*([\d,.]+)",
     "DK_STOCK": r"\**(\d+)\**\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)",
-    "DK_READY": r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)",
+    "DK_READY": r"\$dk.*?(?:ready|available|pronto|disponible|prêt|dispon[ií]vel|listo)",
     "DK_COOLDOWN": r"(?:next \$dk|próximo \$dk|siguiente \$dk|prochain \$dk).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "DK_POWER": r"(?:power|poder):\s*\*{0,2}(\d+)%\*{0,2}",
     "DK_CONSUMPTION": r"(?:each kakera (?:reaction|button) consumes|cada (?:reação|botão|botón) de kakera consume|chaque bouton kakera consomme)\s*(\d+)%",
@@ -1198,6 +1198,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.oc_collect_after_red = bool(oc_collect_after_red_preset)
     client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
     client.sphere_game_refill_at_utc = None
+    client.sphere_button_budget = SphereButtonBudget()
+    client._pre_roll_status_required = False
+    client._pre_roll_status_cycle_id = None
+    client._pre_roll_status_requested_at = None
     # run_bot is entered from a worker thread before discord.py creates that
     # thread's event loop. Bind per-client locks lazily from their first async task.
     client._sphere_game_lock = None
@@ -2085,11 +2089,48 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             clear_rt_command_in_flight(sent_message_id)
         return acknowledged
 
-    async def guarded_click(target):
+    async def guarded_click(target, *, return_interaction=False):
         if client.is_paused or is_maintenance_active():
             return False
-        await target.click()
-        return True
+        interaction = await target.click()
+        return interaction if return_interaction else True
+
+    async def click_character_sphere(msg, button, interaction_key, emoji_name, character_name):
+        """Sphere delivery has no Kakera +amount ($k) confirmation contract."""
+        budget = client.sphere_button_budget
+        if not budget.available or client.is_paused or is_maintenance_active():
+            client.kakera_interaction_ledger.release(interaction_key)
+            return False
+        budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
+        try:
+            try:
+                interaction = await guarded_click(button, return_interaction=True)
+            except Exception as error:
+                if not is_ambiguous_component_interaction_error(error):
+                    raise
+                interaction = None
+            if interaction is False or getattr(interaction, "successful", None) is False:
+                budget.cancel(interaction_key)
+                client.kakera_interaction_ledger.mark_terminal(interaction_key, state="rejected")
+                BotLogger.log(f"{emoji_name} interaction rejected for {character_name}.", preset_name, "WARN")
+                return False
+            # A Discord acknowledgement proves delivery, not a sphere reward.
+            # Reserve quota until the next authoritative $tu, and never retry
+            # a delivered/ambiguous logical button for lack of a Kakera result.
+            client.kakera_interaction_ledger.mark_terminal(interaction_key, state="sent-unverified")
+            BotLogger.log(
+                f"{emoji_name} click sent for {character_name}; sphere usage will be checked with $tu.",
+                preset_name, "KAKERA",
+            )
+            return True
+        except asyncio.CancelledError:
+            # Cancellation can arrive after dispatch too; retain the reservation.
+            client.kakera_interaction_ledger.mark_terminal(interaction_key, state="sent-ambiguous")
+            raise
+        except Exception:
+            budget.cancel(interaction_key)
+            client.kakera_interaction_ledger.release(interaction_key)
+            raise
 
     def register_kakera_result_waiter(emoji_name):
         """Register before clicking so a fast account-specific result cannot be missed."""
@@ -2139,6 +2180,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return False
 
         terminal = False
+        if is_character_sphere_emoji(emoji_name):
+            return await click_character_sphere(msg, button, interaction_key, emoji_name, character_name)
         power_token = reserve_kakera_power_click(emoji_name, power_cost) if power_cost > 0 else None
         is_purple = str(emoji_name or "").rstrip("2").casefold() == "kakerap"
         attempt_limit = 3 if is_purple else 2
@@ -3079,7 +3122,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
         return sent_message
 
-    async def wait_for_tu_inactivity(channel):
+    async def wait_for_tu_inactivity(channel, *, before_roll=False):
         """Wait until both the configured active period and channel quiet window allow $tu."""
         waited = False
         total_quiet_wait = 0.0
@@ -3111,7 +3154,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             try:
                 last_message = None
-                async for recent_message in channel.history(limit=1):
+                async for recent_message in channel.history(limit=15 if before_roll else 1):
+                    if before_roll:
+                        author_id = getattr(getattr(recent_message, "author", None), "id", None)
+                        self_id = getattr(getattr(client, "user", None), "id", None)
+                        if self_id is not None and author_id == self_id:
+                            continue
+                        if author_id == TARGET_BOT_ID and is_tu_response_for_self(recent_message):
+                            continue
                     last_message = recent_message
                     break
                 if last_message is None:
@@ -3130,7 +3180,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if remaining <= 0:
                     return True, waited
 
-                if total_quiet_wait >= TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS:
+                if not before_roll and total_quiet_wait >= TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS:
                     BotLogger.log(
                         f"$tu inactivity check: channel stayed busy for over {int(TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS)}s; sending anyway.",
                         preset_name,
@@ -3257,6 +3307,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         "DEBUG",
                         client,
                     )
+                    if getattr(client, "_tu_last_sent_at_utc", None) is None:
+                        client._tu_last_sent_at_utc = datetime.datetime.now(timezone.utc)
                     if await _trigger_mudae_slash(channel, "tu"): return True
                     if client.slash_fallback_active: break
                     if attempt < 3 and not await active_delay(5.0): return False
@@ -3284,6 +3336,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 "DEBUG",
                 client,
             )
+            if getattr(client, "_tu_last_sent_at_utc", None) is None:
+                client._tu_last_sent_at_utc = datetime.datetime.now(timezone.utc)
             return await guarded_send(channel, f"{client.mudae_prefix}tu")
         finally:
             client._tu_in_flight = False
@@ -3928,6 +3982,35 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             await run_independent_known_work(channel, client.current_roll_cycle_id)
         return True
 
+    async def refresh_status_before_rolls(channel, logical_roll_cycle_id):
+        """Refresh private cooldowns before a predicted batch can send commands."""
+        if getattr(client, "is_processing_cycle", False) or client._pre_roll_status_required:
+            return False
+        checked_at = getattr(client, "_pre_roll_status_requested_at", None)
+        now_utc = datetime.datetime.now(timezone.utc)
+        if (
+            client.last_tu_snapshot_complete
+            and client._pre_roll_status_cycle_id == logical_roll_cycle_id
+            and checked_at is not None
+            and checked_at.date() == now_utc.date()
+            and (now_utc - checked_at).total_seconds() < 60
+            and not status_dirty_fields(client)
+        ):
+            return True
+        client._pre_roll_status_cycle_id = None
+        client._pre_roll_status_required = True
+        mark_status_dirty(client, {"claim", "rolls", "dk", "points"}, reason="pre-roll-status")
+        try:
+            await check_status(client, channel, client.mudae_prefix, proceed_to_rolls=False)
+            return bool(
+                client.last_tu_snapshot_complete
+                and client._pre_roll_status_cycle_id == logical_roll_cycle_id
+                and client.current_roll_cycle_id == logical_roll_cycle_id
+                and not status_dirty_fields(client)
+            )
+        finally:
+            client._pre_roll_status_required = False
+
     async def execute_owned_normal_roll_action(logical_roll_cycle_id):
         """The sole executor for every ordinary replenished normal-roll batch."""
         owner = client.normal_roll_action_owner
@@ -3975,6 +4058,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if channel is None:
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 15.0)
             return
+        if not reconciling_auto_rolls:
+            if not await refresh_status_before_rolls(channel, logical_roll_cycle_id):
+                _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
+                return
+            # A status request may cross a reset or observe manual roll usage.
+            state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
+            if owner.cycle_id != logical_roll_cycle_id or state is None or state.count_uncertain:
+                return
         roll_count = max(0, int(state.remaining))
         if reconciling_auto_rolls:
             # The just-received authoritative $tu is the only evidence used to
@@ -4761,7 +4852,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.active_cycle_id = scheduler_cycle_id
             cmd_channel = await _resolve_administrative_command_channel(channel)
 
-            if suppress_physical_tu:
+            if suppress_physical_tu and not client._pre_roll_status_required:
                 target_cycle = client.current_roll_cycle_id or action_owner.cycle_id
                 if action_status_policy == "suppress-routine" and action_owner.is_pending(target_cycle):
                     # A complete authoritative $tu is just as trustworthy as a
@@ -4851,7 +4942,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if sphere_retry_due or sphere_refill_due:
                             can_bypass = False
 
-            if can_bypass:
+            if can_bypass and not client._pre_roll_status_required:
                 BotLogger.log("Skipping $tu (using cached status).", preset_name, "CHECK")
                 claim_reset_m = max(0.0, (client.next_claim_reset_at_utc - now_utc).total_seconds() / 60.0) if client.next_claim_reset_at_utc else 0.0
                 roll_reset_m = max(0.0, (client.roll_reset_at_utc - now_utc).total_seconds() / 60.0) if client.roll_reset_at_utc else 0.0
@@ -4940,6 +5031,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             async with client.tu_lock:
                 request_started_at = datetime.datetime.now(timezone.utc)
+                client._tu_last_sent_at_utc = None
                 response_future = asyncio.get_running_loop().create_future()
                 client._tu_response_future = response_future
                 client._tu_response_channel_id = getattr(cmd_channel, 'id', None)
@@ -5002,6 +5094,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 record_tu_success(client)
                 c_lower = tu_content.lower()
+
+            if client.sphere_button_budget.observe(tu_content, request_started_at):
+                BotLogger.log(
+                    f"Sphere buttons: {client.sphere_button_budget.clicked}/{client.sphere_button_budget.limit} clicked (confirmed by $tu).",
+                    preset_name, "INFO",
+                )
 
             # Validate $tu response categories and log warnings if essential sections are missing
             explicit_claim_cooldown = parse_claim_denied_cooldown(c_lower)
@@ -5085,10 +5183,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if (client.auto_dk_enabled and client.dk_power_management and client.rolling_enabled
                     and power_snapshot_is_authoritative
-                    and action_owner.state != "executing"):
+                    and (action_owner.state != "executing" or client._pre_roll_status_required)):
                 await handle_dk_power_management(client, cmd_channel, tu_content)
 
-            if client.rolling_enabled and action_owner.state != "executing":
+            if client.rolling_enabled and (action_owner.state != "executing" or client._pre_roll_status_required):
                 if any(x in c_lower for x in [
                     "$daily is available",
                     "$daily está disponível",
@@ -5104,10 +5202,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         return
 
                 if client.auto_dk_enabled and not client.dk_power_management:
-                    if re.search(r"\$dk.*?(?:ready|pronto|disponible|prêt|dispon[ií]vel|listo)", c_lower):
+                    if client.dk_stock_count > 0:
                         BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
                         if not await guarded_send(cmd_channel, f"{client.mudae_prefix}dk"):
                             return
+                        client.dk_stock_count = max(0, client.dk_stock_count - 1)
                         if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
                             return
 
@@ -5332,7 +5431,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # the active count-reconciliation attempt. The normal partial
                 # response defer below remains the retry throttle.
                 release_roll_count_reconciliation(client)
-            required_fields = {"claim", "rolls"} if proceed_to_rolls else {"claim"}
+            required_fields = {"claim", "rolls"} if proceed_to_rolls or client._pre_roll_status_required else {"claim"}
             if "rt" not in getattr(client, "_tu_missing_categories", set()):
                 required_fields.add("rt")
             core_complete = required_fields.issubset(fresh_fields)
@@ -5349,6 +5448,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client._status_refresh_reasons.discard("mudae-maintenance")
                     client._status_refresh_reasons.discard("discord-reconnect")
                 schedule_periodic_sanity_sync(now_utc)
+                client._pre_roll_status_cycle_id = client.current_roll_cycle_id
+                client._pre_roll_status_requested_at = client._tu_last_sent_at_utc or request_started_at
+            if client._pre_roll_status_required:
+                # The requesting owner resumes only after all status commands
+                # and parsing finish; do not schedule a competing roll callback.
+                mk_match = re.search(REGEX_PATTERNS["MK_BONUS"], c_lower)
+                client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
+                return
             if (
                 client.predicted_roll_state_valid
                 and client.predicted_roll_cycle_id == client.current_roll_cycle_id
@@ -5980,6 +6087,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         return
                 is_timing_mode_active = True
         client.is_timing_mode_active = is_timing_mode_active
+
+        if not is_us_pull:
+            owns_transaction = (
+                logical_roll_cycle_id is not None
+                and getattr(client, "_normal_roll_transaction_cycle_id", None) == logical_roll_cycle_id
+            )
+            while True:
+                ready, _ = await wait_for_tu_inactivity(channel, before_roll=True)
+                if not ready:
+                    return
+                if not owns_transaction:
+                    break
+                # Smart Timing and channel patience can outlive the earlier
+                # snapshot. Keep ownership while refreshing before the first roll.
+                checked_before = getattr(client, "last_tu_query_utc", None)
+                if not await refresh_status_before_rolls(channel, logical_roll_cycle_id):
+                    if (client.current_roll_cycle_id != logical_roll_cycle_id
+                            or not client.rolling_enabled
+                            or not await active_delay(max(10.0, tu_retry_wait(client)))):
+                        return
+                    continue
+                rolls_left = max(0, int(client.rolls_left))
+                if client.last_tu_query_utc == checked_before:
+                    break
+                # Recheck the roll channel after waiting on administrative work.
 
         # Prerequisites (Auto $rolls, $mk, forcedivorce, pacing, and network
         # jitter) may have consumed the window since this action was scheduled.

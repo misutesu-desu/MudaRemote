@@ -11,6 +11,46 @@ UNKNOWN_SPHERE = "spU"
 RED_SPHERE = "sp"
 
 
+def parse_sphere_button_count(text):
+    """Read the sphere quota without confusing it with Perk 8/9 counters."""
+    match = re.search(
+        r"(\d+)\s*/\s*(\d+)\s+buttons\s+clicked\b",
+        str(text or "").replace("**", ""), re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+class SphereButtonBudget:
+    """Keep authoritative usage separate from clicks awaiting a status snapshot."""
+
+    def __init__(self):
+        self.clicked = None
+        self.limit = None
+        self.pending = {}
+
+    def observe(self, text, requested_at):
+        count = parse_sphere_button_count(text)
+        if count is None:
+            return False
+        self.clicked, self.limit = count
+        # Clicks sent during the query may not appear in its snapshot yet.
+        self.pending = {key: sent_at for key, sent_at in self.pending.items()
+                        if sent_at >= requested_at}
+        return True
+
+    @property
+    def available(self):
+        return self.limit is None or self.clicked + len(self.pending) < self.limit
+
+    def reserve(self, key, sent_at):
+        self.pending[key] = sent_at
+
+    def cancel(self, key):
+        self.pending.pop(key, None)
+
+
 def sphere_click_recovery_decision(previous_snapshot, latest_snapshot, attempts_used, max_attempts=2):
     """Classify an acknowledged or ambiguous logical board click."""
     if latest_snapshot is not None and latest_snapshot != previous_snapshot:

@@ -1856,6 +1856,9 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     if callable(check_maint) and check_maint():
         return False, "maintenance-active"
 
+    if getattr(client, "_pre_roll_status_required", False):
+        return True, "pre-roll-status"
+
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     advance_fn = getattr(client, "_advance_predicted_reset_cycles", None)
     if callable(advance_fn):
