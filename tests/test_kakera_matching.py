@@ -31,12 +31,25 @@ class MatchingTests(unittest.TestCase):
             self.skipTest('No desktop display available')
         self.addCleanup(root.destroy)
         root.withdraw()
-        editor = mock.Mock(spec=PresetEditor)
+        editor = PresetEditor.__new__(PresetEditor)
+        editor.root = root
         editor.widgets = {}
+        editor.settings_fields = []
+        editor.subframe_controls = {}
+        editor.rounds_frame = None
+        editor.mark_dirty = mock.Mock()
+        editor.apply_theme()
         PresetEditor.add_choice_field(editor, root, 'kakera_filter_match_mode', 'Match selected filters:',
                                      {'all': 'All (AND)', 'any': 'Any (OR)'})
         self.assertEqual(editor.widgets['kakera_filter_match_mode'].get(), 'all')
-        radio_buttons = root.winfo_children()[0].winfo_children()[1:]
+        container = root.winfo_children()[0]
+        radio_buttons = container.winfo_children()[1:]
+        # The real settings search runs even with an empty query when a preset opens.
+        for query in ('', 'any', 'unrelated search', '', 'kakera_filter_match_mode'):
+            editor._filter_container_children(root, query)
+            self.assertEqual(container.winfo_manager() == 'pack', query != 'unrelated search')
+            for button in radio_buttons:
+                self.assertEqual(button.winfo_manager(), 'pack', (query, button.cget('text')))
         radio_buttons[1].invoke()
         self.assertEqual(editor.widgets['kakera_filter_match_mode'].get(), 'any')
         radio_buttons[0].invoke()

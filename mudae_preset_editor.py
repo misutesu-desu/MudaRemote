@@ -2989,6 +2989,9 @@ class PresetEditor:
             ttk.Radiobutton(container, text=text, value=value, variable=var, command=self.mark_dirty).pack(anchor=tk.W, padx=20)
         if description:
             ttk.Label(container, text=description, wraplength=600, foreground=TEXT_MUTED).pack(anchor=tk.W, padx=20)
+        self._register_settings_widget(
+            parent, container, " ".join([label, *choices.values(), description or ""]), key,
+        )
 
     def add_checkbox(self, parent, key, label, description=None):
         """Add a checkbox."""
