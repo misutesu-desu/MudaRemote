@@ -1088,8 +1088,11 @@ def apply_authoritative_roll_remaining(
             if base_normal_remaining is not None
             else remaining
         )
-        client.normal_roll_replenishment_capacity = capacity_value
-        client.normal_roll_replenishment_capacity_confidence = True
+        # An empty snapshot can follow unobserved manual rolls or a late reset.
+        # It is not evidence that future resets replenish zero rolls.
+        if capacity_value > 0:
+            client.normal_roll_replenishment_capacity = capacity_value
+            client.normal_roll_replenishment_capacity_confidence = True
 
 
 def reconcile_authoritative_current_roll_count(
@@ -1923,9 +1926,7 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
         roll_reset_at = getattr(client, "roll_reset_at_utc", None)
         is_before_claim = claim_reset_at is None or now_utc < claim_reset_at
         is_before_roll = roll_reset_at is None or now_utc < roll_reset_at
-        known_idle = bool((claim_reset_at and is_before_claim) or (roll_reset_at and is_before_roll))
-
-        if cache_seconds > 0 or known_idle:
+        if cache_seconds > 0:
             state = get_normal_roll_cycle_state(client, current_cid)
             has_unknown_rolls = state is not None and (state.remaining is None or state.count_uncertain)
             rolls_left = int(getattr(client, "rolls_left", 0) or 0)

@@ -294,6 +294,19 @@ def has_perk_eight_discount(description: object) -> bool:
     return re.search(r"💎\s*(?:/|÷|➗)\s*2", normalized) is not None
 
 
+def has_perk_eight_buttons(description: object, components: object) -> bool:
+    """Recognize the four-button Perk 8 spawn after its daily discount ends."""
+    if has_perk_eight_discount(description):
+        return True
+    names = [
+        str(getattr(getattr(button, "emoji", None), "name", "") or "").rstrip("2")
+        for row in components or ()
+        for button in getattr(row, "children", ()) or ()
+    ]
+    kakera = [name for name in names if name.startswith("kakera")]
+    return has_op_perk_five_marker(description) and len(kakera) == 4 and "kakeraP" not in kakera
+
+
 def kakera_embed_text(embed: object) -> str:
     """Return all stable text locations where Mudae renders perk markers."""
     if embed is None:

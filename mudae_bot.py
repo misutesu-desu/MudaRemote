@@ -207,7 +207,7 @@ try:
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
@@ -240,7 +240,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_newer_version, looks_like_tu_status_snapshot,
         humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
@@ -296,7 +296,7 @@ _original_terminal_settings = None
 _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
-TU_GLOBAL_INTERVAL_SECONDS = 20.0
+TU_GLOBAL_INTERVAL_SECONDS = 2.0
 # A permanently busy channel must never stall status refreshes (and therefore
 # rolling) forever; after this much cumulative quiet-channel waiting, send $tu
 # regardless of the last message age.
@@ -2500,6 +2500,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client._sphere_game_lock is None:
             client._sphere_game_lock = asyncio.Lock()
         async with client._sphere_game_lock:
+            if claim_critical_work_pending():
+                client._deferred_independent_known_work = True
+                return False
             started_at = datetime.datetime.now(timezone.utc)
             response_future = asyncio.get_running_loop().create_future()
             client._sphere_game_response_future = response_future
@@ -3012,115 +3015,122 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def send_roll_command(channel, command_name, pending_operation=None, on_sent=None,
                                 logical_roll_cycle_id=None, expected_reset_boundary_utc=None):
-        if channel.id != client.target_channel_id:
-            channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
-        cmd = (command_name or "").strip().lstrip('/')
-        if not cmd or client.is_paused or is_maintenance_active(): return False
-        # The send-end path and the later character result can both observe a
-        # boundary race.  Keep the correlation token on the client so those
-        # observations can be idempotently attributed to one command.
-        client._last_automation_roll_command_token = None
-        owner_id = client.user.id
-        owner_name = getattr(client.user, "name", "")
-        slash_token = None
-        send_start_utc = datetime.datetime.now(timezone.utc)
-        boundary_utc = expected_reset_boundary_utc or getattr(client, "roll_reset_at_utc", None)
+        # Share the board lock so bonus/MK rolls cannot interrupt a live puzzle.
+        if client._sphere_game_lock is None:
+            client._sphere_game_lock = asyncio.Lock()
+        async with client._sphere_game_lock:
+            if (expected_reset_boundary_utc is not None
+                    and datetime.datetime.now(timezone.utc) >= expected_reset_boundary_utc):
+                return False
+            if channel.id != client.target_channel_id:
+                channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
+            cmd = (command_name or "").strip().lstrip('/')
+            if not cmd or client.is_paused or is_maintenance_active(): return False
+            # The send-end path and the later character result can both observe a
+            # boundary race.  Keep the correlation token on the client so those
+            # observations can be idempotently attributed to one command.
+            client._last_automation_roll_command_token = None
+            owner_id = client.user.id
+            owner_name = getattr(client.user, "name", "")
+            slash_token = None
+            send_start_utc = datetime.datetime.now(timezone.utc)
+            boundary_utc = expected_reset_boundary_utc or getattr(client, "roll_reset_at_utc", None)
 
-        def prearm_slash(receipt):
-            nonlocal slash_token
-            slash_token = client.roll_command_correlation.prearm(
+            def prearm_slash(receipt):
+                nonlocal slash_token
+                slash_token = client.roll_command_correlation.prearm(
+                    channel_id=channel.id,
+                    owner_id=owner_id,
+                    owner_name=owner_name,
+                    command_name=receipt.get("command_name") or cmd,
+                    mode="slash",
+                    operation=pending_operation,
+                    registered_at_utc=receipt.get("sent_at_utc") or send_start_utc,
+                    automation_owned=True,
+                    logical_roll_cycle_id=logical_roll_cycle_id,
+                    expected_reset_boundary_utc=boundary_utc,
+                    send_start_utc=send_start_utc,
+                )
+
+            def _check_and_track_boundary_origin(token, send_end_time):
+                if boundary_utc is not None and logical_roll_cycle_id is not None:
+                    dist = abs((send_end_time - boundary_utc).total_seconds())
+                    if dist <= ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS or send_start_utc >= (boundary_utc - datetime.timedelta(seconds=ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS)):
+                        successor = successor_roll_cycle_id(logical_roll_cycle_id)
+                        if successor is not None:
+                            successor_state = get_normal_roll_cycle_state(client, successor)
+                            client._pending_boundary_roll_origins[token] = {
+                                "origin_cycle_id": logical_roll_cycle_id,
+                                "affected_cycle_id": successor,
+                                "boundary_utc": boundary_utc,
+                                "expires_at": time.monotonic() + 15.0,
+                                "authoritative_revision_at_registration": getattr(successor_state, "authoritative_revision", 0),
+                            }
+                            add_provisional_roll_cycle_uncertainty(
+                                client,
+                                successor,
+                                ("pending-boundary-origin", token),
+                            )
+
+            def finalize_slash(receipt):
+                send_end_utc = datetime.datetime.now(timezone.utc)
+                receipt = dict(receipt or {})
+                receipt.setdefault("send_end_utc", send_end_utc)
+                client.roll_command_correlation.finalize(
+                    slash_token, receipt, operation=pending_operation
+                )
+                client._last_automation_roll_command_token = slash_token
+                _check_and_track_boundary_origin(slash_token, send_end_utc)
+                if on_sent is not None:
+                    on_sent(receipt)
+
+            if _slash_ready():
+                override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
+                if await _trigger_mudae_slash(
+                    channel,
+                    f"/{override}",
+                    on_prepared=prearm_slash,
+                    on_sent=finalize_slash,
+                ):
+                    return True
+                if slash_token is not None:
+                    client.roll_command_correlation.cancel(
+                        slash_token, operation=pending_operation
+                    )
+                # Do not return here if fallback is not yet active. Let it fall through to text commands.
+            text_token = client.roll_command_correlation.prearm(
                 channel_id=channel.id,
                 owner_id=owner_id,
                 owner_name=owner_name,
-                command_name=receipt.get("command_name") or cmd,
-                mode="slash",
+                command_name=cmd,
+                mode="text",
                 operation=pending_operation,
-                registered_at_utc=receipt.get("sent_at_utc") or send_start_utc,
                 automation_owned=True,
                 logical_roll_cycle_id=logical_roll_cycle_id,
                 expected_reset_boundary_utc=boundary_utc,
                 send_start_utc=send_start_utc,
             )
-
-        def _check_and_track_boundary_origin(token, send_end_time):
-            if boundary_utc is not None and logical_roll_cycle_id is not None:
-                dist = abs((send_end_time - boundary_utc).total_seconds())
-                if dist <= ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS or send_start_utc >= (boundary_utc - datetime.timedelta(seconds=ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS)):
-                    successor = successor_roll_cycle_id(logical_roll_cycle_id)
-                    if successor is not None:
-                        successor_state = get_normal_roll_cycle_state(client, successor)
-                        client._pending_boundary_roll_origins[token] = {
-                            "origin_cycle_id": logical_roll_cycle_id,
-                            "affected_cycle_id": successor,
-                            "boundary_utc": boundary_utc,
-                            "expires_at": time.monotonic() + 15.0,
-                            "authoritative_revision_at_registration": getattr(successor_state, "authoritative_revision", 0),
-                        }
-                        add_provisional_roll_cycle_uncertainty(
-                            client,
-                            successor,
-                            ("pending-boundary-origin", token),
-                        )
-
-        def finalize_slash(receipt):
+            sent_message = await guarded_send(channel, f"{client.mudae_prefix}{cmd}")
             send_end_utc = datetime.datetime.now(timezone.utc)
-            receipt = dict(receipt or {})
-            receipt.setdefault("send_end_utc", send_end_utc)
-            client.roll_command_correlation.finalize(
-                slash_token, receipt, operation=pending_operation
-            )
-            client._last_automation_roll_command_token = slash_token
-            _check_and_track_boundary_origin(slash_token, send_end_utc)
-            if on_sent is not None:
-                on_sent(receipt)
-
-        if _slash_ready():
-            override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
-            if await _trigger_mudae_slash(
-                channel,
-                f"/{override}",
-                on_prepared=prearm_slash,
-                on_sent=finalize_slash,
-            ):
-                return True
-            if slash_token is not None:
-                client.roll_command_correlation.cancel(
-                    slash_token, operation=pending_operation
+            if sent_message:
+                receipt = {
+                    "mode": "text",
+                    "message_id": getattr(sent_message, "id", None),
+                    "sent_at_utc": getattr(sent_message, "created_at", None) or send_start_utc,
+                    "send_end_utc": send_end_utc,
+                }
+                client.roll_command_correlation.finalize(
+                    text_token, receipt, operation=pending_operation
                 )
-            # Do not return here if fallback is not yet active. Let it fall through to text commands.
-        text_token = client.roll_command_correlation.prearm(
-            channel_id=channel.id,
-            owner_id=owner_id,
-            owner_name=owner_name,
-            command_name=cmd,
-            mode="text",
-            operation=pending_operation,
-            automation_owned=True,
-            logical_roll_cycle_id=logical_roll_cycle_id,
-            expected_reset_boundary_utc=boundary_utc,
-            send_start_utc=send_start_utc,
-        )
-        sent_message = await guarded_send(channel, f"{client.mudae_prefix}{cmd}")
-        send_end_utc = datetime.datetime.now(timezone.utc)
-        if sent_message:
-            receipt = {
-                "mode": "text",
-                "message_id": getattr(sent_message, "id", None),
-                "sent_at_utc": getattr(sent_message, "created_at", None) or send_start_utc,
-                "send_end_utc": send_end_utc,
-            }
-            client.roll_command_correlation.finalize(
-                text_token, receipt, operation=pending_operation
-            )
-            client._last_automation_roll_command_token = text_token
-            _check_and_track_boundary_origin(text_token, send_end_utc)
-            if on_sent is not None:
-                on_sent(receipt)
-        else:
-            client.roll_command_correlation.cancel(
-                text_token, operation=pending_operation
-            )
-        return sent_message
+                client._last_automation_roll_command_token = text_token
+                _check_and_track_boundary_origin(text_token, send_end_utc)
+                if on_sent is not None:
+                    on_sent(receipt)
+            else:
+                client.roll_command_correlation.cancel(
+                    text_token, operation=pending_operation
+                )
+            return sent_message
 
     async def wait_for_tu_inactivity(channel, *, before_roll=False):
         """Wait until both the configured active period and channel quiet window allow $tu."""
@@ -4729,6 +4739,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             getattr(client, "is_claiming", False)
             or getattr(client, "pending_claim", None) is not None
             or getattr(client, "is_actively_rolling", False)
+            or (client.rolling_enabled and getattr(client, "_local_extra_rolls_pending", 0) > 0)
+            or getattr(client, "_pending_mk_roll", None) is not None
             or getattr(client, "_normal_roll_transaction_cycle_id", None) is not None
             or client.normal_roll_action_owner.state in {"pending", "executing"}
             or getattr(client, "collected_rolls", None)
@@ -4889,7 +4901,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             can_bypass = False
             cache_seconds_remaining = 0.0
-            known_idle_boundary = False
             if client.last_tu_snapshot_complete and client.last_tu_query_utc is not None and not status_dirty_fields(client) and not client.scheduled_roll_due:
                 cache_seconds_remaining = tu_cache_seconds_remaining(
                     client.last_tu_query_utc,
@@ -4897,15 +4908,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 )
                 is_before_claim = client.next_claim_reset_at_utc is None or now_utc < client.next_claim_reset_at_utc
                 is_before_roll = client.roll_reset_at_utc is None or now_utc < client.roll_reset_at_utc
-                known_idle_boundary = bool(
-                    (client.next_claim_reset_at_utc and is_before_claim)
-                    or (client.roll_reset_at_utc and is_before_roll)
-                )
-                # When the account has no rolls or pending work, the reset
-                # deadlines are the next moments its state can become useful.
-                # Trust those explicit boundaries beyond the generic cache TTL
-                # instead of issuing an otherwise identical $tu every 30m.
-                if cache_seconds_remaining > 0 or known_idle_boundary:
+                # Predicted boundaries must not extend an exhausted snapshot forever.
+                if cache_seconds_remaining > 0:
                     state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
                     has_unknown_rolls = state is not None and (state.remaining is None or state.count_uncertain)
                     if is_before_claim and is_before_roll and client.rolls_left <= 0 and not has_unknown_rolls:
@@ -4948,14 +4952,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 roll_reset_m = max(0.0, (client.roll_reset_at_utc - now_utc).total_seconds() / 60.0) if client.roll_reset_at_utc else 0.0
                 wait_time = claim_reset_m if not client.claim_right_available else 0
                 if client.rolling_enabled and proceed_to_rolls:
-                    choices = []
-                    if not known_idle_boundary:
-                        choices.append((
-                            max(0.05, cache_seconds_remaining / 60.0),
-                            "cached status refresh",
-                            True,
-                            None,
-                        ))
+                    choices = [(
+                        max(0.05, cache_seconds_remaining / 60.0),
+                        "cached status refresh",
+                        True,
+                        None,
+                    )]
                     is_timing_wait_bypass = bool(
                         client.time_rolls_to_claim_reset
                         and not client.claim_right_available
@@ -6383,7 +6385,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
                 target_list = get_active_kakera_emojis(
                     has_chaos_discount=chaos_count > 0,
-                    has_perk_eight_discount=has_sp_perk,
+                    has_perk_eight_discount=has_perk_eight_buttons(kakera_embed_text(embed), msg.components),
                 )
 
                 for row_idx, comp in enumerate(msg.components):
@@ -7620,7 +7622,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     is_mk_roll=is_mk_roll,
                     is_external_roll=is_snipe,
                     has_chaos_discount=chaos_count > 0,
-                    has_perk_eight_discount=has_sp_perk,
+                    has_perk_eight_discount=has_perk_eight_buttons(kakera_embed_text(embed), msg.components),
                 )
                 # Ordinary purple follows the active colour list; only the
                 # post-claim special collection may click outside of it.
