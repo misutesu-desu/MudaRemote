@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.14**\n\n### ✨ New Features\n- **Shop 7 Double Rewards Only:** A new optional checkbox collects blue-background Chaos Kakera buttons that give double rewards from Shop perk 7. Available on Windows and Android, for immediate clicks, queued collection, and eligible snipes.\n- **Combine your filters:** Keep your chosen Kakera colors and power limits. Enable the existing 50% discount filter separately if you also want to require discounted reactions. Purple Kakera and spheres keep their existing collection settings.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.14/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.14/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "be0bd52733b3d1764abc73e7e3b205ab738d8972898bbba118b99d920e70df15",
   "source_files": [
     {
       "path": "mudae_bot.py",
