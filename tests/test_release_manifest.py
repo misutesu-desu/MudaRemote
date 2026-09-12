@@ -57,6 +57,13 @@ class ReleaseManifestTests(unittest.TestCase):
             expected,
         )
 
+    def test_release_description_matches_discord_update_log(self):
+        with open(os.path.join(PROJECT_ROOT, "version.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        notes_path = os.path.join(PROJECT_ROOT, "packaging", "release-notes-v{}.md".format(manifest["version"]))
+        with open(notes_path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read().strip(), manifest["changelog"].strip())
+
 
 if __name__ == "__main__":
     unittest.main()

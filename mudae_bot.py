@@ -1041,7 +1041,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             auto_dk_min_power_preset=0,
             kakera_snipe_channels_preset=None,
             mk_kakera_emojis_preset=None,
-            server_reset_minute_preset=None):
+            server_reset_minute_preset=None,
+            shop_perk_7_only_preset=False):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -1140,6 +1141,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_dk_min_power = max(0, int(auto_dk_min_power_preset or 0))
     client.maintenance_until = None
     client.only_chaos = only_chaos
+    client.shop_perk_7_only = shop_perk_7_only_preset
     client.mk_only = mk_only_preset
 
     client.auto_us_enabled = auto_us_enabled
@@ -2189,6 +2191,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         current_button = button
         try:
             for attempt in range(attempt_limit):
+                if not shop_seven_filter_allows(current_button):
+                    return False
                 waiter_key, waiter = register_kakera_result_waiter(emoji_name)
                 interaction_ack_missing = False
                 try:
@@ -6411,7 +6415,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 if filter_reason is None and regular_match:
                                     is_clickable = True
 
-                            if is_clickable:
+                            if is_clickable and shop_seven_filter_allows(btn):
                                 identity = kakera_interaction_key(msg.id, (row_idx, child_idx), name)
                                 if identity is None or client.kakera_interaction_ledger.is_claimed(identity):
                                     continue
@@ -7365,8 +7369,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return True
         return False
 
+    def shop_seven_filter_allows(button):
+        """Shop 7 doubles are blue Chaos buttons; purple and spheres keep their rules."""
+        if not client.shop_perk_7_only:
+            return True
+        name = str(getattr(getattr(button, "emoji", None), "name", "") or "").rstrip("2")
+        if name == "kakeraP" or is_character_sphere_emoji(name):
+            return True
+        style = getattr(button, "style", None)
+        return name == "kakeraC" and getattr(style, "value", style) == 1
+
     def kakera_button_is_eligible(button, target_list, filter_reason, allow_special_purple=False):
         if getattr(button, "disabled", False):
+            return False
+        if not shop_seven_filter_allows(button):
             return False
         name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
         clean = name.rstrip("2")
@@ -8912,6 +8928,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("kakera_snipe_channels", None),
                 preset_data.get("mk_kakera_emojis", None),
                 preset_data.get("server_reset_minute", None),
+                shop_perk_7_only_preset=preset_data.get("shop_perk_7_only", False),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

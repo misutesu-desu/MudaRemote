@@ -656,6 +656,7 @@ BOOL_SETTINGS = [
     ("auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
     ("only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)", False),
+    ("shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", False),
     ("mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)", False),
     ("humanization_enabled", "Timing Variation (Randomizes timing; does not prevent detection or bans)", False),
     ("auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)", True),
@@ -2547,6 +2548,7 @@ class PresetEditor:
         self.add_list_field(kakera_react_sub, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
 
         self.add_checkbox(kakera_react_frame.content, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
+        self.add_checkbox(kakera_react_frame.content, "shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", description="Only collect blue-background Chaos Kakera buttons that give double rewards from Shop perk 7. Your emoji selections and other filters still apply. Enable Chaos Kakera Only separately to also require its 50% power discount. Purple Kakera and spheres keep their existing collection rules.")
         self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
 
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
@@ -3295,7 +3297,7 @@ class PresetEditor:
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
-                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
+                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "shop_perk_7_only",
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
@@ -3589,7 +3591,7 @@ class PresetEditor:
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
-                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos",
+                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "shop_perk_7_only",
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",

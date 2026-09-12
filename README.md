@@ -136,6 +136,7 @@ The bot can collect selected Kakera buttons and track the power used by each cli
 | **Power Tracking** | Clicking costs power. The bot monitors your power in real-time and stops clicking before you hit zero. |
 | **Auto $dk** | Can use `$dk` when power needs to be restored. |
 | **Chaos Mode** | Can limit Kakera clicks to eligible characters with 10 or more keys. |
+| **Shop 7 Double Rewards Only** | Collects only blue-background Chaos Kakera buttons for Shop perk 7 double rewards. Enable it in Advanced Settings → Kakera Reaction Collection. It combines with your other filters; the 50% discount filter remains a separate option. Purple Kakera and spheres follow their existing settings. |
 | **MK Only Mode** | Limits Kakera collection to `$mk` rolls. |
 | **Sphere Detection** | Detects supported sphere buttons, which do not consume Kakera power. |
 | **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board; `$oh` uses can run as multiplier batches or as separate boards. |
