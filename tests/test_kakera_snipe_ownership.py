@@ -84,6 +84,7 @@ def _create_test_client(
     kakera_reaction_snipe_targets=None,
     immediate_kakera_click_preset=True,
     enable_reactive_self_snipe_preset=False,
+    **preset_options,
 ):
     bot = _Bot(user_id=7001, user_name="snipe-bot")
     mudae_bot._mobile_runtime_stop_event.clear()
@@ -117,6 +118,7 @@ def _create_test_client(
             kakera_reaction_snipe_targets=kakera_reaction_snipe_targets or [],
             command_channel_id_preset="5678",
             immediate_kakera_click_preset=immediate_kakera_click_preset,
+            **preset_options,
         )
 
     client_getter = lambda: bot

@@ -146,7 +146,7 @@ class ConfigTests(unittest.TestCase):
             for error in validate_preset(invalid_forcedivorce_channel)
         ))
 
-    def test_kakera_settings_reject_self_defeating_combinations(self):
+    def test_empty_paid_color_lists_allow_free_kakera_collection(self):
         base = {
             "token": "secret", "prefix": "////////", "mudae_prefix": "$",
             "roll_command": "wa", "channel_id": "123", "claim_interval": 180,
@@ -155,13 +155,13 @@ class ConfigTests(unittest.TestCase):
         }
 
         empty_chaos = dict(base, only_chaos=True, chaos_emojis=[])
-        self.assertTrue(any("Chaos Emojis" in error for error in validate_preset(empty_chaos)))
+        self.assertEqual(validate_preset(empty_chaos), [])
 
         empty_general = dict(base, kakera_reaction_snipe_mode=True, kakera_emojis=[])
-        self.assertTrue(any("Kakera Emojis" in error for error in validate_preset(empty_general)))
+        self.assertEqual(validate_preset(empty_general), [])
 
         empty_mk = dict(base, mk_only=True, mk_kakera_emojis=[])
-        self.assertTrue(any("$mk Kakera Emojis" in error for error in validate_preset(empty_mk)))
+        self.assertEqual(validate_preset(empty_mk), [])
 
         # Old presets without the key (or with a populated list) stay valid.
         legacy_without_key = dict(base, mk_only=True)

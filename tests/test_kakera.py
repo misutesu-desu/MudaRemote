@@ -274,7 +274,7 @@ class KakeraPowerTests(unittest.TestCase):
                 has_perk_eight_discount=True,
             )
         )
-        self.assertIsNotNone(
+        self.assertIsNone(
             get_regular_kakera_filter_reason(
                 chaos_only=True,
                 is_external_roll=True,
@@ -522,7 +522,7 @@ class KakeraPowerTests(unittest.TestCase):
             chaos_only=True,
             has_chaos_discount=False,
         )
-        self.assertEqual(filter_reason, "Chaos Only requires a half-power Kakera reaction on your own roll")
+        self.assertEqual(filter_reason, "50% Discount Only requires eligible half-power discount evidence")
 
         # Case 3: Starwish character with chaos discount -> filter passes
         filter_reason = get_regular_kakera_filter_reason(

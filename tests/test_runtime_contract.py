@@ -397,8 +397,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
-        self.assertIn("if cost > 0 and current_pow is None", claim_source)
-        self.assertIn("if cost > 0 and current_pow < cost", claim_source)
+        power_source = ast.get_source_segment(self.source, functions["prepare_kakera_click"])
+        self.assertIn("if cost > 0 and current_pow is None", power_source)
+        self.assertIn("if cost > 0 and current_pow < cost", power_source)
         self.assertIn('else "unknown"', claim_source)
 
     def test_hybrid_panic_handles_kakera_before_deferred_claim_processing(self):
@@ -947,14 +948,13 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
             self.assertEqual(len(lock_blocks), 1, function_name)
             block_source = ast.get_source_segment(self.source, lock_blocks[0])
-            ordered_actions = (
-                "client.kakera_interaction_ledger.is_claimed(interaction_key)",
-                "current_pow = get_current_dk_power()",
-                "threshold = first_configured",
-                "await click_kakera_with_confirmation(",
-            )
-            positions = [block_source.index(action) for action in ordered_actions]
-            self.assertEqual(positions, sorted(positions), function_name)
+            self.assertIn("await click_kakera_with_confirmation(", block_source)
+            click_source = ast.get_source_segment(self.source, functions["click_kakera_with_confirmation"])
+            actions = ("client.kakera_interaction_ledger.begin(interaction_key)", "await prepare_kakera_click(", "reserve_kakera_power_click(emoji_name, power_cost)", "await guarded_click(current_button)")
+            positions = [click_source.index(action) for action in actions]
+            self.assertEqual(positions, sorted(positions))
+            power_source = ast.get_source_segment(self.source, functions["prepare_kakera_click"])
+            self.assertLess(power_source.index("current_pow = get_current_dk_power()"), power_source.index("threshold = first_configured"))
             self.assertNotIn(
                 "client.current_dk_power = max(0, get_current_dk_power() - cost)",
                 block_source,
@@ -1073,7 +1073,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         )
         self.assertIn("and power_snapshot_is_authoritative", status_source)
         for action_source in (claim_source, roll_source):
-            self.assertIn("power_cost=cost", action_source)
+            self.assertIn("await click_kakera_with_confirmation(", action_source)
             self.assertNotIn(
                 "client.current_dk_power = max(0, get_current_dk_power() - cost)",
                 action_source,
@@ -1253,8 +1253,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("marker_text = kakera_embed_text(embed)", filter_source)
         self.assertIn("has_op5=has_op_perk_five_marker(marker_text)", filter_source)
         self.assertNotIn('any(f"sp"', filter_source)
-        self.assertIn("filter_reason = regular_kakera_filter_reason", claim_source)
-        self.assertIn("has_sp_perk = has_perk_eight_discount(kakera_embed_text(embed))", claim_source)
+        details_source = ast.get_source_segment(self.source, functions["kakera_click_details"])
+        self.assertIn("filter_reason = regular_kakera_filter_reason", details_source)
+        self.assertIn("has_sp_perk = has_perk_eight_discount(marker_text)", details_source)
 
     def test_purple_kakera_bypass_is_controlled_per_preset(self):
         functions = {
@@ -1266,18 +1267,18 @@ class RuntimeSourceContractTests(unittest.TestCase):
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
         helper_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
 
-        self.assertIn("client.collect_purple_kakera", claim_source)
+        self.assertIn("allow_special_purple=allow_special_purple", claim_source)
         self.assertIn("client.collect_purple_kakera", handler_source)
         self.assertIn('if clean == "kakeraP":', helper_source)
         self.assertIn(
             "return bool(allow_special_purple and client.collect_purple_kakera)",
             helper_source,
         )
-        self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
+        self.assertIn("await click_kakera_with_confirmation(", claim_source)
         # Ordinary purple must follow the roll context's selected colours.
         self.assertIn(
-            "list_includes_purple(target_list) or special_purple_allowed",
-            claim_source,
+            "list_includes_purple(target_list)",
+            helper_source,
         )
         self.assertIn("has_collectible_kakera_button(message.components, all_k)", handler_source)
         self.assertIn("Collect Purple Kakera is disabled", handler_source)
@@ -1335,7 +1336,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("allow_special_purple=True", refresh_source)
         self.assertIn("allow_special_purple=False", claim_source)
         self.assertIn(
-            "special_purple_allowed = bool(allow_special_purple and client.collect_purple_kakera)",
+            "allow_special_purple=allow_special_purple",
             claim_source,
         )
 
@@ -1351,7 +1352,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.mk_kakera_emojis,", run_source)
         for function_name in ("claim_character", "start_roll_commands"):
             source = ast.get_source_segment(self.source, functions[function_name])
-            self.assertIn("get_active_kakera_emojis(", source, function_name)
+            self.assertIn("await click_kakera_with_confirmation(", source, function_name)
+        details_source = ast.get_source_segment(self.source, functions["kakera_click_details"])
+        self.assertIn("get_active_kakera_emojis(", details_source)
         # Only the central helper may talk to the pure selection function.
         self.assertEqual(run_source.count("get_kakera_emoji_targets("), 1)
         self.assertNotIn(
@@ -1377,14 +1380,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
             "if is_free_purple and client.collect_purple_kakera:",
             allowed_source,
         )
-        self.assertIn(
-            "is_kakera_reaction_allowed(is_free_purple=has_purple_kakera)",
-            claim_source,
-        )
-        self.assertIn("is_free_purple = name_clean == 'kakeraP'", claim_source)
-        self.assertIn("is_free_purple = name.rstrip('2') == 'kakeraP'", roll_source)
+        power_source = ast.get_source_segment(self.source, functions["prepare_kakera_click"])
+        self.assertIn("and not client.collect_purple_kakera", power_source)
+        self.assertIn("if needs_reaction and not is_kakera_reaction_allowed()", power_source)
 
-    def test_kakera_cooldown_blocks_free_buttons_and_learns_from_ku(self):
+    def test_kakera_cooldown_blocks_paid_buttons_and_learns_from_ku(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -1399,9 +1399,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         handler_source = ast.get_source_segment(self.source, functions["on_message"])
 
         self.assertNotIn("has_free_button", claim_source)
-        self.assertIn("has_reaction_cooldown_bypass", claim_source)
-        self.assertIn("reaction became unavailable before", claim_source)
-        self.assertIn("reaction is on cooldown before queued", roll_source)
+        power_source = ast.get_source_segment(self.source, functions["prepare_kakera_click"])
+        self.assertIn("if needs_reaction and not is_kakera_reaction_allowed()", power_source)
         self.assertIn("can't react to kakera", cooldown_source)
         self.assertIn("client.kakera_react_available = False", cooldown_source)
         self.assertIn("process_kakera_reaction_cooldown_message(message)", handler_source)
@@ -1438,11 +1437,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         claim_source = ast.get_source_segment(self.source, functions["claim_character"])
-        sphere_source = ast.get_source_segment(self.source, functions["has_targeted_sphere_button"])
+        sphere_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
         eligibility_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
 
-        self.assertIn("has_targeted_sphere = has_targeted_sphere_button", claim_source)
-        self.assertIn("filter_reason and not has_purple_kakera and not has_targeted_sphere", claim_source)
+        self.assertIn("await click_kakera_with_confirmation(", claim_source)
+        self.assertIn("await click_kakera_with_confirmation(", claim_source)
         self.assertIn("return filter_reason is None", eligibility_source)
         self.assertIn("client.sphere_click_targets", sphere_source)
         self.assertIn("sphere_target_matches", sphere_source)
@@ -1495,11 +1494,12 @@ class RuntimeSourceContractTests(unittest.TestCase):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
-            if isinstance(node, ast.AsyncFunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
-        self.assertIn("filter_reason = regular_kakera_filter_reason", roll_source)
-        self.assertIn("filter_reason is None and regular_match", roll_source)
+        self.assertIn("await click_kakera_with_confirmation(", roll_source)
+        details_source = ast.get_source_segment(self.source, functions["kakera_click_details"])
+        self.assertIn("filter_reason = regular_kakera_filter_reason", details_source)
 
     def test_ready_claim_retries_once_without_a_tu_round_trip(self):
         functions = {
@@ -1805,7 +1805,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn('state="confirmed"', click_source)
         self.assertIn('state="sent-ambiguous"', click_source)
         self.assertIn("client.kakera_interaction_ledger.release(interaction_key)", click_source)
-        self.assertIn("power_cost=cost", claim_source)
+        self.assertIn("await prepare_kakera_click(", click_source)
         self.assertIn("clickable_by_identity.setdefault(identity", roll_source)
         self.assertLess(
             roll_source.index("clickable_buttons = list(clickable_by_identity.values())"),

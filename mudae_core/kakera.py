@@ -424,6 +424,9 @@ def find_refreshed_component_button(components, *, custom_id, position, emoji_na
 
 def get_regular_kakera_filter_reason(
     *,
+    match_mode: str = "all",
+    shop_seven_only: bool = False,
+    is_shop_seven: bool = False,
     wish_only: bool = False,
     is_wish: bool = False,
     op5_only: bool = False,
@@ -435,22 +438,23 @@ def get_regular_kakera_filter_reason(
     has_chaos_discount: bool = False,
     has_perk_eight_discount: bool = False,
 ):
-    """Apply roll-level filters to ordinary Kakera buttons.
+    """Combine only enabled eligibility conditions for one paid Kakera button.
 
     Purple Kakera and targeted sphere buttons are intentionally handled by the
     caller because they bypass these Kakera-only filters.
     """
-    if wish_only and not is_wish:
-        return "character is not wished/starwished"
-    if op5_only and not has_op5:
-        return "embed has no Ouroperk 5 sp emoji"
-    if mk_only and not is_mk_roll:
-        return "MK Only is enabled and this is not an $mk roll"
-    if chaos_only and not is_mk_roll and (
-        is_external_roll or (not has_chaos_discount and not has_perk_eight_discount)
-    ):
-        return "Chaos Only requires a half-power Kakera reaction on your own roll"
-    return None
+    conditions = [
+        (wish_only, is_wish, "character is not wished/starwished"),
+        (op5_only, has_op5, "embed has no Ouroperk 5 sp emoji"),
+        (mk_only, is_mk_roll, "MK Only is enabled and this is not an $mk roll"),
+        (chaos_only, has_perk_eight_discount or (has_chaos_discount and not is_external_roll),
+         "50% Discount Only requires eligible half-power discount evidence"),
+        (shop_seven_only, is_shop_seven, "Shop 7 requires a blue-background Chaos Kakera button"),
+    ]
+    selected = [(matches, reason) for enabled, matches, reason in conditions if enabled]
+    if match_mode == "any":
+        return None if not selected or any(matches for matches, _ in selected) else "none of the selected Kakera filters match"
+    return next((reason for matches, reason in selected if not matches), None)
 
 
 def calculate_kakera_power_cost(

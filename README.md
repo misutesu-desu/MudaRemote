@@ -135,9 +135,12 @@ The bot can collect selected Kakera buttons and track the power used by each cli
 | **Priority Order** | Multiple crystals on one roll? The bot clicks the most valuable one first. You set the priority. |
 | **Power Tracking** | Clicking costs power. The bot monitors your power in real-time and stops clicking before you hit zero. |
 | **Auto $dk** | Can use `$dk` when power needs to be restored. |
-| **Chaos Mode** | Can limit Kakera clicks to eligible characters with 10 or more keys. |
-| **Shop 7 Double Rewards Only** | Collects only blue-background Chaos Kakera buttons for Shop perk 7 double rewards. Enable it in Advanced Settings → Kakera Reaction Collection. It combines with your other filters; the 50% discount filter remains a separate option. Purple Kakera and spheres follow their existing settings. |
-| **MK Only Mode** | Limits Kakera collection to `$mk` rolls. |
+| **Match selected filters** | All (AND) requires every selected condition; Any (OR) requires at least one. Saved per preset on Windows and Android; existing presets default to All. No selected filters means ordinary collection. All: discounted AND Shop 7. Any: discounted OR Shop 7. |
+| **50% Discount Only** | Matches eligible half-power discounts of any crystal color. Key discounts require your own roll; a visible Perk 8 half-power marker also applies on others' rolls. |
+| **Shop 7 Double Rewards Only** | Matches blue-background Chaos Kakera buttons (`kakeraC`/`kakeraC2`, Discord style 1). Blue styling alone does not grant a power discount. |
+| **MK, OP5 and Wish/Starwish Only** | Match your `$mk` rolls, OP5 characters, or either wish/starwish. Each selected option is an alternative under Any, not a mandatory condition. |
+| **Free green Kakera** | Green-background Kakera (Discord style 3) costs zero power and bypasses these five filters, paid color restrictions and power limits. Channel and roll permissions still apply. Character-claim buttons are separate; ordinary purple and spheres keep their own settings. |
+| **Paid Kakera selections** | After matching filters, paid buttons still follow the current roll context's colors, inherited selections, power requirements and thresholds. Immediate Click and Auto-Collect remain separate operational settings. |
 | **Sphere Detection** | Detects supported sphere buttons, which do not consume Kakera power. |
 | **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board; `$oh` uses can run as multiplier batches or as separate boards. |
 | **Custom Thresholds** | Sets a separate minimum power level for each Kakera type. |

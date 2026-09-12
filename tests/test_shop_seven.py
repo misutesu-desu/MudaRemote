@@ -119,7 +119,8 @@ class ShopSevenTests(unittest.IsolatedAsyncioTestCase):
             grey.click.assert_not_awaited()
 
     def test_filter_checks_button_style_and_preserves_free_collection(self):
-        eligible = inspect.getclosurevars(self.client._runtime_claim_character).nonlocals['kakera_button_is_eligible']
+        details = inspect.getclosurevars(inspect.getclosurevars(self.client._runtime_claim_character).nonlocals['click_kakera_with_confirmation']).nonlocals['kakera_click_details']
+        eligible = inspect.getclosurevars(details).nonlocals['kakera_button_is_eligible']
         for name, style, expected in (
             ('kakeraC', 1, True), ('kakeraC2', discord.ButtonStyle.primary, True),
             ('kakeraC', 2, False), ('kakeraC', None, False),
@@ -129,7 +130,7 @@ class ShopSevenTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name=name, style=style):
                 button = SimpleNamespace(emoji=SimpleNamespace(name=name), style=style)
                 self.client.sphere_click_targets = ['spR']
-                self.assertEqual(eligible(button, [name], None), expected)
+                self.assertEqual(details(self.message, button) is not None, expected)
                 button.disabled = True
                 self.assertFalse(eligible(button, [name], None))
         self.client.shop_perk_7_only = False

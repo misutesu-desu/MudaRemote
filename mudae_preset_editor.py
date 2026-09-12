@@ -612,6 +612,7 @@ DEFAULTS = {
     "farm_forcedivorce_after_claim": False,
     "farm_forcedivorce_after_other_claim": False,
     "op_perk_5_only": False,
+    "kakera_filter_match_mode": "all",
     "auto_divorce_enabled": False,
     "auto_divorce_protect_wishes": True,
     "auto_divorce_max_kakera": 50,
@@ -655,9 +656,9 @@ BOOL_SETTINGS = [
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
     ("auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
-    ("only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)", False),
+    ("only_chaos", "50% Discount Only", False),
     ("shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", False),
-    ("mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)", False),
+    ("mk_only", "MK Only (Your $mk rolls)", False),
     ("humanization_enabled", "Timing Variation (Randomizes timing; does not prevent detection or bans)", False),
     ("auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)", True),
     ("dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)", False),
@@ -679,7 +680,7 @@ BOOL_SETTINGS = [
     ("auto_rt_after_claim", "Auto $rt After Claim (Also controls $rt for Kakera farm claims)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("enable_kakera_snipe_chat_reactions", "Kakera Snipe Chat Message (Send after collecting Kakera from another roll)", False),
-    ("op_perk_5_only", "Only Click Kakera on OP5 Characters", False),
+    ("op_perk_5_only", "OP5 Only", False),
     ("farm_character_enabled", "Enable Kakera Farming Loop (Auto-Forcedivorce)", False),
     ("farm_forcedivorce_before_roll", "Forcedivorce Before Rolling (Solo/Startup Cleanup)", False),
     ("farm_forcedivorce_after_claim", "Forcedivorce After Own Verified Claim", False),
@@ -695,7 +696,7 @@ BOOL_SETTINGS = [
     ("oh_use_individually", "$oh: Play Every Available Use Separately (one board per use)", False),
     ("auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)", False),
     ("oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red", True),
-    ("wish_starwish_kakera_only", "Only Click Kakera on Wish/Starwish Characters (combines with other filters)", False),
+    ("wish_starwish_kakera_only", "Wish/Starwish Only (Either wish or starwish)", False),
 ]
 
 # Numeric settings with their display names, defaults, and types
@@ -2547,9 +2548,16 @@ class PresetEditor:
         self.add_list_field(kakera_react_sub, "kakera_snipe_channels", "Kakera Snipe Channels (Leave empty to reuse Character Snipe Channels)")
         self.add_list_field(kakera_react_sub, "kakera_reaction_snipe_targets", "Target User IDs (Only steal Kakera from these specific users)")
 
-        self.add_checkbox(kakera_react_frame.content, "only_chaos", "Chaos Kakera Only (Only click crystals that cost 50% less power)")
-        self.add_checkbox(kakera_react_frame.content, "shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", description="Only collect blue-background Chaos Kakera buttons that give double rewards from Shop perk 7. Your emoji selections and other filters still apply. Enable Chaos Kakera Only separately to also require its 50% power discount. Purple Kakera and spheres keep their existing collection rules.")
-        self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Kakera Only (Ignore normal kakera, ONLY click crystals from your $mk rolls)")
+        self.add_choice_field(
+            kakera_react_frame.content, "kakera_filter_match_mode", "Match selected filters:",
+            {"all": "All (AND) — every selected condition must match", "any": "Any (OR) — at least one selected condition must match"},
+            description="All: discounted AND Shop 7. Any: discounted OR Shop 7.\nAny also makes OP5, Wish/Starwish and MK alternative matches when selected; they are not mandatory. No filters selected: ordinary collection.",
+        )
+        self.add_checkbox(kakera_react_frame.content, "only_chaos", "50% Discount Only", description="Matches an eligible half-power discount of any crystal color. Key discounts require your own roll; a visible Perk 8 half-power marker also applies to others' rolls. Blue styling alone is not a discount.")
+        self.add_checkbox(kakera_react_frame.content, "shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", description="Matches blue-background Chaos Kakera buttons. Combine with 50% Discount Only using All to require both, or Any to accept either. Paid colors and power limits still apply.")
+        self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Only (Your $mk rolls)")
+        self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "OP5 Only")
+        self.add_checkbox(kakera_react_frame.content, "wish_starwish_kakera_only", "Wish/Starwish Only (Either wish or starwish)")
 
         self.add_checkbox(kakera_react_frame.content, "immediate_kakera_click", "Immediate Kakera Click (Click crystals instantly instead of waiting for all rolls to finish)", description="If enabled, the bot clicks crystals as soon as they appear. Otherwise, it waits to prioritize the best ones.")
         self.add_checkbox(
@@ -2559,15 +2567,10 @@ class PresetEditor:
             description="Special purple collection on your own claimed/refreshed rolls. Ordinary purple buttons always follow the selected Kakera emoji colours. Turn this off on extra accounts when several accounts watch the same rolls.",
         )
 
-        self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "Only Click Kakera on OP5 Characters")
-        self.add_checkbox(
-            kakera_react_frame.content,
-            "wish_starwish_kakera_only",
-            "Only Click Kakera on Wish/Starwish Characters (combines with other filters; starwish = sw emoji in series)",
-        )
         ttk.Label(
             kakera_react_frame.content,
-            text="Filter rule: every enabled 'Only' option must match. Purple Kakera is clicked when kakeraP is in the roll context's emoji list; 'Auto-Collect Purple After Claims' only adds purple collection after your own claims.",
+            text="Paid Kakera always follows the roll context's colors and power limits. Green-background free Kakera bypasses these five filters, paid colors and power limits. Ordinary purple follows the context's colors; post-claim purple and spheres keep their settings.",
+            wraplength=600,
             foreground="#f9e2af",
             font=("Segoe UI", 9),
         ).pack(anchor=tk.W, padx=20, pady=(2, 6))
@@ -2976,6 +2979,17 @@ class PresetEditor:
 
         return entry
 
+    def add_choice_field(self, parent, key, label, choices, description=None):
+        container = ttk.Frame(parent)
+        container.pack(fill=tk.X, pady=5)
+        ttk.Label(container, text=label).pack(anchor=tk.W)
+        var = tk.StringVar(value=DEFAULTS[key])
+        self.widgets[key] = var
+        for value, text in choices.items():
+            ttk.Radiobutton(container, text=text, value=value, variable=var, command=self.mark_dirty).pack(anchor=tk.W, padx=20)
+        if description:
+            ttk.Label(container, text=description, wraplength=600, foreground=TEXT_MUTED).pack(anchor=tk.W, padx=20)
+
     def add_checkbox(self, parent, key, label, description=None):
         """Add a checkbox."""
         var = tk.BooleanVar()
@@ -3294,6 +3308,9 @@ class PresetEditor:
                     if value is not None:
                         widget.insert(0, str(value))
 
+        if "kakera_filter_match_mode" in self.widgets:
+            self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
+
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
@@ -3587,6 +3604,9 @@ class PresetEditor:
                 data["server_reset_minute"] = None
         else:
             data.setdefault("server_reset_minute", DEFAULTS.get("server_reset_minute", None))
+
+        if "kakera_filter_match_mode" in self.widgets:
+            data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
 
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",

@@ -1042,7 +1042,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_snipe_channels_preset=None,
             mk_kakera_emojis_preset=None,
             server_reset_minute_preset=None,
-            shop_perk_7_only_preset=False):
+            shop_perk_7_only_preset=False, kakera_filter_match_mode_preset="all"):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -1142,6 +1142,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.maintenance_until = None
     client.only_chaos = only_chaos
     client.shop_perk_7_only = shop_perk_7_only_preset
+    client.kakera_filter_match_mode = "any" if kakera_filter_match_mode_preset == "any" else "all"
     client.mk_only = mk_only_preset
 
     client.auto_us_enabled = auto_us_enabled
@@ -2167,9 +2168,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         position,
         emoji_name,
         character_name,
-        power_cost=0,
+        is_mk_roll=False,
+        is_snipe=False,
+        allow_special_purple=False,
     ):
         """Retry an enabled Kakera button only while this account has no result."""
+        if kakera_click_details(msg, button, is_mk_roll=is_mk_roll, is_snipe=is_snipe, allow_special_purple=allow_special_purple) is None:
+            return False
         interaction_key = kakera_interaction_key(msg.id, position, emoji_name)
         if not client.kakera_interaction_ledger.begin(interaction_key):
             BotLogger.log(
@@ -2184,73 +2189,84 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         terminal = False
         if is_character_sphere_emoji(emoji_name):
             return await click_character_sphere(msg, button, interaction_key, emoji_name, character_name)
-        power_token = reserve_kakera_power_click(emoji_name, power_cost) if power_cost > 0 else None
+        power_token = None
         is_purple = str(emoji_name or "").rstrip("2").casefold() == "kakerap"
         attempt_limit = 3 if is_purple else 2
         label = "Purple Kakera" if is_purple else str(emoji_name or "Kakera")
         current_button = button
+        waiter_key, waiter = register_kakera_result_waiter(emoji_name)
         try:
             for attempt in range(attempt_limit):
-                if not shop_seven_filter_allows(current_button):
+                if waiter.done():
+                    client.kakera_interaction_ledger.mark_terminal(interaction_key, state="confirmed", custom_id=custom_id)
+                    terminal = True
+                    return True
+                cancel_kakera_power_click(power_token)
+                power_token = None
+                power_cost = await prepare_kakera_click(
+                    msg, current_button, is_mk_roll=is_mk_roll, is_snipe=is_snipe,
+                    allow_special_purple=allow_special_purple, allow_refill=attempt == 0,
+                )
+                if power_cost is None:
                     return False
-                waiter_key, waiter = register_kakera_result_waiter(emoji_name)
+                power_token = reserve_kakera_power_click(emoji_name, power_cost) if power_cost > 0 else None
                 interaction_ack_missing = False
                 try:
-                    try:
-                        if not await guarded_click(current_button):
-                            return False
-                    except Exception as error:
-                        if not is_ambiguous_component_interaction_error(error):
-                            raise
-                        # discord.py-self documents this timeout as ambiguous: the
-                        # interaction request was sent and may already have worked.
-                        # Never double-click it blindly. Wait for Mudae's account-
-                        # specific result and reconcile power with a fresh $tu if
-                        # the gateway acknowledgement was the only missing event.
-                        if _mobile_runtime_stop_event.is_set():
-                            return False
-                        interaction_ack_missing = True
-                    try:
-                        amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
+                    if not await guarded_click(current_button):
+                        return False
+                except Exception as error:
+                    if not is_ambiguous_component_interaction_error(error):
+                        raise
+                    # discord.py-self documents this timeout as ambiguous: the
+                    # interaction request was sent and may already have worked.
+                    # Never double-click it blindly. Wait for Mudae's account-
+                    # specific result and reconcile power with a fresh $tu if
+                    # the gateway acknowledgement was the only missing event.
+                    if _mobile_runtime_stop_event.is_set():
+                        return False
+                    interaction_ack_missing = True
+                try:
+                    amount = await asyncio.wait_for(asyncio.shield(waiter), timeout=2.5)
+                    client.kakera_interaction_ledger.mark_terminal(
+                        interaction_key,
+                        state="confirmed",
+                        custom_id=custom_id,
+                    )
+                    terminal = True
+                    BotLogger.log(
+                        f"{label} confirmed for {character_name} (+{amount}).",
+                        preset_name,
+                        "KAKERA",
+                    )
+                    return True
+                except asyncio.TimeoutError:
+                    if interaction_ack_missing:
                         client.kakera_interaction_ledger.mark_terminal(
                             interaction_key,
-                            state="confirmed",
+                            state="sent-ambiguous",
                             custom_id=custom_id,
                         )
                         terminal = True
+                        request_status_refresh(
+                            {"power"},
+                            reason="kakera-interaction-ambiguous",
+                            urgent=True,
+                        )
                         BotLogger.log(
-                            f"{label} confirmed for {character_name} (+{amount}).",
+                            f"{label} interaction was sent for {character_name}, but Discord "
+                            "did not return an acknowledgement. Power will be verified with $tu.",
                             preset_name,
-                            "KAKERA",
+                            "WARN",
                         )
                         return True
-                    except asyncio.TimeoutError:
-                        if interaction_ack_missing:
-                            client.kakera_interaction_ledger.mark_terminal(
-                                interaction_key,
-                                state="sent-ambiguous",
-                                custom_id=custom_id,
-                            )
-                            terminal = True
-                            request_status_refresh(
-                                {"power"},
-                                reason="kakera-interaction-ambiguous",
-                                urgent=True,
-                            )
-                            BotLogger.log(
-                                f"{label} interaction was sent for {character_name}, but Discord "
-                                "did not return an acknowledgement. Power will be verified with $tu.",
-                                preset_name,
-                                "WARN",
-                            )
-                            return True
-                finally:
-                    discard_kakera_result_waiter(waiter_key, waiter)
 
                 if attempt >= attempt_limit - 1 or not await active_delay(0.35):
                     break
                 try:
-                    msg = await channel.fetch_message(msg.id)
+                    refreshed = await channel.fetch_message(msg.id)
+                    if not hasattr(refreshed, "embeds"):
+                        refreshed.embeds = msg.embeds
+                    msg = refreshed
                     current_button = find_refreshed_component_button(
                         msg.components,
                         custom_id=custom_id,
@@ -2259,6 +2275,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     )
                 except Exception:
                     current_button = None
+                if waiter.done():
+                    continue
                 if current_button is None or getattr(current_button, "disabled", False):
                     break
                 BotLogger.log(
@@ -2275,6 +2293,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
             return False
         finally:
+            if not terminal and waiter.done() and not waiter.cancelled():
+                client.kakera_interaction_ledger.mark_terminal(interaction_key, state="confirmed", custom_id=custom_id)
+                terminal = True
+            discard_kakera_result_waiter(waiter_key, waiter)
             if not terminal:
                 cancel_kakera_power_click(power_token)
                 client.kakera_interaction_ledger.release(interaction_key)
@@ -3592,7 +3614,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             cur_power = int(power_match.group(1))
             cost = int(consumption_match.group(1))
-            if getattr(client, 'only_chaos', False):
+            if client.only_chaos and (client.kakera_filter_match_mode == 'all' or not any((
+                client.shop_perk_7_only, client.mk_only, client.op_perk_5_only, client.wish_starwish_kakera_only,
+            ))):
                 cost = calculate_kakera_power_cost(cost, has_chaos_discount=True)
 
             trigger_power = client.auto_dk_min_power or cost
@@ -6377,45 +6401,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if not msg.embeds or not msg.components:
                     continue
                 embed = msg.embeds[0]
-                chaos_count = count_chaos_keys(embed)
-                has_sp_perk = has_perk_eight_discount(kakera_embed_text(embed))
-                filter_reason = regular_kakera_filter_reason(
-                    client,
-                    msg,
-                    embed,
-                    is_mk_roll=False,
-                    is_external_roll=False,
-                )
-
-                target_list = get_active_kakera_emojis(
-                    has_chaos_discount=chaos_count > 0,
-                    has_perk_eight_discount=has_perk_eight_buttons(kakera_embed_text(embed), msg.components),
-                )
-
                 for row_idx, comp in enumerate(msg.components):
                     for child_idx, btn in enumerate(comp.children):
                         if hasattr(btn.emoji, 'name') and btn.emoji.name:
                             name = btn.emoji.name
                             name_clean = name.rstrip('2')
 
-                            is_sphere = is_character_sphere_emoji(name)
-                            is_free = name_clean == 'kakeraP' or is_sphere or check_is_green(btn)
-
-                            # Mirrors kakera_button_is_eligible so deferred clicks
-                            # follow the same colour rules as immediate clicks.
-                            is_clickable = False
-                            if is_sphere:
-                                if sphere_target_matches(name, client.sphere_click_targets):
-                                    is_clickable = True
-                            elif name_clean == 'kakeraP':
-                                if list_includes_purple(target_list):
-                                    is_clickable = True
-                            else:
-                                regular_match = (name in target_list or name_clean in target_list) or ("kakera" in name.lower() and check_is_green(btn))
-                                if filter_reason is None and regular_match:
-                                    is_clickable = True
-
-                            if is_clickable and shop_seven_filter_allows(btn):
+                            if kakera_button_is_eligible(btn, (*KAKERA_EMOJIS, "kakeraG", "kakeraT"), None):
+                                chaos_count = count_chaos_keys(embed)
+                                has_sp_perk = has_perk_eight_discount(kakera_embed_text(embed))
+                                is_sphere = is_character_sphere_emoji(name)
+                                is_free = is_sphere or name_clean == 'kakeraP' or is_green_kakera(btn)
                                 identity = kakera_interaction_key(msg.id, (row_idx, child_idx), name)
                                 if identity is None or client.kakera_interaction_ledger.is_claimed(identity):
                                     continue
@@ -6430,18 +6426,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     'emoji_name': name,
                                     'priority': prio,
                                     'message': msg,
-                                    'is_sphere': is_sphere,
-                                    'is_free': is_free,
-                                    'chaos_count': chaos_count,
-                                    'has_sp_perk': has_sp_perk,
                                     'has_reaction_cooldown_bypass': (
                                         chaos_count > 0 or has_sp_perk or is_free
-                                    ),
-                                    'cost': calculate_kakera_power_cost(
-                                        client.dk_consumption,
-                                        has_chaos_discount=chaos_count > 0,
-                                        has_perk_eight_discount=has_sp_perk,
-                                        is_free=is_free,
                                     ),
                                     'char_name': (embed.author.name if embed.author else "Unknown").strip(),
                                     'identity': identity,
@@ -6462,17 +6448,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 custom_id = item['custom_id']
                 pos = item['pos']
                 name = item['emoji_name']
-                is_free = item['is_free']
-                cost = item['cost']
-                chaos_count = item['chaos_count']
-                has_sp_perk = item.get('has_sp_perk', False)
-                has_reaction_cooldown_bypass = item['has_reaction_cooldown_bypass']
                 char_name = item['char_name']
 
                 msg_id = msg.id
                 # Update target message reference to avoid stale element exceptions
                 try:
-                    msg = await channel.fetch_message(msg_id)
+                    refreshed = await channel.fetch_message(msg_id)
+                    if not hasattr(refreshed, "embeds"):
+                        refreshed.embeds = msg.embeds
+                    msg = refreshed
                     btn = find_refreshed_component_button(
                         msg.components,
                         custom_id=custom_id,
@@ -6488,67 +6472,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     continue
 
                 async with get_kakera_action_lock():
-                    interaction_key = kakera_interaction_key(msg_id, pos, name)
-                    if client.kakera_interaction_ledger.is_claimed(interaction_key):
-                        continue
-                    is_free_purple = name.rstrip('2') == 'kakeraP'
-                    if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass and not is_free:
-                        BotLogger.log(
-                            f"Kakera skipped for {char_name}: reaction is on cooldown before queued {name} click.",
-                            preset_name,
-                            "DEBUG",
-                            client,
-                        )
-                        continue
-                    current_pow = get_current_dk_power()
-                    if cost > 0 and current_pow is None:
-                        request_status_refresh({"power"}, reason="power-unknown", urgent=True)
-                        continue
-                    if cost > 0 and current_pow < cost:
-                        if (client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0
-                                and should_auto_refill_dk(current_pow, cost)):
-                            log_name = name
-                            BotLogger.log(f"Dynamic DK Refill: Power too low ({current_pow}% < {cost}%). Sending $dk for {log_name}...", preset_name, "KAKERA")
-                            try:
-                                cmd_ch = _get_command_channel() or channel
-                                if not await guarded_send(cmd_ch, f"{client.mudae_prefix}dk"):
-                                    return
-                                client.dk_stock_count = max(0, client.dk_stock_count - 1)
-                                client.current_dk_power = client.max_dk_power
-                                client.kakera_power_ledger.clear()
-                                mark_dk_power_changed()
-                                client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
-                                request_status_refresh({"power"}, reason="dynamic-dk-used")
-                                if not await active_delay(1.2 + random.uniform(0.1, 0.4)):
-                                    return
-                                current_pow = get_current_dk_power()
-                            except Exception as e:
-                                BotLogger.log(f"Dynamic DK Refill failed: {e}", preset_name, "ERROR")
-
-                    if cost > 0 and current_pow < cost:
-                        log_name = name
-                        if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
-                            BotLogger.log(f"Insufficient Power ({current_pow}% < {cost}%). Skipping {log_name}.", preset_name, "WARN")
-                            client.last_power_warn = time.time()
-                        continue
-
-                    if cost > 0 and client.kakera_power_thresholds:
-                        base_name = name.rstrip('2')
-                        is_chaos = bool(chaos_count > 0 or has_sp_perk)
-                        spec_name = f"chaos_{base_name}" if is_chaos else base_name
-                        threshold = resolve_kakera_power_threshold(
-                            client.kakera_power_thresholds,
-                            name,
-                            chaos_count=chaos_count,
-                            has_perk_eight_discount=has_sp_perk,
-                            is_snipe=False,
-                        )
-                        if threshold is None and not is_chaos:
-                            threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
-                        if threshold is not None and current_pow < threshold:
-                            BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
-                            continue
-
                     if client.debug_mode:
                         ws_ref = getattr(client, 'ws', None)
                         sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
@@ -6563,7 +6486,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             position=pos,
                             emoji_name=name,
                             character_name=char_name,
-                            power_cost=cost,
                         )
                         if not click_ok:
                             continue
@@ -7275,11 +7197,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     _claim_coordinator.release_all(msg_rt.id)
         return bool(msg_claimed_id != -1)
 
-    def regular_kakera_filter_reason(client, msg, embed, *, is_mk_roll=False, is_external_roll=False):
+    def regular_kakera_filter_reason(client, msg, embed, *, button=None, is_mk_roll=False, is_external_roll=False):
         """Explain why ordinary Kakera is blocked without blocking spheres or purple."""
         chaos_count = count_chaos_keys(embed)
         marker_text = kakera_embed_text(embed)
         return get_regular_kakera_filter_reason(
+            match_mode=client.kakera_filter_match_mode,
+            shop_seven_only=client.shop_perk_7_only,
+            is_shop_seven=(
+                str(getattr(getattr(button, "emoji", None), "name", "")) in ("kakeraC", "kakeraC2")
+                and getattr(getattr(button, "style", None), "value", getattr(button, "style", None)) == 1
+            ),
             wish_only=client.wish_starwish_kakera_only,
             is_wish=is_wish_or_starwish(msg, embed),
             op5_only=client.op_perk_5_only,
@@ -7349,17 +7277,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
         )
 
-    def has_targeted_sphere_button(components):
-        for component in components or ():
-            for button in getattr(component, "children", ()) or ():
-                name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
-                if is_character_sphere_emoji(name) and sphere_target_matches(
-                    name,
-                    client.sphere_click_targets,
-                ):
-                    return True
-        return False
-
     def has_collectible_kakera_button(components, allowed_emojis):
         """Return whether this preset may click at least one Kakera button."""
         allowed = set(allowed_emojis or ())
@@ -7369,21 +7286,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     return True
         return False
 
-    def shop_seven_filter_allows(button):
-        """Shop 7 doubles are blue Chaos buttons; purple and spheres keep their rules."""
-        if not client.shop_perk_7_only:
-            return True
+    def is_green_kakera(button):
         name = str(getattr(getattr(button, "emoji", None), "name", "") or "").rstrip("2")
-        if name == "kakeraP" or is_character_sphere_emoji(name):
-            return True
-        style = getattr(button, "style", None)
-        return name == "kakeraC" and getattr(style, "value", style) == 1
+        return name in (*KAKERA_EMOJIS, "kakeraG", "kakeraT") and check_is_green(button)
 
     def kakera_button_is_eligible(button, target_list, filter_reason, allow_special_purple=False):
         if getattr(button, "disabled", False):
             return False
-        if not shop_seven_filter_allows(button):
-            return False
+        if is_green_kakera(button):
+            return True
         name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
         clean = name.rstrip("2")
         if is_character_sphere_emoji(name):
@@ -7397,6 +7308,95 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return bool(allow_special_purple and client.collect_purple_kakera)
         allowed = {str(item) for item in target_list or ()}
         return filter_reason is None and (name in allowed or clean in allowed)
+
+    def kakera_click_details(msg, button, *, is_mk_roll=False, is_snipe=False, allow_special_purple=False):
+        embed = msg.embeds[0] if getattr(msg, "embeds", None) else None
+        chaos_count = count_chaos_keys(embed)
+        marker_text = kakera_embed_text(embed)
+        has_sp_perk = has_perk_eight_discount(marker_text)
+        filter_reason = regular_kakera_filter_reason(
+            client, msg, embed, button=button,
+            is_mk_roll=is_mk_roll, is_external_roll=is_snipe,
+        )
+        target_list = get_active_kakera_emojis(
+            is_mk_roll=is_mk_roll, is_external_roll=is_snipe,
+            has_chaos_discount=chaos_count > 0,
+            has_perk_eight_discount=has_perk_eight_buttons(marker_text, msg.components),
+        )
+        if not kakera_button_is_eligible(button, target_list, filter_reason, allow_special_purple):
+            return None
+        name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
+        is_free = name.rstrip("2") == "kakeraP" or is_character_sphere_emoji(name) or is_green_kakera(button)
+        cost = calculate_kakera_power_cost(
+            client.dk_consumption, has_chaos_discount=chaos_count > 0,
+            has_perk_eight_discount=has_sp_perk, is_external_roll=is_snipe, is_free=is_free,
+        )
+        return cost, chaos_count, has_sp_perk
+
+    async def prepare_kakera_click(msg, button, *, is_mk_roll=False, is_snipe=False, allow_special_purple=False, allow_refill=True):
+        details = kakera_click_details(
+            msg, button, is_mk_roll=is_mk_roll, is_snipe=is_snipe,
+            allow_special_purple=allow_special_purple,
+        )
+        if details is None:
+            return None
+        cost, chaos_count, has_sp_perk = details
+        name = button.emoji.name
+        needs_reaction = cost > 0 or (name.rstrip('2') == 'kakeraP' and not is_green_kakera(button) and not client.collect_purple_kakera)
+        if needs_reaction and not is_kakera_reaction_allowed() and not ((chaos_count > 0 and not is_snipe) or has_sp_perk):
+            return None
+        current_pow = get_current_dk_power()
+
+        if cost > 0 and current_pow is None:
+            request_status_refresh({"power"}, reason="power-unknown", urgent=True)
+            return None
+        if cost > 0 and current_pow < cost:
+            if (allow_refill and client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0
+                    and should_auto_refill_dk(current_pow, cost)):
+                log_name = button.emoji.name if hasattr(button.emoji, 'name') else 'Kakera'
+                BotLogger.log(f"Dynamic DK Refill: Power too low ({current_pow}% < {cost}%). Sending $dk for {log_name}...", preset_name, "KAKERA")
+                try:
+                    cmd_ch = _get_command_channel() or msg.channel
+                    if not await guarded_send(cmd_ch, f"{client.mudae_prefix}dk"):
+                        return None
+                    client.dk_stock_count = max(0, client.dk_stock_count - 1)
+                    client.current_dk_power = client.max_dk_power
+                    client.kakera_power_ledger.clear()
+                    mark_dk_power_changed()
+                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                    request_status_refresh({"power"}, reason="dynamic-dk-used")
+                    if not await active_delay(1.2 + random.uniform(0.1, 0.4)):
+                        return None
+                    current_pow = get_current_dk_power()
+                except Exception as e:
+                    BotLogger.log(f"Dynamic DK Refill failed: {e}", preset_name, "ERROR")
+
+        if cost > 0 and current_pow < cost:
+            log_name = button.emoji.name if hasattr(button.emoji, 'name') else 'Kakera'
+            if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
+                BotLogger.log(f"Insufficient Power ({current_pow}% < {cost}%). Skipping {log_name}.", preset_name, "WARN")
+                client.last_power_warn = time.time()
+            return None
+
+        if cost > 0 and client.kakera_power_thresholds:
+            base_name = name.rstrip('2')
+            # The 10+ key and Perk 8 discount only applies to self-rolls (when is_snipe is False)
+            is_chaos = bool((chaos_count > 0 or has_sp_perk) and not is_snipe)
+            spec_name = f"chaos_{base_name}" if is_chaos else base_name
+            threshold = resolve_kakera_power_threshold(
+                client.kakera_power_thresholds,
+                name,
+                chaos_count=chaos_count,
+                has_perk_eight_discount=has_sp_perk,
+                is_snipe=is_snipe,
+            )
+            if threshold is None and not is_chaos:
+                threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
+            if threshold is not None and current_pow < threshold:
+                BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
+                return None
+
+        return cost
 
     async def send_claim_click(button, pending, timeout=2.0):
         """Start a claim immediately without treating a missing Discord ACK as a failed send.
@@ -7621,52 +7621,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if is_free_claim and not await active_delay(random.uniform(1.0, 2.5)): return False
 
             if is_kakera:
-                chaos_count = count_chaos_keys(embed)
-                has_sp_perk = has_perk_eight_discount(kakera_embed_text(embed))
-                purple_on_roll = has_purple_kakera_button(msg.components)
-                special_purple_allowed = bool(allow_special_purple and client.collect_purple_kakera)
-                has_targeted_sphere = has_targeted_sphere_button(msg.components)
-                filter_reason = regular_kakera_filter_reason(
-                    client,
-                    msg,
-                    embed,
-                    is_mk_roll=is_mk_roll,
-                    is_external_roll=is_snipe,
-                )
-
-                target_list = get_active_kakera_emojis(
-                    is_mk_roll=is_mk_roll,
-                    is_external_roll=is_snipe,
-                    has_chaos_discount=chaos_count > 0,
-                    has_perk_eight_discount=has_perk_eight_buttons(kakera_embed_text(embed), msg.components),
-                )
-                # Ordinary purple follows the active colour list; only the
-                # post-claim special collection may click outside of it.
-                has_purple_kakera = purple_on_roll and (
-                    list_includes_purple(target_list) or special_purple_allowed
-                )
-                if filter_reason and not has_purple_kakera and not has_targeted_sphere:
-                    BotLogger.log(f"Kakera skipped for {char_name}: {filter_reason}.", preset_name, "DEBUG", client)
-                    return False
-                if filter_reason:
-                    BotLogger.log(
-                        f"Regular Kakera filtered for {char_name}: {filter_reason}; collecting eligible sphere/purple buttons only.",
-                        preset_name,
-                        "DEBUG",
-                        client,
-                    )
-
-                # The 10+ key discount and cooldown bypass only applies to self-rolls (when is_snipe is False)
-                has_reaction_cooldown_bypass = (chaos_count > 0 and not is_snipe) or has_sp_perk
-                if not is_kakera_reaction_allowed(is_free_purple=has_purple_kakera) and not has_reaction_cooldown_bypass and not has_targeted_sphere:
-                    BotLogger.log(
-                        f"Kakera skipped for {char_name}: reaction is on cooldown and no valid discount bypass applies.",
-                        preset_name,
-                        "DEBUG",
-                        client,
-                    )
-                    return False
-
                 clicked = False
                 if msg.components:
                     all_btns_tracked = []
@@ -7677,7 +7631,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 name_clean = name.rstrip('2')
                                 if is_purple_only and name_clean != 'kakeraP':
                                     continue
-                                if kakera_button_is_eligible(btn, target_list, filter_reason, allow_special_purple=special_purple_allowed):
+                                if kakera_button_is_eligible(btn, (*KAKERA_EMOJIS, "kakeraG", "kakeraT"), None):
                                     all_btns_tracked.append({
                                         'btn': btn, 'custom_id': btn.custom_id,
                                         'pos': (row_idx, child_idx), 'emoji_name': name
@@ -7729,84 +7683,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if getattr(btn, 'disabled', False):
                             continue
 
-                        name_clean = name.rstrip('2')
-                        is_sphere = is_character_sphere_emoji(name)
-                        is_free = name_clean == 'kakeraP' or is_sphere or check_is_green(btn)
-                        if client.only_chaos and (is_snipe or (chaos_count == 0 and not has_sp_perk)) and not is_free:
-                            continue
-                        cost = calculate_kakera_power_cost(
-                            client.dk_consumption,
-                            has_chaos_discount=chaos_count > 0,
-                            has_perk_eight_discount=has_sp_perk,
-                            is_external_roll=is_snipe,
-                            is_free=is_free,
-                        )
                         async with get_kakera_action_lock():
-                            interaction_key = kakera_interaction_key(msg.id, pos, name)
-                            if client.kakera_interaction_ledger.is_claimed(interaction_key):
-                                continue
-                            # Recheck after serializing clicks: another account may
-                            # have just received a $ku rejection for this preset.
-                            is_free_purple = name_clean == 'kakeraP'
-                            if not is_kakera_reaction_allowed(is_free_purple=is_free_purple) and not has_reaction_cooldown_bypass and not is_free:
-                                BotLogger.log(
-                                    f"Kakera skipped for {char_name}: reaction became unavailable before {name} could be clicked.",
-                                    preset_name,
-                                    "DEBUG",
-                                    client,
-                                )
-                                continue
-                            current_pow = get_current_dk_power()
-
-                            if cost > 0 and current_pow is None:
-                                request_status_refresh({"power"}, reason="power-unknown", urgent=True)
-                                continue
-                            if cost > 0 and current_pow < cost:
-                                if (client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0
-                                        and should_auto_refill_dk(current_pow, cost)):
-                                    log_name = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
-                                    BotLogger.log(f"Dynamic DK Refill: Power too low ({current_pow}% < {cost}%). Sending $dk for {log_name}...", preset_name, "KAKERA")
-                                    try:
-                                        cmd_ch = _get_command_channel() or channel
-                                        if not await guarded_send(cmd_ch, f"{client.mudae_prefix}dk"):
-                                            return clicked
-                                        client.dk_stock_count = max(0, client.dk_stock_count - 1)
-                                        client.current_dk_power = client.max_dk_power
-                                        client.kakera_power_ledger.clear()
-                                        mark_dk_power_changed()
-                                        client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
-                                        request_status_refresh({"power"}, reason="dynamic-dk-used")
-                                        if not await active_delay(1.2 + random.uniform(0.1, 0.4)):
-                                            return clicked
-                                        current_pow = get_current_dk_power()
-                                    except Exception as e:
-                                        BotLogger.log(f"Dynamic DK Refill failed: {e}", preset_name, "ERROR")
-
-                            if cost > 0 and current_pow < cost:
-                                log_name = btn.emoji.name if hasattr(btn.emoji, 'name') else 'Kakera'
-                                if not hasattr(client, 'last_power_warn') or (time.time() - getattr(client, 'last_power_warn', 0) > 60):
-                                    BotLogger.log(f"Insufficient Power ({current_pow}% < {cost}%). Skipping {log_name}.", preset_name, "WARN")
-                                    client.last_power_warn = time.time()
-                                continue
-
-                            if cost > 0 and client.kakera_power_thresholds:
-                                base_name = name.rstrip('2')
-                                # The 10+ key and Perk 8 discount only applies to self-rolls (when is_snipe is False)
-                                is_chaos = bool((chaos_count > 0 or has_sp_perk) and not is_snipe)
-                                spec_name = f"chaos_{base_name}" if is_chaos else base_name
-                                threshold = resolve_kakera_power_threshold(
-                                    client.kakera_power_thresholds,
-                                    name,
-                                    chaos_count=chaos_count,
-                                    has_perk_eight_discount=has_sp_perk,
-                                    is_snipe=is_snipe,
-                                )
-                                if threshold is None and not is_chaos:
-                                    threshold = first_configured(client.kakera_power_thresholds, spec_name, base_name, name)
-                                if threshold is not None and current_pow < threshold:
-                                    BotLogger.log(f"Power ({current_pow}%) below threshold ({threshold}%) for {spec_name}. Waiting.", preset_name, "INFO")
-                                    continue
-
                             if client.debug_mode:
                                 ws_ref = getattr(client, 'ws', None)
                                 sid = getattr(ws_ref, 'session_id', None) if ws_ref else None
@@ -7821,7 +7698,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                     position=pos,
                                     emoji_name=name,
                                     character_name=char_name,
-                                    power_cost=cost,
+                                    is_mk_roll=is_mk_roll,
+                                    is_snipe=is_snipe,
+                                    allow_special_purple=allow_special_purple,
                                 )
                                 if not click_ok:
                                     continue
@@ -8929,6 +8808,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("mk_kakera_emojis", None),
                 preset_data.get("server_reset_minute", None),
                 shop_perk_7_only_preset=preset_data.get("shop_perk_7_only", False),
+                kakera_filter_match_mode_preset=preset_data.get("kakera_filter_match_mode", "all"),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

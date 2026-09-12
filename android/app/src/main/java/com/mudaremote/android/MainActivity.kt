@@ -35,6 +35,8 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -76,6 +78,8 @@ class MainActivity : ComponentActivity() {
     private val profiles = linkedMapOf<String, JSONObject>()
     private val tokens = linkedMapOf<String, String>()
     private val fieldViews = linkedMapOf<String, View>()
+    private val inheritedKakeraFields = setOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis")
+    private var inheritedKakeraAtRender = "[]"
     private val sectionContainers = linkedMapOf<String, LinearLayout>()
     private val sectionHeaders = linkedMapOf<String, TextView>()
     private val collapsedSections = mutableMapOf<String, Boolean>()
@@ -1101,16 +1105,18 @@ class MainActivity : ComponentActivity() {
 
     private fun renderCurrentProfile() {
         val data = profiles[currentProfile] ?: JSONObject()
+        inheritedKakeraAtRender = (data.optJSONArray("kakera_emojis") ?: schemaFields.getJSONObject("kakera_emojis").getJSONArray("default")).toString()
         tokenInput.setText(tokens[currentProfile].orEmpty())
         fieldsContainer.removeAllViews()
         fieldViews.clear()
         sectionContainers.clear()
         sectionHeaders.clear()
 
-        val keys = data.keys().asSequence()
+        val keys = (data.keys().asSequence().toList() + inheritedKakeraFields).distinct().asSequence()
             .filter { it != "token" && it != "additional_tokens" }
             .toList().sortedWith(
-            compareBy<String> { sectionRank(schemaFields.optJSONObject(it)?.optString("section", "Advanced") ?: "Advanced") }.thenBy { it }
+            compareBy<String> { sectionRank(schemaFields.optJSONObject(it)?.optString("section", "Advanced") ?: "Advanced") }
+                .thenBy { schemaFields.optJSONObject(it)?.optInt("order", 100) ?: 100 }.thenBy { it }
         )
 
         var previousSection = ""
@@ -1118,7 +1124,9 @@ class MainActivity : ComponentActivity() {
         var sectionBody: LinearLayout? = null
 
         for (key in keys) {
-            val value = data.opt(key)
+            val value = data.opt(key) ?: if (key in inheritedKakeraFields) {
+                JSONArray(inheritedKakeraAtRender)
+            } else null
             val meta = schemaFields.optJSONObject(key)
             val section = meta?.optString("section", "Advanced") ?: "Advanced"
 
@@ -1207,6 +1215,35 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, UiTheme.dp(this@MainActivity, 5), 0, UiTheme.dp(this@MainActivity, 5))
             tag = "field_container_$key"
+        }
+
+        val choices = meta?.optJSONObject("choices")
+        if (choices != null) {
+            container.addView(TextView(this).apply {
+                text = labelText
+                setTextColor(UiTheme.TEXT_PRIMARY)
+            })
+            val group = RadioGroup(this)
+            choices.keys().asSequence().sorted().forEach { choice ->
+                val radio = RadioButton(this).apply {
+                    id = View.generateViewId()
+                    tag = choice
+                    text = choices.getString(choice)
+                    textSize = 13f
+                    setTextColor(UiTheme.TEXT_PRIMARY)
+                    buttonTintList = ColorStateList.valueOf(UiTheme.ACCENT_BLUE)
+                }
+                group.addView(radio)
+                if (choice == value) group.check(radio.id)
+            }
+            fieldViews[key] = group
+            container.addView(group)
+            container.addView(TextView(this).apply {
+                text = descriptionText
+                textSize = 11f
+                setTextColor(UiTheme.TEXT_SECONDARY)
+            })
+            return container
         }
 
         when (value) {
@@ -1466,10 +1503,12 @@ class MainActivity : ComponentActivity() {
             val oldValue = data.opt(key)
             val value = when (view) {
                 is Switch -> view.isChecked
+                is RadioGroup -> view.findViewById<RadioButton>(view.checkedRadioButtonId)?.tag ?: oldValue
                 is ChipListView -> view.getJsonArray()
                 is EditText -> parseValue(view.text.toString(), oldValue)
                 else -> view.toString()
             }
+            if (key in inheritedKakeraFields && !data.has(key) && value.toString() == inheritedKakeraAtRender) continue
             data.put(key, value)
         }
         val accountToken = tokenInput.text.toString().trim()
@@ -2244,14 +2283,14 @@ class MainActivity : ComponentActivity() {
 
     private fun schemaDefaults(): JSONObject {
         val data = JSONObject()
-        schemaFields.keys().asSequence().filter { it != "token" }.forEach { key ->
+        schemaFields.keys().asSequence().filter { it != "token" && it !in inheritedKakeraFields }.forEach { key ->
             data.put(key, schemaFields.optJSONObject(key)?.opt("default") ?: "")
         }
         return data
     }
 
     private fun mergeSchemaDefaults(data: JSONObject) {
-        schemaFields.keys().asSequence().filter { it != "token" }.forEach { key ->
+        schemaFields.keys().asSequence().filter { it != "token" && it !in inheritedKakeraFields }.forEach { key ->
             if (!data.has(key)) data.put(key, schemaFields.optJSONObject(key)?.opt("default") ?: "")
         }
     }

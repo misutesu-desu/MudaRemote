@@ -33,7 +33,7 @@ def main(project_root, output_dir):
                     if isinstance(item, (list, tuple)) and len(item) >= 3:
                         settings.setdefault(str(item[0]), {})["default"] = item[2]
 
-    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field"}
+    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field", "add_choice_field"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr not in wanted:
             continue
@@ -43,6 +43,8 @@ def main(project_root, output_dir):
         key, label = args[1], args[2]
         entry = settings.setdefault(key, {})
         entry.setdefault("label", label)
+        if node.func.attr == "add_choice_field" and len(args) > 3:
+            entry["choices"] = args[3]
         description = literal(next((kw.value for kw in node.keywords if kw.arg == "description"), None))
         if isinstance(description, str) and description.strip():
             entry["description"] = description.strip()
@@ -106,6 +108,10 @@ def main(project_root, output_dir):
         "Advanced": {"debug_mode", "debug_log_categories", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
     }
     sections = {key: section for section, keys in section_groups.items() for key in keys}
+    filter_keys = ["kakera_filter_match_mode", "only_chaos", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
+    for order, key in enumerate(filter_keys):
+        sections[key] = "Kakera Reactions"
+        settings[key]["order"] = order
     for key, entry in settings.items():
         if "default" not in entry:
             entry["default"] = ""

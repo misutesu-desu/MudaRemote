@@ -25,7 +25,25 @@ class PresetImportParserTest {
             put("claim_interval", JSONObject().put("type", "number").put("default", 180))
             put("roll_interval", JSONObject().put("type", "number").put("default", 60))
             put("wishlist", JSONObject().put("type", "json").put("default", JSONArray()))
+            put("kakera_filter_match_mode", JSONObject().put("default", "all"))
         }
+    }
+
+    @Test
+    fun testKakeraModesRoundtripPerPresetWithoutCreatingColorOverrides() {
+        val parsed = PresetImportParser.parse(
+            """{"Legacy":{"kakera_emojis":["kakeraY"]},"Any":{"kakera_filter_match_mode":"any","only_chaos":true,"shop_perk_7_only":true}}""",
+            schemaFields, "unused",
+        )
+        val saved = JSONObject().apply { parsed.forEach { (name, data) -> put(name, data) } }.toString()
+        val restored = PresetImportParser.parse(saved, schemaFields, "unused")
+        assertEquals("all", restored.getValue("Legacy").optString("kakera_filter_match_mode", "all"))
+        assertEquals("any", restored.getValue("Any").getString("kakera_filter_match_mode"))
+        for (key in listOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis")) {
+            assertFalse(restored.getValue("Legacy").has(key))
+        }
+        val flat = PresetImportParser.parse("""{"kakera_filter_match_mode":"all"}""", schemaFields, "All")
+        assertEquals("all", flat.getValue("All").getString("kakera_filter_match_mode"))
     }
 
     @Test
