@@ -566,6 +566,7 @@ DEFAULTS = {
     "auto_p_enabled": True,
     "auto_oh_enabled": False,
     "oh_use_individually": False,
+    "hourly_tu_refresh": False,
     "auto_oc_enabled": False,
     "roll_speed": 0.4,
     "snipe_delay": 2,
@@ -656,7 +657,8 @@ BOOL_SETTINGS = [
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
     ("auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
-    ("only_chaos", "50% Discount Only", False),
+    ("only_chaos", "Chaos Key Only", False),
+    ("perk_eight_only", "Perk 8 Only", False),
     ("shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", False),
     ("mk_only", "MK Only (Your $mk rolls)", False),
     ("humanization_enabled", "Timing Variation (Randomizes timing; does not prevent detection or bans)", False),
@@ -2404,6 +2406,7 @@ class PresetEditor:
             description="Minute of each hour when this server replenishes rolls. Leave empty to auto-detect."
         )
         self.add_checkbox(roll_sub, "time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)")
+        self.add_checkbox(roll_frame.content, "hourly_tu_refresh", "Hourly $tu Refresh", description="Request fresh status after an hour without a complete $tu. Active rolls finish first; normal command pacing still applies.")
 
         auto_rolls_var = self.add_checkbox(roll_sub, "auto_rolls_enabled", "Automatically Use Daily Rolls ($rolls)")
         auto_rolls_sub = self.create_subframe(roll_sub, auto_rolls_var, "auto_rolls_enabled")
@@ -2551,10 +2554,11 @@ class PresetEditor:
         self.add_choice_field(
             kakera_react_frame.content, "kakera_filter_match_mode", "Match selected filters:",
             {"all": "All (AND) — every selected condition must match", "any": "Any (OR) — at least one selected condition must match"},
-            description="All: discounted AND Shop 7. Any: discounted OR Shop 7.\nAny also makes OP5, Wish/Starwish and MK alternative matches when selected; they are not mandatory. No filters selected: ordinary collection.",
+            description="All requires every selected filter; Any accepts at least one.\nFor Perk 8 OR Shop 7, select those two filters and Any; leave Chaos Key off. OP5, Wish/Starwish and MK also become alternatives under Any. No filters selected: ordinary collection.",
         )
-        self.add_checkbox(kakera_react_frame.content, "only_chaos", "50% Discount Only", description="Matches an eligible half-power discount of any crystal color. Key discounts require your own roll; a visible Perk 8 half-power marker also applies to others' rolls. Blue styling alone is not a discount.")
-        self.add_checkbox(kakera_react_frame.content, "shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", description="Matches blue-background Chaos Kakera buttons. Combine with 50% Discount Only using All to require both, or Any to accept either. Paid colors and power limits still apply.")
+        self.add_checkbox(kakera_react_frame.content, "only_chaos", "Chaos Key Only", description="Requires 10+ keys on your own roll. A Chaos crystal's color alone does not qualify. This filter is separate from Perk 8.")
+        self.add_checkbox(kakera_react_frame.content, "perk_eight_only", "Perk 8 Only", description="Requires the visible Perk 8 💎 / 2 marker, on your own or others' rolls. Keys and the four-button layout without this marker do not qualify.")
+        self.add_checkbox(kakera_react_frame.content, "shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", description="Matches blue-background Chaos Kakera buttons. Combine with Perk 8 Only using All to require both, or Any to accept either. Paid colors and power limits still apply.")
         self.add_checkbox(kakera_react_frame.content, "mk_only", "MK Only (Your $mk rolls)")
         self.add_checkbox(kakera_react_frame.content, "op_perk_5_only", "OP5 Only")
         self.add_checkbox(kakera_react_frame.content, "wish_starwish_kakera_only", "Wish/Starwish Only (Either wish or starwish)")
@@ -2569,7 +2573,7 @@ class PresetEditor:
 
         ttk.Label(
             kakera_react_frame.content,
-            text="Paid Kakera always follows the roll context's colors and power limits. Green-background free Kakera bypasses these five filters, paid colors and power limits. Ordinary purple follows the context's colors; post-claim purple and spheres keep their settings.",
+            text="Paid Kakera always follows the roll context's colors and power limits. Green-background free Kakera bypasses the selected filters, paid colors and power limits. Ordinary purple follows the context's colors; post-claim purple and spheres keep their settings.",
             wraplength=600,
             foreground="#f9e2af",
             font=("Segoe UI", 9),
@@ -3317,7 +3321,7 @@ class PresetEditor:
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
-                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "shop_perk_7_only",
+                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only",
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
@@ -3327,7 +3331,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "auto_oc_enabled", "oc_collect_after_red",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
@@ -3614,7 +3618,7 @@ class PresetEditor:
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
-                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "shop_perk_7_only",
+                    "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only",
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
@@ -3624,7 +3628,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "auto_oc_enabled", "oc_collect_after_red",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()

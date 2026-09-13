@@ -464,5 +464,23 @@ class MudaRemoteService : Service() {
                 Intent(context, MudaRemoteService::class.java).setAction(ACTION_STOP)
             )
         }
+
+        fun applySavedProfile(context: Context, name: String, profile: JSONObject, accountTokens: List<String>): Boolean {
+            if (runtimeState != RuntimeState.RUNNING) return false
+            val vault = SecretVault(context)
+            val profiles = JSONObject(vault.get(ACTIVE_PROFILES_KEY).ifBlank { "{}" })
+            if (!profiles.has(name)) return false
+            val tokens = JSONObject(vault.get(ACTIVE_TOKENS_KEY).ifBlank { "{}" })
+            profiles.put(name, JSONObject(profile.toString()).apply {
+                remove("token")
+                remove("tokens")
+                remove("additional_tokens")
+            })
+            tokens.put(name, org.json.JSONArray(accountTokens).toString())
+            // Reuse the supervised Stop/Run queue so old workers exit before settings take effect.
+            stop(context)
+            start(context, profiles.toString(), tokens.toString())
+            return true
+        }
     }
 }

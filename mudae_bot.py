@@ -590,6 +590,7 @@ def _request_mobile_client_close(client):
         loop = getattr(client, "loop", None)
         if not loop or not loop.is_running():
             return None
+        client._mobile_owned_loop = loop
         close_coro = client.close()
         try:
             future = asyncio.run_coroutine_threadsafe(close_coro, loop)
@@ -1042,10 +1043,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             kakera_snipe_channels_preset=None,
             mk_kakera_emojis_preset=None,
             server_reset_minute_preset=None,
-            shop_perk_7_only_preset=False, kakera_filter_match_mode_preset="all"):
+            shop_perk_7_only_preset=False, kakera_filter_match_mode_preset="all",
+            hourly_tu_refresh_preset=False, perk_eight_only_preset=False):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
+    client.hourly_tu_refresh = bool(hourly_tu_refresh_preset)
     client._pause_generation = 1 if _global_paused else 0
     client.command_pacer = CommandPacer(0.6, 0.8)
     with _active_clients_lock:
@@ -1141,6 +1144,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.auto_dk_min_power = max(0, int(auto_dk_min_power_preset or 0))
     client.maintenance_until = None
     client.only_chaos = only_chaos
+    client.perk_eight_only = bool(perk_eight_only_preset)
     client.shop_perk_7_only = shop_perk_7_only_preset
     client.kakera_filter_match_mode = "any" if kakera_filter_match_mode_preset == "any" else "all"
     client.mk_only = mk_only_preset
@@ -2522,7 +2526,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         channel = await _resolve_administrative_command_channel(channel)
         if channel is None:
             return False
-        uses = max(1, int(uses or 1))
+        uses = max(1, min(10, int(uses or 1)))
+        if kind == "oh" and client.oh_use_individually:
+            uses = 1
         if client._sphere_game_lock is None:
             client._sphere_game_lock = asyncio.Lock()
         async with client._sphere_game_lock:
@@ -2548,9 +2554,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if game_message is None:
                     BotLogger.log(f"${kind}: Game board did not arrive; retrying later.", preset_name, "WARN")
                     return False
-                await play_sphere_game(channel, game_message, kind)
                 # Starting the board consumes the selected stock even if the chest is lost.
-                return True
+                client.sphere_game_counts[kind] = max(0, client.sphere_game_counts.get(kind, 0) - uses)
+                return await play_sphere_game(channel, game_message, kind)
             finally:
                 if client._sphere_game_response_future is response_future:
                     client._sphere_game_response_future = None
@@ -2562,16 +2568,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if not response_future.done():
                     response_future.cancel()
 
-    async def run_available_sphere_games(channel, status):
-        available_oh = status.available_for("oh")
-        available_oc = status.available_for("oc")
-        client.sphere_game_counts = {
-            "oh": available_oh,
-            "oc": available_oc,
-            "oq": status.available_for("oq"),
-            "ot": status.available_for("ot"),
-        }
-        if status.refill_minutes is not None:
+    async def run_available_sphere_games(channel, status=None):
+        if getattr(client, "_sphere_games_running", False):
+            client._deferred_independent_known_work = True
+            return
+        if status is not None:
+            client.sphere_game_counts = {
+                kind: status.available_for(kind) for kind in ("oh", "oc", "oq", "ot")
+            }
+        if status is not None and status.refill_minutes is not None:
             previous_refill = client.sphere_game_refill_at_utc
             client.sphere_game_refill_at_utc = (
                 datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=status.refill_minutes)
@@ -2579,47 +2584,50 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if previous_refill != client.sphere_game_refill_at_utc:
                 client.loop.call_later(max(5.0, status.refill_minutes * 60.0 + 2.0), wake_status_loop)
 
-        if getattr(client, "is_processing_cycle", False) or claim_critical_work_pending():
+        if (status is not None and getattr(client, "is_processing_cycle", False)) or claim_critical_work_pending():
             # A reconciliation $tu may still update local sphere stock, but it
             # must not inject a board command ahead of claim-state handling.
             client._deferred_independent_known_work = True
             return
 
-        enabled_games = (
-            ("oh", client.auto_oh_enabled, available_oh),
-            ("oc", client.auto_oc_enabled, available_oc),
-        )
-        for kind, enabled, available in enabled_games:
-            if not enabled or available <= 0:
-                continue
-            now_monotonic = time.monotonic()
-            if now_monotonic < client._sphere_game_retry_after.get(kind, 0.0):
-                continue
-            remaining = available
-            completed_all = True
-            batch_sizes = (
-                [1] * available
-                if kind == "oh" and client.oh_use_individually
-                else split_command_batches(available, 10)
+        client._sphere_games_running = True
+        try:
+            enabled_games = (
+                ("oh", client.auto_oh_enabled, client.sphere_game_counts.get("oh", 0)),
+                ("oc", client.auto_oc_enabled, client.sphere_game_counts.get("oc", 0)),
             )
-            if kind == "oh" and client.oh_use_individually and available > 1:
-                BotLogger.log(
-                    f"OH: Individual-use mode will play {available} separate board(s).",
-                    preset_name,
-                    "INFO",
+            for kind, enabled, available in enabled_games:
+                if not enabled or available <= 0:
+                    continue
+                now_monotonic = time.monotonic()
+                if now_monotonic < client._sphere_game_retry_after.get(kind, 0.0):
+                    continue
+                completed_all = True
+                batch_sizes = (
+                    [1] * available
+                    if kind == "oh" and client.oh_use_individually
+                    else split_command_batches(available, 10)
                 )
-            for batch_size in batch_sizes:
-                if not await run_sphere_game(channel, kind, batch_size):
-                    completed_all = False
-                    break
-                remaining -= batch_size
-                client.sphere_game_counts[kind] = remaining
-            if completed_all:
-                refill_seconds = max(300.0, float(status.refill_minutes or 60) * 60.0)
-                client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
-            else:
-                client._sphere_game_retry_after[kind] = time.monotonic() + 300.0
-                client.loop.call_later(302.0, wake_status_loop)
+                if kind == "oh" and client.oh_use_individually and available > 1:
+                    BotLogger.log(
+                        f"OH: Individual-use mode will play {available} separate board(s).",
+                        preset_name,
+                        "INFO",
+                    )
+                for batch_size in batch_sizes:
+                    if not await run_sphere_game(channel, kind, batch_size):
+                        completed_all = False
+                        break
+                if completed_all:
+                    refill_seconds = max(300.0, float(getattr(status, "refill_minutes", None) or 60) * 60.0)
+                    client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
+                else:
+                    for waiting_kind in ("oh", "oc"):
+                        client._sphere_game_retry_after[waiting_kind] = time.monotonic() + 300.0
+                    client.loop.call_later(302.0, wake_status_loop)
+                    return  # An unfinished board must settle before another minigame starts.
+        finally:
+            client._sphere_games_running = False
 
     async def series_wishlist_matches(message, series, known_self_roll=None):
         if not client.series_snipe_mode or not client.series_wishlist:
@@ -3463,6 +3471,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_ready():
+        client._mobile_owned_loop = asyncio.get_running_loop()
         ws = getattr(client, "ws", None)
         if ws and getattr(ws, "session_id", None): client.mudae_session_id = ws.session_id
 
@@ -3586,6 +3595,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         unhealthy = 0
         while not client.is_closed():
             await asyncio.sleep(60)
+            request_hourly_status_refresh()
             if client.latency == float('inf'):
                 unhealthy += 1
                 BotLogger.log(f"Connection lost ({unhealthy}/3).", preset_name, "ERROR")
@@ -3614,10 +3624,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             cur_power = int(power_match.group(1))
             cost = int(consumption_match.group(1))
-            if client.only_chaos and (client.kakera_filter_match_mode == 'all' or not any((
+            if client.kakera_filter_match_mode == 'all':
+                cost = calculate_kakera_power_cost(cost, has_chaos_discount=client.only_chaos,
+                                                  has_perk_eight_discount=client.perk_eight_only)
+            elif (client.only_chaos or client.perk_eight_only) and not any((
                 client.shop_perk_7_only, client.mk_only, client.op_perk_5_only, client.wish_starwish_kakera_only,
-            ))):
-                cost = calculate_kakera_power_cost(cost, has_chaos_discount=True)
+            )):
+                cost = calculate_kakera_power_cost(cost, has_perk_eight_discount=True)
 
             trigger_power = client.auto_dk_min_power or cost
             if cur_power < trigger_power:
@@ -3881,7 +3894,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
             client._predicted_roll_action_handle = None
             client._predicted_roll_action_cycle_id = None
-            client.loop.create_task(execute_owned_normal_roll_action(logical_roll_cycle_id))
+            task = client.loop.create_task(execute_owned_normal_roll_action(logical_roll_cycle_id))
+            if task is not None:
+                task.add_done_callback(recover_failed_normal_action)
+
+        def recover_failed_normal_action(task):
+            if task.cancelled() or task.exception() is None or _mobile_runtime_stop_event.is_set():
+                return
+            BotLogger.log(f"Roll action failed; refreshing status before retry: {task.exception()}", preset_name, "ERROR")
+            owner = client.normal_roll_action_owner
+            if owner.cycle_id == logical_roll_cycle_id:
+                owner.defer(logical_roll_cycle_id)
+                owner.resume_claim(logical_roll_cycle_id)
+                client._normal_roll_transaction_cycle_id = None
+                client.is_actively_rolling = False
+                client._auto_rolls_ack_ambiguous_cycle_id = None
+                client._auto_rolls_reconcile_cycle_id = None
+                request_status_refresh({"claim", "rolls"}, reason="normal-action-failed", urgent=True)
+                _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
 
         client._predicted_roll_action_handle = client.loop.call_later(
             max(0.0, delay),
@@ -4795,11 +4825,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=2)
                 ).replace(second=0, microsecond=0)
                 schedule_points_refresh(client.next_p_claim_at_utc)
-        for kind, enabled in (("oh", client.auto_oh_enabled), ("oc", client.auto_oc_enabled)):
-            available = int(client.sphere_game_counts.get(kind, 0) or 0)
-            if enabled and available > 0 and time.monotonic() >= client._sphere_game_retry_after.get(kind, 0.0):
-                if await run_sphere_game(channel, kind, available):
-                    client.sphere_game_counts[kind] = 0
+        await run_available_sphere_games(channel)
         return True
 
     async def drain_deferred_independent_work(channel):
@@ -4810,7 +4836,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client._deferred_independent_known_work = False
         return await run_independent_known_work(channel, client.current_roll_cycle_id)
 
+    def request_hourly_status_refresh():
+        if (client.hourly_tu_refresh and client.last_tu_query_utc is not None
+                and (datetime.datetime.now(timezone.utc) - client.last_tu_query_utc).total_seconds() >= 3600):
+            request_status_refresh({"claim", "rolls", "dk", "points"}, reason="hourly-tu-refresh")
+
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, scheduler_cycle_id=None):
+        request_hourly_status_refresh()
         if client.is_paused or is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
@@ -5582,7 +5614,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             raise
         finally:
             client.is_processing_cycle = False
-            if getattr(client, "_deferred_independent_known_work", False):
+            if getattr(client, "_deferred_independent_known_work", False) and not _mobile_runtime_stop_event.is_set():
                 client.loop.create_task(drain_deferred_independent_work(channel))
 
     async def send_auto_us(amount, fallback_channel):
@@ -7215,6 +7247,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             mk_only=client.mk_only,
             is_mk_roll=is_mk_roll,
             chaos_only=client.only_chaos,
+            perk_eight_only=client.perk_eight_only,
             is_external_roll=is_external_roll,
             has_chaos_discount=chaos_count > 0,
             has_perk_eight_discount=has_perk_eight_discount(marker_text),
@@ -8809,6 +8842,8 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 preset_data.get("server_reset_minute", None),
                 shop_perk_7_only_preset=preset_data.get("shop_perk_7_only", False),
                 kakera_filter_match_mode_preset=preset_data.get("kakera_filter_match_mode", "all"),
+                hourly_tu_refresh_preset=preset_data.get("hourly_tu_refresh", False),
+                perk_eight_only_preset=preset_data.get("perk_eight_only", False),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):
@@ -8971,10 +9006,14 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
         still_active = [client for client in clients if client in _active_clients]
     forced_loops = 0
     for client in still_active:
-        loop = getattr(client, "loop", None)
+        loop = getattr(client, "_mobile_owned_loop", None) or getattr(client, "loop", None)
         try:
             if loop and loop.is_running():
-                loop.call_soon_threadsafe(loop.stop)
+                def cancel_and_stop(owned_loop=loop):
+                    for task in asyncio.all_tasks(owned_loop):
+                        task.cancel()
+                    owned_loop.stop()
+                loop.call_soon_threadsafe(cancel_and_stop)
                 forced_loops += 1
         except (AttributeError, RuntimeError):
             pass

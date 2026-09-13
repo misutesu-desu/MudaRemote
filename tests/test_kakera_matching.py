@@ -19,8 +19,8 @@ from mudae_preset_editor import PresetEditor, build_recommended_preset
 from tests.test_kakera_snipe_ownership import _create_test_client, _build_roll_message
 
 
-FILTERS = ('chaos_only', 'shop_seven_only', 'mk_only', 'op5_only', 'wish_only')
-MATCHES = ('has_chaos_discount', 'is_shop_seven', 'is_mk_roll', 'has_op5', 'is_wish')
+FILTERS = ('chaos_only', 'perk_eight_only', 'shop_seven_only', 'mk_only', 'op5_only', 'wish_only')
+MATCHES = ('has_chaos_discount', 'has_perk_eight_discount', 'is_shop_seven', 'is_mk_roll', 'has_op5', 'is_wish')
 
 
 class MatchingTests(unittest.TestCase):
@@ -57,8 +57,8 @@ class MatchingTests(unittest.TestCase):
 
     def test_all_enabled_and_matching_combinations(self):
         for mode, enabled, matched in itertools.product(
-            ('all', 'any'), itertools.product((False, True), repeat=5),
-            itertools.product((False, True), repeat=5),
+            ('all', 'any'), itertools.product((False, True), repeat=len(FILTERS)),
+            itertools.product((False, True), repeat=len(FILTERS)),
         ):
             selected = [value for use, value in zip(enabled, matched) if use]
             expected = not selected or (all(selected) if mode == 'all' else any(selected))
@@ -71,7 +71,7 @@ class MatchingTests(unittest.TestCase):
         for mode in ('all', 'any'):
             for external, keys, perk, expected in (
                 (False, True, False, True), (True, True, False, False),
-                (False, False, True, True), (True, False, True, True),
+                (False, False, True, False), (True, False, True, False),
                 (False, False, False, False),
             ):
                 self.assertEqual(get_regular_kakera_filter_reason(
@@ -79,11 +79,15 @@ class MatchingTests(unittest.TestCase):
                     has_chaos_discount=keys, has_perk_eight_discount=perk,
                     is_mk_roll=True, is_shop_seven=True,
                 ) is None, expected)
+                self.assertEqual(get_regular_kakera_filter_reason(
+                    match_mode=mode, perk_eight_only=True, is_external_roll=external,
+                    has_chaos_discount=keys, has_perk_eight_discount=perk,
+                ) is None, perk)
 
     def test_preset_defaults_validation_storage_and_android_schema(self):
         preset = build_recommended_preset()
         self.assertEqual(preset['kakera_filter_match_mode'], 'all')
-        preset.update(kakera_filter_match_mode='any', only_chaos=True, mk_only=True,
+        preset.update(kakera_filter_match_mode='any', only_chaos=True, perk_eight_only=True, mk_only=True,
                       kakera_reaction_snipe_mode=True, kakera_emojis=[], chaos_emojis=[], mk_kakera_emojis=[])
         self.assertEqual(validate_preset(preset, require_runtime=False), [])
         with tempfile.TemporaryDirectory() as directory:
@@ -95,10 +99,16 @@ class MatchingTests(unittest.TestCase):
             generate_schema(str(Path(__file__).resolve().parents[1]), directory)
             fields = json.loads(Path(directory, 'android_schema.json').read_text(encoding='utf-8'))['fields']
         field = fields['kakera_filter_match_mode']
+        self.assertEqual(fields['hourly_tu_refresh']['type'], 'boolean')
+        self.assertFalse(fields['hourly_tu_refresh']['default'])
+        self.assertEqual(fields['hourly_tu_refresh']['section'], 'Rolling')
         self.assertEqual(field['default'], 'all')
         self.assertEqual(set(field['choices']), {'all', 'any'})
-        self.assertIn('All: discounted AND Shop 7. Any: discounted OR Shop 7.', field['description'])
-        for key in ('only_chaos', 'shop_perk_7_only', 'mk_only', 'op_perk_5_only', 'wish_starwish_kakera_only'):
+        self.assertIn('For Perk 8 OR Shop 7', field['description'])
+        self.assertEqual(fields['only_chaos']['label'], 'Chaos Key Only')
+        self.assertEqual(fields['perk_eight_only']['label'], 'Perk 8 Only')
+        self.assertFalse(fields['perk_eight_only']['default'])
+        for key in ('only_chaos', 'perk_eight_only', 'shop_perk_7_only', 'mk_only', 'op_perk_5_only', 'wish_starwish_kakera_only'):
             self.assertEqual(fields[key]['section'], 'Kakera Reactions')
             self.assertGreater(fields[key]['order'], field['order'])
         self.assertTrue(validate_preset(dict(preset, kakera_filter_match_mode='invalid'), require_runtime=False))
@@ -109,6 +119,8 @@ class MatchingTests(unittest.TestCase):
             editor = mock.Mock(spec=PresetEditor)
             editor.current_preset = 'test'
             editor.widgets = {'kakera_filter_match_mode': mock.Mock(get=lambda: mode),
+                              'perk_eight_only': mock.Mock(get=lambda: mode == 'any'),
+                              'hourly_tu_refresh': mock.Mock(get=lambda: mode == 'any'),
                               'inactive_hours': mock.Mock(get=lambda: ''),
                               'reactive_kakera_delay_min': mock.Mock(get=lambda: '0'),
                               'reactive_kakera_delay_max': mock.Mock(get=lambda: '0')}
@@ -116,13 +128,17 @@ class MatchingTests(unittest.TestCase):
             self.assertTrue(PresetEditor.save_current_preset(editor, show_success=False))
             data = editor._persist_preset_data.call_args.args[0]
             self.assertEqual(data['kakera_filter_match_mode'], mode)
-        for preset, expected in (({}, 'all'), ({'kakera_filter_match_mode': 'any'}, 'any')):
+            self.assertEqual(data['perk_eight_only'], mode == 'any')
+            self.assertEqual(data['hourly_tu_refresh'], mode == 'any')
+        for preset, expected in (({}, 'all'), ({'kakera_filter_match_mode': 'any', 'perk_eight_only': True, 'hourly_tu_refresh': True}, 'any')):
             editor = mock.Mock(spec=PresetEditor)
             editor.current_preset = None
             editor.presets = {'test': preset}
             editor.bot_processes = {}
-            editor.widgets = {key: mock.Mock() for key in ('kakera_filter_match_mode', 'inactive_hours',
+            editor.widgets = {key: mock.Mock() for key in ('kakera_filter_match_mode', 'perk_eight_only', 'hourly_tu_refresh', 'inactive_hours',
                                                           'reactive_kakera_delay_min', 'reactive_kakera_delay_max')}
+            for key in ('perk_eight_only', 'hourly_tu_refresh'):
+                editor.widgets[key] = mock.Mock(spec=tk.BooleanVar)
             editor.preset_listbox = mock.Mock(size=lambda: 0)
             editor.secret_store = mock.Mock(get_tokens=lambda *args: [])
             editor.root = mock.Mock()
@@ -130,6 +146,8 @@ class MatchingTests(unittest.TestCase):
             editor.run_status_label = mock.Mock()
             PresetEditor._select_preset_impl(editor, 'test')
             editor.widgets['kakera_filter_match_mode'].set.assert_called_once_with(expected)
+            editor.widgets['perk_eight_only'].set.assert_called_once_with(expected == 'any')
+            editor.widgets['hourly_tu_refresh'].set.assert_called_once_with(expected == 'any')
 
 
 class CollectionTests(unittest.IsolatedAsyncioTestCase):
@@ -162,11 +180,12 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_shop_and_discount_qualify_independently_in_any_on_each_path(self):
         for queued, mode, style, desc in itertools.product(
-            (False, True), ('all', 'any'), (1, 2), ('Series', 'Series 💎 / 2'),
+            (False, True), ('all', 'any'), (1, 2),
+            ('Series\n<:chaoskey:123> (**112,951**)', 'Series\n<:chaoskey:123> (**112,951**) 💎 / 2'),
         ):
             with self.subTest(queued=queued, mode=mode, style=style, desc=desc):
                 self.bot.kakera_filter_match_mode = mode
-                self.bot.only_chaos = self.bot.shop_perk_7_only = True
+                self.bot.perk_eight_only = self.bot.shop_perk_7_only = True
                 self.bot.kakera_interaction_ledger = mudae_bot.KakeraInteractionLedger()
                 self.bot.kakera_power_ledger.clear()
                 msg, btn = self.message(style=style, description=desc)
@@ -174,7 +193,7 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
                 expected = (style == 1 and '💎' in desc) if mode == 'all' else (style == 1 or '💎' in desc)
                 self.assertEqual(btn.click.await_count, int(expected))
                 self.assertEqual(self.bot.kakera_power_ledger.available_power(100),
-                                 100 - (15 if '💎' in desc else 30) if expected else 100)
+                                 100 - (7.5 if '💎' in desc else 15) if expected else 100)
 
     async def test_op5_wish_starwish_mk_are_alternatives_not_mandatory(self):
         for mode in ('all', 'any'):

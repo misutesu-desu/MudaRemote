@@ -135,11 +135,12 @@ The bot can collect selected Kakera buttons and track the power used by each cli
 | **Priority Order** | Multiple crystals on one roll? The bot clicks the most valuable one first. You set the priority. |
 | **Power Tracking** | Clicking costs power. The bot monitors your power in real-time and stops clicking before you hit zero. |
 | **Auto $dk** | Can use `$dk` when power needs to be restored. |
-| **Match selected filters** | All (AND) requires every selected condition; Any (OR) requires at least one. Saved per preset on Windows and Android; existing presets default to All. No selected filters means ordinary collection. All: discounted AND Shop 7. Any: discounted OR Shop 7. |
-| **50% Discount Only** | Matches eligible half-power discounts of any crystal color. Key discounts require your own roll; a visible Perk 8 half-power marker also applies on others' rolls. |
+| **Match selected filters** | All (AND) requires every selected condition; Any (OR) requires at least one. Saved per preset on Windows and Android; existing presets default to All. No selected filters means ordinary collection. For Perk 8 OR Shop 7, select those two filters and Any; leave Chaos Key off. All requires both. |
+| **Chaos Key Only** | Requires 10+ keys on your own roll. Chaos crystal color alone does not qualify. |
+| **Perk 8 Only** | Requires the visible Perk 8 💎 / 2 marker on your own or another account's roll. Keys and the four-button layout alone do not qualify. |
 | **Shop 7 Double Rewards Only** | Matches blue-background Chaos Kakera buttons (`kakeraC`/`kakeraC2`, Discord style 1). Blue styling alone does not grant a power discount. |
 | **MK, OP5 and Wish/Starwish Only** | Match your `$mk` rolls, OP5 characters, or either wish/starwish. Each selected option is an alternative under Any, not a mandatory condition. |
-| **Free green Kakera** | Green-background Kakera (Discord style 3) costs zero power and bypasses these five filters, paid color restrictions and power limits. Channel and roll permissions still apply. Character-claim buttons are separate; ordinary purple and spheres keep their own settings. |
+| **Free green Kakera** | Green-background Kakera (Discord style 3) costs zero power and bypasses the selected filters, paid color restrictions and power limits. Channel and roll permissions still apply. Character-claim buttons are separate; ordinary purple and spheres keep their own settings. |
 | **Paid Kakera selections** | After matching filters, paid buttons still follow the current roll context's colors, inherited selections, power requirements and thresholds. Immediate Click and Auto-Collect remain separate operational settings. |
 | **Sphere Detection** | Detects supported sphere buttons, which do not consume Kakera power. |
 | **Sphere Mini-Games** | Optional Auto `$oh` harvests valuable spheres, while Auto `$oc` solves the red-sphere clue board; `$oh` uses can run as multiplier batches or as separate boards. |

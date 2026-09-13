@@ -1516,7 +1516,11 @@ class MainActivity : ComponentActivity() {
         normalizeProfileTokens(currentProfile, data)
         profiles[currentProfile] = data
         persist()
-        if (showStatus) toast("Committed changes to '$currentProfile' 💾")
+        if (showStatus) {
+            val applying = MudaRemoteService.applySavedProfile(this, currentProfile, data, allTokensForProfile(currentProfile))
+            toast(if (applying) "Saved '$currentProfile'. Restarting active profiles to apply changes."
+                  else "Committed changes to '$currentProfile' 💾")
+        }
     }
 
     private fun decodeTokenValues(raw: Any?): List<String> {

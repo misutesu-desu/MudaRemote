@@ -434,6 +434,7 @@ def get_regular_kakera_filter_reason(
     mk_only: bool = False,
     is_mk_roll: bool = False,
     chaos_only: bool = False,
+    perk_eight_only: bool = False,
     is_external_roll: bool = False,
     has_chaos_discount: bool = False,
     has_perk_eight_discount: bool = False,
@@ -447,8 +448,10 @@ def get_regular_kakera_filter_reason(
         (wish_only, is_wish, "character is not wished/starwished"),
         (op5_only, has_op5, "embed has no Ouroperk 5 sp emoji"),
         (mk_only, is_mk_roll, "MK Only is enabled and this is not an $mk roll"),
-        (chaos_only, has_perk_eight_discount or (has_chaos_discount and not is_external_roll),
-         "50% Discount Only requires eligible half-power discount evidence"),
+        (chaos_only, has_chaos_discount and not is_external_roll,
+         "Chaos Key Only requires 10+ keys on your own roll"),
+        (perk_eight_only, has_perk_eight_discount,
+         "Perk 8 Only requires the visible diamond / 2 marker"),
         (shop_seven_only, is_shop_seven, "Shop 7 requires a blue-background Chaos Kakera button"),
     ]
     selected = [(matches, reason) for enabled, matches, reason in conditions if enabled]

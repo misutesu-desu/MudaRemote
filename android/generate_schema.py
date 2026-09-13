@@ -98,7 +98,7 @@ def main(project_root, output_dir):
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
-        "Rolling": {"rolling", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
+        "Rolling": {"hourly_tu_refresh", "rolling", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "panic_roll_minutes", "auto_free_claim", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls"},
         "Character Sniping": {"snipe_mode", "snipe_delay", "snipe_channels", "character_snipe_targets", "reactive_snipe_on_own_rolls", "reactive_snipe_delay", "series_snipe_mode", "series_snipe_delay", "series_snipe_only_self_rolls", "series_wishlist", "kakera_snipe_mode", "kakera_snipe_threshold", "enable_snipe_chat_reactions", "snipe_chat_messages"},
         "Kakera Reactions": {"kakera_reaction_snipe_mode", "kakera_reaction_snipe_delay", "kakera_reaction_snipe_targets", "kakera_snipe_channels", "enable_kakera_snipe_chat_reactions", "kakera_snipe_chat_messages", "immediate_kakera_click", "collect_purple_kakera", "shop_perk_7_only", "kakera_power_thresholds", "auto_dk_enabled", "auto_dk_min_power", "max_dk_power"},
@@ -108,7 +108,7 @@ def main(project_root, output_dir):
         "Advanced": {"debug_mode", "debug_log_categories", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
     }
     sections = {key: section for section, keys in section_groups.items() for key in keys}
-    filter_keys = ["kakera_filter_match_mode", "only_chaos", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
+    filter_keys = ["kakera_filter_match_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
     for order, key in enumerate(filter_keys):
         sections[key] = "Kakera Reactions"
         settings[key]["order"] = order

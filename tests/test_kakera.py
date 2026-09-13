@@ -267,21 +267,21 @@ class KakeraPowerTests(unittest.TestCase):
             get_regular_kakera_filter_reason(op5_only=True, has_op5=True)
         )
 
-    def test_chaos_only_accepts_own_half_power_perk_eight_buttons(self):
+    def test_perk_eight_only_accepts_visible_marker_on_either_roll_source(self):
         self.assertIsNone(
             get_regular_kakera_filter_reason(
-                chaos_only=True,
+                perk_eight_only=True,
                 has_perk_eight_discount=True,
             )
         )
         self.assertIsNone(
             get_regular_kakera_filter_reason(
-                chaos_only=True,
+                perk_eight_only=True,
                 is_external_roll=True,
                 has_perk_eight_discount=True,
             )
         )
-        self.assertIsNotNone(get_regular_kakera_filter_reason(chaos_only=True))
+        self.assertIsNotNone(get_regular_kakera_filter_reason(perk_eight_only=True))
 
     def test_purple_kakera_button_is_detected_even_with_a_variant_suffix(self):
         class Emoji:
@@ -522,9 +522,9 @@ class KakeraPowerTests(unittest.TestCase):
             chaos_only=True,
             has_chaos_discount=False,
         )
-        self.assertEqual(filter_reason, "50% Discount Only requires eligible half-power discount evidence")
+        self.assertEqual(filter_reason, "Chaos Key Only requires 10+ keys on your own roll")
 
-        # Case 3: Starwish character with chaos discount -> filter passes
+        # Case 3: Starwish character with a Chaos Key -> filter passes
         filter_reason = get_regular_kakera_filter_reason(
             wish_only=True,
             is_wish=True,

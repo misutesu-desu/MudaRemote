@@ -64,6 +64,15 @@ class AndroidRuntimeContractTests(unittest.TestCase):
         self.assertIn("scheduleWithFixedDelay", self.service)
         self.assertIn("latestCommandStartId == watchedStartId", self.service)
 
+    def test_explicit_save_applies_only_active_profiles_via_stop_then_start(self):
+        self.assertIn('if (showStatus) {\n            val applying = MudaRemoteService.applySavedProfile', self.activity)
+        apply_source = self.service.split('fun applySavedProfile(', 1)[1]
+        self.assertIn('if (runtimeState != RuntimeState.RUNNING) return false', apply_source)
+        self.assertIn('if (!profiles.has(name)) return false', apply_source)
+        self.assertLess(apply_source.index('stop(context)'), apply_source.index('start(context,'))
+        for key in ('token', 'tokens', 'additional_tokens'):
+            self.assertIn('remove("{}")'.format(key), apply_source)
+
 
 if __name__ == "__main__":
     unittest.main()

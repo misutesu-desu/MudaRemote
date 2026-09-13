@@ -589,11 +589,11 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("for click_attempt in range(2)", board_source)
         self.assertIn("_sphere_board_update_events", board_source)
         self.assertIn("collecting bonus spheres", board_source)
-        self.assertIn('status.available_for("oc")', available_source)
+        self.assertIn('status.available_for(kind)', available_source)
         self.assertIn("split_command_batches(available, 10)", available_source)
         self.assertIn("client.oh_use_individually", available_source)
         self.assertIn("[1] * available", available_source)
-        self.assertIn("remaining -= batch_size", available_source)
+        self.assertIn("client.sphere_game_counts.get(kind, 0) - uses", game_source)
 
     def test_hard_status_deadlines_bypass_humanization_structurally(self):
         functions = {
