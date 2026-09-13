@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.1-beta.18**\n\n### 🐛 Bug Fixes\n- **Hourly Rolls:** Fixed an issue near the hourly reset that could make the bot try to spend the same roll allowance twice.\n- **Roll Limit Recovery:** The bot now stops the current roll batch when Mudae reports that the account has no rolls left, then checks its status before continuing.\n- **Multiple Accounts:** Roll-limit warnings are matched to the affected account, so another account's warning does not stop your rolls.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.1-beta.18/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.1-beta.18/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "62f6c48960622770c67fb48fef016c7b696ebc667a8390521198363db523d5c9",
   "source_files": [
     {
       "path": "mudae_bot.py",
