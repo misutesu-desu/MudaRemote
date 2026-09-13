@@ -132,7 +132,8 @@ class ResetAnchor:
             return tuple(parts)
         return None
 
-    def observe(self, proposed_boundary_utc, observed_at_utc=None, *, tolerance_seconds=125.0):
+    def observe(self, proposed_boundary_utc, observed_at_utc=None, *, tolerance_seconds=125.0,
+                private_roll_count=False):
         """Accept a trusted future boundary and return ``(changed, refined)``.
 
         A difference inside the display/transport tolerance deliberately does
@@ -140,6 +141,18 @@ class ResetAnchor:
         humanization state attached to the same logical cycle.  A material
         disagreement safely starts a new authoritative schedule.
         """
+        # A fresh private count may already belong to the following interval
+        # while our minute-rounded/configured boundary is still imminent.
+        # Consume that boundary without predicting another refill. Peer timers
+        # alone cannot establish which interval this account's count belongs to.
+        if (private_roll_count and self.name == "roll"
+                and proposed_boundary_utc is not None and observed_at_utc is not None
+                and self.next_boundary_at_utc is not None
+                and 0 < (self.next_boundary_at_utc - observed_at_utc).total_seconds() <= tolerance_seconds
+                and abs((proposed_boundary_utc - self.next_boundary_at_utc).total_seconds()
+                        - self.interval_seconds) <= tolerance_seconds):
+            self.advance_through(self.next_boundary_at_utc)
+
         if self.authoritative_minute is not None:
             ref_utc = observed_at_utc or proposed_boundary_utc
             if ref_utc is not None and (self.anchor_at_utc is None or self.next_boundary_at_utc is None):

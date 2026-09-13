@@ -1776,7 +1776,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("reconcile_authoritative_current_roll_count(", status_source)
         self.assertIn('ROLL_RESET_TU', status_source)
 
-    def test_all_roll_deadline_paths_use_the_canonical_reconciler(self):
+    def test_private_roll_counts_can_supersede_imminent_boundary_protection(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -1786,6 +1786,8 @@ class RuntimeSourceContractTests(unittest.TestCase):
         rolls_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
 
         self.assertIn("reconcile_roll_reset_deadline(", status_source)
+        self.assertIn("if parsed_rolls is None:", status_source)
+        self.assertIn("private_roll_count=(parsed_rolls is not None)", status_source)
         self.assertIn("reconcile_roll_reset_deadline(", rolls_source)
 
     def test_kakera_button_ledger_replaces_whole_message_success_guard(self):

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+from mudae_bot import REGEX_PATTERNS
+
 
 def production_functions(*names):
     tree = ast.parse((Path(__file__).resolve().parents[1] / 'mudae_bot.py').read_text(encoding='utf-8'))
@@ -21,7 +23,7 @@ class TuResponseIdentityTests(unittest.TestCase):
         user = SimpleNamespace(id=7, name='deoprrr', display_name='Deoprrr')
         guild = SimpleNamespace(get_member=lambda uid: SimpleNamespace(display_name='𝕯𝖊𝖔𝖕𝖗𝖗') if uid == 7 else None)
         scope = dict(client=SimpleNamespace(user=user), re=re, TARGET_BOT_ID=42,
-                     REGEX_PATTERNS={'USER_BOLD': r'^\*\*(.+?)\*\*'})
+                     REGEX_PATTERNS=REGEX_PATTERNS)
         exec(production_functions('claim_identities', 'is_tu_response_for_self'), scope)
         message = SimpleNamespace(author=SimpleNamespace(id=42), guild=guild,
                                   content='**𝕯𝖊𝖔𝖕𝖗𝖗**\nYou can claim now!\nYou have **10** rolls left.')

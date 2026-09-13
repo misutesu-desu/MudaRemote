@@ -473,6 +473,7 @@ REGEX_PATTERNS = {
     "KAKERA_COOLDOWN": r"(?:react|pegar|reaccionar).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
     "MK_BONUS": r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)",
     "ROLLS_COUNT": r"(?:you have|vous avez|tienes|você tem)\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left|restantes?|restants?\b)",
+    "ROLL_LIMIT": r"\broulette is limited to\s+\*{0,2}[\d,.]+\*{0,2}\s+uses? per hour\b",
     "BONUS_ROLLS": r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$(us|mk)\)",
     "ROLL_RESET_TU": r"(?:reset|reinicialização|reinicio).*?(?:in|em|en|dans)\s+(?:.*?)\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min",
     "KAKERA_EARNED": r"\+(\d+)\s*<:kakera:",
@@ -1645,6 +1646,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
             return False
         text = str(getattr(message, 'content', '') or '')
+        if re.search(REGEX_PATTERNS["ROLL_LIMIT"], text, re.IGNORECASE):
+            return False
         match = re.match(REGEX_PATTERNS["USER_BOLD"], text)
         if not match:
             return False
@@ -1873,6 +1876,23 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # only repeat the same cooldown and can fan out across many alts.
             clear_status_dirty(client, {"claim"})
             wake_status_loop()
+        return True
+
+    def process_roll_limit_message(message):
+        if not re.search(REGEX_PATTERNS["ROLL_LIMIT"], message.content or "", re.IGNORECASE):
+            return False
+        interaction = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
+        user = getattr(interaction, "user", None)
+        is_self = user.id == client.user.id if user is not None else message_addresses_self(message)
+        if not is_self:
+            return False
+        client.interrupt_rolling = True
+        client._roll_interrupt_reason = "roll-limit"
+        reconcile_authoritative_current_roll_count(0, observation_kind="roll-limit")
+        client.predicted_roll_state_valid = False
+        client.normal_roll_replenishment_capacity_confidence = False
+        request_status_refresh({"rolls"}, reason="roll-limit-reached", urgent=True)
+        BotLogger.log("Mudae roll limit reached for this account; stopping rolls and refreshing status.", preset_name, "WARN")
         return True
 
     def process_kakera_reaction_cooldown_message(message):
@@ -5428,6 +5448,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             parsed_rolls = None
             roll_reset_minutes = None
             roll_anchor_materially_reanchored = False
+            now_utc = datetime.datetime.now(timezone.utc)
             rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_lower, re.DOTALL)
             if rolls_match:
                 try:
@@ -5441,13 +5462,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 # This account's complete $tu is authoritative. Keep the
                 # parsed boundary if the narrower roll-count parser misses
                 # the same localized reset phrase below.
-                client.roll_reset_at_utc, _ = reconcile_roll_reset_deadline(
-                    getattr(client, "roll_reset_at_utc", None),
-                    now_utc,
-                    cooldown_deadline(now_utc, roll_reset_minutes),
-                )
+                proposed_reset = cooldown_deadline(now_utc, roll_reset_minutes)
+                if parsed_rolls is None:
+                    proposed_reset, _ = reconcile_roll_reset_deadline(
+                        client.roll_reset_at_utc, now_utc, proposed_reset,
+                    )
                 changed, refined = client.roll_reset_anchor.observe(
-                    client.roll_reset_at_utc, now_utc,
+                    proposed_reset, now_utc,
+                    private_roll_count=(parsed_rolls is not None),
                 )
                 roll_anchor_materially_reanchored = changed
                 client.roll_reset_at_utc = client.roll_reset_anchor.next_boundary_at_utc
@@ -6268,6 +6290,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 break
             if client.interrupt_rolling:
                 interrupt_reason = getattr(client, "_roll_interrupt_reason", None)
+                if interrupt_reason == "roll-limit":
+                    remaining_batch_rolls = client.rolls_left = 0
+                    break
                 if interrupt_reason == "claim-attempt":
                     while (
                         getattr(client, "is_claiming", False)
@@ -6363,7 +6388,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     break
 
         timeout, poll_start = 5.0, time.time()
-        while not client.is_paused and time.time() - poll_start < timeout and client._rolls_received < client._rolls_sent:
+        while not client.is_paused and not client.interrupt_rolling and time.time() - poll_start < timeout and client._rolls_received < client._rolls_sent:
             await asyncio.sleep(0.05)
 
         client.is_actively_rolling = False
@@ -8123,6 +8148,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not client.is_paused and client.rolling_enabled: await client.process_commands(message)
             return
 
+        if is_roll and process_roll_limit_message(message):
+            return
         record_claim_text_evidence(message)
         process_claim_cooldown_message(message)
         process_kakera_reaction_cooldown_message(message)
