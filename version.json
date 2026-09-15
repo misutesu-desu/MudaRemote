@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.2**\n\n### 🐛 Bug Fixes\n- **Repeated Status Checks:** Fixed a reset-wait issue that could repeatedly send `$tu` or `/tu` while rolls were still available. The bot now waits quietly for the next roll period and resumes when it arrives.\n- **Roll Recovery & Key Mode:** Available rolls now resume after a fresh status update instead of remaining stuck in an outdated claim wait. This also works in Key Mode with Auto `$us` disabled, on Windows and Android.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.2/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.2/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "7dca2387ac4930c4d145843aa7410272421aa8b2c3960bd63bd3bfbd80452170",
   "source_files": [
     {
       "path": "mudae_bot.py",
