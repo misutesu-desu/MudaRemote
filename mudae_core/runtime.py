@@ -1906,6 +1906,13 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     last_complete = bool(getattr(client, "last_tu_snapshot_complete", False))
     last_query_utc = getattr(client, "last_tu_query_utc", None)
 
+    # A refined cycle ID can still belong to the same exhausted roll window.
+    # Honor its existing wait even when the owner retains the earlier ID.
+    if not dirty and not roll_state_dirty and normal_roll_window_is_deferred(
+        client, current_cid, getattr(client, "roll_reset_at_utc", None),
+    ):
+        return False, "roll-window-deferred"
+
     rolling_enabled = bool(getattr(client, "rolling_enabled", True) and proceed_to_rolls)
     # A disabled roll scheduler may skip roll-only refreshes only after an
     # authoritative snapshot exists. An empty initial dirty set is a subset

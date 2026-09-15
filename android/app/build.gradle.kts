@@ -41,8 +41,8 @@ android {
         applicationId = "com.mudaremote.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "1.2.18"
+        versionCode = 27
+        versionName = "1.2.19"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

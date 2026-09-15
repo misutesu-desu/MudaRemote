@@ -398,3 +398,95 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         deadlines = [client._tu_timing_deadline_utc for client in clients]
         self.assertEqual(len(set(deadlines)), 3)
         self.assertTrue(all(channel.sent == [] for channel in channels))
+
+    async def test_refined_deferred_window_does_not_repeat_tu_and_successor_rolls(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        channel.snapshot = channel.snapshot.replace("**1** rolls", "**30** rolls")
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            cycle = client.current_roll_cycle_id
+            owner = client.normal_roll_action_owner
+            client._runtime_defer_owned_normal_roll_window(cycle)
+            # A refined anchor can identify the same sealed window differently.
+            owner.cycle_id = ("roll", cycle[1] - 60, cycle[2])
+            client._normal_roll_deferred_cycle_id = owner.cycle_id
+            mark_status_dirty(client, {"rolls"}, reason="reset-refinement")
+            await client._runtime_check_status(client, channel, "$")
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            self.assertEqual(channel.sent, ["$tu", "$tu"])
+            self.assertIsNone(client._predicted_roll_action_handle)
+
+            # The next actual reset must release the wait and allow rolling.
+            boundary = client.roll_reset_anchor.next_boundary_at_utc
+            with mock.patch.object(mudae_bot.datetime, "datetime", wraps=datetime.datetime) as clock:
+                clock.now.return_value = boundary + datetime.timedelta(seconds=1)
+                client._runtime_advance_predicted_reset_cycles(clock.now())
+                client._roll_count_sync_handle.fire()
+                await client._runtime_check_status(client, channel, "$")
+                client.loop.close_created_tasks = False
+                client._predicted_roll_action_handle.fire()
+                await client.loop.created_tasks.pop()
+            self.assertEqual(channel.sent.count("$wa"), 30)
+
+    async def test_fresh_rolls_resume_claim_wait_with_auto_us_disabled(self):
+        for key_mode in (False, True):
+            with self.subTest(key_mode=key_mode):
+                client = _create_test_client(
+                    server_reset_minute=None, last_tu_snapshot_complete=False,
+                    humanization_enabled=False,
+                )
+                channel = _attach_status_channel(client)
+                channel.snapshot = channel.snapshot.replace("**1** rolls", "**30** rolls")
+                client.key_mode = key_mode
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await client._runtime_check_status(client, channel, "$")
+                    cycle = client.current_roll_cycle_id
+                    owner = client.normal_roll_action_owner
+                    owner.defer(cycle)
+                    client._predicted_roll_action_handle.cancel()
+                    client._predicted_roll_action_handle = None
+                    if key_mode:
+                        channel.snapshot = channel.snapshot.replace(
+                            "You can claim now!", "You can't claim for **60** min."
+                        ).replace("$rt is available!", "$rt is available in **120** min.")
+                    mark_status_dirty(client, {"claim", "rolls"}, reason="fresh-rolls")
+                    await client._runtime_check_status(client, channel, "$")
+                    self.assertFalse(client.auto_us_enabled)
+                    self.assertTrue(owner.is_pending(cycle))
+                    client.loop.close_created_tasks = False
+                    client._predicted_roll_action_handle.fire()
+                    await client.loop.created_tasks.pop()
+                    self.assertEqual(channel.sent.count("$tu"), 2)
+                    self.assertEqual(channel.sent.count("$wa"), 30)
+                    self.assertEqual(owner.state, "completed")
+
+    async def test_portuguese_feedback_snapshot_starts_available_rolls(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        channel.snapshot = (
+            "Você pode se casar agora mesmo! A próxima reinicialização é em 3h 00 min.\n"
+            "Você tem 30 rolls restantes. A próxima reinicialização é em 60 min.\n"
+            "$daily está pronto!\nVocê tem 1 rolls reset no estoque.\n"
+            "Você pode pegar kakera agora! Power: 86%\n"
+            "$rt está pronto!\nO próximo $dk em 16h 04 min.\n$p está pronto!"
+        )
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            await client._runtime_check_status(client, channel, "$")
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent.count("$tu"), 1)
+        self.assertEqual(channel.sent.count("$daily"), 1)
+        self.assertEqual(channel.sent.count("$wa"), 30)

@@ -4391,6 +4391,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         roll_count = normal_roll_schedule_count(state)
         if roll_count <= 0 and not client.auto_rolls_enabled:
             return
+        if owner.is_waiting_claim(logical_roll_cycle_id) and (
+            client.claim_right_available
+            or (roll_count > 0 and (client.key_mode or client.rt_available))
+        ):
+            owner.resume_claim(logical_roll_cycle_id)
         if scheduled_trigger:
             client._normal_roll_action_scheduled_triggers.add(logical_roll_cycle_id)
         if (
