@@ -3,7 +3,8 @@
 ### ✨ New Features
 - **Update Channels & Version Picker:** Choose stable or beta updates on Windows and Android, and upgrade, reinstall or return to a specific published version from the app.
 - **All / Any Kakera Filters:** Decide whether paid Kakera must match every selected condition or just one. Combine Wish/Starwish, OP Perk 5, MK, Chaos Key, Perk 8 and Shop 7 rules to suit your collection goals.
-- **Separate Perk Controls:** Chaos Key, Perk 8 and Shop 7 now have separate options, including a filter for Shop 7 double-reward Kakera.
+- **Separate Perk Controls:** Chaos Key and Perk 8 now have separate options, giving you more control over which Kakera bonuses to collect.
+- **Shop 7 Support:** Added a dedicated filter for Shop 7 double-reward Kakera, so you can focus your collection on crystals that give twice the rewards.
 - **Hourly Status Refresh:** Enable an hourly status check to keep idle accounts up to date without interrupting an active roll batch.
 
 ### 🐛 Bug Fixes
