@@ -170,7 +170,7 @@ These controls vary timing and avoid configured inactive periods. They cannot ma
 
 | Feature | What You Get |
 | :--- | :--- |
-| **Random Delays** | Every cycle can use a configurable randomized wait (0-40 min). This does not guarantee account safety. |
+| **Random Delays** | A configurable randomized wait runs before `$tu` (default 0-40 min). Eligible rolls start after its response once the channel is quiet, without another random wait. This does not guarantee account safety. |
 | **Channel Awareness** | Can wait while recent conversation is active in the configured channel. |
 | **Random Reactions** | Can vary the reaction emoji used for claims. |
 | **Sleep Schedule** | Pauses automated actions during a configured time window. |

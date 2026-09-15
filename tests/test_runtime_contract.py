@@ -160,14 +160,15 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("client.us_pulled_this_cycle = 0", source)
         self.assertIn("client.us_failed_this_cycle = False", source)
 
-    def test_snipe_only_status_refresh_is_humanized_once_per_reset(self):
+    def test_snipe_only_status_refresh_uses_the_shared_tu_delay(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         loop_source = ast.get_source_segment(self.source, functions["snipe_only_status_loop"])
-        self.assertIn("humanized_claim_refresh_deadline(", loop_source)
+        self.assertNotIn("humanized_claim_refresh_deadline(", loop_source)
+        self.assertIn("client._snipe_claim_refresh_at_utc = reset_at", loop_source)
         self.assertIn("cached_reset != reset_at", loop_source)
         self.assertIn('reason="snipe-claim-reset"', loop_source)
 
@@ -1871,7 +1872,7 @@ class RuntimeSourceContractTests(unittest.TestCase):
         self.assertIn("finally:", process_source)
         self.assertIn("clear_pending_mk_roll(operation", process_source)
 
-    def test_roll_timing_variation_has_a_separate_stable_action_phase(self):
+    def test_timing_variation_delays_status_instead_of_the_roll_action(self):
         functions = {
             node.name: node
             for node in ast.walk(self.tree)
@@ -1880,19 +1881,24 @@ class RuntimeSourceContractTests(unittest.TestCase):
         action_source = ast.get_source_segment(self.source, functions["schedule_owned_normal_roll_action"])
         executor_source = ast.get_source_segment(self.source, functions["execute_owned_normal_roll_action"])
         status_source = ast.get_source_segment(self.source, functions["check_rolls_left_tu"])
+        query_source = ast.get_source_segment(self.source, functions["check_status"])
         roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
         wait_source = ast.get_source_segment(self.source, functions["humanized_wait_and_proceed"])
 
         self.assertIn("owner.schedule(", action_source)
         self.assertIn("logical_roll_cycle_id", action_source)
-        self.assertIn("persistent_stagger_seconds=(0 if no_extra_humanization else client.persistent_stagger_seconds)", action_source)
-        self.assertIn("scheduled_trigger or smart_timing_owns_deadline", action_source)
+        self.assertNotIn("humanization_enabled=", action_source)
+        self.assertNotIn("persistent_stagger_seconds=", action_source)
+        self.assertIn("client._tu_timing_deadline_utc = timing_deadline", query_source)
+        self.assertIn("if now_utc < timing_deadline:", query_source)
         self.assertIn("_schedule_owned_normal_action_callback", action_source)
         self.assertIn("schedule_owned_normal_roll_action(", status_source)
+        self.assertIn("status_refreshed=True", status_source)
         self.assertIn("evaluate_daily_rolls()", executor_source)
         self.assertIn("await start_roll_commands(", executor_source)
         self.assertNotIn("wait_for_normal_roll_action(", roll_source)
-        self.assertIn("humanization_enabled and not hard_deadline", wait_source)
+        self.assertIn("wait_for_tu_inactivity(channel, before_roll=True)", roll_source)
+        self.assertNotIn("random.uniform(", wait_source)
         self.assertNotIn("persistent_stagger_seconds", wait_source)
 
     def test_cross_boundary_result_detection_and_capacity_contracts(self):

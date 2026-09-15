@@ -146,7 +146,7 @@ Bu ayarlar yalnızca tekrar eden zamanlamayı azaltır. Bir self-botu görünmez
 
 | Özellik | Ne Yapar |
 | :--- | :--- |
-| **Rastgele Gecikmeler** | Her döngüden sonra rastgele süre bekler (0-40 dk). |
+| **Rastgele Gecikmeler** | `$tu` öncesinde ayarlanan süre aralığında bekler (varsayılan 0-40 dk). Yanıttan sonra uygun roll hakları kanal sakinleşince kullanılır; tekrar rastgele beklenmez. |
 | **Kanal İzleyici** | Ayarlanan kanalda yakın zamanda konuşma varsa bekleyebilir. |
 | **Rastgele Reaksiyonlar** | Karakter yakalarken her seferinde farklı bir kalp emojisi seçer. |
 | **Uyku Düzeni** | "Gece 1 ile sabah 7 arası uyu" diyebilirsiniz. Bot tamamen sessiz kalır. |

@@ -711,7 +711,7 @@ NUMERIC_SETTINGS = [
     ("series_snipe_delay", "Series Snipe Wait Time (Wait X seconds before stealing from series)", 3, float),
     ("kakera_snipe_threshold", "Minimum Value to Steal (Only steal if worth this much)", 0, int),
     ("kakera_reaction_snipe_delay", "Kakera Collection Delay (How fast to click others' crystals)", 0.75, float),
-    ("humanization_window_minutes", "Random Wait Time (minutes) to Look Like a Real Human", 40, int),
+    ("humanization_window_minutes", "Random wait before $tu (minutes)", 40, int),
     ("humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5, int),
     ("reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0, float),
     ("claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180, int),
@@ -2659,7 +2659,7 @@ class PresetEditor:
         human_var = self.add_checkbox(human_frame.content, "humanization_enabled", "Timing Variation (Randomizes timing; does not prevent detection or bans)")
         human_sub = self.create_subframe(human_frame.content, human_var, "humanization_enabled")
 
-        self.add_number_field(human_sub, "humanization_window_minutes", "Random Wait Time (minutes) to Look Like a Real Human", 40)
+        self.add_number_field(human_sub, "humanization_window_minutes", "Random wait before $tu (minutes)", 40)
         self.add_number_field(human_sub, "humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5)
 
         # Inactive hours

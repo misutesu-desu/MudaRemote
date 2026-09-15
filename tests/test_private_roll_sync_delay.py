@@ -1,27 +1,11 @@
 import asyncio
 import datetime
-import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 import mudae_bot
-from mudae_core.coordinator import GlobalIntervalCoordinator
-from mudae_core.runtime import (
-    NormalRollActionOwner,
-    RollActionTiming,
-    get_normal_roll_cycle_state,
-    is_tu_still_required,
-    normal_roll_start_window,
-    reconcile_authoritative_current_roll_count,
-)
-from mudae_core.status import (
-    ResetAnchor,
-    clear_status_dirty,
-    mark_status_dirty,
-    status_dirty_fields,
-    status_refresh_reasons,
-)
+from mudae_core.status import mark_status_dirty
 
 
 class _MockHandle:
@@ -46,6 +30,7 @@ class _MockLoop:
     def __init__(self):
         self.handles = []
         self.created_tasks = []
+        self.close_created_tasks = True
 
     def call_later(self, delay, callback, *args):
         handle = _MockHandle(callback, delay, args)
@@ -54,7 +39,8 @@ class _MockLoop:
 
     def create_task(self, coroutine):
         self.created_tasks.append(coroutine)
-        coroutine.close()
+        if self.close_created_tasks:
+            coroutine.close()
         return None
 
     def create_future(self):
@@ -144,6 +130,50 @@ class _PacingChannel:
         self.guild = SimpleNamespace(id=guild_id)
 
 
+class _StatusChannel(_PacingChannel):
+    snapshot = (
+        "You can claim now!\nNext claim reset in **60** min.\n"
+        "You have **1** rolls left. Next rolls reset in **60** min.\n"
+        "$rt is available!\nPower: **100%**\n0 $dk available\n"
+        "$daily is on cooldown.\n$p is unavailable."
+    )
+
+    def __init__(self, channel_id=123456, guild_id=987654):
+        super().__init__(channel_id, guild_id)
+        self.sent = []
+        self.recent_messages = []
+
+    async def send(self, content, **_kwargs):
+        self.sent.append(content)
+        future = getattr(self.client, "_tu_response_future", None)
+        if content == "$tu" and future is not None and not future.done():
+            future.set_result(self.snapshot)
+        elif content == "$wa":
+            self.client._rolls_received += 1
+        return SimpleNamespace(id=len(self.sent), created_at=datetime.datetime.now(datetime.timezone.utc))
+
+    async def history(self, limit=1):
+        for message in self.recent_messages[:limit]:
+            yield message
+
+
+def _attach_status_channel(client):
+    channel = _StatusChannel()
+    channel.client = client
+    client._main_channel = channel
+    client.command_channel = channel
+    client.command_pacer.minimum_delay = 0
+    client.command_pacer.maximum_delay = 0
+    client.auto_p_enabled = False
+    client.auto_dk_enabled = False
+    client.auto_mk_enabled = False
+    client.auto_oh_enabled = False
+    client.auto_oc_enabled = False
+    client.auto_us_enabled = False
+    client.auto_rolls_enabled = False
+    return channel
+
+
 def _advance_at_reset(client, now_utc):
     client.roll_reset_anchor.authoritative_minute = now_utc.minute
     client.roll_reset_anchor.anchor_at_utc = now_utc
@@ -155,171 +185,194 @@ def _advance_at_reset(client, now_utc):
 
 
 class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
-    """Focused production scheduling coverage for humanized roll preparation."""
+    """Timing Variation delays the status prerequisite, never the owned roll."""
 
-    def test_mandatory_1_unknown_private_state_syncs_near_humanized_target(self):
-        """Unknown state defers its one physical $tu until just before the owned target."""
+    async def test_startup_delays_tu_once_then_releases_roll_immediately(self):
+        client = _create_test_client(
+            server_reset_minute=None,
+            last_tu_snapshot_complete=False,
+            humanization_window_minutes=30,
+        )
+        channel = _attach_status_channel(client)
+
+        with mock.patch.object(
+            mudae_bot.random, "uniform",
+            side_effect=lambda low, high: 17 * 60 if high == 30 * 60 else (low + high) / 2,
+        ) as draw:
+            await client._runtime_check_status(client, channel, "$")
+            deadline = client._tu_timing_deadline_utc
+            self.assertAlmostEqual(
+                (deadline - datetime.datetime.now(datetime.timezone.utc)).total_seconds(),
+                17 * 60,
+                delta=2,
+            )
+            self.assertEqual(channel.sent, [])
+
+            await client._runtime_check_status(client, channel, "$")
+            self.assertEqual(client._tu_timing_deadline_utc, deadline)
+            self.assertEqual(draw.call_count, 1)
+
+            client._tu_timing_deadline_utc = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+            with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                    mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                await client._runtime_check_status(client, channel, "$")
+
+            self.assertEqual(channel.sent, ["$tu"])
+            self.assertIsNone(client._tu_timing_deadline_utc)
+            handle = client._predicted_roll_action_handle
+            self.assertIsNotNone(handle)
+            self.assertLessEqual(handle.delay, 0.1)
+            client.loop.close_created_tasks = False
+            handle.fire()
+            self.assertEqual(len(client.loop.created_tasks), 1)
+            with mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                await client.loop.created_tasks.pop()
+            self.assertEqual(channel.sent, ["$tu", "$wa"])
+            self.assertEqual(draw.call_args_list.count(mock.call(0, 30 * 60)), 1)
+
+    async def test_roll_waits_for_actual_channel_quiet_period(self):
+        client = _create_test_client(humanization_window_minutes=30)
+        channel = _attach_status_channel(client)
+        client.humanization_inactivity_seconds = 5
+        channel.recent_messages = [SimpleNamespace(
+            author=SimpleNamespace(id=999),
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        )]
+
+        waits = []
+        quiet_checked = False
+
+        async def finish_quiet_wait(_client, seconds, abort_on_pause=True):
+            nonlocal quiet_checked
+            waits.append(seconds)
+            if not quiet_checked:
+                self.assertNotIn("$wa", channel.sent)
+                channel.recent_messages.clear()
+                quiet_checked = True
+            return True
+
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", side_effect=finish_quiet_wait):
+            await client._runtime_start_roll_commands(client, channel, 1, False, False)
+
+        self.assertGreaterEqual(len(waits), 1)
+        self.assertGreaterEqual(waits[0], 5)
+        self.assertIn("$wa", channel.sent)
+
+    async def test_predicted_unknown_count_uses_prompt_sync_then_central_tu_gate(self):
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         client = _create_test_client(
-            preset_name="humanized_unknown",
-            user_id=9999,
             server_reset_minute=now_utc.minute,
             trusted_confidence=False,
+            humanization_window_minutes=30,
         )
-
-        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
-            current_cid = _advance_at_reset(client, now_utc)
-
-        owner = client.normal_roll_action_owner
+        channel = _attach_status_channel(client)
+        cycle_id = _advance_at_reset(client, now_utc)
         sync_handle = client._roll_count_sync_handle
-        self.assertEqual(owner.state, "pending")
-        self.assertEqual(owner.cycle_id, current_cid)
-        self.assertAlmostEqual((owner.deadline_utc - now_utc).total_seconds(), 17 * 60, delta=1.0)
         self.assertIsNotNone(sync_handle)
-        self.assertGreater(sync_handle.delay, 60.0)
-        self.assertLess(sync_handle.delay, 17 * 60)
-        self.assertLess(client._roll_count_sync_at_utc, owner.deadline_utc)
-        self.assertEqual(status_dirty_fields(client), set())
-        self.assertIsNone(client._roll_count_sync_requested_cycle_id)
-        sync_at_utc = client._roll_count_sync_at_utc
+        self.assertGreaterEqual(sync_handle.delay, 0.5)
+        self.assertLessEqual(sync_handle.delay, 3.0)
+        client._runtime_schedule_owned_normal_roll_action(cycle_id, now_utc)
+        self.assertIs(client._roll_count_sync_handle, sync_handle)
 
-        # Fake scheduler advances to the planned preparation slot. No wall
-        # sleep is used; this is the point where the physical $tu becomes due.
         sync_handle.fire()
-        self.assertIn("rolls", status_dirty_fields(client))
-        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertTrue(required)
-        self.assertEqual(reason, "required")
+        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60) as draw:
+            await client._runtime_check_status(client, channel, "$")
+            self.assertEqual(draw.call_count, 1)
+            self.assertEqual(channel.sent, [])
+            client._tu_timing_deadline_utc = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+            with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                    mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                await client._runtime_check_status(client, channel, "$")
 
-        # An authoritative response re-arms the same pre-drawn roll callback.
-        reconcile_authoritative_current_roll_count(
-            client,
-            1062,
-            observation_kind="humanized-private-sync",
-            observed_at_utc=sync_at_utc,
-            rearm_existing_owner=lambda cid, deadline: client._schedule_owned_normal_roll_action(cid, deadline),
-        )
-        action_handle = client._predicted_roll_action_handle
-        self.assertIsNotNone(action_handle)
-        self.assertEqual(owner.deadline_utc, client.normal_roll_action_owner.deadline_utc)
-        self.assertGreater(owner.deadline_utc, sync_at_utc)
+        self.assertEqual(channel.sent.count("$tu"), 1)
+        self.assertTrue(client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id))
+        self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
-        # Firing the fake action handle proves the production executor is
-        # dispatched at the selected humanized deadline, not at reset.
-        action_handle.fire()
-        self.assertEqual(len(client.loop.created_tasks), 1)
-
-    def test_mandatory_2_trusted_state_needs_no_roll_preparation_tu(self):
-        """Trusted replenishment keeps the humanized target and skips pre-roll $tu."""
+    async def test_new_predicted_cycle_delays_pre_roll_tu_but_not_post_tu_roll(self):
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         client = _create_test_client(
-            preset_name="humanized_trusted",
-            user_id=2001,
             server_reset_minute=now_utc.minute,
-            trusted_capacity=13,
+            trusted_capacity=1,
             trusted_confidence=True,
+            humanization_window_minutes=30,
         )
+        channel = _attach_status_channel(client)
+        client.last_tu_query_utc = now_utc - datetime.timedelta(minutes=5)
+        client._pre_roll_status_cycle_id = ("roll", 1, 0)
+        cycle_id = _advance_at_reset(client, now_utc)
+        self.assertTrue(client.normal_roll_action_owner.is_pending(cycle_id))
+        self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
-        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
-            current_cid = _advance_at_reset(client, now_utc)
+        client._pre_roll_status_required = True
+        mark_status_dirty(client, {"claim", "rolls", "dk", "points"}, reason="pre-roll-status")
+        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60) as draw:
+            await client._runtime_check_status(client, channel, "$", proceed_to_rolls=False)
+            self.assertEqual(draw.call_count, 1)
+            self.assertEqual(channel.sent, [])
+            client._tu_timing_deadline_utc = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+            with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                    mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                await client._runtime_check_status(client, channel, "$", proceed_to_rolls=False)
+        client._pre_roll_status_required = False
 
-        owner = client.normal_roll_action_owner
-        self.assertEqual(owner.state, "pending")
-        self.assertEqual(owner.cycle_id, current_cid)
-        self.assertAlmostEqual((owner.deadline_utc - now_utc).total_seconds(), 17 * 60, delta=1.0)
-        self.assertIsNone(client._roll_count_sync_handle)
-        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertFalse(required)
-        self.assertIn(reason, ("roll-action-already-pending", "policy-suppress-routine"))
-        self.assertIsNotNone(client._predicted_roll_action_handle)
+        self.assertEqual(channel.sent.count("$tu"), 1)
+        self.assertIsNone(client._tu_timing_deadline_utc)
+        self.assertTrue(client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id))
+        self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
-    def test_mandatory_3_humanization_disabled_preserves_prompt_sync(self):
-        """Normal non-humanized unknown-state reconciliation remains prompt."""
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
+    async def test_zero_window_or_disabled_humanization_sends_tu_promptly(self):
+        for enabled, window in ((True, 0), (False, 30)):
+            with self.subTest(enabled=enabled, window=window):
+                client = _create_test_client(
+                    server_reset_minute=None,
+                    last_tu_snapshot_complete=False,
+                    humanization_enabled=enabled,
+                    humanization_window_minutes=window,
+                )
+                channel = _attach_status_channel(client)
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await client._runtime_check_status(client, channel, "$")
+                self.assertEqual(channel.sent.count("$tu"), 1)
+                self.assertIsNone(client._tu_timing_deadline_utc)
+
+    async def test_stale_same_cycle_status_refresh_does_not_delay_roll_again(self):
         client = _create_test_client(
-            preset_name="non_humanized_unknown",
-            user_id=3001,
-            server_reset_minute=now_utc.minute,
-            trusted_confidence=False,
-            humanization_enabled=False,
+            server_reset_minute=None, last_tu_snapshot_complete=False,
             humanization_window_minutes=0,
         )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            client.humanization_window_minutes = 30
+            client._pre_roll_status_requested_at -= datetime.timedelta(seconds=61)
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            with mock.patch.object(
+                mudae_bot.random, "uniform", side_effect=lambda low, high: (low + high) / 2,
+            ) as draw:
+                await client.loop.created_tasks.pop()
+            self.assertEqual(channel.sent, ["$tu", "$tu", "$wa"])
+            self.assertNotIn(mock.call(0, 30 * 60), draw.call_args_list)
 
-        _advance_at_reset(client, now_utc)
-
-        self.assertEqual(client.normal_roll_action_owner.state, "idle")
-        sync_handle = client._roll_count_sync_handle
-        self.assertIsNotNone(sync_handle)
-        self.assertGreaterEqual(sync_handle.delay, 0.1)
-        self.assertLessEqual(sync_handle.delay, 3.0)
-
-        sync_handle.fire()
-        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertTrue(required)
-        self.assertEqual(reason, "required")
-
-    def test_mandatory_4_congested_pacer_advances_preparation_before_target(self):
-        """Known global pacing congestion moves preparation forward instead of waiting for the roll deadline."""
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        client = _create_test_client(
-            preset_name="congested_humanized",
-            user_id=4001,
-            server_reset_minute=now_utc.minute,
-            trusted_confidence=False,
-        )
-        client._main_channel = _PacingChannel(channel_id=9101, guild_id=8801)
-
-        original_coordinator = mudae_bot._tu_interval_coordinator
-        coordinator = GlobalIntervalCoordinator()
-        mudae_bot._tu_interval_coordinator = coordinator
-        self.addCleanup(setattr, mudae_bot, "_tu_interval_coordinator", original_coordinator)
-
-        with mock.patch.object(mudae_bot.random, "uniform", return_value=17 * 60):
-            current_cid = _advance_at_reset(client, now_utc)
-
-        original_handle = client._roll_count_sync_handle
-        self.assertIsNotNone(original_handle)
-        for _ in range(10):
-            coordinator.reserve(8801, 20.0, now_monotonic=time.monotonic())
-
-        # The regular owner recheck uses the new queue depth and advances the
-        # one planned sync; it does not create another logical request.
-        client._runtime_schedule_owned_normal_roll_action(current_cid, now_utc)
-
-        owner = client.normal_roll_action_owner
-        sync_handle = client._roll_count_sync_handle
-        self.assertIsNotNone(sync_handle)
-        self.assertTrue(original_handle.cancelled())
-        # The queued ten global slots are included in the preparation lead,
-        # so this happens materially before the un-congested near-target slot.
-        self.assertLess(sync_handle.delay, 850.0)
-        self.assertLess(client._roll_count_sync_at_utc, owner.deadline_utc - datetime.timedelta(seconds=180))
-
-        sync_handle.fire()
-        required, reason = is_tu_still_required(client, proceed_to_rolls=True)
-        self.assertTrue(required)
-        self.assertEqual(reason, "required")
-
-    def test_mandatory_5_accounts_follow_independent_humanized_targets(self):
-        """Shared-reset accounts retain independent target-aligned preparation work."""
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
+    async def test_clients_keep_independent_tu_deadlines(self):
         clients = [
             _create_test_client(
-                preset_name=f"humanized_side_{index}",
+                preset_name=f"tu_side_{index}",
                 user_id=5000 + index,
-                server_reset_minute=now_utc.minute,
-                trusted_confidence=False,
+                server_reset_minute=None,
+                last_tu_snapshot_complete=False,
+                humanization_window_minutes=30,
             )
             for index in range(3)
         ]
+        channels = [_attach_status_channel(client) for client in clients]
 
         with mock.patch.object(mudae_bot.random, "uniform", side_effect=[7 * 60, 12 * 60, 17 * 60]):
-            for client in clients:
-                _advance_at_reset(client, now_utc)
+            for client, channel in zip(clients, channels):
+                await client._runtime_check_status(client, channel, "$")
 
-        targets = [client.normal_roll_action_owner.deadline_utc for client in clients]
-        preparation_times = [client._roll_count_sync_at_utc for client in clients]
-        self.assertEqual(len(set(targets)), 3)
-        self.assertEqual(len(set(preparation_times)), 3)
-        self.assertTrue(all(handle.delay > 60.0 for handle in (client._roll_count_sync_handle for client in clients)))
-        self.assertTrue(all(sync_at < target for sync_at, target in zip(preparation_times, targets)))
+        deadlines = [client._tu_timing_deadline_utc for client in clients]
+        self.assertEqual(len(set(deadlines)), 3)
+        self.assertTrue(all(channel.sent == [] for channel in channels))

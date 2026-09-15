@@ -205,7 +205,7 @@ try:
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
-        humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
+        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
@@ -238,7 +238,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
-        humanized_claim_refresh_deadline, mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
+        mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
         status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
@@ -301,9 +301,6 @@ TU_GLOBAL_INTERVAL_SECONDS = 2.0
 # rolling) forever; after this much cumulative quiet-channel waiting, send $tu
 # regardless of the last message age.
 TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS = 120.0
-# The first $tu response wait is 5.5s. Reserve a small amount beyond that for
-# response parsing and reconciliation before the humanized roll callback.
-ROLL_STATUS_RESPONSE_RESERVE_SECONDS = 8.0
 
 def _apply_shared_reset_snapshot(client, snapshot):
     """Apply only server-wide reset boundaries, never another user's private state."""
@@ -1349,6 +1346,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
 
     client.last_tu_query_utc = None
+    client._tu_timing_deadline_utc = None
     initialize_status_tracking(client)
     client.last_tu_snapshot_complete = False
     client._tu_response_future = None
@@ -2783,14 +2781,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.maintenance_until is None: return False
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         if now_utc >= client.maintenance_until:
-            if client.humanization_enabled and not getattr(client, '_maintenance_jitter_applied', False):
-                jitter = random.uniform(0, client.humanization_window_minutes * 60)
-                client.maintenance_until = now_utc + datetime.timedelta(seconds=jitter)
-                client._maintenance_jitter_applied = True
-                BotLogger.log(f"Maintenance ended. Humanized re-entry: waiting {jitter/60:.1f}m before resuming.", preset_name, "RESET")
-                return True
             client.maintenance_until = None
-            client._maintenance_jitter_applied = False
             client._post_maintenance_inactivity_needed = True
             client._post_maint_last_msg_utc = None
             BotLogger.log("Maintenance period ended. Waiting for channel inactivity before resuming.", preset_name, "INFO")
@@ -2893,11 +2884,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if not await active_delay(min_wait):
                     continue
 
-                if client.humanization_enabled and client.humanization_window_minutes > 0:
-                    jitter = random.uniform(0, client.humanization_window_minutes * 60)
-                    BotLogger.log(f"Humanized delay: waiting {jitter/60:.1f}m before scheduled roll.", preset_name, "INFO")
-                    if not await active_delay(jitter):
-                        continue
                 if client.is_paused or is_maintenance_active() or is_inactive_hour(): continue
                 BotLogger.log("Executing scheduled roll.", preset_name, "INFO")
                 client.scheduled_roll_due = True
@@ -3196,8 +3182,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if is_inactive_hour():
                 wait_seconds = max(1.0, seconds_until_active())
-                if client.humanization_enabled and client.humanization_window_minutes > 0:
-                    wait_seconds += random.uniform(0, client.humanization_window_minutes * 60)
                 BotLogger.log(
                     f"$tu deferred by inactive hours for {wait_seconds / 60:.1f}m.",
                     preset_name,
@@ -3587,7 +3571,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         await pause_interruptible_sleep(client, total_start_delay + random.uniform(0.1, 0.5))
 
         if is_inactive_hour():
-            wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)
+            wait_s = seconds_until_active()
             BotLogger.log(f"Inactive hours active. Sleeping {wait_s/60:.0f}m.", preset_name, "RESET")
             await pause_interruptible_sleep(client, wait_s)
 
@@ -3706,21 +3690,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             reset_at = client.next_claim_reset_at_utc
             cached_reset = getattr(client, "_snipe_claim_refresh_reset_at_utc", None)
             if reset_at and cached_reset != reset_at:
-                refresh_at = humanized_claim_refresh_deadline(
-                    reset_at,
-                    client.humanization_enabled,
-                    client.humanization_window_minutes,
-                )
                 client._snipe_claim_refresh_reset_at_utc = reset_at
-                client._snipe_claim_refresh_at_utc = refresh_at
+                client._snipe_claim_refresh_at_utc = reset_at
                 client._snipe_claim_refresh_completed_for = None
-                delay_seconds = max(0.0, (refresh_at - reset_at).total_seconds())
-                if delay_seconds > 0:
-                    BotLogger.log(
-                        f"Snipe-only: Humanized claim status refresh scheduled {delay_seconds/60:.1f}m after reset.",
-                        preset_name,
-                        "RESET",
-                    )
 
             refresh_at = getattr(client, "_snipe_claim_refresh_at_utc", None)
             refresh_completed_for = getattr(client, "_snipe_claim_refresh_completed_for", None)
@@ -3814,9 +3786,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     cycle_id=owner.cycle_id,
                     now_utc=now_utc,
                     latest_action_at_utc=latest_action,
-                    humanization_enabled=client.humanization_enabled,
-                    window_minutes=client.humanization_window_minutes,
-                    persistent_stagger_seconds=client.persistent_stagger_seconds,
                 )
                 if not fits_before_reset and has_usable_window:
                     if owner.mark_boundary_aware(owner.cycle_id):
@@ -4085,6 +4054,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             and not status_dirty_fields(client)
         ):
             return True
+        if client.last_tu_snapshot_complete and client._pre_roll_status_cycle_id == logical_roll_cycle_id:
+            # This cycle already paid its query delay. Refreshing after slow
+            # prerequisites or channel activity must not draw another wait.
+            client._tu_timing_deadline_utc = now_utc
         client._pre_roll_status_cycle_id = None
         client._pre_roll_status_required = True
         mark_status_dirty(client, {"claim", "rolls", "dk", "points"}, reason="pre-roll-status")
@@ -4289,41 +4262,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                             )
                             request_roll_count_reconciliation(affected_cycle)
 
-    def _roll_status_preparation_lead_seconds():
-        """Reserve the existing status-pacing work that precedes one planned roll action."""
-        quiet_wait = 0.0
-        if getattr(client, "humanization_enabled", False):
-            quiet_wait = min(
-                TU_INACTIVITY_MAX_TOTAL_WAIT_SECONDS,
-                max(0.0, float(getattr(client, "humanization_inactivity_seconds", 0) or 0)) + 0.5,
-            )
-
-        channel = getattr(client, "command_channel", None) or getattr(client, "_main_channel", None)
-        guild_id = getattr(getattr(channel, "guild", None), "id", None)
-        pacing_key = guild_id if guild_id is not None else getattr(channel, "id", None)
-        queued_wait = 0.0
-        estimate_wait = getattr(_tu_interval_coordinator, "estimated_wait", None)
-        if pacing_key is not None and callable(estimate_wait):
-            queued_wait = max(0.0, float(estimate_wait(pacing_key) or 0.0))
-
-        # Keep the lead modest while accounting for the normal pre-roll
-        # reserve, one global slot, configured quiet-channel behavior, and
-        # the current queue depth when it is already congested.
-        return (
-            NORMAL_ROLL_PREROLL_RESERVE_SECONDS
-            + max(TU_GLOBAL_INTERVAL_SECONDS, queued_wait)
-            + quiet_wait
-            + ROLL_STATUS_RESPONSE_RESERVE_SECONDS
-        )
-
     def schedule_private_roll_count_sync(
         logical_roll_cycle_id,
         boundary_utc,
         *,
         reason="roll-count-unknown",
-        planned_action_at_utc=None,
     ):
-        """Schedule one private /tu, optionally as preparation for an owned humanized roll action."""
+        """Request one private /tu; check_status owns its timing variation."""
         if logical_roll_cycle_id is None:
             return
         if not getattr(client, "rolling_enabled", True):
@@ -4336,28 +4281,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         boundary_dt = boundary_utc or datetime.datetime.now(timezone.utc)
         now_dt = datetime.datetime.now(timezone.utc)
-        humanized_preparation = planned_action_at_utc is not None
-        if humanized_preparation:
-            preparation_at_utc = planned_action_at_utc - datetime.timedelta(
-                seconds=_roll_status_preparation_lead_seconds()
-            )
-            candidate_utc = max(
-                boundary_dt + datetime.timedelta(seconds=0.1),
-                now_dt + datetime.timedelta(seconds=0.1),
-                preparation_at_utc,
-            )
-        else:
-            seed_material = (
-                str(preset_name or getattr(client.user, "id", "")),
-                getattr(client.user, "id", 0),
-                getattr(client, "target_channel_id", 0),
-                logical_roll_cycle_id,
-                "private-roll-count-sync",
-            )
-            digest = hashlib.sha256(repr(seed_material).encode("utf-8")).digest()
-            fraction = int.from_bytes(digest[:8], "big") / (2**64)
-            delay_seconds = 0.5 + fraction * 2.5
-            candidate_utc = boundary_dt + datetime.timedelta(seconds=delay_seconds)
+        seed_material = (
+            str(preset_name or getattr(client.user, "id", "")),
+            getattr(client.user, "id", 0),
+            getattr(client, "target_channel_id", 0),
+            logical_roll_cycle_id,
+            "private-roll-count-sync",
+        )
+        digest = hashlib.sha256(repr(seed_material).encode("utf-8")).digest()
+        fraction = int.from_bytes(digest[:8], "big") / (2**64)
+        delay_seconds = 0.5 + fraction * 2.5
+        candidate_utc = boundary_dt + datetime.timedelta(seconds=delay_seconds)
 
         existing_cid = getattr(client, "_roll_count_sync_cycle_id", None)
         existing_handle = getattr(client, "_roll_count_sync_handle", None)
@@ -4371,17 +4305,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ):
                 return
             if existing_handle is not None and not existing_handle.cancelled():
-                existing_at_utc = getattr(client, "_roll_count_sync_at_utc", None)
-                if (
-                    not humanized_preparation
-                    or existing_at_utc is None
-                    or candidate_utc >= existing_at_utc
-                ):
-                    return
-                # Global pacing grew after the original plan. Advance this
-                # one preparation task rather than discovering the shortage
-                # at the roll deadline.
-                existing_handle.cancel()
+                return
 
         if existing_handle is not None and not existing_handle.cancelled():
             existing_handle.cancel()
@@ -4431,20 +4355,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             request_private_roll_count_sync_now(cycle_id)
 
         client._roll_count_sync_handle = client.loop.call_later(delay, run_private_roll_count_sync)
-        if humanized_preparation:
-            BotLogger.log(
-                "Timing Variation: roll-enabling $tu scheduled near humanized action time.",
-                preset_name,
-                "DEBUG",
-                client,
-            )
-        else:
-            BotLogger.log(
-                f"Scheduled private roll count sync in {max(0, round(delay))}s for cycle {logical_roll_cycle_id}.",
-                preset_name,
-                "DEBUG",
-                client,
-            )
+        BotLogger.log(
+            f"Scheduled private roll count sync in {max(0, round(delay))}s for cycle {logical_roll_cycle_id}.",
+            preset_name,
+            "DEBUG",
+            client,
+        )
 
     client._schedule_private_roll_count_sync = schedule_private_roll_count_sync
 
@@ -4453,6 +4369,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         boundary_utc,
         *,
         scheduled_trigger=False,
+        status_refreshed=False,
     ):
         """Schedule the one normal action for either fresh $tu or local prediction."""
         if logical_roll_cycle_id is None:
@@ -4467,76 +4384,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
         owner = client.normal_roll_action_owner
-        smart_timing_owns_deadline = bool(
-            client.time_rolls_to_claim_reset and not client.claim_right_available
-        )
-        no_extra_humanization = scheduled_trigger or smart_timing_owns_deadline
         if state is None or state.remaining is None:
             if state is None or not state.remaining_authoritative:
-                humanized_roll_preparation = bool(
-                    client.humanization_enabled
-                    and not no_extra_humanization
-                    and (
-                        float(getattr(client, "humanization_window_minutes", 0) or 0) > 0
-                        or float(getattr(client, "persistent_stagger_seconds", 0) or 0) > 0
-                    )
-                    and owner.state != "executing"
-                )
-                if humanized_roll_preparation:
-                    # We do not know the full batch size yet, but one-roll
-                    # admission preserves the beta.23 cross-reset handoff.
-                    # The owner draws its stable humanized target before the
-                    # private status prerequisite is placed.
-                    latest_action, fits_before_reset = normal_roll_start_window(
-                        actual_now_utc,
-                        client.roll_reset_at_utc,
-                        1,
-                        client.roll_speed,
-                        client.use_slash_rolls,
-                        pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
-                    )
-                    has_usable_window = (
-                        fits_before_reset
-                        or normal_roll_has_usable_window(
-                            actual_now_utc,
-                            client.roll_reset_at_utc,
-                            client.roll_speed,
-                            client.use_slash_rolls,
-                            pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
-                        )
-                    )
-                    if has_usable_window:
-                        action_at, created = owner.schedule(
-                            cycle_id=logical_roll_cycle_id,
-                            now_utc=boundary_utc,
-                            latest_action_at_utc=latest_action,
-                            humanization_enabled=True,
-                            window_minutes=client.humanization_window_minutes,
-                            persistent_stagger_seconds=client.persistent_stagger_seconds,
-                        )
-                        if action_at is not None and owner.is_pending(logical_roll_cycle_id):
-                            # A stale callback must not execute before its
-                            # authoritative prerequisite completes. Reconciliation
-                            # below re-arms this same, already-drawn deadline.
-                            existing = getattr(client, "_predicted_roll_action_handle", None)
-                            if existing is not None and not existing.cancelled():
-                                existing.cancel()
-                            client._predicted_roll_action_handle = None
-                            client._predicted_roll_action_cycle_id = None
-                            schedule_private_roll_count_sync(
-                                logical_roll_cycle_id,
-                                boundary_utc,
-                                reason="humanized-roll-preparation",
-                                planned_action_at_utc=action_at,
-                            )
-                            if created:
-                                BotLogger.log(
-                                    "Timing Variation: owned normal action scheduled before private roll status sync.",
-                                    preset_name,
-                                    "DEBUG",
-                                    client,
-                                )
-                            return
                 schedule_private_roll_count_sync(logical_roll_cycle_id, boundary_utc, reason="roll-count-unknown")
             return
         roll_count = normal_roll_schedule_count(state)
@@ -4569,15 +4418,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
         )
         crosses_reset = not fits_before_reset and has_usable_window
-        if scheduled_trigger and owner.is_pending(logical_roll_cycle_id):
+        if (scheduled_trigger or status_refreshed) and owner.is_pending(logical_roll_cycle_id):
             if not has_usable_window:
                 if defer_owned_normal_roll_window(logical_roll_cycle_id):
                     BotLogger.log("Scheduled roll is too late to finish safely; deferring to the next cycle.", preset_name, "WARN", client)
                 return
-            # A user-defined schedule is already the chosen action time. Keep
-            # its owner but replace any earlier generic humanization deadline.
-            owner.deadline_utc = boundary_utc
-            owner.timing.deadline_utc = boundary_utc
+            # A fresh status response or explicit schedule releases the same
+            # owner immediately; channel patience still runs before rolling.
+            owner.deadline_utc = actual_now_utc
+            owner.timing.deadline_utc = actual_now_utc
             existing = getattr(client, "_predicted_roll_action_handle", None)
             if existing is not None and not existing.cancelled():
                 existing.cancel()
@@ -4594,9 +4443,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             cycle_id=logical_roll_cycle_id,
             now_utc=boundary_utc,
             latest_action_at_utc=latest_action,
-            humanization_enabled=(client.humanization_enabled and not no_extra_humanization),
-            window_minutes=(0 if no_extra_humanization else client.humanization_window_minutes),
-            persistent_stagger_seconds=(0 if no_extra_humanization else client.persistent_stagger_seconds),
         )
         if not has_usable_window and owner.is_pending(logical_roll_cycle_id):
             if defer_owned_normal_roll_window(logical_roll_cycle_id):
@@ -4619,7 +4465,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             (action_at - datetime.datetime.now(timezone.utc)).total_seconds(),
         )
         if created:
-            BotLogger.log("Timing Variation: owned normal action scheduled.", preset_name, "DEBUG", client)
+            BotLogger.log("Owned normal action ready; checking status and channel inactivity.", preset_name, "DEBUG", client)
 
     client._schedule_owned_normal_roll_action = schedule_owned_normal_roll_action
 
@@ -5097,7 +4943,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 )
                 return
 
-            if client.delay_seconds > 0:
+            # Timing Variation belongs to the status query. Reuse one target
+            # while checks coalesce or retry; never delay rolls after its reply.
+            timing_deadline = getattr(client, "_tu_timing_deadline_utc", None)
+            if timing_deadline is None:
+                delay = 0.0
+                if client.tu_query_count > 0 and action_owner.state != "executing":
+                    if client.humanization_enabled and client.humanization_window_minutes > 0:
+                        delay = random.uniform(0, client.humanization_window_minutes * 60)
+                    delay += max(0.0, client.persistent_stagger_seconds)
+                timing_deadline = now_utc + datetime.timedelta(seconds=delay)
+                if client.rolling_enabled and client.roll_reset_at_utc is not None:
+                    state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
+                    latest_start, _ = normal_roll_start_window(
+                        now_utc, client.roll_reset_at_utc, normal_roll_schedule_count(state) or 1,
+                        client.roll_speed, client.use_slash_rolls,
+                        pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                    )
+                    timing_deadline = min(timing_deadline, latest_start)
+                client._tu_timing_deadline_utc = timing_deadline
+                remaining = (timing_deadline - now_utc).total_seconds()
+                if remaining > 0:
+                    BotLogger.log(
+                        f"Timing Variation: waiting {remaining / 60:.1f}m before $tu. "
+                        "Available rolls will start after the response when the channel is quiet.",
+                        preset_name, "INFO",
+                    )
+            if now_utc < timing_deadline:
+                return
+
+            if client.tu_query_count > 0 and client.delay_seconds > 0:
                 await _interruptible_sleep(client.delay_seconds)
             reasons = status_refresh_reasons(client)
             reason_text = ", ".join(reasons) if reasons else ("scheduled-roll" if client.scheduled_roll_due else "status-boundary")
@@ -5526,6 +5401,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 defer_tu_queries(client, 30.0)
                 consume_current_tu_urgency_for_backoff(client)
             else:
+                client._tu_timing_deadline_utc = None
                 if not any(r == "power-changed-during-tu" for r in status_refresh_reasons(client)):
                     clear_status_dirty(client)
                 else:
@@ -5546,10 +5422,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 and client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id)
                 and not status_dirty_fields(client)
             ):
-                # A recovery sync must retain the originally drawn deadline.
-                # Re-scheduling the same owner only recreates a missing
-                # callback; it cannot redraw or create a second action.
-                schedule_owned_normal_roll_action(client.current_roll_cycle_id, now_utc)
+                # The query has paid its timing delay. Wake the same owner
+                # now, replacing any outstanding status-retry callback.
+                schedule_owned_normal_roll_action(client.current_roll_cycle_id, now_utc, status_refreshed=True)
                 return
             if client.key_limit_hit:
                 BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
@@ -5758,7 +5633,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if total_rolls == 0:
                 if is_inactive_hour():
-                    wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)
+                    wait_s = seconds_until_active()
                     BotLogger.log("Sleeping until active period (Auto rolls interrupted).", preset_name, "RESET")
                     await _interruptible_sleep(wait_s)
                     return
@@ -5839,6 +5714,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     logical_roll_cycle_id,
                     now_utc,
                     scheduled_trigger=scheduled_trigger,
+                    status_refreshed=True,
                 )
                 return
         else:
@@ -7877,21 +7753,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     _claim_coordinator.release_all(msg.id)
 
     async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset", *, hard_deadline=False, boundary_fields=None):
-        """Wait for a state boundary or a soft action time.
+        """Wait for a state boundary before requesting status.
 
         ``hard_deadline`` is intentionally supplied by the scheduler, never
         inferred from a display reason: reset availability must be discovered
-        on time; only the subsequent action may be humanized.
+        on time; check_status applies timing variation to the query itself.
         """
         min_wait = max(0.0, base_reset_minutes * 60)
         if min_wait <= 0: min_wait = max(client.delay_seconds + 60, 240)
-        human_jitter = random.uniform(0, max(0.0, client.humanization_window_minutes * 60)) if client.humanization_enabled and not hard_deadline else 0
-        wait_seconds = min_wait + human_jitter
+        wait_seconds = min_wait
 
         if hard_deadline:
             BotLogger.log(f"Waiting {wait_seconds/60:.1f}m for hard state deadline ({reason}).", preset_name, "RESET")
         else:
-            BotLogger.log(f"{'Humanized ' if client.humanization_enabled else ''}Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
+            BotLogger.log(f"Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         deadline = time.monotonic() + wait_seconds
         while True:
             remaining = deadline - time.monotonic()
@@ -7930,11 +7805,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         event.set()
             # Boundary discovery takes precedence over inactive-hour and action
             # pacing. The next status cycle performs the reconciliation; any
-            # deliberately humanized action delay belongs after that cycle.
+            # timing variation belongs to the next physical status query.
             return
 
         if is_inactive_hour():
-            wait_s = seconds_until_active() + (random.uniform(0, client.humanization_window_minutes * 60) if client.humanization_enabled else 0)
+            wait_s = seconds_until_active()
             BotLogger.log(f"Inactive hours. Sleeping {wait_s/60:.0f}m.", preset_name, "RESET")
             await _interruptible_sleep(wait_s)
             if client.is_paused:
