@@ -1,7 +1,7 @@
 import unittest
+from unittest import mock
 
 from mudae_core.versioning import (
-    CURRENT_VERSION,
     compare_versions,
     get_update_manifest_url,
     get_update_manifest_urls,
@@ -33,7 +33,11 @@ class VersioningTests(unittest.TestCase):
         self.assertTrue(is_prerelease("1.0.0a1"))
         self.assertFalse(is_prerelease("4.8.10"))
         self.assertFalse(is_prerelease("4.9.0"))
-        self.assertTrue(is_prerelease())  # default is CURRENT_VERSION (4.9.1-beta.2)
+        # Android tests reload modules; patch the globals used by this import.
+        with mock.patch.dict(is_prerelease.__globals__, CURRENT_VERSION="4.9.1-beta.2"):
+            self.assertTrue(is_prerelease())
+        with mock.patch.dict(is_prerelease.__globals__, CURRENT_VERSION="4.9.1"):
+            self.assertFalse(is_prerelease())
 
     def test_resolve_update_channel(self):
         import os
@@ -41,8 +45,9 @@ class VersioningTests(unittest.TestCase):
         # Empty base path keeps the test hermetic: a real settings.json in the
         # working tree must not leak a saved channel into default resolution.
         with tempfile.TemporaryDirectory() as base:
-            # Default from CURRENT_VERSION (beta)
-            self.assertEqual(resolve_update_channel(base_path=base), "beta")
+            for version, channel in (("4.9.1-beta.2", "beta"), ("4.9.1", "main")):
+                with mock.patch.dict(resolve_update_channel.__globals__, CURRENT_VERSION=version):
+                    self.assertEqual(resolve_update_channel(base_path=base), channel)
             # Stable version defaults to main
             self.assertEqual(resolve_update_channel(current_version="4.8.10", base_path=base), "main")
         # Explicit argument overrides
@@ -74,19 +79,19 @@ class VersioningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             # Initially none saved
             self.assertIsNone(load_update_channel_setting(td))
-            self.assertEqual(resolve_update_channel(base_path=td), "beta")
+            self.assertEqual(resolve_update_channel(current_version="4.9.1-beta.2", base_path=td), "beta")
 
             # Toggle beta off -> saves "main"
             saved = save_update_channel_setting("main", base_path=td)
             self.assertEqual(saved, "main")
             self.assertEqual(load_update_channel_setting(td), "main")
-            self.assertEqual(resolve_update_channel(base_path=td), "main")
+            self.assertEqual(resolve_update_channel(current_version="4.9.1-beta.2", base_path=td), "main")
 
             # Toggle beta on -> saves "beta"
             saved = save_update_channel_setting("beta", base_path=td)
             self.assertEqual(saved, "beta")
             self.assertEqual(load_update_channel_setting(td), "beta")
-            self.assertEqual(resolve_update_channel(base_path=td), "beta")
+            self.assertEqual(resolve_update_channel(current_version="4.9.1", base_path=td), "beta")
 
 
 def _release(tag, prerelease=False, assets=()):

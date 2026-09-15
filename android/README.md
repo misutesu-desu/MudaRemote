@@ -11,7 +11,7 @@ app from battery optimization.
 ## Install and run
 
 1. Download `Mudaremote.apk` from the latest
-   [Android pre-release](https://github.com/misutesu-desu/MudaRemote/releases)
+   [MudaRemote release](https://github.com/misutesu-desu/MudaRemote/releases/latest)
    (or build it locally as below) on an Android 8.0 or newer device. Android
    will ask you to allow installs from the file manager used to open the APK.
 2. Open MudaRemote and use **Import presets.json**. The app supports:
@@ -53,10 +53,11 @@ The debug APK is signed with the local debug certificate. A production release
 should be signed with a separate private upload key and tested on a physical
 ARM64 phone, especially through screen-off and battery-optimization behavior.
 
-## CI pre-releases
+## CI releases
 
-`.github/workflows/android-release.yml` builds `Mudaremote.apk` on GitHub
-runners and publishes it as a pre-release. Trigger it from the Actions tab via
-**Android Pre-Release → Run workflow** and provide a unique tag (for example
-`android-pre1`). Re-running with an existing tag replaces the APK asset on
-that release.
+`.github/workflows/android-release.yml` builds and tests `Mudaremote.apk` on
+GitHub runners. Trigger **Android Release → Run workflow** against the release
+tag and use that tag as the input to attach the APK to an existing release.
+The release keeps its stable or pre-release status. A unique Android tag (for
+example `android-pre1`) creates a separate pre-release. Re-running with an
+existing tag replaces its APK asset.

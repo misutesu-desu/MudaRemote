@@ -115,6 +115,7 @@ def _create_test_client(
         )
     bot.loop = _MockLoop()
     bot.last_tu_snapshot_complete = last_tu_snapshot_complete
+    bot.tu_query_count = int(last_tu_snapshot_complete)
     if trusted_confidence and trusted_capacity is not None:
         bot.normal_roll_replenishment_capacity = trusted_capacity
         bot.normal_roll_replenishment_capacity_confidence = True
@@ -187,13 +188,14 @@ def _advance_at_reset(client, now_utc):
 class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
     """Timing Variation delays the status prerequisite, never the owned roll."""
 
-    async def test_startup_delays_tu_once_then_releases_roll_immediately(self):
+    async def test_later_tu_delays_once_then_releases_roll_immediately(self):
         client = _create_test_client(
             server_reset_minute=None,
             last_tu_snapshot_complete=False,
             humanization_window_minutes=30,
         )
         channel = _attach_status_channel(client)
+        client.tu_query_count = 1
 
         with mock.patch.object(
             mudae_bot.random, "uniform",
@@ -229,6 +231,24 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                 await client.loop.created_tasks.pop()
             self.assertEqual(channel.sent, ["$tu", "$wa"])
             self.assertEqual(draw.call_args_list.count(mock.call(0, 30 * 60)), 1)
+
+    async def test_first_tu_skips_random_and_configured_query_delays(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_window_minutes=30,
+        )
+        channel = _attach_status_channel(client)
+        client.delay_seconds = 600
+        with mock.patch.object(mudae_bot.random, "uniform") as draw, \
+                mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)) as sleep:
+            await client._runtime_check_status(client, channel, "$")
+        self.assertEqual(channel.sent, ["$tu"])
+        self.assertIsNone(client._tu_timing_deadline_utc)
+        self.assertEqual(client.tu_query_count, 1)
+        draw.assert_not_called()
+        self.assertNotIn(mock.call(client, 600), sleep.call_args_list)
+        self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
     async def test_roll_waits_for_actual_channel_quiet_period(self):
         client = _create_test_client(humanization_window_minutes=30)
@@ -368,6 +388,8 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
             for index in range(3)
         ]
         channels = [_attach_status_channel(client) for client in clients]
+        for client in clients:
+            client.tu_query_count = 1
 
         with mock.patch.object(mudae_bot.random, "uniform", side_effect=[7 * 60, 12 * 60, 17 * 60]):
             for client, channel in zip(clients, channels):

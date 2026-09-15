@@ -1,16 +1,16 @@
-name: Android Pre-Release
+name: Android Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (must be unique, e.g. android-pre1)"
+        description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "android-pre1"
+        default: "v4.9.1"
       title:
         description: "Release title"
         required: false
-        default: "MudaRemote Android — Pre-release"
+        default: "MudaRemote v4.9.1"
 
 permissions:
   contents: write
@@ -66,14 +66,14 @@ jobs:
           ls -lh Mudaremote.apk
 
       - name: Write release notes
-        run: cp packaging/release-notes-v4.9.1-beta.18.md release_notes.md
+        run: cp packaging/release-notes-v4.9.1.md release_notes.md
 
       - uses: actions/upload-artifact@v4
         with:
           name: Mudaremote-apk
           path: Mudaremote.apk
 
-      - name: Publish pre-release
+      - name: Publish Android asset
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag }}
@@ -81,9 +81,13 @@ jobs:
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" Mudaremote.apk --clobber
-            gh release edit "$TAG" --prerelease --title "$TITLE" --notes-file release_notes.md
+            gh release edit "$TAG" --title "$TITLE" --notes-file release_notes.md
             echo "Updated asset on existing release $TAG"
           else
+            if [ "$TAG" = "v4.9.1" ]; then
+              echo "::error::Publish the Windows stable release before attaching its Android APK."
+              exit 1
+            fi
             gh release create "$TAG" Mudaremote.apk \
               --prerelease \
               --target "$GITHUB_SHA" \
@@ -100,9 +104,10 @@ jobs:
           gh release view "$TAG" --json body,isPrerelease,assets > published-release.json
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           release = json.loads(Path("published-release.json").read_text())
-          assert release["isPrerelease"]
+          assert release["isPrerelease"] == (os.environ["TAG"] != "v4.9.1")
           assert release["body"].strip() == Path("release_notes.md").read_text().strip()
           assets = [a for a in release["assets"] if a["name"] == "Mudaremote.apk"]
           assert len(assets) == 1 and assets[0]["size"] == Path("Mudaremote.apk").stat().st_size
