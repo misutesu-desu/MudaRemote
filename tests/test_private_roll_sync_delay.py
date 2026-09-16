@@ -373,6 +373,7 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         )
         channel = _attach_status_channel(client)
         client.tu_query_count = 1
+        client.persistent_stagger_seconds = 40
 
         with mock.patch.object(
             mudae_bot.random, "uniform",
@@ -517,7 +518,7 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id))
         self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
-    async def test_zero_window_or_disabled_humanization_sends_tu_promptly(self):
+    async def test_later_tu_ignores_startup_stagger_with_zero_or_disabled_variation(self):
         for enabled, window in ((True, 0), (False, 30)):
             with self.subTest(enabled=enabled, window=window):
                 client = _create_test_client(
@@ -527,11 +528,42 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                     humanization_window_minutes=window,
                 )
                 channel = _attach_status_channel(client)
+                client.tu_query_count = 1
+                client.persistent_stagger_seconds = 40
                 with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
                         mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
                     await client._runtime_check_status(client, channel, "$")
-                self.assertEqual(channel.sent.count("$tu"), 1)
+                    client.loop.close_created_tasks = False
+                    if client._predicted_roll_action_handle is not None:
+                        client._predicted_roll_action_handle.fire()
+                        await client.loop.created_tasks.pop()
+                self.assertEqual(channel.sent, ["$tu", "$wa"])
                 self.assertIsNone(client._tu_timing_deadline_utc)
+
+    async def test_saved_roll_confirmation_does_not_repeat_startup_stagger(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_window_minutes=0,
+        )
+        channel = _attach_status_channel(client)
+        client.tu_query_count = 2
+        client.persistent_stagger_seconds = 40
+        client._us_in_flight = True
+        client._us_pending_amount = 2
+        channel.snapshot = channel.snapshot.replace(
+            "**1** rolls left", "**0** rolls (+**2** $us) left",
+        )
+        mark_status_dirty(client, {"rolls"}, reason="auto-us-sent")
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            if client._predicted_roll_action_handle is not None:
+                client.loop.close_created_tasks = False
+                client._predicted_roll_action_handle.fire()
+                await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$wa", "$wa"])
+        self.assertFalse(client._us_in_flight)
+        self.assertEqual(client.us_pulled_this_cycle, 2)
 
     async def test_stale_same_cycle_status_refresh_does_not_delay_roll_again(self):
         client = _create_test_client(

@@ -1447,7 +1447,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     BotLogger.log(
         f"Automated Staggering: Assigned active index {account_index} (Preset: '{preset_name}') -> "
-        f"+{client.persistent_stagger_seconds}s persistent sleep offset applied.",
+        f"+{client.persistent_stagger_seconds}s startup offset applied.",
         preset_name, "INFO"
     )
 
@@ -4978,15 +4978,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 )
                 return
 
-            # Timing Variation belongs to the status query. Reuse one target
-            # while checks coalesce or retry; never delay rolls after its reply.
+            # Only the configured random window delays status queries. Account
+            # staggering is applied at startup, not again before each $tu.
+            # Reuse one target while checks coalesce or retry.
             timing_deadline = getattr(client, "_tu_timing_deadline_utc", None)
             if timing_deadline is None:
                 delay = 0.0
                 if client.tu_query_count > 0 and action_owner.state != "executing":
                     if client.humanization_enabled and client.humanization_window_minutes > 0:
                         delay = random.uniform(0, client.humanization_window_minutes * 60)
-                    delay += max(0.0, client.persistent_stagger_seconds)
                 timing_deadline = now_utc + datetime.timedelta(seconds=delay)
                 if client.rolling_enabled and client.roll_reset_at_utc is not None:
                     state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
