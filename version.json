@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.4-beta.2**\n\n### 🐛 Bug Fixes\n- **Timing Variation:** Setting the random wait before `$tu` to `0`, or disabling Timing Variation, no longer adds an unwanted delay before status checks and stacked rolls. Configured random waits no longer receive an extra account-based delay either.\n- **Sleep Schedule Without Random Delays:** You can keep Timing Variation enabled with random wait and patience both at `0` to use your sleep schedule without the extra wait outside sleeping hours. Startup staggering and normal command pacing remain unchanged.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.4-beta.2/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.4-beta.2/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "f5696f89690c323c537abfcb0e62c89e84f254f37470e1063d31a982f0f09b87",
   "source_files": [
     {
       "path": "mudae_bot.py",
