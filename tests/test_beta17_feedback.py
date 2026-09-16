@@ -24,6 +24,8 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
             ('any', False, True, False, 16, False),
         ):
             bot = _build_runtime()
+            bot.auto_dk_enabled = bot.dk_power_management = True
+            bot.current_dk_power = power  # check_status commits authoritative power before invoking the handler.
             bot.kakera_filter_match_mode = mode
             bot.only_chaos, bot.perk_eight_only, bot.shop_perk_7_only = keys, perk, shop
             channel = _Channel()

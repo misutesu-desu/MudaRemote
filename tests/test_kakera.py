@@ -171,6 +171,28 @@ class KakeraPowerTests(unittest.TestCase):
                     self.assertTrue(ledger.cancel(yellow_token))
                     self.assertFalse(ledger.has_pending)
 
+    def test_light_breakdown_confirms_original_button_and_total(self):
+        for source in ("kakeraL", "kakeraL2"):
+            content = (
+                f"<a:{source}:123> breaks down into <:kakera:456> + "
+                "<:kakeraT:457> + <:kakeraT:457> + <:kakeraG:458> "
+                "=> **karapisicik +1,234** ($k)"
+            )
+            result = parse_kakera_result(content, ["karapisicik"])
+            self.assertEqual(result, (1234, source))
+            ledger = KakeraPowerLedger()
+            ledger.reserve("kakeraL2", 15)
+            self.assertEqual(ledger.confirm(result.emoji_name), 15)
+            self.assertFalse(ledger.has_pending)
+            self.assertIsNone(parse_kakera_result(content, ["someone_else"]))
+            self.assertIsNone(parse_kakera_result(content.replace("($k)", ""), ["karapisicik"]))
+
+        # A breakdown for someone else cannot relabel our ordinary reward.
+        result = parse_kakera_result(
+            content + "\n<:kakeraY:459> **someone_else +500** ($k)", ["someone_else"],
+        )
+        self.assertEqual(result, (500, "kakeraY"))
+
     def test_dark_transformation_still_requires_own_reward(self):
         content = (
             "<:kakeraD:123> turns into <:kakeraY:456>\n"

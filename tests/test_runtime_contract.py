@@ -425,9 +425,9 @@ class RuntimeSourceContractTests(unittest.TestCase):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         run_source = ast.get_source_segment(self.source, functions["run_bot"])
-        dk_source = ast.get_source_segment(self.source, functions["handle_dk_power_management"])
+        dk_source = ast.get_source_segment(self.source, functions["should_auto_refill_dk"])
         self.assertIn("client.auto_dk_min_power", run_source)
-        self.assertIn("client.auto_dk_min_power or cost", dk_source)
+        self.assertIn("configured_trigger=client.auto_dk_min_power", dk_source)
 
     def test_authoritative_cooldown_refreshes_claim_and_rt_before_retry(self):
         functions = {

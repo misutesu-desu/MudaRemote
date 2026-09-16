@@ -251,6 +251,56 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.normal_roll_action_owner.state, "completed")
         self.assertIsNone(client._auto_rolls_reconcile_cycle_id)
 
+    async def test_auto_rolls_ack_timeout_reconciles_once_without_immediate_retry(self):
+        async def ack_timeout(_awaitable, timeout):
+            raise asyncio.TimeoutError
+
+        for returned_rolls in (0, 1):
+            with self.subTest(returned_rolls=returned_rolls):
+                client = _create_test_client(
+                    server_reset_minute=None,
+                    last_tu_snapshot_complete=False,
+                    humanization_enabled=False,
+                )
+                channel = _attach_status_channel(client)
+                client.auto_rolls_enabled = True
+                status = client._runtime_check_status
+                wait_cell = status.__closure__[status.__code__.co_freevars.index("humanized_wait_and_proceed")]
+                wait_cell.cell_contents = mock.AsyncMock()
+
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await client._runtime_check_status(client, channel, "$")
+                    cycle = client.current_roll_cycle_id
+                    client.loop.close_created_tasks = False
+                    client._predicted_roll_action_handle.fire()
+                    with mock.patch.object(mudae_bot.asyncio, "wait_for", new=ack_timeout):
+                        await client.loop.created_tasks.pop()
+
+                    self.assertEqual(channel.sent, ["$tu", "$wa", "$rolls"])
+                    self.assertEqual(client._auto_rolls_ack_ambiguous_cycle_id, cycle)
+                    self.assertGreater(client._rolls_ack_retry_after, 0)
+                    self.assertEqual(client.rolls_used_cycle_id, cycle)
+                    self.assertEqual(client.rolls_item_used_count, 0)
+
+                    channel.snapshot = channel.snapshot.replace(
+                        "You have **1** rolls left.",
+                        f"You have **{returned_rolls}** rolls left.",
+                    )
+                    await client._runtime_check_status(client, channel, "$")
+                    client._predicted_roll_action_handle.fire()
+                    await client.loop.created_tasks.pop()
+                    client.loop.close_created_tasks = True
+                    client._rolls_ack_retry_after = 0.0
+                    for _ in range(3):
+                        await client._runtime_check_status(client, channel, "$")
+
+                self.assertEqual(channel.sent.count("$rolls"), 1)
+                self.assertEqual(channel.sent.count("$tu"), 2)
+                self.assertEqual(channel.sent.count("$wa"), 1 + returned_rolls)
+                self.assertEqual(client.normal_roll_action_owner.state, "completed")
+                self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
+
     async def test_exhausted_rolls_wait_through_cache_expiry_for_imminent_reset(self):
         client = _create_test_client(server_reset_minute=None, humanization_enabled=False)
         channel = _attach_status_channel(client)

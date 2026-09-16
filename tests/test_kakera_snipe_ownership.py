@@ -175,6 +175,75 @@ def _build_roll_message(channel, message_id, roll_owner_id, roll_owner_name, kak
 
 
 class KakeraSnipeOwnershipRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_light_breakdown_confirms_click_and_spends_power_once(self):
+        bot, channel = _create_test_client()
+        bot.current_dk_power = 46
+        bot.dk_consumption = 15
+        message, button = _build_roll_message(channel, 1008, bot.user.id, bot.user.name, "kakeraL2")
+        result = SimpleNamespace(
+            id=1009, channel=channel, author=message.author,
+            content=("<:kakeraL:123> breaks down into <:kakera:456> + <:kakeraT:457> + "
+                     "<:kakeraG:458> => **snipe-bot +1,234** ($k)"),
+            created_at=message.created_at, embeds=[], components=[], interaction=None,
+        )
+        async def deliver_result():
+            await bot.events["on_message"](result)
+        button.click.side_effect = deliver_result
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message"](message)
+            await bot.events["on_message"](message)
+        button.click.assert_awaited_once()
+        self.assertEqual(bot.current_dk_power, 31)
+        self.assertFalse(bot.kakera_power_ledger.has_pending)
+        self.assertFalse(bot._kakera_result_waiters)
+
+    async def test_dk_threshold_refills_before_or_after_confirmed_click_without_tu(self):
+        for power, trigger, stock, pending, enabled, management, expected in (
+            (40, 30, 1, False, True, True, ["click", "$dk"]),
+            (29, 30, 1, False, True, True, ["$dk", "click"]),
+            (45, 30, 1, False, True, True, ["click"]),
+            (25, 0, 1, False, True, True, ["click", "$dk"]),
+            (40, 30, 0, False, True, True, ["click"]),
+            (40, 30, 1, True, True, True, ["click"]),
+            (40, 30, 1, False, False, True, ["click"]),
+            (40, 30, 1, False, True, False, ["click"]),
+        ):
+            with self.subTest(power=power, trigger=trigger, stock=stock, pending=pending,
+                              enabled=enabled, management=management):
+                bot, channel = _create_test_client()
+                bot.current_dk_power, bot.dk_consumption = power, 15
+                bot.auto_dk_enabled, bot.dk_power_management = enabled, management
+                bot.auto_dk_min_power, bot.dk_stock_count = trigger, stock
+                command_channel = _Channel(5678, lambda: bot)
+                bot._fetched_channels[5678] = command_channel
+                if pending:
+                    bot.kakera_power_ledger.reserve("kakeraW", 1)
+                events = []
+                send = command_channel.send
+                async def record_command(content):
+                    events.append(content)
+                    return await send(content)
+                command_channel.send = record_command
+                message, button = _build_roll_message(channel, 1006, bot.user.id, bot.user.name)
+                result = SimpleNamespace(
+                    id=1007, channel=channel, author=message.author,
+                    content="<:kakeraY:123> **snipe-bot +515** ($k)",
+                    created_at=message.created_at, embeds=[], components=[], interaction=None,
+                )
+                async def deliver_result():
+                    events.append("click")
+                    await bot.events["on_message"](result)
+                button.click.side_effect = deliver_result
+                with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+                    await bot.events["on_message"](message)
+                    await bot.events["on_message"](message)
+                self.assertEqual(events, expected)
+                self.assertEqual(channel.sent, [])
+                self.assertEqual(bot.dk_stock_count, stock - expected.count("$dk"))
+                expected_power = 100 if expected[-1] == "$dk" else (85 if expected[0] == "$dk" else power - 15)
+                self.assertEqual(bot.current_dk_power, expected_power)
+                button.click.assert_awaited_once()
+
     async def test_dark_transformation_confirms_click_without_retry(self):
         bot, channel = _create_test_client()
         message, btn = _build_roll_message(

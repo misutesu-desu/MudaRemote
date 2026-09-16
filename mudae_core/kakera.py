@@ -15,6 +15,8 @@ _CHARACTER_SPHERE_EMOJIS = frozenset({
 
 _KAKERA_RESULT_RE = re.compile(
     r"<a?:(?P<emoji>kakera[A-Za-z0-9_]*):\d+>\s*"
+    r"(?:breaks down into\s*<a?:kakera[A-Za-z0-9_]*:\d+>"
+    r"(?:\s*\+\s*<a?:kakera[A-Za-z0-9_]*:\d+>)*\s*=>\s*)?"
     r"(?:\(\s*Free\s*\)\s*)?"
     r"\*{0,2}\s*(?P<user>[^*\r\n+]+?)\s*"
     r"\+\s*(?P<amount>[\d,\.\s]+)\s*\*{0,2}\s*"
@@ -212,8 +214,8 @@ class KakeraPowerLedger:
 def parse_kakera_result(content: object, identities: object):
     """Return the amount and clicked emoji from this account's confirmation.
 
-    Dark Kakera rewards display the transformed color. Only an immediately
-    preceding transformation into that color identifies the original button.
+    Light breakdowns keep the source emoji; Dark rewards use the immediately
+    preceding transformation into the displayed reward color.
     """
     known_identities = {
         str(identity).strip().casefold()

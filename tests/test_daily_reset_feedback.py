@@ -57,9 +57,12 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 message, button = _build_roll_message(channel, 5101, bot.user.id, bot.user.name, emoji)
                 button.click.return_value = SimpleNamespace(successful=True)
                 button.click.side_effect = None
-                with mock.patch.object(mudae_bot.asyncio, 'wait_for', side_effect=AssertionError('sphere waited for kakera')):
+                with mock.patch.object(mudae_bot.asyncio, 'wait_for', side_effect=AssertionError('sphere waited for kakera')), \
+                        mock.patch.object(mudae_bot.BotLogger, 'log') as log:
                     await bot.events['on_message'](message)
                     await bot.events['on_message'](message)
+                self.assertEqual(sum('Sphere click sent:' in call.args[0] for call in log.call_args_list), 1)
+                self.assertFalse(any('Kakera click sent:' in call.args[0] for call in log.call_args_list))
                 button.click.assert_awaited_once()
                 self.assertFalse(bot._kakera_result_waiters)
                 self.assertEqual(bot.sphere_button_budget.clicked, 7)
