@@ -5,7 +5,8 @@ import unittest
 from unittest import mock
 
 import mudae_bot
-from mudae_core.status import mark_status_dirty
+from mudae_core.runtime import get_normal_roll_cycle_state
+from mudae_core.status import mark_status_dirty, status_refresh_reasons
 
 
 class _MockHandle:
@@ -188,6 +189,132 @@ def _advance_at_reset(client, now_utc):
 class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
     """Timing Variation delays the status prerequisite, never the owned roll."""
 
+    async def test_stale_roll_callback_does_not_request_status_or_rearm(self):
+        for owner_state in ("executing", "waiting_claim", "completed", "deferred_window"):
+            with self.subTest(owner_state=owner_state):
+                client = _create_test_client(
+                    server_reset_minute=None, last_tu_snapshot_complete=False,
+                    humanization_enabled=False,
+                )
+                channel = _attach_status_channel(client)
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await client._runtime_check_status(client, channel, "$")
+                    client.normal_roll_action_owner.state = owner_state
+                    mark_status_dirty(client, {"rolls"}, reason="manual-roll-activity")
+                    client.loop.close_created_tasks = False
+                    client._predicted_roll_action_handle.fire()
+                    await client.loop.created_tasks.pop()
+                self.assertEqual(status_refresh_reasons(client), ["manual-roll-activity"])
+                self.assertIsNone(client._predicted_roll_action_handle)
+                self.assertEqual(client.normal_roll_action_owner.state, owner_state)
+                self.assertEqual(channel.sent, ["$tu"])
+
+    async def test_pending_roll_status_request_is_logged_once_until_reconciled(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            mark_status_dirty(client, {"rolls"}, reason="manual-roll-activity")
+            client.loop.close_created_tasks = False
+            with mock.patch.object(mudae_bot.BotLogger, "log") as log:
+                for _ in range(3):
+                    client._predicted_roll_action_handle.fire()
+                    await client.loop.created_tasks.pop()
+                requests = [call for call in log.call_args_list if "ambiguity before owned roll" in call.args[0]]
+                self.assertEqual(len(requests), 1)
+            await client._runtime_check_status(client, channel, "$")
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$tu", "$wa"])
+
+    async def test_auto_rolls_reconciliation_resumes_the_executing_batch(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            cycle = client.current_roll_cycle_id
+            client.normal_roll_action_owner.start(cycle)
+            client._auto_rolls_reconcile_cycle_id = cycle
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$wa"])
+        self.assertEqual(client.normal_roll_action_owner.state, "completed")
+        self.assertIsNone(client._auto_rolls_reconcile_cycle_id)
+
+    async def test_exhausted_rolls_wait_through_cache_expiry_for_imminent_reset(self):
+        client = _create_test_client(server_reset_minute=None, humanization_enabled=False)
+        channel = _attach_status_channel(client)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        boundary = now + datetime.timedelta(minutes=2)
+        client.roll_reset_anchor.observe(boundary, now)
+        client.roll_reset_at_utc = boundary
+        client.current_roll_cycle_id = client.roll_reset_anchor.cycle_id_for_boundary(-1)
+        state = get_normal_roll_cycle_state(client, client.current_roll_cycle_id)
+        state.remaining = 0
+        state.remaining_authoritative = True
+        client.rolls_left = 0
+        client.claim_right_available = True
+        client.next_claim_reset_at_utc = now + datetime.timedelta(hours=2)
+        client.last_tu_query_utc = now - datetime.timedelta(minutes=31)
+        required = client._runtime_is_tu_still_required
+        for overrides in (
+            {"scheduled_roll_due": True},
+            {"_pre_roll_status_required": True},
+            {"last_tu_snapshot_complete": False},
+            {"rolls_left": 1},
+            {"roll_reset_at_utc": now + datetime.timedelta(minutes=4)},
+            {"auto_oh_enabled": True, "sphere_game_counts": {"oh": 1}},
+            {"auto_oc_enabled": True, "sphere_game_refill_at_utc": now - datetime.timedelta(seconds=1)},
+        ):
+            with self.subTest(overrides=overrides), mock.patch.multiple(client, **overrides):
+                self.assertTrue(required(client)[0])
+        for age in (1, 31):
+            for overrides in (
+                {"auto_rolls_enabled": True},
+                {"auto_us_enabled": True},
+                {"auto_mk_enabled": True, "mk_rolls_left": 1, "current_dk_power": 100},
+            ):
+                with self.subTest(age=age, overrides=overrides), mock.patch.multiple(
+                    client, last_tu_query_utc=now - datetime.timedelta(minutes=age), **overrides,
+                ):
+                    self.assertTrue(required(client)[0])
+        with mock.patch.object(state, "remaining", None):
+            self.assertTrue(required(client)[0])
+        state.count_uncertain = True
+        self.assertTrue(required(client)[0])
+        state.count_uncertain = False
+        with mock.patch.object(client.roll_reset_anchor, "confidence", False):
+            self.assertTrue(required(client)[0])
+        mark_status_dirty(client, {"claim"}, reason="claim-verification-inconclusive")
+        self.assertTrue(required(client)[0])
+        mudae_bot.clear_status_dirty(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            self.assertEqual(channel.sent, [])
+            channel.snapshot = channel.snapshot.replace("**1** rolls", "**30** rolls")
+            with mock.patch.object(mudae_bot.datetime, "datetime", wraps=datetime.datetime) as clock:
+                clock.now.return_value = boundary + datetime.timedelta(seconds=1)
+                client._runtime_advance_predicted_reset_cycles(clock.now())
+                client._roll_count_sync_handle.fire()
+                await client._runtime_check_status(client, channel, "$")
+                client.loop.close_created_tasks = False
+                client._predicted_roll_action_handle.fire()
+                await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent.count("$tu"), 1)
+        self.assertEqual(channel.sent.count("$wa"), 30)
+
     async def test_later_tu_delays_once_then_releases_roll_immediately(self):
         client = _create_test_client(
             server_reset_minute=None,
@@ -251,7 +378,7 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(client._predicted_roll_action_handle.delay, 0.1)
 
     async def test_roll_waits_for_actual_channel_quiet_period(self):
-        client = _create_test_client(humanization_window_minutes=30)
+        client = _create_test_client(server_reset_minute=None, humanization_window_minutes=30)
         channel = _attach_status_channel(client)
         client.humanization_inactivity_seconds = 5
         channel.recent_messages = [SimpleNamespace(

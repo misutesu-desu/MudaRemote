@@ -4077,13 +4077,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         owner = client.normal_roll_action_owner
         if logical_roll_cycle_id != owner.cycle_id:
             return
-        if client.is_paused or is_maintenance_active():
-            _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
-            return
-        if not client.rolling_enabled:
-            owner.cancel(logical_roll_cycle_id)
-            return
-        _prune_normal_action_metadata()
         reconciling_auto_rolls = (
             owner.state == "executing"
             and logical_roll_cycle_id in {
@@ -4091,6 +4084,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 getattr(client, "_auto_rolls_reconcile_cycle_id", None),
             }
         )
+        # A callback queued during status parsing may outlive its pending
+        # action. Only explicit Auto $rolls reconciliation can re-enter it.
+        if not owner.is_pending(logical_roll_cycle_id) and not reconciling_auto_rolls:
+            return
+        if client.is_paused or is_maintenance_active():
+            _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
+            return
+        if not client.rolling_enabled:
+            owner.cancel(logical_roll_cycle_id)
+            return
+        _prune_normal_action_metadata()
         state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
         if state is None or state.remaining is None:
             BotLogger.log("Status sync requested: normal-roll count unknown before owned roll action.", preset_name, "DEBUG", client)
@@ -4110,9 +4114,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
         if normal_roll_action_state_is_dirty(client, logical_roll_cycle_id) and not reconciling_auto_rolls:
-            BotLogger.log("Status sync requested: ambiguity before owned roll action.", preset_name, "DEBUG", client)
-            refresh_fields = {"claim", "rolls"} if getattr(client, "time_rolls_to_claim_reset", False) else {"rolls"}
-            request_status_refresh(refresh_fields, reason="normal-action-ambiguity", urgent=True)
+            if "normal-action-ambiguity" not in status_refresh_reasons(client):
+                BotLogger.log("Status sync requested: ambiguity before owned roll action.", preset_name, "DEBUG", client)
+                refresh_fields = {"claim", "rolls"} if getattr(client, "time_rolls_to_claim_reset", False) else {"rolls"}
+                request_status_refresh(refresh_fields, reason="normal-action-ambiguity", urgent=True)
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
         channel = _get_command_channel() or getattr(client, "_main_channel", None)
@@ -4661,6 +4666,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         pending_mk = (client.auto_mk_enabled and client.mk_rolls_left > 0 and power is not None and
                       (client.mk_bypass_power_check or (power >= client.max_dk_power if client.auto_mk_full_power_only else power >= client.dk_consumption)))
         return pending_rolls, pending_us, pending_mk
+
+    client._pending_roll_work = pending_roll_work
 
     def claim_critical_work_pending():
         """Whether unrelated sphere boards must yield to claim/roll settlement."""

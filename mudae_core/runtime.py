@@ -1933,8 +1933,16 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
         roll_reset_at = getattr(client, "roll_reset_at_utc", None)
         is_before_claim = claim_reset_at is None or now_utc < claim_reset_at
         is_before_roll = roll_reset_at is None or now_utc < roll_reset_at
-        if cache_seconds > 0:
-            state = get_normal_roll_cycle_state(client, current_cid)
+        state = get_normal_roll_cycle_state(client, current_cid)
+        # Exhausted rolls can wait up to three more minutes for a trusted
+        # reset. The successor's pre-roll check will refresh private state.
+        reset_imminent = bool(
+            state is not None and state.remaining == 0 and not state.count_uncertain
+            and getattr(getattr(client, "roll_reset_anchor", None), "confidence", False)
+            and roll_reset_at is not None
+            and 0 < (roll_reset_at - now_utc).total_seconds() <= 180.0
+        )
+        if cache_seconds > 0 or reset_imminent:
             has_unknown_rolls = state is not None and (state.remaining is None or state.count_uncertain)
             rolls_left = int(getattr(client, "rolls_left", 0) or 0)
 
@@ -1970,7 +1978,7 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
                     and not sphere_retry
                     and not sphere_refill
                 ):
-                    return False, "cached-status-valid"
+                    return False, "roll-reset-imminent" if reset_imminent else "cached-status-valid"
 
             elif (
                 state is not None
