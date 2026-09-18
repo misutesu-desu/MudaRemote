@@ -322,6 +322,12 @@ def _apply_shared_reset_snapshot(client, snapshot):
         if roll_anchor is not None and getattr(roll_anchor, "confidence", False):
             if advance_fn is not None:
                 advance_fn(observed_at)
+            # A peer's rounded timer can already describe the following hour.
+            # Preserve our pending boundary so its cycle still advances locally;
+            # only a private count can establish an early account rollover.
+            roll_deadline, _ = reconcile_roll_reset_deadline(
+                roll_anchor.next_boundary_at_utc, observed_at, roll_deadline,
+            )
             changed, refined = roll_anchor.observe(roll_deadline, observed_at)
             client.roll_reset_at_utc = roll_anchor.next_boundary_at_utc
         elif roll_anchor is not None:
