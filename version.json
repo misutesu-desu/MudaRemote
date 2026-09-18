@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.4-beta.3**\n\n### 🐛 Bug Fixes\n- **No Repeated Auto `$rolls`:** Fixed extra `$rolls` attempts after the available rolls and roll item were already used. A missing confirmation no longer causes repeated attempts during the same roll cycle.\n- **Rolling Resumes After Reset:** Fixed a freeze when a roll batch, including saved rolls from `$us`, was postponed because the next reset was too close. The bot now resumes automatically in the next cycle instead of remaining idle.\n\nRestart your bot after updating to apply these fixes.\n",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.4-beta.3/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.4-beta.3/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "05a70d25a132d226917a350edc2b62d3a324f26d43288dd1787fa1b94591e270",
   "source_files": [
     {
       "path": "mudae_bot.py",
