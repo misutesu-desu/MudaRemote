@@ -1920,7 +1920,11 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
     if not rolling_enabled and last_complete and dirty.issubset({"rolls"}):
         return False, "rolling-disabled"
 
-    if getattr(client, "time_rolls_to_claim_reset", False) and not getattr(client, "claim_right_available", False):
+    if (
+        not scheduled_due
+        and getattr(client, "time_rolls_to_claim_reset", False)
+        and not getattr(client, "claim_right_available", False)
+    ):
         claim_reset_at = getattr(client, "next_claim_reset_at_utc", None)
         if claim_reset_at is not None:
             claim_reset_m_check = (claim_reset_at - now_utc).total_seconds() / 60.0

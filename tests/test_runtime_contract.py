@@ -1431,22 +1431,6 @@ class RuntimeSourceContractTests(unittest.TestCase):
             2,
         )
 
-    def test_spheres_bypass_kakera_only_filters_without_unblocking_regular_kakera(self):
-        functions = {
-            node.name: node
-            for node in ast.walk(self.tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        claim_source = ast.get_source_segment(self.source, functions["claim_character"])
-        sphere_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
-        eligibility_source = ast.get_source_segment(self.source, functions["kakera_button_is_eligible"])
-
-        self.assertIn("await click_kakera_with_confirmation(", claim_source)
-        self.assertIn("await click_kakera_with_confirmation(", claim_source)
-        self.assertIn("return filter_reason is None", eligibility_source)
-        self.assertIn("client.sphere_click_targets", sphere_source)
-        self.assertIn("sphere_target_matches", sphere_source)
-
     def test_megasphere_is_a_supported_default_sphere_target(self):
         self.assertIn("'spM'", self.source)
         self.assertIn('"spM", "spU"', self.source)

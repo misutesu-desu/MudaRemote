@@ -75,34 +75,67 @@ def classify_claim_text(
     identities: Iterable[object],
     user_id: Optional[int] = None,
 ) -> ClaimEvidence:
-    """Classify a textual claim confirmation using strict and permissive evidence."""
+    """Require a completed ownership statement and identify its actual claimant."""
     raw = str(content or "")
-    normalized = normalize_external_text(raw)
     character = normalize_external_text(character_name)
-    if not character or not _contains_normalized(normalized, character):
+    if not character or not _contains_normalized(normalize_external_text(raw), character):
         return ClaimEvidence(ClaimOutcome.INCONCLUSIVE)
 
-    safe_identities = [identity for identity in identities if normalize_external_text(identity) != character]
-    if identity_matches(raw, safe_identities, user_id=user_id):
-        return ClaimEvidence(ClaimOutcome.SUCCESS, source="confirmation-text")
+    def plain_text(value):
+        text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", str(value))
+        return re.sub(r"[*~`]", "", text).strip()
 
-    labels = re.findall(r"\*\*(.+?)\*\*|\[([^\]]+)\]\([^\)]+\)", raw, flags=re.DOTALL)
-    candidates = []
-    for bold_label, link_label in labels:
-        label = (bold_label or link_label).strip()
-        normalized_label = normalize_external_text(label)
-        if not normalized_label or normalized_label == character:
-            continue
-        if normalized_label.isdigit() or normalized_label in {"kakera", "claim", "claimed", "married"}:
-            continue
-        candidates.append(label)
-
-    relationship_markers = (
-        "married", "claimed", "belongs", "casou", "casado", "reclamado",
-        "marié", "mariée", "épous", "se casar", "se casó",
+    character_pattern = re.escape(plain_text(character_name))
+    owner_pattern = r"(?P<owner><@!?\d+>|[^<>\n!?]+?)"
+    # Match the relationship, not arbitrary mentions elsewhere in the message.
+    # Punctuation ends a confirmation; a following wish ping is not its owner.
+    patterns = (
+        rf"{owner_pattern} and {character_pattern} are now married",
+        rf"{character_pattern} and {owner_pattern} are now married",
+        rf"{owner_pattern} (?<!not )(?<!never )(?<!n't )(?:has claimed|claimed) {character_pattern}",
+        rf"{owner_pattern} (?:se casou com|casou com|se casó con|a épousé) {character_pattern}",
+        rf"{owner_pattern} e {character_pattern} (?:agora estão casados|estão agora casados)",
+        rf"{owner_pattern} et {character_pattern} sont (?:maintenant |désormais )?mariés",
+        rf"{owner_pattern} y {character_pattern} (?:ahora están casados|están ahora casados)",
     )
-    if candidates and any(marker in normalized for marker in relationship_markers):
-        return ClaimEvidence(ClaimOutcome.FAILURE, winner=candidates[0], source="confirmation-text")
+    owner_last_patterns = (
+        rf"{character_pattern} (?:belongs to|is now married to|was claimed by|has been claimed by) {owner_pattern}",
+        rf"{character_pattern} (?:foi reclamado por|foi reclamada por|foi reivindicado por|foi reivindicada por) {owner_pattern}",
+    )
+    own_names = {normalize_external_text(identity) for identity in identities if identity}
+    own_names.discard(character)
+    for line in raw.splitlines():
+        # Prompts and quoted announcements do not confirm a new claim.
+        if line.lstrip().startswith(">") or "?" in line:
+            continue
+        text = plain_text(line)
+        match = next(
+            (match for pattern in patterns
+             if (match := re.match(rf"^{pattern}(?:[!.]|$)", text, flags=re.IGNORECASE))),
+            None,
+        )
+        if match is None:
+            match = next(
+                (match for pattern in owner_last_patterns
+                 if (match := re.fullmatch(rf"{pattern}[!.]*", text, flags=re.IGNORECASE))),
+                None,
+            )
+        if match is None:
+            continue
+        owner = match.group("owner").strip()
+        normalized_owner = normalize_external_text(owner)
+        mention = re.fullmatch(r"<@!?(\d+)>", owner)
+        if mention:
+            is_self = user_id is not None and int(mention.group(1)) == user_id
+        else:
+            is_self = normalized_owner in own_names
+        if not normalized_owner:
+            continue
+        return ClaimEvidence(
+            ClaimOutcome.SUCCESS if is_self else ClaimOutcome.FAILURE,
+            winner=None if is_self else owner,
+            source="confirmation-text",
+        )
     return ClaimEvidence(ClaimOutcome.INCONCLUSIVE)
 
 

@@ -82,6 +82,58 @@ class ClaimingTests(unittest.TestCase):
         self.assertEqual(evidence.outcome, ClaimOutcome.FAILURE)
         self.assertEqual(evidence.winner, "Someone Else")
 
+    def test_wish_ping_and_unclaimed_roll_text_are_not_claim_confirmations(self):
+        for text in (
+            "<@123> **Izana Kurokawa** 412 ka",
+            "**Maliss** wished for **Izana Kurokawa**!",
+            "**Izana Kurokawa** is on <@123>'s wishlist",
+            "React to claim **Izana Kurokawa**, <@123>!",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    classify_claim_text(text, "Izana Kurokawa", ["Maliss"], 123).outcome,
+                    ClaimOutcome.INCONCLUSIVE,
+                )
+
+    def test_claimant_not_incidental_ping_or_partial_username_controls_outcome(self):
+        for text in (
+            "**Someone Else** and **Satella** are now married! <@123>",
+            "**Someone Else** claimed **Satella**!\nWish ping: **Maliss** <@123>",
+            "**Maliss Extra** claimed **Satella**!",
+            "<@456> claimed **Satella**! <@123>",
+        ):
+            with self.subTest(text=text):
+                evidence = classify_claim_text(text, "Satella", ["Maliss"], 123)
+                self.assertEqual(evidence.outcome, ClaimOutcome.FAILURE)
+
+    def test_questions_quotes_and_unrelated_relationships_stay_inconclusive(self):
+        for text in (
+            "**Satella** belongs to **Maliss**, do you want to force the divorce?",
+            "> **Maliss** and **Satella** are now married!",
+            "Did **Maliss** claim **Satella**?",
+            "**Maliss** claimed **Rem**!\n**Satella** appeared!",
+            "**Maliss** has not claimed **Satella**",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    classify_claim_text(text, "Satella", ["Maliss"]).outcome,
+                    ClaimOutcome.INCONCLUSIVE,
+                )
+
+    def test_completed_ownership_formats_keep_explicit_attribution(self):
+        for text in (
+            "**Satella** belongs to **Maliss**",
+            "**Satella** and **Maliss** are now married!",
+            "**Maliss** se casou com **Satella**!",
+            "**Maliss** se casó con **Satella**!",
+            "**Maliss** a épousé **Satella**!",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    classify_claim_text(text, "Satella", ["Maliss"]).outcome,
+                    ClaimOutcome.SUCCESS,
+                )
+
     def test_claim_announcement_detection_excludes_forcedivorce_prompts(self):
         self.assertTrue(is_claim_announcement_for_character(
             "**Someone Else** and **Yoruichi Shihoin** are now married!",
@@ -253,6 +305,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver():
             await click_started.wait()
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **Rem** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -327,6 +380,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver():
             await click_started.wait()
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **RemErr** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -472,6 +526,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
             # Deliver real evidence
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **RemSpurious** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -510,6 +565,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver():
             await click_started.wait()
             evidence_msg = SimpleNamespace(
+                id=_other_pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **OtherChar** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -568,6 +624,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver():
             await fetch_started.wait()
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **RemSlow** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -626,6 +683,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver():
             await fetch_started.wait()
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content=f"**{self.bot.user.name}** and **RemFast** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -673,6 +731,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         async def deliver_failure():
             await fetch_started.wait()
             evidence_msg = SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
                 author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
                 content="**Someone Else** and **RemFail** are now married!",
                 channel=SimpleNamespace(id=1234),
@@ -689,6 +748,118 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome, ClaimOutcome.FAILURE)
         self.assertFalse(pending.get("finalized"))
         self.assertIsNone(self.bot.pending_claim)
+
+    async def test_gateway_confirmation_must_match_attempt_channel_time_and_reference(self):
+        pending = self.bot._runtime_prepare_pending_claim(
+            self.msg, "Satella", True, 300, "Re:Zero", True, False
+        )
+        valid = dict(
+            id=pending["confirmation_min_id"] + 1,
+            author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+            channel=self.msg.channel,
+            content=f"**{self.bot.user.name}** and **Satella** are now married!",
+        )
+        for invalid in (
+            {"id": self.msg.id},
+            {"id": pending["confirmation_min_id"] - 1},
+            {"id": None},
+            {"channel": SimpleNamespace(id=4321)},
+            {"author": SimpleNamespace(id=123)},
+            {"reference": SimpleNamespace(message_id=9999)},
+        ):
+            with self.subTest(invalid=invalid):
+                self.bot._runtime_record_claim_text_evidence(SimpleNamespace(**(valid | invalid)))
+                self.assertIsNone(self.bot._claim_text_evidence)
+                self.assertFalse(self.bot._claim_evidence_event.is_set())
+        self.bot._runtime_record_claim_text_evidence(SimpleNamespace(**valid))
+        self.assertEqual(self.bot._claim_text_evidence.outcome, ClaimOutcome.SUCCESS)
+
+    async def test_history_rejects_roll_wish_and_stale_or_unrelated_confirmation(self):
+        for scenario in ("original-roll", "wish-ping", "stale-claim", "other-roll"):
+            with self.subTest(scenario=scenario):
+                pending = self.bot._runtime_prepare_pending_claim(
+                    self.msg, "Izana Kurokawa", True, 412, "Tokyo Revengers", False, False
+                )
+                history_message = SimpleNamespace(
+                    id=pending["confirmation_min_id"] + 1,
+                    author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+                    channel=self.msg.channel,
+                    content=f"**{self.bot.user.name}** claimed **Izana Kurokawa**!",
+                )
+                if scenario in ("original-roll", "wish-ping"):
+                    history_message.content = "<@7001> **Izana Kurokawa** 412 ka"
+                if scenario == "original-roll":
+                    history_message.id = self.msg.id
+                elif scenario == "stale-claim":
+                    history_message.id = pending["confirmation_min_id"] - 1
+                elif scenario == "other-roll":
+                    history_message.reference = SimpleNamespace(message_id=9999)
+                clock = [0.0]
+
+                async def fetch_message(message_id):
+                    clock[0] += 6.0
+                    return SimpleNamespace(id=message_id, embeds=[])
+
+                async def history(limit=20):
+                    yield history_message
+
+                channel = SimpleNamespace(id=1234, fetch_message=fetch_message, history=history)
+                with mock.patch.object(mudae_bot, "time", SimpleNamespace(monotonic=lambda: clock[0])):
+                    outcome = await self.bot._runtime_verify_snipe_outcome(
+                        self.bot, channel, self.msg, pending
+                    )
+                self.assertEqual(outcome, ClaimOutcome.INCONCLUSIVE)
+                self.assertFalse(pending["finalized"])
+                self.assertIsNone(self.bot.last_successfully_claimed_character)
+
+    async def test_delayed_ack_and_wish_ping_do_not_finalize_or_retry_cached_claim(self):
+        self.bot.claim_right_available = True
+        pending = self.bot._runtime_prepare_pending_claim(
+            self.msg, "Ghislaine Dedoldia", True, 341, "Mushoku Tensei", True, False
+        )
+        ack_release = asyncio.get_running_loop().create_future()
+        click_count = 0
+
+        async def slow_click():
+            nonlocal click_count
+            click_count += 1
+            await ack_release
+
+        self.btn.click = slow_click
+        try:
+            sent, observed = await self.bot._runtime_send_claim_click(self.btn, pending, timeout=0.01)
+            self.assertTrue(sent)
+            self.assertFalse(observed)
+            self.bot._runtime_record_claim_text_evidence(SimpleNamespace(
+                id=pending["confirmation_min_id"] + 1,
+                author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+                channel=self.msg.channel,
+                content="<@7001> **Ghislaine Dedoldia** is on your wishlist!",
+            ))
+            clock = [0.0]
+
+            async def fetch_message(message_id):
+                clock[0] += 6.0
+                return SimpleNamespace(id=message_id, embeds=[])
+
+            async def history(limit=20):
+                if False:
+                    yield None
+
+            channel = SimpleNamespace(id=1234, fetch_message=fetch_message, history=history)
+            with mock.patch.object(mudae_bot, "time", SimpleNamespace(monotonic=lambda: clock[0])):
+                outcome = await self.bot._runtime_verify_snipe_outcome(
+                    self.bot, channel, self.msg, pending
+                )
+            self.assertEqual(outcome, ClaimOutcome.INCONCLUSIVE)
+            self.assertFalse(pending["finalized"])
+            self.assertIs(self.bot.pending_claim, pending)
+            self.assertEqual(self.bot.claim_retry_counts.get(self.msg.id, 0), 0)
+            self.assertTrue(self.bot.claim_right_available)
+            self.assertEqual(click_count, 1)
+            self.assertFalse(ack_release.done())
+        finally:
+            ack_release.set_result(True)
 
 if __name__ == "__main__":
     unittest.main()

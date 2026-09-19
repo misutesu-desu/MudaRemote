@@ -1823,9 +1823,24 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         )
         return True
 
+    def claim_text_message_matches_attempt(message, pending):
+        """Scope both gateway and history evidence to this new claim attempt."""
+        if (
+            getattr(getattr(message, "author", None), "id", None) != TARGET_BOT_ID
+            or not getattr(message, "content", None)
+            or getattr(getattr(message, "channel", None), "id", None)
+            != getattr(pending.get("channel"), "id", None)
+        ):
+            return False
+        message_id = getattr(message, "id", None)
+        if message_id is None or message_id <= pending["confirmation_min_id"]:
+            return False
+        reference_id = getattr(getattr(message, "reference", None), "message_id", None)
+        return reference_id is None or reference_id == pending.get("message_id")
+
     def record_claim_text_evidence(message):
         pending = getattr(client, 'pending_claim', None)
-        if not pending or not getattr(message, 'content', None):
+        if not pending or not claim_text_message_matches_attempt(message, pending):
             return
         evidence = classify_claim_text(
             message.content,
@@ -4427,7 +4442,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         if owner.is_waiting_claim(logical_roll_cycle_id) and (
             client.claim_right_available
-            or (roll_count > 0 and (client.key_mode or client.rt_available))
+            or (roll_count > 0 and (scheduled_trigger or client.key_mode or client.rt_available))
         ):
             owner.resume_claim(logical_roll_cycle_id)
         if scheduled_trigger:
@@ -4833,10 +4848,19 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
             if suppress_physical_tu and not client._pre_roll_status_required:
                 target_cycle = client.current_roll_cycle_id or action_owner.cycle_id
-                if action_status_policy == "suppress-routine" and action_owner.is_pending(target_cycle):
-                    # A complete authoritative $tu is just as trustworthy as a
-                    # predicted anchor for preserving the one stable callback.
-                    schedule_owned_normal_roll_action(target_cycle, now_utc)
+                if action_status_policy == "suppress-routine":
+                    scheduled_trigger = bool(client.scheduled_roll_due and client.rolling_enabled and proceed_to_rolls)
+                    if action_owner.is_pending(target_cycle) or (
+                        scheduled_trigger and action_owner.is_waiting_claim(target_cycle)
+                    ):
+                        # Transfer an explicit schedule to the existing owner,
+                        # including one waiting for claim, rather than leaving
+                        # a stale due flag to force another status query later.
+                        schedule_owned_normal_roll_action(
+                            target_cycle, now_utc, scheduled_trigger=scheduled_trigger,
+                        )
+                    if scheduled_trigger:
+                        client.scheduled_roll_due = False
                 elif private_count_sync_pending and action_owner.is_pending(target_cycle):
                     # Recheck queue depth while the one target-aligned private
                     # sync is pending. This may only advance its preparation
@@ -5465,7 +5489,13 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ):
                 # The query has paid its timing delay. Wake the same owner
                 # now, replacing any outstanding status-retry callback.
-                schedule_owned_normal_roll_action(client.current_roll_cycle_id, now_utc, status_refreshed=True)
+                scheduled_trigger = bool(client.scheduled_roll_due and client.rolling_enabled and proceed_to_rolls)
+                schedule_owned_normal_roll_action(
+                    client.current_roll_cycle_id, now_utc,
+                    scheduled_trigger=scheduled_trigger, status_refreshed=True,
+                )
+                if scheduled_trigger:
+                    client.scheduled_roll_due = False
                 return
             if client.key_limit_hit:
                 BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
@@ -6605,6 +6635,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 and is_wish_or_starwish(msg, msg.embeds[0])
             ),
             "created_monotonic": time.monotonic(),
+            "confirmation_min_id": max(
+                getattr(msg, "id", 0) or 0,
+                discord.utils.time_snowflake(datetime.datetime.now(timezone.utc)),
+            ),
             "finalized": False,
         }
         client.pending_claim = pending
@@ -6759,6 +6793,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             or retry_count >= 1
             or client.is_paused
             or pending.get("rejected_by_cooldown")
+            or pending.get("ack_delayed")
             or not pending.get("claim_was_available")
             or not client.claim_right_available
         ):
@@ -6951,9 +6986,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if evidence is None:
             try:
                 async for history_message in channel.history(limit=20):
-                    if history_message.author.id != TARGET_BOT_ID or not history_message.content:
-                        continue
-                    if getattr(history_message, 'id', 0) < getattr(msg, 'id', 0):
+                    if not claim_text_message_matches_attempt(history_message, pending):
                         continue
                     candidate = classify_claim_text(
                         history_message.content,
@@ -7417,6 +7450,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     except (asyncio.CancelledError, Exception):
                         pass
 
+        pending["ack_delayed"] = True
         return True, False
 
     async def collect_refreshed_purple_after_claim(channel, msg, is_snipe=False):

@@ -236,6 +236,50 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         loaded, _ = _create_test_client(kakera_filter_match_mode_preset='any')
         self.assertEqual(loaded.kakera_filter_match_mode, 'any')
 
+    async def test_mai_screenshot_filters_paid_colors_without_blocking_selected_spheres(self):
+        self.bot.snipe_mode = False
+        self.bot.key_mode = True
+        self.bot.min_kakera = 200000000
+        self.bot.max_claim_rank = self.bot.max_like_rank = 0
+        self.bot.wishlist = ['mai sakurajima']
+        self.bot.only_chaos = self.bot.op_perk_5_only = True
+        self.bot.kakera_filter_match_mode = 'all'
+        self.bot.kakera_emojis = self.bot.chaos_emojis = ['kakeraP', 'kakeraC']
+        self.bot.sphere_click_targets = ['spR', 'spW', 'spD', 'spM', 'spU', 'spO']
+        description = (
+            'Seishun Buta Yarou Series\nClaims: #10\nLikes: #19\n'
+            '<:kakera:123> **2,209,270,140**\n'
+            '<:chaoskey:456> (**1,225,819**) +5% kakera value\n'
+            '<:chaoskey:456> (**1,225,820**) +5% kakera value\n'
+            '<:chaoskey:456> (**1,225,821**) +5% kakera value'
+        )
+        msg, chaos = self.message(description=description)
+        msg.embeds[0].author.name = 'Mai Sakurajima'
+        msg.embeds[0].footer.text = 'Belongs to renma.1'
+        buttons = {'kakeraC': chaos}
+        for index, name in enumerate(('kakeraO', 'kakeraY', 'kakeraP', 'sp2', 'spO', 'spY')):
+            _, button = self.message(name=name, message_id=6700 + index)
+            buttons[name] = button
+            msg.components[0].children.append(button)
+        self.channel.fetch_message.return_value = msg
+
+        # Large key counters satisfy Chaos Key Only, but +5% is not OP5.
+        self.assertEqual(mudae_bot.count_chaos_keys(msg.embeds[0]), 3)
+        await self.bot.events['on_message'](msg)
+        for name in ('kakeraC', 'kakeraO', 'kakeraY', 'spY'):
+            buttons[name].click.assert_not_awaited()
+        for name in ('kakeraP', 'sp2', 'spO'):
+            buttons[name].click.assert_awaited_once()
+
+        # A real OP5 marker admits selected Chaos, not unselected paid O/Y.
+        msg.id = 6800
+        msg.embeds[0].description += '\n<:sp:789>'
+        await self.bot.events['on_message'](msg)
+        chaos.click.assert_awaited_once()
+        buttons['kakeraO'].click.assert_not_awaited()
+        buttons['kakeraY'].click.assert_not_awaited()
+        buttons['spY'].click.assert_not_awaited()
+
     async def test_free_green_every_color_bypasses_filters_colors_power_and_cooldown(self):
         self.bot.only_chaos = self.bot.shop_perk_7_only = self.bot.mk_only = True
         self.bot.op_perk_5_only = self.bot.wish_starwish_kakera_only = True

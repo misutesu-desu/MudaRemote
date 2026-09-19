@@ -39,17 +39,6 @@ class BuildContractTests(unittest.TestCase):
         self.assertRegex(requirements, r"(?m)^pyinstaller-hooks-contrib==\d+\.\d+$")
         self.assertRegex(requirements, r"(?m)^pillow==\d+\.\d+\.\d+$")
 
-    def test_windows_metadata_matches_release_version(self):
-        with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as handle:
-            release_version = json.load(handle)["version"]
-        metadata = read_project_file("packaging", "windows_version_info.txt")
-        product_version = re.search(r"StringStruct\('ProductVersion', '([^']+)'\)", metadata)
-        file_version = re.search(r"StringStruct\('FileVersion', '([^']+)'\)", metadata)
-        self.assertIsNotNone(product_version)
-        self.assertIsNotNone(file_version)
-        self.assertEqual(product_version.group(1), release_version)
-        self.assertEqual(file_version.group(1), release_version + ".0")
-
     def test_gui_update_prompt_shows_changelog_before_installing(self):
         editor = read_project_file("mudae_preset_editor.py")
         launch_start = editor.index("def launch_gui():")

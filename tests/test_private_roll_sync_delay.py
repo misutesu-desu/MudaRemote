@@ -699,3 +699,81 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(channel.sent.count("$tu"), 1)
         self.assertEqual(channel.sent.count("$daily"), 1)
         self.assertEqual(channel.sent.count("$wa"), 30)
+
+    async def test_scheduled_roll_overrides_claim_timing_wait_and_queries_once(self):
+        client = _create_test_client(
+            server_reset_minute=None, humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        client.time_rolls_to_claim_reset = True
+        client.claim_right_available = False
+        client.next_claim_reset_at_utc = now + datetime.timedelta(minutes=120)
+        client.last_tu_query_utc = now
+        channel.snapshot = channel.snapshot.replace(
+            "You can claim now!\nNext claim reset in **60** min.",
+            "You can't claim for **120** min.",
+        ).replace("$rt is available!", "$rt is available in **120** min.")
+        self.assertFalse(client._runtime_is_tu_still_required(client)[0])
+        client.scheduled_roll_due = True
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            self.assertFalse(client.scheduled_roll_due)
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$wa"])
+        self.assertEqual(client.normal_roll_action_owner.state, "completed")
+
+    async def test_scheduled_roll_releases_waiting_owner_without_status_polling(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            owner = client.normal_roll_action_owner
+            owner.defer(client.current_roll_cycle_id)
+            client._predicted_roll_action_handle.cancel()
+            client._predicted_roll_action_handle = None
+            client.claim_right_available = False
+            client.rt_available = False
+            client.next_claim_reset_at_utc = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=2)
+            client.time_rolls_to_claim_reset = True
+            client.scheduled_roll_due = True
+            await client._runtime_check_status(client, channel, "$")
+            self.assertTrue(owner.is_pending(client.current_roll_cycle_id))
+            self.assertFalse(client.scheduled_roll_due)
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$wa"])
+        self.assertEqual(owner.state, "completed")
+
+    async def test_scheduled_due_is_consumed_by_refreshed_predicted_owner(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            client.predicted_roll_state_valid = True
+            client.predicted_roll_cycle_id = client.current_roll_cycle_id
+            client.scheduled_roll_due = True
+            mark_status_dirty(client, {"rolls"}, reason="manual-roll-activity")
+            await client._runtime_check_status(client, channel, "$")
+            self.assertFalse(client.scheduled_roll_due)
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$tu", "$wa"])
+        self.assertFalse(client._runtime_is_tu_still_required(client)[0])
