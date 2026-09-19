@@ -768,7 +768,7 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
             {"reference": SimpleNamespace(message_id=9999)},
         ):
             with self.subTest(invalid=invalid):
-                self.bot._runtime_record_claim_text_evidence(SimpleNamespace(**(valid | invalid)))
+                self.bot._runtime_record_claim_text_evidence(SimpleNamespace(**{**valid, **invalid}))
                 self.assertIsNone(self.bot._claim_text_evidence)
                 self.assertFalse(self.bot._claim_evidence_event.is_set())
         self.bot._runtime_record_claim_text_evidence(SimpleNamespace(**valid))
