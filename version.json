@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.5-beta.1**\n\n### 🐛 Bug Fixes\n- **Scheduled Rolls:** Scheduled roll times now wake rolls that were waiting for a claim reset instead of silently leaving them paused. The safety pause near a roll reset remains in place.\n- **Fewer Repeated `$tu` Checks:** Fixed an extra-status-check loop caused by a scheduled roll remaining marked as due after it had already been picked up.\n- **Accurate Snipe Results:** Wish pings, ordinary roll messages, and old or unrelated confirmations no longer count as successful claims. A delayed Discord acknowledgement alone will not trigger a duplicate claim click.\n\n### ⚡ Improvements\n- **Kakera Filter Check:** Verified the reported Mai Sakurajima preset: paid Kakera must still match your selected colors and enabled filters. Selected spheres, purple Kakera, and free green-background buttons retain their existing exceptions; `min_kakera` controls character claims, not Kakera reactions.\n\nRestart your bot after updating to apply these fixes.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.5-beta.1/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.5-beta.1/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "e4549d93c2ab3502f7ff8e1dd4411eeccfd48fd9dd22ff57179774f64d4b1d1b",
   "source_files": [
     {
       "path": "mudae_bot.py",
