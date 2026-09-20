@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.5-beta.5**\n\n### ✨ New Features\n- **Optional Key Limit Pause:** Added **Pause on Key Limit** in the preset editor under **Advanced Settings → Rolling Options**. Turn it off to keep rolling and collecting Kakera when Mudae reports the key limit, instead of taking the automatic one-hour break.\n- **Your Choice per Preset:** The pause stays enabled by default for existing and new presets. Leave it on to keep the current 60–70 minute recovery pause, or disable it for the presets you want to keep running. Mudae's key cap still applies.\n\nSave your preset and restart your bot after updating to apply these changes.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.5-beta.5/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.5-beta.5/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "81b748356602d3486f50754106f78b79ced9b3da153667fa1bd46d9a12cddb27",
   "source_files": [
     {
       "path": "mudae_bot.py",
