@@ -3,32 +3,61 @@ import datetime
 import inspect
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import mudae_bot
 from mudae_core import (
     GlobalIntervalCoordinator, apply_authoritative_roll_remaining,
-    calculate_kakera_power_cost, clear_status_dirty, get_normal_roll_cycle_state,
-    has_perk_eight_buttons, has_perk_eight_discount,
+    clear_status_dirty, get_normal_roll_cycle_state,
 )
 from tests.test_roll_window_production import _build_runtime, _Channel
 from tests.test_kakera_snipe_ownership import _create_test_client, _build_roll_message
 
 
 class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_own_roll_uses_perk_eight_colors_at_full_power_after_discount(self):
+    async def test_own_roll_perk_eight_spawn_falls_back_to_configured_colors_at_full_price(self):
+        """The four-button Perk 8 spawn without the visible marker uses configured colours."""
         client, channel = _create_test_client()
-        client.kakera_emojis = []
+        client.kakera_emojis = ['kakeraO']
+        client.chaos_emojis = ['kakeraO']
+        client.sphere_perk_emojis = ['kakeraY']
+        client.dk_consumption = 36
+        message, perk_button = _build_roll_message(
+            channel, 1013, client.user.id, client.user.name, client=client,
+        )
+        message.embeds[0].description += '\n46 <:sp:123> ✅'
+        configured_button = None
+        for offset in range(3):
+            other, other_button = _build_roll_message(
+                channel, 2000 + offset, client.user.id, client.user.name,
+                kakera_emoji='kakeraO' if offset == 0 else 'kakeraY',
+            )
+            if offset == 0:
+                configured_button = other_button
+            message.components[0].children.extend(other.components[0].children)
+        async def deliver_result():
+            await client.events['on_message'](SimpleNamespace(
+                id=3013, channel=channel, author=message.author,
+                content='<:kakeraO:123> **snipe-bot +150** ($k)',
+                created_at=message.created_at, embeds=[], components=[], interaction=None,
+            ))
+        perk_button.click.side_effect = deliver_result
+        configured_button.click.side_effect = deliver_result
+        await client.events['on_message'](message)
+        perk_button.click.assert_not_awaited()
+        configured_button.click.assert_awaited_once()
+        self.assertEqual(client.current_dk_power, 64)
+
+    async def test_own_roll_strict_perk_eight_marker_overrides_colors_at_half_price(self):
+        """Only the visible diamond / 2 marker selects Perk 8 colours and halves the price."""
+        client, channel = _create_test_client()
+        client.kakera_emojis = ['kakeraO']
         client.sphere_perk_emojis = ['kakeraY']
         client.dk_consumption = 36
         message, button = _build_roll_message(
             channel, 1013, client.user.id, client.user.name, client=client,
         )
-        message.embeds[0].description += '\n46 <:sp:123> ✅'
-        for offset in range(3):
-            other, _ = _build_roll_message(
-                channel, 2000 + offset, client.user.id, client.user.name, kakera_emoji='kakeraO',
-            )
-            message.components[0].children.extend(other.components[0].children)
+        message.embeds[0].description += '\n💎 / 2'
         async def deliver_result():
             await client.events['on_message'](SimpleNamespace(
                 id=3013, channel=channel, author=message.author,
@@ -38,21 +67,69 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
         button.click.side_effect = deliver_result
         await client.events['on_message'](message)
         button.click.assert_awaited_once()
-        self.assertEqual(client.current_dk_power, 64)
+        self.assertEqual(client.current_dk_power, 82)
 
-    def test_post_discount_perk_eight_selection_does_not_discount_power(self):
-        description = '46 <:sp:123> ✅'
-        buttons = [SimpleNamespace(emoji=SimpleNamespace(name=name)) for name in
-                   ('spO', 'kakeraO', 'kakeraY', 'kakeraY', 'kakeraY')]
-        rows = [SimpleNamespace(children=buttons)]
-        self.assertTrue(has_perk_eight_buttons(description, rows))
-        self.assertFalse(has_perk_eight_discount(description))
-        self.assertEqual(calculate_kakera_power_cost(30, has_chaos_discount=True), 15)
-        self.assertEqual(calculate_kakera_power_cost(30), 30)
-        self.assertFalse(has_perk_eight_buttons('46 spheres', rows))
-        self.assertFalse(has_perk_eight_buttons(description, [SimpleNamespace(children=buttons[:3])]))
-        buttons[-1].emoji.name = 'kakeraP'
-        self.assertFalse(has_perk_eight_buttons(description, rows))
+    async def test_key_limit_notice_interrupts_rolling_but_still_collects_notice_and_followup_kakera(self):
+        """A key-cap notice stops rolling without discarding that roll's own Kakera."""
+        client, channel = _create_test_client(
+            rolling_enabled=True, immediate_kakera_click_preset=True,
+        )
+        client.is_actively_rolling = True
+        on_message = client.events['on_message']
+        message, button = _build_roll_message(
+            channel, 1014, client.user.id, client.user.name, client=client,
+        )
+        message.embeds[0].description += "\nYou've reached the limit of 1,000 keys!"
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await on_message(message)
+        button.click.assert_awaited_once()
+        self.assertTrue(client.key_limit_hit)
+        self.assertTrue(client.interrupt_rolling)
+        self.assertEqual(client._roll_interrupt_reason, "key-limit")
+
+        followup, followup_button = _build_roll_message(
+            channel, 1015, client.user.id, client.user.name, client=client,
+        )
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await on_message(followup)
+        followup_button.click.assert_awaited_once()
+
+    async def test_key_limit_notice_matches_configurable_amounts_and_locales(self):
+        for notice in (
+            "You've reached the limit of 2,200 keys!",
+            "Você atingiu o limite de 2.200 chaves!",
+            "¡Has alcanzado el límite de 2.200 llaves!",
+        ):
+            with self.subTest(notice=notice):
+                client, channel = _create_test_client(
+                    rolling_enabled=True, immediate_kakera_click_preset=True,
+                )
+                client.is_actively_rolling = True
+                message, button = _build_roll_message(
+                    channel, 1016, client.user.id, client.user.name, client=client,
+                )
+                message.embeds[0].description += "\n" + notice
+                with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+                    await client.events['on_message'](message)
+                button.click.assert_awaited_once()
+                self.assertTrue(client.key_limit_hit, notice)
+                self.assertTrue(client.interrupt_rolling, notice)
+
+    async def test_key_limit_notice_without_qualifying_keys_does_not_satisfy_chaos_only(self):
+        """The key-cap amount alone is not visible key evidence for Chaos Key Only."""
+        client, channel = _create_test_client(
+            rolling_enabled=True, immediate_kakera_click_preset=True, only_chaos=True,
+        )
+        client.is_actively_rolling = True
+        message, button = _build_roll_message(
+            channel, 1017, client.user.id, client.user.name, client=client,
+        )
+        message.embeds[0].description += "\nYou've reached the limit of 2,200 keys!"
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await client.events['on_message'](message)
+        button.click.assert_not_awaited()
+        self.assertTrue(client.key_limit_hit)
+        self.assertTrue(client.interrupt_rolling)
 
     def test_empty_snapshot_does_not_teach_zero_replenishment(self):
         client = _build_runtime()

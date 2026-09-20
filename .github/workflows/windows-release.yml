@@ -13,18 +13,36 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-release-v4.9.5-beta.1
+  group: windows-release-v4.9.5-beta.2
   cancel-in-progress: false
 
 jobs:
+  compatibility:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q mudae_bot.py mudae_preset_editor.py mudae_core tests build.py
+
   build-and-publish:
+    needs: compatibility
     if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.5-beta.1
-      RELEASE_TAG: v4.9.5-beta.1
-      RELEASE_TITLE: MudaRemote v4.9.5-beta.1
+      RELEASE_VERSION: 4.9.5-beta.2
+      RELEASE_TAG: v4.9.5-beta.2
+      RELEASE_TITLE: MudaRemote v4.9.5-beta.2
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -88,7 +106,7 @@ jobs:
           if ($versionInfo.ProductVersion -ne $env:RELEASE_VERSION) {
             throw "ProductVersion mismatch: expected $env:RELEASE_VERSION, got $($versionInfo.ProductVersion)."
           }
-          if ($versionInfo.FileVersion -ne "4.9.5.1") {
+          if ($versionInfo.FileVersion -ne "4.9.5.2") {
             throw "Unexpected numeric FileVersion: $($versionInfo.FileVersion)."
           }
           if ($versionInfo.OriginalFilename -ne "MudaRemote.exe") {
@@ -133,7 +151,7 @@ jobs:
 
       - name: Write release notes
         shell: pwsh
-        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.5-beta.1.md -Destination .\release_notes.md
+        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.5-beta.2.md -Destination .\release_notes.md
 
       - name: Publish GitHub beta release
         shell: pwsh

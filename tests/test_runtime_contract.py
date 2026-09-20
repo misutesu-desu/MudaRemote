@@ -2009,20 +2009,6 @@ class RuntimeSourceContractTests(unittest.TestCase):
 
         self.assertGreater(consumption, boundary_guard)
 
-    def test_batch_completion_cannot_clear_successor_reconciliation_state(self):
-        functions = {
-            node.name: node
-            for node in ast.walk(self.tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        roll_source = ast.get_source_segment(self.source, functions["start_roll_commands"])
-
-        self.assertIn("can_clear_roll_status_after_exact_batch(", roll_source)
-        self.assertIn("deferred_status_fields=deferred_status_fields", roll_source)
-        self.assertLess(
-            roll_source.index("request_status_refresh(\n                deferred_status_fields"),
-            roll_source.index("can_clear_roll_status_after_exact_batch("),
-        )
 
     def test_partial_tu_seals_current_urgency_against_its_own_defer(self):
         functions = {

@@ -1564,7 +1564,6 @@ def daily_rolls_decision(
     ack_retry_ready,
     claim_hour_active=False,
     now_utc=None,
-    dynamic_round=None,
     claim_interval=180,
 ):
     """Classify Auto ``$rolls`` work without conflating timing and claim state.
@@ -1587,10 +1586,7 @@ def daily_rolls_decision(
         return "key-mode-disabled"
 
     in_claim_round = False
-    if dynamic_round is not None:
-        total_rounds = dynamic_claim_round(claim_interval or 180, None)[1]
-        in_claim_round = dynamic_round >= total_rounds
-    elif next_claim_reset_at_utc is not None:
+    if next_claim_reset_at_utc is not None and next_claim_reset_at_utc > now:
         round_num, total_rounds = dynamic_claim_round(
             claim_interval or 180,
             next_claim_reset_at_utc,

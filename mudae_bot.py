@@ -207,7 +207,7 @@ try:
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
@@ -240,7 +240,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount, has_perk_eight_buttons,
+        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
@@ -477,6 +477,7 @@ REGEX_PATTERNS = {
     "MK_BONUS": r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$mk\)",
     "ROLLS_COUNT": r"(?:you have|vous avez|tienes|você tem)\s+\*{0,2}([\d,.]+)\*{0,2}\s+rolls?(.*?)(?:left|restantes?|restants?\b)",
     "ROLL_LIMIT": r"\broulette is limited to\s+\*{0,2}[\d,.]+\*{0,2}\s+uses? per hour\b",
+    "KEY_LIMIT": r"\b(?:limit of|limite de|límite de)\s+\*{0,2}\d[\d,.]*\*{0,2}\s+(?:keys|chaves|llaves)\b",
     "BONUS_ROLLS": r"\(\+\*{0,2}([\d,.]+)\*{0,2}\s+\$(us|mk)\)",
     "ROLL_RESET_TU": r"(?:reset|reinicialização|reinicio).*?(?:in|em|en|dans)\s+(?:.*?)\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min",
     "KAKERA_EARNED": r"\+(\d+)\s*<:kakera:",
@@ -1236,6 +1237,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._daily_rolls_claim_wake_handle = None
     client._daily_rolls_claim_wake_at_utc = None
     client._daily_rolls_claim_hour_until_utc = None
+    client._daily_rolls_observed_claim_reset_utc = None
     client._rolls_item_limit_reset_at_utc = None
     client._rolls_ack_retry_after = 0.0
     client._auto_rolls_ack_ambiguous_cycle_id = None
@@ -1845,7 +1847,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         evidence = classify_claim_text(
             message.content,
             pending['character_name'],
-            claim_identities(),
+            claim_identities(getattr(message, "guild", None)),
             user_id=getattr(getattr(client, 'user', None), 'id', None),
         )
         if evidence.outcome == ClaimOutcome.INCONCLUSIVE:
@@ -3868,10 +3870,25 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         elif current_cycle is None and limit_reset_at is not None and now_utc >= limit_reset_at:
             client.rolls_item_used_count = 0
             client._rolls_item_limit_reset_at_utc = None
-        claim_hour_until = getattr(client, '_daily_rolls_claim_hour_until_utc', None)
-        claim_hour_active = bool(claim_hour_until and now_utc < claim_hour_until)
-        if claim_hour_until is not None and not claim_hour_active:
+        claim_hour_until = client._daily_rolls_claim_hour_until_utc
+        observed_reset = client._daily_rolls_observed_claim_reset_utc
+        claim_reset = client.next_claim_reset_at_utc
+        claim_hour_active = bool(
+            claim_hour_until and observed_reset and now_utc < claim_hour_until
+            and (now_utc >= observed_reset or claim_reset == observed_reset)
+        )
+        if not claim_hour_active:
             client._daily_rolls_claim_hour_until_utc = None
+            client._daily_rolls_observed_claim_reset_utc = None
+        # Preserve an observed reset inside this roll interval, not a verdict
+        # derived from a cached threshold round or from the latch itself.
+        if (
+            client.auto_rolls_only_claim_hour and claim_reset
+            and client.roll_reset_at_utc
+            and now_utc < claim_reset <= client.roll_reset_at_utc
+        ):
+            client._daily_rolls_claim_hour_until_utc = client.roll_reset_at_utc
+            client._daily_rolls_observed_claim_reset_utc = claim_reset
         decision = daily_rolls_decision(
             enabled=client.auto_rolls_enabled,
             only_claim_hour=client.auto_rolls_only_claim_hour,
@@ -3889,11 +3906,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ack_retry_ready=time.monotonic() >= client._rolls_ack_retry_after,
             claim_hour_active=claim_hour_active,
             now_utc=now_utc,
-            dynamic_round=getattr(client, "_dynamic_claim_round", None),
             claim_interval=getattr(client, "claim_interval", 180),
         )
-        if client.auto_rolls_only_claim_hour and decision in {"wait-claim-reset", "execute"} and client.roll_reset_at_utc is not None:
-            client._daily_rolls_claim_hour_until_utc = client.roll_reset_at_utc
         deadline = next_daily_rolls_wake_deadline(decision, client.next_claim_reset_at_utc)
         if deadline is not None:
             schedule_daily_rolls_claim_wake(deadline)
@@ -4831,11 +4845,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             )
             if private_count_sync_pending:
                 suppress_physical_tu = True
-            if action_status_policy == "defer-executing":
-                # Executing ownership starts before the first `$wa`: Auto
-                # `$rolls`, prerequisites, and Smart Timing all own the same
-                # visible transaction. Unrelated dirty state waits for release.
-                client._roll_batch_deferred_status_fields.update(status_dirty_fields(client))
             if (locally_advanced or local_boundary_wake) and not status_dirty_fields(client):
                 # The action callback owns the visible Discord work.  Returning
                 # here is what prevents a predictable internal wake from
@@ -5011,7 +5020,22 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # Only the configured random window delays status queries. Account
             # staggering is applied at startup, not again before each $tu.
             # Reuse one target while checks coalesce or retry.
+            reasons = status_refresh_reasons(client)
+            recovering_claim = bool(
+                status_dirty_fields(client) & {"claim", "rt"}
+                and (
+                    client.pending_claim
+                    or any(reason in {
+                        "claim-verification-inconclusive", "claim-rejected-cooldown",
+                        "manual-rt-ack-timeout", "rt-attempt-inconclusive",
+                        "pending-claim-unresolved",
+                    } for reason in reasons)
+                )
+            )
             timing_deadline = getattr(client, "_tu_timing_deadline_utc", None)
+            if recovering_claim:
+                timing_deadline = now_utc
+                client._tu_timing_deadline_utc = timing_deadline
             if timing_deadline is None:
                 delay = 0.0
                 if client.tu_query_count > 0 and action_owner.state != "executing":
@@ -5037,9 +5061,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if now_utc < timing_deadline:
                 return
 
-            if client.tu_query_count > 0 and client.delay_seconds > 0:
+            if not recovering_claim and client.tu_query_count > 0 and client.delay_seconds > 0:
                 await _interruptible_sleep(client.delay_seconds)
-            reasons = status_refresh_reasons(client)
             reason_text = ", ".join(reasons) if reasons else ("scheduled-roll" if client.scheduled_roll_due else "status-boundary")
             tu_may_reconcile_pending_power = any(
                 reason == "external-kakera-result-reconcile"
@@ -6341,8 +6364,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         client.is_actively_rolling = False
         client._active_normal_roll_cycle_id = None
         client._active_normal_batch_remaining = 0
-        deferred_status_fields = set(client._roll_batch_deferred_status_fields)
-        deferred_status_fields.update(status_dirty_fields(client))
+        deferred_status_fields = client._roll_batch_deferred_status_fields & status_dirty_fields(client)
         client._roll_batch_deferred_status_fields.clear()
         now_utc = datetime.datetime.now(timezone.utc)
         advanced_during_batch = set()
@@ -6352,12 +6374,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.is_paused:
             mark_status_dirty(client, {"rolls"}, reason="pause-during-roll")
             return
-        if deferred_status_fields:
-            request_status_refresh(
-                deferred_status_fields,
-                reason="roll-batch-deferred-status",
-                urgent=True,
-            )
         if client.roll_reset_at_utc is not None and now_utc >= client.roll_reset_at_utc:
             if "rolls" not in advanced_during_batch:
                 request_status_refresh(
@@ -6365,7 +6381,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     reason="roll-reset-passed-during-rolling-uncertain",
                     urgent=True,
                 )
-        elif remaining_batch_rolls <= 0 and client._rolls_received >= client._rolls_sent:
+        elif not client.interrupt_rolling and remaining_batch_rolls <= 0 and client._rolls_received >= client._rolls_sent:
             if can_clear_roll_status_after_exact_batch(
                 client,
                 logical_roll_cycle_id=logical_roll_cycle_id,
@@ -6391,6 +6407,12 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 {"rolls"},
                 reason="normal-roll-responses-missing",
                 urgent=True,
+            )
+
+        unresolved_fields = status_dirty_fields(client)
+        if unresolved_fields:
+            request_status_refresh(
+                unresolved_fields, reason="roll-batch-deferred-status", urgent=True,
             )
 
         if not getattr(client, 'immediate_kakera_click', True) and getattr(client, 'collected_kakera_rolls', []):
@@ -6888,10 +6910,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     f"Retrying {pending['character_name']} once after $tu confirmed the claim was not consumed.",
                 ))
             return
-        if pending.get("claim_was_available"):
-            await finalize_successful_claim(pending, pending_channel, "$tu cooldown confirmation")
-        else:
-            BotLogger.log("Claim Verification remains inconclusive after $tu because the attempt used $rt/cooldown state.", preset_name, "WARN")
+        BotLogger.log(
+            f"Claim Verification: {pending['character_name']} remains unconfirmed. "
+            "$tu shows a consumed claim, but does not identify who was claimed.",
+            preset_name, "WARN",
+        )
         clear_pending_claim(pending)
 
     async def verify_snipe_outcome(client, channel, msg, pending):
@@ -6939,7 +6962,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     owner = get_character_owner(refreshed.embeds[0])
                     owner_evidence = classify_claim_owner(
                         owner,
-                        claim_identities(),
+                        claim_identities(getattr(refreshed, "guild", None) or getattr(channel, "guild", None)),
                         user_id=getattr(client.user, 'id', None),
                     )
                     if owner_evidence.outcome in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE):
@@ -6991,7 +7014,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     candidate = classify_claim_text(
                         history_message.content,
                         char_name,
-                        claim_identities(),
+                        claim_identities(getattr(history_message, "guild", None) or getattr(channel, "guild", None)),
                         user_id=getattr(client.user, 'id', None),
                     )
                     if candidate.outcome in (ClaimOutcome.SUCCESS, ClaimOutcome.FAILURE):
@@ -7039,6 +7062,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         wl_claims = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
 
+        async def claim_collected_candidate(message, value):
+            # A combined normal/$rolls batch can outlive its first buttons.
+            # Refresh only candidates we are about to claim, not every roll.
+            try:
+                current = await channel.fetch_message(message.id)
+            except Exception as exc:
+                BotLogger.log(f"Skipping cached claim: could not refresh roll {message.id}: {exc}", preset_name, "WARN")
+                return False
+            if not current or not current.embeds:
+                return False
+            current_embed = current.embeds[0]
+            if get_character_owner(current_embed) or not has_claim_option(current, current_embed, client.claim_emojis):
+                return False
+            return await claim_character(client, channel, current, kakera_value=value)
+
         attempted = set()
         for msg in mudae_messages:
             if not msg.embeds: continue
@@ -7082,7 +7120,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if wl_claims:
                     wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     for m_c, n, v, _ in wl_claims:
-                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                        if await claim_collected_candidate(m_c, v):
                             msg_claimed_id = m_c.id
                             attempted.add(n)
                             break
@@ -7091,7 +7129,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if msg_claimed_id == -1 and client.claim_right_available and char_claims:
                     char_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     for m_c, n, v, _ in char_claims:
-                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                        if await claim_collected_candidate(m_c, v):
                             msg_claimed_id = m_c.id
                             attempted.add(n)
                             break
@@ -7102,7 +7140,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if wl_claims:
                     wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     for m_c, n, v, _ in wl_claims:
-                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                        if await claim_collected_candidate(m_c, v):
                             msg_claimed_id = m_c.id
                             attempted.add(n)
                             break
@@ -7111,7 +7149,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if msg_claimed_id == -1 and client.claim_right_available and valid_chars:
                     valid_chars.sort(key=lambda x: (x[2], x[0].id), reverse=True)
                     for m_c, n, v, _ in valid_chars:
-                        if await claim_character(client, channel, m_c, is_kakera=False, kakera_value=v):
+                        if await claim_collected_candidate(m_c, v):
                             msg_claimed_id = m_c.id
                             attempted.add(n)
                             break
@@ -7330,7 +7368,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         target_list = get_active_kakera_emojis(
             is_mk_roll=is_mk_roll, is_external_roll=is_snipe,
             has_chaos_discount=chaos_count > 0,
-            has_perk_eight_discount=has_perk_eight_buttons(marker_text, msg.components),
+            has_perk_eight_discount=has_sp_perk,
         )
         if not kakera_button_is_eligible(button, target_list, filter_reason, allow_special_purple):
             return None
@@ -7737,6 +7775,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     for btn in comp.children:
                         has_emoji = hasattr(btn.emoji, 'name') and btn.emoji.name is not None
                         is_claim_button = has_emoji and btn.emoji.name in client.claim_emojis
+                        if getattr(btn, "disabled", False):
+                            continue
                         is_verified_free_button = is_claim_button and (is_free_event(embed) or check_is_green(btn))
                         if (is_free_claim and is_verified_free_button) or (not is_free_claim and is_claim_button):
                             if client.debug_mode:
@@ -8383,7 +8423,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client.rolling_enabled and client.is_actively_rolling and is_self_roll:
             client._rolls_received += 1
             desc = embed.description or ""
-            if any(limit in desc for limit in ["limit of 1,000 keys", "limite de 1.000 chaves", "límite de 1.000 llaves"]):
+            # The key cap is server-configurable, so the notice may report any
+            # amount (1,000, 2,200, ...); only the surrounding wording is
+            # stable. The amount itself is never parsed into keys, discounts,
+            # or ownership signals.
+            if re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
                 client.interrupt_rolling = True
                 client._roll_interrupt_reason = "key-limit"
                 client.key_limit_hit = True
@@ -8392,7 +8436,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     await asyncio.sleep(3600 + random.randint(0, 600))
                     if client._immediate_check_event: client._immediate_check_event.set()
                 client.loop.create_task(_key_limit_recovery())
-                return
+                # The notice roll itself still carries collectible Kakera and
+                # spheres, so processing continues instead of returning early.
 
             c_name = embed.author.name.lower()
             series = desc.splitlines()[0].lower() if desc else ""

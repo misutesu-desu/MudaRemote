@@ -415,6 +415,9 @@ def clear_status_dirty(client, fields=None) -> None:
         dirty.difference_update(_normalize_fields(fields))
     client._status_dirty_fields = dirty
     client.desync_detected = bool(dirty)
+    deferred = getattr(client, "_roll_batch_deferred_status_fields", None)
+    if deferred is not None:
+        deferred.intersection_update(dirty)
     pending = getattr(client, "_pending_status_request", None)
     if pending is not None:
         if fields is None:
