@@ -1050,7 +1050,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             mk_kakera_emojis_preset=None,
             server_reset_minute_preset=None,
             shop_perk_7_only_preset=False, kakera_filter_match_mode_preset="all",
-            hourly_tu_refresh_preset=False, perk_eight_only_preset=False):
+            hourly_tu_refresh_preset=False, perk_eight_only_preset=False,
+            pause_on_key_limit_preset=True):
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
@@ -1108,6 +1109,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client.roll_speed = roll_speed
     client.mudae_prefix = mudae_prefix
     client.key_mode = key_mode
+    client.pause_on_key_limit = bool(pause_on_key_limit_preset)
     client.delay_seconds = delay_seconds
     client.sniped_messages = set()
     client.snipe_happened = False
@@ -8521,7 +8523,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # amount (1,000, 2,200, ...); only the surrounding wording is
             # stable. The amount itself is never parsed into keys, discounts,
             # or ownership signals.
-            if not client.key_limit_hit and re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
+            if client.pause_on_key_limit and not client.key_limit_hit and re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
                 client.interrupt_rolling = True
                 client._roll_interrupt_reason = "key-limit"
                 client.key_limit_hit = True
@@ -8947,6 +8949,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
                 kakera_filter_match_mode_preset=preset_data.get("kakera_filter_match_mode", "all"),
                 hourly_tu_refresh_preset=preset_data.get("hourly_tu_refresh", False),
                 perk_eight_only_preset=preset_data.get("perk_eight_only", False),
+                pause_on_key_limit_preset=preset_data.get("pause_on_key_limit", True),
             )
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):

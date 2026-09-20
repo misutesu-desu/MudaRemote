@@ -648,6 +648,7 @@ DEFAULTS = {
 BOOL_SETTINGS = [
     ("rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)", True),
     ("use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)", False),
+    ("pause_on_key_limit", "Pause on Key Limit", True),
     ("snipe_mode", "Snipe Characters (Claim characters rolled by other people)", False),
     ("snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)", False),
     ("series_snipe_mode", "Series Sniping (Auto-claim any character from specific shows/games)", False),
@@ -2397,6 +2398,10 @@ class PresetEditor:
         roll_sub = self.create_subframe(roll_frame.content, rolling_var, "rolling")
 
         self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
+        self.add_checkbox(
+            roll_sub, "pause_on_key_limit", "Pause on Key Limit",
+            description="Pause for 60-70 minutes at the key limit.\nTurn off to keep rolling and collecting Kakera; Mudae's key cap still applies."
+        )
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
         self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
         self.add_text_field(
@@ -3319,7 +3324,7 @@ class PresetEditor:
             self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
 
         # Populate boolean fields
-        for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
+        for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only",
                     "auto_free_claim",
@@ -3616,7 +3621,7 @@ class PresetEditor:
             data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
 
         # Collect boolean fields
-        for key in ["rolling", "use_slash_rolls", "snipe_mode", "snipe_ignore_min_kakera_reset",
+        for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",
                     "series_snipe_mode", "series_snipe_only_self_rolls", "kakera_snipe_mode", "kakera_reaction_snipe_mode",
                     "reactive_snipe_on_own_rolls", "key_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only",
                     "auto_free_claim",

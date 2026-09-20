@@ -94,6 +94,24 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
             await on_message(followup)
         followup_button.click.assert_awaited_once()
 
+    async def test_disabled_key_limit_pause_keeps_rolling_and_collecting(self):
+        client, channel = _create_test_client(
+            rolling_enabled=True, immediate_kakera_click_preset=True,
+            pause_on_key_limit_preset=False,
+        )
+        client.is_actively_rolling = True
+        for message_id in (1201, 1202):
+            message, button = _build_roll_message(
+                channel, message_id, client.user.id, client.user.name, client=client,
+            )
+            message.embeds[0].description += "\nYou've reached the limit of 2,200 keys!"
+            with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+                await client.events["on_message"](message)
+            button.click.assert_awaited_once()
+            self.assertFalse(client.key_limit_hit)
+            self.assertFalse(client.interrupt_rolling)
+        self.assertEqual(client._rolls_received, 2)
+
     async def test_key_limit_recovery_waits_once_then_requests_fresh_status(self):
         client, channel = _create_test_client(rolling_enabled=True)
         client.is_actively_rolling = True
