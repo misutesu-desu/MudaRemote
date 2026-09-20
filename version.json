@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.5-beta.4**\n\n### 🐛 Bug Fixes\n- **Key Limit Pause:** Reaching your server's key limit, including 2,200 keys, now holds the recovery pause instead of repeatedly checking `$tu` and trying another roll. Queued rolls and automatic roll refills stay paused until recovery, then the bot checks your status before resuming.\n- **Ready Rolls Getting Stuck:** Fixed a pre-roll `$tu` loop where a pending Kakera power update could keep available rolls waiting even with a claim ready. Normal rolling can continue while power is reconciled; Auto `$mk` still waits for confirmed power.\n\nRestart your bot after updating to apply these changes.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.5-beta.4/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.5-beta.4/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "555649696c0b346a10d9ff7fe44469c869d07c4e60addb48e313bf1efd73f610",
   "source_files": [
     {
       "path": "mudae_bot.py",
