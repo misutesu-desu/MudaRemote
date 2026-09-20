@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-release-v4.9.5-beta.2
+  group: windows-release-v4.9.5-beta.3
   cancel-in-progress: false
 
 jobs:
@@ -40,9 +40,9 @@ jobs:
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 4.9.5-beta.2
-      RELEASE_TAG: v4.9.5-beta.2
-      RELEASE_TITLE: MudaRemote v4.9.5-beta.2
+      RELEASE_VERSION: 4.9.5-beta.3
+      RELEASE_TAG: v4.9.5-beta.3
+      RELEASE_TITLE: MudaRemote v4.9.5-beta.3
     steps:
       - name: Check out the requested release revision
         uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
           if ($versionInfo.ProductVersion -ne $env:RELEASE_VERSION) {
             throw "ProductVersion mismatch: expected $env:RELEASE_VERSION, got $($versionInfo.ProductVersion)."
           }
-          if ($versionInfo.FileVersion -ne "4.9.5.2") {
+          if ($versionInfo.FileVersion -ne "4.9.5.3") {
             throw "Unexpected numeric FileVersion: $($versionInfo.FileVersion)."
           }
           if ($versionInfo.OriginalFilename -ne "MudaRemote.exe") {
@@ -151,7 +151,7 @@ jobs:
 
       - name: Write release notes
         shell: pwsh
-        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.5-beta.2.md -Destination .\release_notes.md
+        run: Copy-Item -LiteralPath .\packaging\release-notes-v4.9.5-beta.3.md -Destination .\release_notes.md
 
       - name: Publish GitHub beta release
         shell: pwsh

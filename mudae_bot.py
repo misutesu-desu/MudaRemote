@@ -485,6 +485,7 @@ REGEX_PATTERNS = {
     "KAKERA_VALUE": r"\**([\d,.]+)\**<:kakera:",
     "MAINTENANCE": r"For\s+(?:some|(\d+))\s+minutes",
     "EXTRA_ROLLS": r"\+\**(\d+)\**\s*rolls?",
+    "CHAOS_POWER_DISCOUNT": r"\b50\s*%\s*(?:kakera power discount when you clicked on this chaos kakera|discount on the react power used for this chaos kakera)\b",
     "USER_BOLD": r"^\s*\*\*([^*]+)\*\*"
 }
 
@@ -1209,8 +1210,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     ]
     client.oc_collect_after_red = bool(oc_collect_after_red_preset)
     client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
-    client.sphere_game_refill_at_utc = None
     client.sphere_button_budget = SphereButtonBudget()
+    client._sphere_quota_recheck_requested = False
+    client.sphere_game_refill_at_utc = None
     client._pre_roll_status_required = False
     client._pre_roll_status_cycle_id = None
     client._pre_roll_status_requested_at = None
@@ -1247,6 +1249,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._normal_roll_deferred_until_utc = None
     client._normal_roll_deferred_cycle_id = None
     client._confirmed_kakera_c_bonus_until = 0.0
+    client._confirmed_kakera_c_discount_until = 0.0
+    client._confirmed_kakera_c_discount_channel_id = None
     client.collected_kakera_rolls = []
     client._pending_mk_roll = None
     client._mk_roll_generation = 0
@@ -1922,8 +1926,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return False
         if not message_addresses_self(message):
             return False
-        c_low = message.content.lower()
-        if not any(phrase in c_low for phrase in ("can't react to kakera", "nÃ£o pode reagir", "no puedes reaccionar")):
+        c_low = message.content.lower().replace("*", "").replace("_", "")
+        if not any(phrase in c_low for phrase in ("can't react to kakera", "não pode reagir", "no puedes reaccionar")):
             return False
 
         cooldown_minutes = parse_timer_minutes("KAKERA_COOLDOWN", c_low)
@@ -2143,10 +2147,38 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         interaction = await target.click()
         return interaction if return_interaction else True
 
+    def _request_sphere_quota_recheck():
+        """Reconcile exhausted provisional sphere usage through the status loop."""
+        client._sphere_quota_recheck_requested = True
+        request_status_refresh({"points"}, reason="sphere-quota-exhausted", urgent=True)
+
+    def _sphere_cap_refill_elapsed():
+        """Return whether an authoritative cap has outlived its known refill."""
+        budget = client.sphere_button_budget
+        refill_at = client.sphere_game_refill_at_utc
+        return (
+            budget.limit is not None
+            and budget.clicked is not None
+            and budget.clicked >= budget.limit
+            and not budget.pending
+            and refill_at is not None
+            and datetime.datetime.now(timezone.utc) >= refill_at
+        )
+
     async def click_character_sphere(msg, button, interaction_key, emoji_name, character_name):
         """Sphere delivery has no Kakera +amount ($k) confirmation contract."""
         budget = client.sphere_button_budget
-        if not budget.available or client.is_paused or is_maintenance_active():
+        if not budget.available:
+            # Pending reservations make the cap provisional, and a confirmed
+            # cap whose known refill already elapsed needs the same $tu. Ask
+            # once per episode; the next successful budget.observe re-arms it.
+            if not getattr(client, "_sphere_quota_recheck_requested", False) and (
+                budget.pending or _sphere_cap_refill_elapsed()
+            ):
+                _request_sphere_quota_recheck()
+            client.kakera_interaction_ledger.release(interaction_key)
+            return False
+        if client.is_paused or is_maintenance_active():
             client.kakera_interaction_ledger.release(interaction_key)
             return False
         budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
@@ -2347,9 +2379,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if not terminal:
                 cancel_kakera_power_click(power_token)
                 client.kakera_interaction_ledger.release(interaction_key)
-            elif confirmed and power_cost > 0 and str(emoji_name).rstrip("2").casefold() != "kakerad":
-                # Dark rewards may refund power; their status reconciliation
-                # must settle first. Other paid results can refill immediately.
+            elif confirmed and power_cost > 0 and str(emoji_name).rstrip("2").casefold() not in ("kakerad", "kakerac"):
+                # Dark rewards may refund power and a Chaos kakeraC may still
+                # be settling its bonus/discount evidence; their status
+                # reconciliation must settle first. Other paid results can
+                # refill immediately.
                 await refill_dk_if_needed(channel, power_cost)
 
     async def guarded_reaction(message, emoji):
@@ -2740,7 +2774,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if is_free_purple and client.collect_purple_kakera:
             return True
         now = datetime.datetime.now(datetime.timezone.utc)
-        if client.kakera_react_available: return True
+        # Unknown readiness is not a rejection; paid clicks still need known,
+        # sufficient power in prepare_kakera_click.
+        if client.kakera_react_available is not False: return True
         if client.kakera_react_cooldown_until_utc and now >= client.kakera_react_cooldown_until_utc:
             client.kakera_react_available = True
             client.kakera_react_cooldown_until_utc = None
@@ -2794,6 +2830,14 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         return cost
 
     def should_auto_refill_dk(current_power, required_power):
+        if (
+            time.monotonic() < client._confirmed_kakera_c_discount_until
+            or ("power" in status_dirty_fields(client)
+                and "chaos-kakera-discount" in status_refresh_reasons(client))
+        ):
+            # Let the Chaos bonus settle before spending a refill; then use
+            # Mudae's authoritative power rather than guessing the refund.
+            return False
         return should_refill_kakera_power(
             current_power,
             required_power,
@@ -2822,6 +2866,21 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         except Exception as error:
             BotLogger.log(f"DK refill failed: {error}", preset_name, "ERROR")
             return False
+
+    def chaos_kakera_discount_reported(content):
+        text = str(content or "").replace("*", "").replace("_", "")
+        return re.search(REGEX_PATTERNS["CHAOS_POWER_DISCOUNT"], text, re.IGNORECASE) is not None
+
+    def consume_chaos_kakera_discount():
+        """Mark power dirty once for this account's reported Chaos discount."""
+        client._confirmed_kakera_c_discount_until = 0.0
+        mark_dk_power_changed()
+        request_status_refresh({"power"}, reason="chaos-kakera-discount", urgent=True)
+        BotLogger.log(
+            "Chaos kakera power discount reported; requesting an authoritative power refresh.",
+            preset_name,
+            "KAKERA",
+        )
 
     def get_kakera_action_lock():
         if client._kakera_action_lock is None:
@@ -5086,6 +5145,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         if response_future.done():
                             tu_content = response_future.result()
                             break
+                        if tu_power_revision is None:
+                            # Include changes arriving while the send awaits
+                            # Discord's acknowledgement, not just after it.
+                            tu_power_revision = client.dk_power_revision
                         if not await send_tu_command(cmd_channel):
                             # A delayed reply can arrive while the retry waits
                             # for channel inactivity or its global pacing slot.
@@ -5102,11 +5165,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                                 "ERROR",
                             )
                             return
-                        if tu_power_revision is None:
-                            # A later local click makes this response unsafe for
-                            # automatic DK decisions, even if the response
-                            # arrives after that click.
-                            tu_power_revision = client.dk_power_revision
                         client.tu_query_count += 1
                         timeout = 5.5 if attempt == 0 else 8.0
                         try:
@@ -5140,7 +5198,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 record_tu_success(client)
                 c_lower = tu_content.lower()
 
-            if client.sphere_button_budget.observe(tu_content, request_started_at):
+            sphere_budget_observed = client.sphere_button_budget.observe(tu_content, request_started_at)
+            if sphere_budget_observed:
+                client._sphere_quota_recheck_requested = False
                 BotLogger.log(
                     f"Sphere buttons: {client.sphere_button_budget.clicked}/{client.sphere_button_budget.limit} clicked (confirmed by $tu).",
                     preset_name, "INFO",
@@ -5450,14 +5510,17 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     material_reanchor=roll_anchor_materially_reanchored,
                 )
 
-            if any(x in c_lower for x in ["you __can__ react", "pode reagir", "pegar kakera", "puedes__ reaccionar", "puedes reaccionar", "pouvez__ réagir", "pouvez réagir"]):
+            reaction_text = c_lower.replace("*", "").replace("_", "")
+            if any(x in reaction_text for x in ["can't react", "cannot react", "não pode reagir", "no puedes reaccionar", "ne pouvez pas réagir"]):
+                client.kakera_react_available = False
+                k_cooldown = parse_timer_minutes("KAKERA_COOLDOWN", reaction_text)
+                client.kakera_react_cooldown_until_utc = (
+                    now_utc + datetime.timedelta(minutes=k_cooldown)
+                    if k_cooldown is not None else None
+                )
+            elif any(x in reaction_text for x in ["you can react", "pode reagir", "pegar kakera", "puedes reaccionar", "pouvez réagir"]):
                 client.kakera_react_available = True
                 client.kakera_react_cooldown_until_utc = None
-            elif any(x in c_lower for x in ["can't react", "não pode", "no puedes"]):
-                client.kakera_react_available = False
-                k_cooldown = parse_timer_minutes("KAKERA_COOLDOWN", c_lower)
-                if k_cooldown is not None:
-                    client.kakera_react_cooldown_until_utc = now_utc + datetime.timedelta(minutes=k_cooldown)
 
             fresh_fields = set()
             if claim_ready or claim_reset_minutes is not None:
@@ -5470,7 +5533,10 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 fresh_fields.add("power")
             if dk_stock_match or re.search(REGEX_PATTERNS["DK_READY"], c_lower) or re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower):
                 fresh_fields.add("dk")
-            if "$p" in c_lower or "$daily" in c_lower:
+            if sphere_budget_observed or (
+                not client._sphere_quota_recheck_requested
+                and ("$p" in c_lower or "$daily" in c_lower)
+            ):
                 fresh_fields.add("points")
             clear_status_dirty(client, fresh_fields)
             if "rolls" not in fresh_fields:
@@ -8146,6 +8212,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     )
                 if kakera_result.emoji_name.rstrip("2").casefold() == "kakerac":
                     client._confirmed_kakera_c_bonus_until = time.monotonic() + 10.0
+                    client._confirmed_kakera_c_discount_until = time.monotonic() + 10.0
+                    client._confirmed_kakera_c_discount_channel_id = message.channel.id
                 remaining = get_current_dk_power()
                 BotLogger.log(
                     f"Kakera result confirmed (+{kakera_result.amount}); "
@@ -8153,6 +8221,26 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     preset_name,
                     "KAKERA",
                 )
+        elif (
+            message.channel.id == client._confirmed_kakera_c_discount_channel_id
+            and re.search(r"\(\s*\$k\s*\)", message.content or "", re.IGNORECASE)
+        ):
+            # A different account's result breaks attribution of anonymous
+            # follow-up bonus lines in this shared channel.
+            client._confirmed_kakera_c_discount_until = 0.0
+
+        if (
+            message.content and not message.embeds
+            and message.channel.id == client._confirmed_kakera_c_discount_channel_id
+            and time.monotonic() < client._confirmed_kakera_c_discount_until
+            and chaos_kakera_discount_reported(message.content)
+            and (
+                kakera_result is not None
+                and kakera_result.emoji_name.rstrip("2").casefold() == "kakerac"
+                or not re.search(r"\(\s*\$k\s*\)", message.content, re.IGNORECASE)
+            )
+        ):
+            consume_chaos_kakera_discount()
 
         if message.content and "under maintenance" in message.content.lower():
             m_match = re.search(REGEX_PATTERNS["MAINTENANCE"], message.content, re.IGNORECASE)
