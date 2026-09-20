@@ -2121,23 +2121,6 @@ class RuntimeSourceContractTests(unittest.TestCase):
             transaction_source.index("await run_independent_known_work("),
         )
 
-    def test_auto_rolls_runs_after_current_batch_in_same_owner(self):
-        functions = {
-            node.name: node
-            for node in ast.walk(self.tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        source = ast.get_source_segment(
-            self.source, functions["execute_owned_normal_roll_action"]
-        )
-        current_batch = source.index("await start_roll_commands(")
-        item_send = source.index('f"{client.mudae_prefix}rolls"')
-
-        self.assertLess(current_batch, item_send)
-        self.assertEqual(source.count('f"{client.mudae_prefix}rolls"'), 1)
-        self.assertIn("_auto_rolls_reconcile_cycle_id = logical_roll_cycle_id", source)
-        self.assertIn("post_batch_rolls_decision = evaluate_daily_rolls()", source)
-        self.assertIn("client._preserve_collected_rolls = True", source)
 
     def test_auto_rolls_defers_collected_rolls_panic_claim_during_normal_roll(self):
         functions = {

@@ -189,6 +189,90 @@ def _advance_at_reset(client, now_utc):
 class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
     """Timing Variation delays the status prerequisite, never the owned roll."""
 
+    async def test_key_limit_blocks_status_and_queued_roll_until_recovery(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            client.key_limit_hit = True
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+            self.assertEqual(channel.sent, ["$tu"])
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            self.assertEqual(channel.sent, ["$tu"])
+            self.assertTrue(client.key_limit_hit)
+            client.key_limit_hit = False
+            mark_status_dirty(client, {"rolls"}, reason="key-limit-recovery")
+            await client._runtime_check_status(client, channel, "$")
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent, ["$tu", "$tu", "$wa"])
+
+    async def test_key_limit_mid_batch_stops_rolls_and_does_not_spend_refill(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        channel.snapshot = channel.snapshot.replace("**1** rolls", "**2** rolls")
+        client.auto_rolls_enabled = True
+        send = channel.send
+
+        async def deliver_cap(content, **kwargs):
+            result = await send(content, **kwargs)
+            if content == "$wa":
+                client.key_limit_hit = True
+                client.interrupt_rolling = True
+                client._roll_interrupt_reason = "key-limit"
+            return result
+
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)), \
+                mock.patch.object(channel, "send", side_effect=deliver_cap):
+            await client._runtime_check_status(client, channel, "$")
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+        self.assertEqual(channel.sent, ["$tu", "$wa"])
+        self.assertEqual(client.normal_roll_action_owner.state, "completed")
+        self.assertTrue(client.key_limit_hit)
+
+    async def test_pending_power_reconciliation_does_not_loop_before_ready_rolls(self):
+        client = _create_test_client(
+            server_reset_minute=None, last_tu_snapshot_complete=False,
+            humanization_enabled=False,
+        )
+        channel = _attach_status_channel(client)
+        channel.snapshot = channel.snapshot.replace("**1** rolls", "**29** rolls")
+        self.addCleanup(lambda: [
+            task.close() for task in client.loop.created_tasks
+            if hasattr(task, "close")
+        ])
+        with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+            await client._runtime_check_status(client, channel, "$")
+            mark_status_dirty(client, {"power"}, reason="power-changed-during-tu")
+            # No power observation can settle this unrelated pending update.
+            channel.snapshot = channel.snapshot.replace("Power: **100%**\n", "")
+            client.auto_mk_enabled = True
+            client.mk_rolls_left = 1
+            for _ in range(3):
+                await client._runtime_check_status(client, channel, "$")
+            client.loop.close_created_tasks = False
+            client._predicted_roll_action_handle.fire()
+            await client.loop.created_tasks.pop()
+        self.assertEqual(channel.sent.count("$tu"), 1)
+        self.assertEqual(channel.sent.count("$wa"), 29)
+        self.assertNotIn("$mk", channel.sent)
+
     async def test_stale_roll_callback_does_not_request_status_or_rearm(self):
         for owner_state in ("executing", "waiting_claim", "completed", "deferred_window"):
             with self.subTest(owner_state=owner_state):

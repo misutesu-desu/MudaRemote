@@ -94,6 +94,50 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
             await on_message(followup)
         followup_button.click.assert_awaited_once()
 
+    async def test_key_limit_recovery_waits_once_then_requests_fresh_status(self):
+        client, channel = _create_test_client(rolling_enabled=True)
+        client.is_actively_rolling = True
+        client._immediate_check_event = asyncio.Event()
+        recovery_coroutines = []
+
+        def capture_recovery(coroutine):
+            if coroutine.cr_code.co_name == "_key_limit_recovery":
+                recovery_coroutines.append(coroutine)
+            else:
+                coroutine.close()
+
+        with mock.patch.object(client.loop, "create_task", side_effect=capture_recovery):
+            for message_id in (1101, 1102):
+                message, _ = _build_roll_message(
+                    channel, message_id, client.user.id, client.user.name,
+                )
+                message.components = []
+                message.embeds[0].description += "\nYou've reached the limit of 2,200 keys!"
+                await client.events["on_message"](message)
+        self.addCleanup(lambda: [coroutine.close() for coroutine in recovery_coroutines])
+        self.assertEqual(len(recovery_coroutines), 1)
+        self.assertTrue(client.key_limit_hit)
+        client._immediate_check_event.clear()
+        timer_started = asyncio.Event()
+        timer_finished = asyncio.Event()
+
+        async def wait_for_recovery(delay):
+            self.assertGreaterEqual(delay, 3600)
+            self.assertLessEqual(delay, 4200)
+            timer_started.set()
+            await timer_finished.wait()
+
+        with mock.patch.object(mudae_bot.asyncio, "sleep", side_effect=wait_for_recovery):
+            recovery = asyncio.create_task(recovery_coroutines[0])
+            await timer_started.wait()
+            self.assertTrue(client.key_limit_hit)
+            self.assertFalse(client._immediate_check_event.is_set())
+            timer_finished.set()
+            await recovery
+        self.assertFalse(client.key_limit_hit)
+        self.assertTrue(client._immediate_check_event.is_set())
+        self.assertTrue({"claim", "rolls"}.issubset(mudae_bot.status_dirty_fields(client)))
+
     async def test_key_limit_notice_matches_configurable_amounts_and_locales(self):
         for notice in (
             "You've reached the limit of 2,200 keys!",

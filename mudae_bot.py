@@ -3175,7 +3175,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             if channel.id != client.target_channel_id:
                 channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
             cmd = (command_name or "").strip().lstrip('/')
-            if not cmd or client.is_paused or is_maintenance_active(): return False
+            if not cmd or client.is_paused or client.key_limit_hit or is_maintenance_active(): return False
             # The send-end path and the later character result can both observe a
             # boundary race.  Keep the correlation token on the client so those
             # observations can be idempotently attributed to one command.
@@ -4161,7 +4161,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             and checked_at is not None
             and checked_at.date() == now_utc.date()
             and (now_utc - checked_at).total_seconds() < 60
-            and not status_dirty_fields(client)
+            and not (status_dirty_fields(client) & {"claim", "rolls", "rt"})
         ):
             return True
         if client.last_tu_snapshot_complete and client._pre_roll_status_cycle_id == logical_roll_cycle_id:
@@ -4177,7 +4177,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 client.last_tu_snapshot_complete
                 and client._pre_roll_status_cycle_id == logical_roll_cycle_id
                 and client.current_roll_cycle_id == logical_roll_cycle_id
-                and not status_dirty_fields(client)
+                and not (status_dirty_fields(client) & {"claim", "rolls", "rt"})
             )
         finally:
             client._pre_roll_status_required = False
@@ -4197,6 +4197,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         # A callback queued during status parsing may outlive its pending
         # action. Only explicit Auto $rolls reconciliation can re-enter it.
         if not owner.is_pending(logical_roll_cycle_id) and not reconciling_auto_rolls:
+            return
+        if client.key_limit_hit:
             return
         if client.is_paused or is_maintenance_active():
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
@@ -4270,7 +4272,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 return
 
         if post_batch_rolls_decision is None:
-            post_batch_rolls_decision = evaluate_daily_rolls()
+            post_batch_rolls_decision = "key-limit" if client.key_limit_hit else evaluate_daily_rolls()
         if post_batch_rolls_decision == "wait-claim-reset":
             BotLogger.log("Auto $rolls: waiting for locally predicted claim cycle.", preset_name, "DEBUG", client)
             if client.collected_rolls:
@@ -4838,7 +4840,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, scheduler_cycle_id=None):
         request_hourly_status_refresh()
-        if client.is_paused or is_maintenance_active(): return
+        if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         if (
@@ -5564,6 +5566,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 schedule_periodic_sanity_sync(now_utc)
                 client._pre_roll_status_cycle_id = client.current_roll_cycle_id
                 client._pre_roll_status_requested_at = client._tu_last_sent_at_utc or request_started_at
+            if client.key_limit_hit:
+                return
             if client._pre_roll_status_required:
                 # The requesting owner resumes only after all status commands
                 # and parsing finish; do not schedule a competing roll callback.
@@ -5585,10 +5589,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 )
                 if scheduled_trigger:
                     client.scheduled_roll_due = False
-                return
-            if client.key_limit_hit:
-                BotLogger.log("Recovering from key limit. Skipping rolls.", preset_name, "INFO")
-                client.key_limit_hit = False
                 return
 
             is_timing_window = bool(client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60)
@@ -5678,7 +5678,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if client._us_lock is None:
             client._us_lock = asyncio.Lock()
         async with client._us_lock:
-            if client._us_in_flight:
+            if client._us_in_flight or client.key_limit_hit:
                 return False
             cmd_channel = _get_command_channel() or fallback_channel
             chunks = [amount]
@@ -5686,6 +5686,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 chunks = [20] * (amount // 20) + ([amount % 20] if amount % 20 else [])
             sent = 0
             for chunk in chunks:
+                if client.key_limit_hit:
+                    break
                 if not await guarded_send(cmd_channel, f"{client.mudae_prefix}us {chunk}"):
                     if sent == 0:
                         client._us_retry_after = time.monotonic() + 30
@@ -5981,7 +5983,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def process_mk_rolls(client, channel, current_cycle_id):
         if channel.id != client.target_channel_id:
             channel = client.get_channel(client.target_channel_id) or client._main_channel or channel
-        if client.is_paused or not getattr(client, 'auto_mk_enabled', True) or client.mk_rolls_left <= 0: return
+        if client.is_paused or client.key_limit_hit or not getattr(client, 'auto_mk_enabled', True) or client.mk_rolls_left <= 0: return
+        # Ordinary rolls do not spend power; $mk must still wait for its
+        # own resource snapshot when a Kakera result is being reconciled.
+        if "power" in status_dirty_fields(client):
+            return
 
         current_power = get_current_dk_power()
         if current_power is None:
@@ -6159,7 +6165,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
-        if client.is_paused or is_maintenance_active(): return
+        if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
         if channel.id != client.target_channel_id:
@@ -8515,13 +8521,15 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             # amount (1,000, 2,200, ...); only the surrounding wording is
             # stable. The amount itself is never parsed into keys, discounts,
             # or ownership signals.
-            if re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
+            if not client.key_limit_hit and re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
                 client.interrupt_rolling = True
                 client._roll_interrupt_reason = "key-limit"
                 client.key_limit_hit = True
                 BotLogger.log("Key Limit Hit. Pausing 1h.", preset_name, "ERROR")
                 async def _key_limit_recovery():
                     await asyncio.sleep(3600 + random.randint(0, 600))
+                    client.key_limit_hit = False
+                    request_status_refresh({"claim", "rolls"}, reason="key-limit-recovery", urgent=True)
                     if client._immediate_check_event: client._immediate_check_event.set()
                 client.loop.create_task(_key_limit_recovery())
                 # The notice roll itself still carries collectible Kakera and
