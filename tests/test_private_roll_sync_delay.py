@@ -385,6 +385,81 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(client.normal_roll_action_owner.state, "completed")
                 self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
 
+    async def test_auto_rolls_reconciliation_hands_off_changed_cycle_without_status_loop(self):
+        async def ack_timeout(_awaitable, timeout):
+            raise asyncio.TimeoutError
+
+        # An early refill snapshot advances the cycle; a changed timer rebases it.
+        for reset_minutes, returned_rolls, patience in ((60, 2, False), (5, 2, False), (60, 0, False), (60, 16, True)):
+            with self.subTest(reset_minutes=reset_minutes, returned_rolls=returned_rolls, patience=patience):
+                client = _create_test_client(
+                    server_reset_minute=None, last_tu_snapshot_complete=False,
+                    humanization_enabled=patience, humanization_window_minutes=0,
+                )
+                channel = _attach_status_channel(client)
+                channel.snapshot = channel.snapshot.replace(
+                    "Next rolls reset in **60**", "Next rolls reset in **2**",
+                )
+                client.auto_rolls_enabled = True
+                client.humanization_inactivity_seconds = 5 if patience else 0
+                status = client._runtime_check_status
+                wait_cell = status.__closure__[status.__code__.co_freevars.index("humanized_wait_and_proceed")]
+                wait_cell.cell_contents = mock.AsyncMock()
+                self.addCleanup(lambda client=client: [
+                    task.close() for task in client.loop.created_tasks if hasattr(task, "close")
+                ])
+
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await status(client, channel, "$")
+                    old_cycle = client.current_roll_cycle_id
+                    client.loop.close_created_tasks = False
+                    client._predicted_roll_action_handle.fire()
+                    with mock.patch.object(mudae_bot.asyncio, "wait_for", new=ack_timeout):
+                        await client.loop.created_tasks.pop()
+                    self.assertEqual(channel.sent, ["$tu", "$wa", "$rolls"])
+
+                    channel.snapshot = channel.snapshot.replace(
+                        "**1** rolls", "**{}** rolls".format(returned_rolls),
+                    ).replace(
+                        "Next rolls reset in **2**",
+                        "Next rolls reset in **{}**".format(reset_minutes),
+                    )
+                    await status(client, channel, "$")
+                    self.assertNotEqual(client.current_roll_cycle_id, old_cycle)
+                    # Repeated scheduler ticks must not poll status while the
+                    # reconciled rolls wait for their existing action callback.
+                    for _ in range(3):
+                        await status(client, channel, "$")
+                    self.assertEqual(channel.sent.count("$tu"), 2)
+                    if patience:
+                        channel.recent_messages = [SimpleNamespace(
+                            author=SimpleNamespace(id=2002),
+                            created_at=datetime.datetime.now(datetime.timezone.utc),
+                        )]
+
+                    async def quiet_channel(_seconds, *_args, **_kwargs):
+                        if channel.recent_messages:
+                            self.assertEqual(channel.sent.count("$wa"), 1)
+                            await status(client, channel, "$")
+                            self.assertEqual(channel.sent.count("$tu"), 2)
+                            channel.recent_messages.clear()
+                        return True
+
+                    handle = client._predicted_roll_action_handle
+                    if handle is not None:
+                        handle.fire()
+                        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=quiet_channel):
+                            await client.loop.created_tasks.pop()
+                    for _ in range(3):
+                        await status(client, channel, "$")
+
+                self.assertEqual(channel.sent.count("$tu"), 2)
+                self.assertEqual(channel.sent.count("$rolls"), 1)
+                self.assertEqual(channel.sent.count("$wa"), 1 + returned_rolls)
+                self.assertEqual(client.normal_roll_action_owner.state, "completed")
+                self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
+
     async def test_exhausted_rolls_wait_through_cache_expiry_for_imminent_reset(self):
         client = _create_test_client(server_reset_minute=None, humanization_enabled=False)
         channel = _attach_status_channel(client)

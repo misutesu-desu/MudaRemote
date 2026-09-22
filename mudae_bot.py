@@ -5568,6 +5568,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 schedule_periodic_sanity_sync(now_utc)
                 client._pre_roll_status_cycle_id = client.current_roll_cycle_id
                 client._pre_roll_status_requested_at = client._tu_last_sent_at_utc or request_started_at
+                if (
+                    "rolls" in fresh_fields
+                    and action_owner.state == "executing"
+                    and action_owner.cycle_id != client.current_roll_cycle_id
+                    and action_owner.cycle_id in {
+                        client._auto_rolls_ack_ambiguous_cycle_id,
+                        client._auto_rolls_reconcile_cycle_id,
+                    }
+                    and not normal_roll_action_state_is_dirty(client, client.current_roll_cycle_id)
+                ):
+                    # The item response belongs to the newly observed cycle.
+                    # Release the old transaction instead of polling forever
+                    # for a snapshot of a cycle that has already expired.
+                    old_cycle_id = action_owner.cycle_id
+                    if client.rolls_used_cycle_id == old_cycle_id:
+                        client.rolls_used_cycle_id = client.current_roll_cycle_id
+                    client._auto_rolls_ack_ambiguous_cycle_id = None
+                    client._auto_rolls_reconcile_cycle_id = None
+                    client._rolls_ack_retry_after = 0.0
+                    client._normal_roll_transaction_cycle_id = None
+                    action_owner.schedule(
+                        cycle_id=client.current_roll_cycle_id, now_utc=now_utc,
+                    )
+                    await complete_owned_normal_roll_transaction(old_cycle_id, channel)
             if client.key_limit_hit:
                 return
             if client._pre_roll_status_required:
