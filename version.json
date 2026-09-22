@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.5-beta.6**\n\n### 🐛 Bug Fixes\n- **Repeated $tu Checks:** Fixed a loop that could keep checking status instead of using available rolls after Auto $rolls crossed a reset or Mudae updated the reset timer. This stops the repeated status messages and unnecessary Discord requests from this loop.\n- **Rolling with Patience:** Available rolls now resume after the channel becomes quiet in this recovery path, without getting stuck checking $tu. Your configured patience setting stays respected.\n- **Safe Auto $rolls Recovery:** A missing acknowledgement no longer leaves rolling stuck across a reset. The bot checks the available rolls and continues without immediately sending the same $rolls request again.\n\nRestart your bot after updating to apply these changes.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.5-beta.6/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.5-beta.6/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "a10eadf5be888de759634392284618b349a81a0eb6c14942212b3485b4cb4683",
   "source_files": [
     {
       "path": "mudae_bot.py",
