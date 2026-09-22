@@ -5588,6 +5588,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     client._auto_rolls_reconcile_cycle_id = None
                     client._rolls_ack_retry_after = 0.0
                     client._normal_roll_transaction_cycle_id = None
+                    client._preserve_collected_rolls = True
                     action_owner.schedule(
                         cycle_id=client.current_roll_cycle_id, now_utc=now_utc,
                     )

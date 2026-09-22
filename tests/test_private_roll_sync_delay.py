@@ -402,6 +402,19 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                 )
                 client.auto_rolls_enabled = True
                 client.humanization_inactivity_seconds = 5 if patience else 0
+                if reset_minutes == 5:
+                    send = channel.send
+
+                    async def acknowledged_send(content, **kwargs):
+                        message = await send(content, **kwargs)
+                        if content == "$rolls":
+                            await client.events["on_raw_reaction_add"](SimpleNamespace(
+                                message_id=message.id, user_id=mudae_bot.TARGET_BOT_ID,
+                                emoji=SimpleNamespace(name="✅"),
+                            ))
+                        return message
+
+                    channel.send = acknowledged_send
                 status = client._runtime_check_status
                 wait_cell = status.__closure__[status.__code__.co_freevars.index("humanized_wait_and_proceed")]
                 wait_cell.cell_contents = mock.AsyncMock()
@@ -415,9 +428,13 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                     old_cycle = client.current_roll_cycle_id
                     client.loop.close_created_tasks = False
                     client._predicted_roll_action_handle.fire()
-                    with mock.patch.object(mudae_bot.asyncio, "wait_for", new=ack_timeout):
+                    if reset_minutes == 5:
                         await client.loop.created_tasks.pop()
+                    else:
+                        with mock.patch.object(mudae_bot.asyncio, "wait_for", new=ack_timeout):
+                            await client.loop.created_tasks.pop()
                     self.assertEqual(channel.sent, ["$tu", "$wa", "$rolls"])
+                    self.assertEqual(client.rolls_item_used_count, int(reset_minutes == 5))
 
                     channel.snapshot = channel.snapshot.replace(
                         "**1** rolls", "**{}** rolls".format(returned_rolls),
@@ -459,6 +476,7 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(channel.sent.count("$wa"), 1 + returned_rolls)
                 self.assertEqual(client.normal_roll_action_owner.state, "completed")
                 self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
+                self.assertIsNone(client._auto_rolls_reconcile_cycle_id)
 
     async def test_exhausted_rolls_wait_through_cache_expiry_for_imminent_reset(self):
         client = _create_test_client(server_reset_minute=None, humanization_enabled=False)
