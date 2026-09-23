@@ -102,34 +102,41 @@ def _create_snipe_only_client():
     mudae_bot._mobile_runtime_stop_event.clear()
     with mock.patch.object(mudae_bot.commands, "Bot", return_value=bot):
         mudae_bot.run_bot(
-            token="dummy-token",
-            prefix="!",
-            target_channel_id=1234,
-            roll_command="wa",
-            min_kakera=300,
-            delay_seconds=0,
-            mudae_prefix="$",
-            log_function=lambda *_args, **_kwargs: None,
             preset_name="snipe-startup-production",
-            key_mode=False,
-            start_delay=0,
-            snipe_mode=True,
-            snipe_delay=0,
-            snipe_ignore_min_kakera_reset=False,
-            wishlist=[],
-            series_snipe_mode=False,
-            series_snipe_delay=0,
-            series_wishlist=[],
-            roll_speed=1.0,
-            kakera_snipe_mode_preset=False,
-            kakera_snipe_threshold_preset=0,
-            enable_reactive_self_snipe_preset=False,
-            rolling_enabled=False,
-            kakera_reaction_snipe_mode_preset=False,
-            kakera_reaction_snipe_delay_preset=0,
-            kakera_reaction_snipe_targets=[],
-            command_channel_id_preset="5678",
-            auto_oc_enabled_preset=True,
+            preset_data={
+                "token": "dummy-token",
+                "prefix": "!",
+                "channel_id": 1234,
+                "roll_command": "wa",
+                "min_kakera": 300,
+                "delay_seconds": 0,
+                "mudae_prefix": "$",
+                "key_mode": False,
+                "start_delay": 0,
+                "snipe_mode": True,
+                "snipe_delay": 0,
+                "snipe_ignore_min_kakera_reset": False,
+                "wishlist": [],
+                "series_snipe_mode": False,
+                "series_snipe_delay": 0,
+                "series_wishlist": [],
+                "roll_speed": 1.0,
+                "kakera_snipe_mode": False,
+                "kakera_snipe_threshold": 0,
+                "reactive_snipe_on_own_rolls": False,
+                "rolling": False,
+                "kakera_reaction_snipe_mode": False,
+                "kakera_reaction_snipe_delay": 0,
+                "kakera_reaction_snipe_targets": [],
+                "command_channel_id": "5678",
+                "auto_oc_enabled": True,
+                "dk_power_management": True,
+                "reactive_snipe_delay": 0.5,
+                "auto_us_limit": 10,
+                "auto_mk_enabled": False,
+                "auto_rolls_limit": 10,
+            },
+            log_function=lambda *_args, **_kwargs: None,
         )
 
     client_getter = lambda: bot
@@ -182,7 +189,7 @@ class SnipeStartupProductionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(command_channel.sent, ["$tu"])
 
         # Existing administrative routing remains intact after handshake.
-        await client._runtime_run_available_sphere_games(roll_channel, _SphereStatus())
+        await client.sphere_runtime.run_available_sphere_games(roll_channel, _SphereStatus())
         self.assertEqual(command_channel.sent, ["$tu", "$oc 1"])
         self.assertEqual(roll_channel.sent, [])
 

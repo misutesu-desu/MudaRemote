@@ -84,35 +84,43 @@ def _create_test_client(
     mudae_bot._mobile_runtime_stop_event.clear()
     with mock.patch.object(mudae_bot.commands, "Bot", return_value=bot):
         mudae_bot.run_bot(
-            token="dummy_token",
-            prefix="!",
-            target_channel_id=123456,
-            roll_command="wa",
-            min_kakera=100,
-            delay_seconds=0,
-            mudae_prefix="$",
-            log_function=lambda *_args, **_kwargs: None,
             preset_name=preset_name,
-            key_mode=False,
-            start_delay=0,
-            snipe_mode=False,
-            snipe_delay=0,
-            snipe_ignore_min_kakera_reset=False,
-            wishlist=[],
-            series_snipe_mode=False,
-            series_snipe_delay=0,
-            series_wishlist=[],
-            roll_speed=1.5,
-            kakera_snipe_mode_preset=False,
-            kakera_snipe_threshold_preset=0,
-            enable_reactive_self_snipe_preset=False,
-            rolling_enabled=rolling_enabled,
-            kakera_reaction_snipe_mode_preset=False,
-            kakera_reaction_snipe_delay_preset=0,
-            kakera_reaction_snipe_targets=[],
-            server_reset_minute_preset=server_reset_minute,
-            humanization_enabled=humanization_enabled,
-            humanization_window_minutes=humanization_window_minutes,
+            preset_data={
+                "token": "dummy_token",
+                "prefix": "!",
+                "channel_id": 123456,
+                "roll_command": "wa",
+                "min_kakera": 100,
+                "delay_seconds": 0,
+                "mudae_prefix": "$",
+                "key_mode": False,
+                "start_delay": 0,
+                "snipe_mode": False,
+                "snipe_delay": 0,
+                "snipe_ignore_min_kakera_reset": False,
+                "wishlist": [],
+                "series_snipe_mode": False,
+                "series_snipe_delay": 0,
+                "series_wishlist": [],
+                "roll_speed": 1.5,
+                "kakera_snipe_mode": False,
+                "kakera_snipe_threshold": 0,
+                "reactive_snipe_on_own_rolls": False,
+                "rolling": rolling_enabled,
+                "kakera_reaction_snipe_mode": False,
+                "kakera_reaction_snipe_delay": 0,
+                "kakera_reaction_snipe_targets": [],
+                "server_reset_minute": server_reset_minute,
+                "humanization_enabled": humanization_enabled,
+                "humanization_window_minutes": humanization_window_minutes,
+                "humanization_inactivity_seconds": 0,
+                "dk_power_management": True,
+                "reactive_snipe_delay": 0.5,
+                "auto_us_limit": 10,
+                "auto_mk_enabled": False,
+                "auto_rolls_limit": 10,
+            },
+            log_function=lambda *_args, **_kwargs: None,
         )
     bot.loop = _MockLoop()
     bot.last_tu_snapshot_complete = last_tu_snapshot_complete
@@ -384,6 +392,99 @@ class PrivateRollSyncDelayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(channel.sent.count("$wa"), 1 + returned_rolls)
                 self.assertEqual(client.normal_roll_action_owner.state, "completed")
                 self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
+
+    async def test_auto_rolls_reconciliation_hands_off_changed_cycle_without_status_loop(self):
+        async def ack_timeout(_awaitable, timeout):
+            raise asyncio.TimeoutError
+
+        # An early refill snapshot advances the cycle; a changed timer rebases it.
+        for reset_minutes, returned_rolls, patience in ((60, 2, False), (5, 2, False), (60, 0, False), (60, 16, True)):
+            with self.subTest(reset_minutes=reset_minutes, returned_rolls=returned_rolls, patience=patience):
+                client = _create_test_client(
+                    server_reset_minute=None, last_tu_snapshot_complete=False,
+                    humanization_enabled=patience, humanization_window_minutes=0,
+                )
+                channel = _attach_status_channel(client)
+                channel.snapshot = channel.snapshot.replace(
+                    "Next rolls reset in **60**", "Next rolls reset in **2**",
+                )
+                client.auto_rolls_enabled = True
+                client.humanization_inactivity_seconds = 5 if patience else 0
+                if reset_minutes == 5:
+                    send = channel.send
+
+                    async def acknowledged_send(content, **kwargs):
+                        message = await send(content, **kwargs)
+                        if content == "$rolls":
+                            await client.events["on_raw_reaction_add"](SimpleNamespace(
+                                message_id=message.id, user_id=mudae_bot.TARGET_BOT_ID,
+                                emoji=SimpleNamespace(name="✅"),
+                            ))
+                        return message
+
+                    channel.send = acknowledged_send
+                status = client._runtime_check_status
+                wait_cell = status.__closure__[status.__code__.co_freevars.index("humanized_wait_and_proceed")]
+                wait_cell.cell_contents = mock.AsyncMock()
+                self.addCleanup(lambda client=client: [
+                    task.close() for task in client.loop.created_tasks if hasattr(task, "close")
+                ])
+
+                with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
+                        mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
+                    await status(client, channel, "$")
+                    old_cycle = client.current_roll_cycle_id
+                    client.loop.close_created_tasks = False
+                    client._predicted_roll_action_handle.fire()
+                    if reset_minutes == 5:
+                        await client.loop.created_tasks.pop()
+                    else:
+                        with mock.patch.object(mudae_bot.asyncio, "wait_for", new=ack_timeout):
+                            await client.loop.created_tasks.pop()
+                    self.assertEqual(channel.sent, ["$tu", "$wa", "$rolls"])
+                    self.assertEqual(client.rolls_item_used_count, int(reset_minutes == 5))
+
+                    channel.snapshot = channel.snapshot.replace(
+                        "**1** rolls", "**{}** rolls".format(returned_rolls),
+                    ).replace(
+                        "Next rolls reset in **2**",
+                        "Next rolls reset in **{}**".format(reset_minutes),
+                    )
+                    await status(client, channel, "$")
+                    self.assertNotEqual(client.current_roll_cycle_id, old_cycle)
+                    # Repeated scheduler ticks must not poll status while the
+                    # reconciled rolls wait for their existing action callback.
+                    for _ in range(3):
+                        await status(client, channel, "$")
+                    self.assertEqual(channel.sent.count("$tu"), 2)
+                    if patience:
+                        channel.recent_messages = [SimpleNamespace(
+                            author=SimpleNamespace(id=2002),
+                            created_at=datetime.datetime.now(datetime.timezone.utc),
+                        )]
+
+                    async def quiet_channel(_seconds, *_args, **_kwargs):
+                        if channel.recent_messages:
+                            self.assertEqual(channel.sent.count("$wa"), 1)
+                            await status(client, channel, "$")
+                            self.assertEqual(channel.sent.count("$tu"), 2)
+                            channel.recent_messages.clear()
+                        return True
+
+                    handle = client._predicted_roll_action_handle
+                    if handle is not None:
+                        handle.fire()
+                        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=quiet_channel):
+                            await client.loop.created_tasks.pop()
+                    for _ in range(3):
+                        await status(client, channel, "$")
+
+                self.assertEqual(channel.sent.count("$tu"), 2)
+                self.assertEqual(channel.sent.count("$rolls"), 1)
+                self.assertEqual(channel.sent.count("$wa"), 1 + returned_rolls)
+                self.assertEqual(client.normal_roll_action_owner.state, "completed")
+                self.assertIsNone(client._auto_rolls_ack_ambiguous_cycle_id)
+                self.assertIsNone(client._auto_rolls_reconcile_cycle_id)
 
     async def test_exhausted_rolls_wait_through_cache_expiry_for_imminent_reset(self):
         client = _create_test_client(server_reset_minute=None, humanization_enabled=False)

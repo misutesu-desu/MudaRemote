@@ -97,7 +97,7 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_key_limit_pause_keeps_rolling_and_collecting(self):
         client, channel = _create_test_client(
             rolling_enabled=True, immediate_kakera_click_preset=True,
-            pause_on_key_limit_preset=False,
+            pause_on_key_limit=False,
         )
         client.is_actively_rolling = True
         for message_id in (1201, 1202):
@@ -232,7 +232,7 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
         client.command_pacer.maximum_delay = 0
         client._sphere_game_lock = asyncio.Lock()
         send_roll = inspect.getclosurevars(client._runtime_start_roll_commands).nonlocals['send_roll_command']
-        run_game = inspect.getclosurevars(client._runtime_run_available_sphere_games).nonlocals['run_sphere_game']
+        run_game = client.sphere_runtime.run_sphere_game
         await client._sphere_game_lock.acquire()
         roll = asyncio.create_task(send_roll(channel, 'wa'))
         try:

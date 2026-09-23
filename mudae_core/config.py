@@ -1,6 +1,7 @@
 """Atomic JSON persistence and shared preset validation."""
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -110,6 +111,54 @@ def parse_inactive_hours(value):
 def validate_preset(data, resolved_token=None, require_runtime=True):
     """Return validation errors, optionally allowing an incomplete editor draft."""
     errors = []
+    loot_mode = data.get("loot_mode", "off")
+    if loot_mode not in ("off", "kl", "scrap"):
+        errors.append("Loot mode must be off, kl, or scrap.")
+
+    def setting_int(key, default, minimum):
+        value = data.get(key, default)
+        if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value).strip()):
+            errors.append("{} must be an integer >= {}.".format(key, minimum))
+            return None
+        try:
+            result = int(str(value).strip())
+        except ValueError:
+            errors.append("{} must be an integer >= {}.".format(key, minimum))
+            return None
+        if result < minimum:
+            errors.append("{} must be an integer >= {}.".format(key, minimum))
+            return None
+        return result
+
+    slash_limit = setting_int("slash_claim_limit", 0, 0)
+    setting_int("slash_claim_window_minutes", 180, 1)
+    if slash_limit and not isinstance(data.get("slash_claim_target", ""), str):
+        errors.append("Slash-to-text character target must be text.")
+    elif slash_limit and not data.get("slash_claim_target", "").strip():
+        errors.append("Slash-to-text character target is required when the claim limit is above zero.")
+
+    if loot_mode in ("kl", "scrap"):
+        if loot_mode == "kl":
+            setting_int("kl_amount", 1000, 1)
+        else:
+            setting_int("scrap_amount", 500000000, 1)
+            target = data.get("scrap_target_id", "")
+            if not isinstance(target, str) or not re.fullmatch(r"[0-9]+", target.strip()) or not target.strip().lstrip("0"):
+                errors.append("Scrap target must be a positive numeric Discord user ID.")
+        cooldowns = {}
+        for key, default in (("loot_min_cooldown", 30), ("loot_max_cooldown", 40)):
+            value = data.get(key, default)
+            try:
+                if isinstance(value, bool):
+                    raise ValueError
+                parsed = float(value)
+                if not math.isfinite(parsed) or parsed < 1:
+                    raise ValueError
+                cooldowns[key] = parsed
+            except (TypeError, ValueError, OverflowError):
+                errors.append("{} must be a finite number >= 1.".format(key))
+        if len(cooldowns) == 2 and cooldowns["loot_max_cooldown"] < cooldowns["loot_min_cooldown"]:
+            errors.append("Maximum loot cooldown must be >= minimum loot cooldown.")
     token = resolved_token if resolved_token is not None else data.get("token")
     token_values = token if isinstance(token, (list, tuple)) else [token]
     if require_runtime and not any(str(item or "").strip() for item in token_values):

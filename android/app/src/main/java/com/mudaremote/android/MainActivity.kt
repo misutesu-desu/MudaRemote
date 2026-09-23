@@ -1384,7 +1384,7 @@ class MainActivity : ComponentActivity() {
 
         val categories = listOf(
             "All", "Connection", "Rolling", "Claiming", "Character Sniping",
-            "Kakera Reactions", "Wishlist and Farming", "Spheres and Emoji",
+            "Kakera Reactions", "Kakera Loot", "Wishlist and Farming", "Spheres and Emoji",
             "Timing and Humanization", "Advanced"
         )
 
@@ -1472,6 +1472,7 @@ class MainActivity : ComponentActivity() {
         "Claiming" -> "💖"
         "Character Sniping" -> "🎯"
         "Kakera Reactions" -> "💎"
+        "Kakera Loot" -> "🪙"
         "Wishlist and Farming" -> "🌾"
         "Spheres and Emoji" -> "🔮"
         "Timing and Humanization" -> "⏱️"
@@ -1481,7 +1482,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sectionRank(section: String): Int = listOf(
-        "Connection", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions",
+        "Connection", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
         "Wishlist and Farming", "Spheres and Emoji", "Timing and Humanization", "Advanced"
     ).indexOf(section).let { if (it < 0) 99 else it }
 

@@ -229,11 +229,11 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         self.bot.mk_kakera_emojis = []
         msg, btn = self.message(description='Series <:sp:123>')
         self.assertIsNone(details(msg, btn, is_mk_roll=True))
-        inherited, _ = _create_test_client(kakera_emojis_preset=['kakeraY'])
+        inherited, _ = _create_test_client(kakera_emojis=['kakeraY'])
         for field in ('chaos_emojis', 'sphere_perk_emojis', 'mk_kakera_emojis'):
             self.assertEqual(getattr(inherited, field), ['kakeraY'])
         self.assertEqual(inherited.kakera_filter_match_mode, 'all')
-        loaded, _ = _create_test_client(kakera_filter_match_mode_preset='any')
+        loaded, _ = _create_test_client(kakera_filter_match_mode='any')
         self.assertEqual(loaded.kakera_filter_match_mode, 'any')
 
     async def test_mai_screenshot_filters_paid_colors_without_blocking_selected_spheres(self):

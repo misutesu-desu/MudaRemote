@@ -90,35 +90,42 @@ def _create_test_client(
     mudae_bot._mobile_runtime_stop_event.clear()
     with mock.patch.object(mudae_bot.commands, "Bot", return_value=bot):
         mudae_bot.run_bot(
-            token="dummy-token",
-            prefix="!",
-            target_channel_id=1234,
-            roll_command="wa",
-            min_kakera=300,
-            delay_seconds=0,
-            mudae_prefix="$",
-            log_function=lambda *_args, **_kwargs: None,
             preset_name="test-kakera-snipe-ownership",
-            key_mode=False,
-            start_delay=0,
-            snipe_mode=True,
-            snipe_delay=0,
-            snipe_ignore_min_kakera_reset=False,
-            wishlist=[],
-            series_snipe_mode=False,
-            series_snipe_delay=0,
-            series_wishlist=[],
-            roll_speed=1.0,
-            kakera_snipe_mode_preset=False,
-            kakera_snipe_threshold_preset=0,
-            enable_reactive_self_snipe_preset=enable_reactive_self_snipe_preset,
-            rolling_enabled=rolling_enabled,
-            kakera_reaction_snipe_mode_preset=kakera_reaction_snipe_mode_preset,
-            kakera_reaction_snipe_delay_preset=0,
-            kakera_reaction_snipe_targets=kakera_reaction_snipe_targets or [],
-            command_channel_id_preset="5678",
-            immediate_kakera_click_preset=immediate_kakera_click_preset,
-            **preset_options,
+            preset_data={
+                "token": "dummy-token",
+                "prefix": "!",
+                "channel_id": 1234,
+                "roll_command": "wa",
+                "min_kakera": 300,
+                "delay_seconds": 0,
+                "mudae_prefix": "$",
+                "key_mode": False,
+                "start_delay": 0,
+                "snipe_mode": True,
+                "snipe_delay": 0,
+                "snipe_ignore_min_kakera_reset": False,
+                "wishlist": [],
+                "series_snipe_mode": False,
+                "series_snipe_delay": 0,
+                "series_wishlist": [],
+                "roll_speed": 1.0,
+                "kakera_snipe_mode": False,
+                "kakera_snipe_threshold": 0,
+                "reactive_snipe_on_own_rolls": enable_reactive_self_snipe_preset,
+                "rolling": rolling_enabled,
+                "kakera_reaction_snipe_mode": kakera_reaction_snipe_mode_preset,
+                "kakera_reaction_snipe_delay": 0,
+                "kakera_reaction_snipe_targets": kakera_reaction_snipe_targets or [],
+                "command_channel_id": "5678",
+                "immediate_kakera_click": immediate_kakera_click_preset,
+                "dk_power_management": True,
+                "reactive_snipe_delay": 0.5,
+                "auto_us_limit": 10,
+                "auto_mk_enabled": False,
+                "auto_rolls_limit": 10,
+                **preset_options,
+            },
+            log_function=lambda *_args, **_kwargs: None,
         )
 
     client_getter = lambda: bot
@@ -245,7 +252,13 @@ class KakeraSnipeOwnershipRegressionTests(unittest.IsolatedAsyncioTestCase):
                 button.click.assert_awaited_once()
 
     async def test_dark_transformation_confirms_click_without_retry(self):
-        bot, channel = _create_test_client()
+        # Legacy presets may explicitly store optional collections as null.
+        bot, channel = _create_test_client(
+            avoid_list=None, snipe_channels=None, character_snipe_targets=None,
+            auto_divorce_series=None, auto_divorce_blacklist=None,
+            auto_divorce_blacklist_series=None, inactive_hours=None,
+            kakera_power_thresholds=None,
+        )
         message, btn = _build_roll_message(
             channel=channel,
             message_id=1010,

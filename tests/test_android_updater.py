@@ -1,6 +1,8 @@
 import hashlib
 import asyncio
+import io
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -8,6 +10,7 @@ import threading
 import time
 import unittest
 from unittest import mock
+from concurrent.futures import ThreadPoolExecutor
 
 # Ensure android python directory is in path for testing
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -625,6 +628,51 @@ class AndroidRuntimeLifecycleTests(unittest.TestCase):
 
         self.assertEqual(run_bot.call_count, 1)
         mudae_bot.reset_mobile_runtime()
+
+
+class DiscordLoggingTests(unittest.TestCase):
+    def test_concurrent_accounts_and_restart_emit_each_gateway_log_once(self):
+        logger = logging.getLogger("discord")
+        saved_handlers = logger.handlers[:]
+        saved_level, saved_propagate = logger.level, logger.propagate
+        original_run = mudae_bot.commands.Bot.run
+        run_barrier = threading.Barrier(2, timeout=5)
+        start_barrier = threading.Barrier(2, timeout=5)
+        first_output, restarted_output = io.StringIO(), io.StringIO()
+
+        def run(client, *args, **kwargs):
+            run_barrier.wait()
+            return original_run(client, *args, **kwargs)
+
+        async def start(client, token, *, reconnect=True):
+            self.assertTrue(reconnect)
+            start_barrier.wait()
+            if token == "first":
+                logging.getLogger("discord.gateway").warning("gateway-test-message")
+
+        try:
+            mudae_bot.reset_mobile_runtime()
+            with mock.patch.object(mudae_bot.commands.Bot, "run", run), \
+                 mock.patch.object(mudae_bot.commands.Bot, "start", start), \
+                 mock.patch.object(mudae_bot, "IS_TERMUX", False), \
+                 mock.patch.object(mudae_bot.BotLogger, "log"):
+                for output in (first_output, restarted_output):
+                    with mock.patch.object(sys, "stderr", output), ThreadPoolExecutor(2) as workers:
+                        futures = [workers.submit(
+                            mudae_bot.run_bot, token, {"token": token, "channel_id": "1"}
+                        ) for token in ("first", "second")]
+                        for future in futures:
+                            future.result(timeout=10)
+                    self.assertEqual(output.getvalue().count("gateway-test-message"), 1)
+                self.assertEqual(first_output.getvalue().count("gateway-test-message"), 1)
+        finally:
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            for handler in saved_handlers:
+                logger.addHandler(handler)
+            logger.setLevel(saved_level)
+            logger.propagate = saved_propagate
+            mudae_bot.reset_mobile_runtime()
 
 
 if __name__ == "__main__":

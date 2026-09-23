@@ -89,37 +89,44 @@ def _create_client(*, user_id, command_channel_id, auto_oh=False, auto_oc=False)
     mudae_bot._mobile_runtime_stop_event.clear()
     with mock.patch.object(mudae_bot.commands, "Bot", return_value=bot):
         mudae_bot.run_bot(
-            token="dummy_token",
-            prefix="!",
-            target_channel_id=1467081796364537949,
-            roll_command="wa",
-            min_kakera=100,
-            delay_seconds=0,
-            mudae_prefix="$",
-            log_function=lambda *_args, **_kwargs: None,
             preset_name="shared-side-preset",
-            key_mode=False,
-            start_delay=0,
-            snipe_mode=False,
-            snipe_delay=0,
-            snipe_ignore_min_kakera_reset=False,
-            wishlist=[],
-            series_snipe_mode=False,
-            series_snipe_delay=0,
-            series_wishlist=[],
-            roll_speed=1.5,
-            kakera_snipe_mode_preset=False,
-            kakera_snipe_threshold_preset=0,
-            enable_reactive_self_snipe_preset=False,
-            rolling_enabled=True,
-            kakera_reaction_snipe_mode_preset=False,
-            kakera_reaction_snipe_delay_preset=0,
-            kakera_reaction_snipe_targets=[],
-            command_channel_id_preset=command_channel_id,
-            auto_oh_enabled_preset=auto_oh,
-            auto_oc_enabled_preset=auto_oc,
-            oh_use_individually_preset=False,
-            oc_collect_after_red_preset=True,
+            preset_data={
+                "token": "dummy_token",
+                "prefix": "!",
+                "channel_id": 1467081796364537949,
+                "roll_command": "wa",
+                "min_kakera": 100,
+                "delay_seconds": 0,
+                "mudae_prefix": "$",
+                "key_mode": False,
+                "start_delay": 0,
+                "snipe_mode": False,
+                "snipe_delay": 0,
+                "snipe_ignore_min_kakera_reset": False,
+                "wishlist": [],
+                "series_snipe_mode": False,
+                "series_snipe_delay": 0,
+                "series_wishlist": [],
+                "roll_speed": 1.5,
+                "kakera_snipe_mode": False,
+                "kakera_snipe_threshold": 0,
+                "reactive_snipe_on_own_rolls": False,
+                "rolling": True,
+                "kakera_reaction_snipe_mode": False,
+                "kakera_reaction_snipe_delay": 0,
+                "kakera_reaction_snipe_targets": [],
+                "command_channel_id": command_channel_id,
+                "auto_oh_enabled": auto_oh,
+                "auto_oc_enabled": auto_oc,
+                "oh_use_individually": False,
+                "oc_collect_after_red": True,
+                "dk_power_management": True,
+                "reactive_snipe_delay": 0.5,
+                "auto_us_limit": 10,
+                "auto_mk_enabled": False,
+                "auto_rolls_limit": 10,
+            },
+            log_function=lambda *_args, **_kwargs: None,
         )
 
     client_ref = lambda: bot
@@ -139,7 +146,7 @@ class CommandChannelRoutingTests(unittest.IsolatedAsyncioTestCase):
             auto_oh=True,
         )
 
-        await client._runtime_run_available_sphere_games(roll_channel, _SphereStatus(oh=2))
+        await client.sphere_runtime.run_available_sphere_games(roll_channel, _SphereStatus(oh=2))
 
         self.assertEqual(command_channel.sent, ["$oh 2"])
         self.assertEqual(roll_channel.sent, [])
@@ -151,7 +158,7 @@ class CommandChannelRoutingTests(unittest.IsolatedAsyncioTestCase):
             auto_oc=True,
         )
 
-        await client._runtime_run_available_sphere_games(roll_channel, _SphereStatus(oc=1))
+        await client.sphere_runtime.run_available_sphere_games(roll_channel, _SphereStatus(oc=1))
 
         self.assertEqual(command_channel.sent, ["$oc 1"])
         self.assertEqual(roll_channel.sent, [])
@@ -163,7 +170,7 @@ class CommandChannelRoutingTests(unittest.IsolatedAsyncioTestCase):
             auto_oh=True,
         )
 
-        await client._runtime_run_available_sphere_games(roll_channel, _SphereStatus(oh=1))
+        await client.sphere_runtime.run_available_sphere_games(roll_channel, _SphereStatus(oh=1))
 
         self.assertEqual(roll_channel.sent, ["$oh 1"])
         self.assertEqual(command_channel.sent, [])
@@ -179,7 +186,7 @@ class CommandChannelRoutingTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         await asyncio.gather(*(
-            client._runtime_run_available_sphere_games(roll_channel, _SphereStatus(oh=1))
+            client.sphere_runtime.run_available_sphere_games(roll_channel, _SphereStatus(oh=1))
             for client, roll_channel, _command_channel in clients
         ))
 

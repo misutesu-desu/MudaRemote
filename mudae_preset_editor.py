@@ -642,6 +642,15 @@ DEFAULTS = {
     "debug_log_categories": ["all"],
     "character_snipe_targets": [],
     "auto_free_claim": True,
+    "loot_mode": "off",
+    "kl_amount": 1000,
+    "scrap_target_id": "",
+    "scrap_amount": 500000000,
+    "loot_min_cooldown": 30.0,
+    "loot_max_cooldown": 40.0,
+    "slash_claim_target": "",
+    "slash_claim_limit": 0,
+    "slash_claim_window_minutes": 180,
 }
 
 # Boolean settings with their display names and defaults
@@ -726,6 +735,12 @@ NUMERIC_SETTINGS = [
     ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
     ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (before fallback strategy)", 3, int),
+    ("kl_amount", "$kl Spend Amount", 1000, int),
+    ("scrap_amount", "$givescrap Amount", 500000000, int),
+    ("loot_min_cooldown", "Minimum Loot Cooldown (seconds)", 30.0, float),
+    ("loot_max_cooldown", "Maximum Loot Cooldown (seconds)", 40.0, float),
+    ("slash_claim_limit", "Shared Slash Claim Limit (0 = disabled)", 0, int),
+    ("slash_claim_window_minutes", "Shared Slash Claim Window (minutes)", 180, int),
 ]
 
 # Text/list settings
@@ -754,6 +769,8 @@ TEXT_SETTINGS = [
     ("kakera_snipe_channels", "Kakera Snipe Channels (Comma-separated IDs of channels to monitor for Kakera)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spM, spU, spG)", ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
+    ("scrap_target_id", "$givescrap Recipient Discord User ID", "", False),
+    ("slash_claim_target", "Slash Claim Target", "", False),
 ]
 
 # Default emoji values
@@ -2420,6 +2437,34 @@ class PresetEditor:
 
         self.add_checkbox(roll_sub, "auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)")
 
+        self.add_text_field(
+            roll_frame.content, "slash_claim_target", "Character for Slash-to-Text Switch",
+            description="Exact character name, e.g. Rem. Required when the claim limit is above zero; active only with slash rolls."
+        )
+        self.add_number_field(
+            roll_frame.content, "slash_claim_limit", "Claims Before Switching to Text (0 = disabled)", 0,
+            description="Counts verified claims of this character by all running app accounts in the same roll channel. Then ordinary rolls use text commands."
+        )
+        self.add_number_field(
+            roll_frame.content, "slash_claim_window_minutes", "Slash-to-Text Window (minutes)", 180,
+            description="Fixed app-session window starts when the feature is enabled. Restarts clear the count; this is not your private claim cooldown."
+        )
+
+        loot_frame = CollapsibleLabelFrame(frame, text="Kakera Loot", start_open=False)
+        loot_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_choice_field(
+            loot_frame.content, "loot_mode", "Loot Operation", {
+                "off": "Off (normal rolling and sniping)",
+                "kl": "Spend kakera with $kl",
+                "scrap": "Send scrap with $givescrap",
+            }, description="When enabled, this profile performs loot operations instead of normal rolling and sniping."
+        )
+        self.add_number_field(loot_frame.content, "kl_amount", "$kl Spend Amount", 1000)
+        self.add_text_field(loot_frame.content, "scrap_target_id", "$givescrap Recipient Discord User ID")
+        self.add_number_field(loot_frame.content, "scrap_amount", "$givescrap Amount", 500000000)
+        self.add_number_field(loot_frame.content, "loot_min_cooldown", "Minimum Loot Cooldown (seconds)", 30.0)
+        self.add_number_field(loot_frame.content, "loot_max_cooldown", "Maximum Loot Cooldown (seconds)", 40.0)
+
         # --- Stacked Rolls ($us) ---
         us_outer = ttk.Frame(frame)
         us_outer.pack(fill=tk.X, pady=(0, 15))
@@ -3306,7 +3351,9 @@ class PresetEditor:
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "main_account_id", "webhook_url", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
-                    "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks"]:
+                    "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
+                    "scrap_target_id", "slash_claim_target", "kl_amount", "scrap_amount",
+                    "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, (ttk.Entry, tk.Entry)):
@@ -3322,6 +3369,8 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
+        if "loot_mode" in self.widgets:
+            self.widgets["loot_mode"].set(data.get("loot_mode", "off"))
 
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",
@@ -3534,7 +3583,7 @@ class PresetEditor:
 
         # Collect text fields
         # [NEW] Include main_account_id and farm_character in text fields collection
-        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "webhook_url"]:
+        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "webhook_url", "scrap_target_id", "slash_claim_target"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 # Special handling for channel_id
@@ -3556,12 +3605,16 @@ class PresetEditor:
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
-                    "oh_unknown_explore_clicks"]
+                    "oh_unknown_explore_clicks", "kl_amount", "scrap_amount",
+                    "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]
         for key in numeric_keys:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     try:
+                        if key in {"kl_amount", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes"}:
+                            data[key] = int(value) if re.fullmatch(r"[0-9]+", value) else value
+                            continue
                         # Determine type
                         if key in ["min_kakera", "start_delay", "kakera_snipe_threshold",
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
@@ -3619,6 +3672,8 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
+        if "loot_mode" in self.widgets:
+            data["loot_mode"] = self.widgets["loot_mode"].get()
 
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",

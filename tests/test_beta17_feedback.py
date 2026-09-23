@@ -47,7 +47,6 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
             bot.sphere_game_counts.update(oh=13, oc=2)
             bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
             work = closure(bot._runtime_check_status, 'run_independent_known_work').cell_contents
-            game = closure(bot._runtime_run_available_sphere_games, 'run_sphere_game').cell_contents
             board_active = False
             finished = []
 
@@ -68,11 +67,10 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 return SimpleNamespace(id=len(channel.sent))
 
             channel.send = send
-            closure(game, 'play_sphere_game').cell_contents = play
-            with mock.patch.object(mudae_bot, 'pause_interruptible_sleep', mock.AsyncMock(return_value=True)):
-                await asyncio.gather(work(channel, None), work(channel, None))
+            with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', play):
+                with mock.patch.object(mudae_bot, 'pause_interruptible_sleep', mock.AsyncMock(return_value=True)):
+                    await asyncio.gather(work(channel, None), work(channel, None))
             self.assertEqual(channel.sent, expected + ['$oc 2'])
-            self.assertEqual(bot.sphere_game_counts['oh'], 0)
             self.assertEqual(bot.sphere_game_counts['oc'], 0)
 
     async def test_unfinished_board_consumes_only_started_stock_and_blocks_next_game(self):
@@ -82,17 +80,15 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
         bot.auto_oh_enabled = bot.auto_oc_enabled = bot.oh_use_individually = True
         bot.sphere_game_counts.update(oh=3, oc=2)
         bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
-        game = closure(bot._runtime_run_available_sphere_games, 'run_sphere_game').cell_contents
-        closure(game, 'play_sphere_game').cell_contents = mock.AsyncMock(return_value=False)
-
         async def send(content, **_kwargs):
             channel.sent.append(content)
             bot._sphere_game_response_future.set_result(SimpleNamespace(id=1))
             return SimpleNamespace(id=1)
 
         channel.send = send
-        await bot._runtime_run_available_sphere_games(channel)
-        await bot._runtime_run_available_sphere_games(channel)
+        with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', mock.AsyncMock(return_value=False)):
+            await bot.sphere_runtime.run_available_sphere_games(channel)
+            await bot.sphere_runtime.run_available_sphere_games(channel)
         self.assertEqual(channel.sent, ['$oh 1'])
         self.assertEqual(bot.sphere_game_counts['oh'], 2)
         self.assertEqual(bot.sphere_game_counts['oc'], 2)

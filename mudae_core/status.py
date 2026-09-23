@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import unicodedata
+from typing import Optional
 
 
 STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
@@ -91,7 +92,7 @@ class ResetAnchor:
     next_boundary_at_utc: datetime.datetime = None
     next_boundary_index: int = 0
     confidence: bool = False
-    authoritative_minute: int = None
+    authoritative_minute: Optional[int] = None
 
     def __post_init__(self):
         if self.authoritative_minute is not None:

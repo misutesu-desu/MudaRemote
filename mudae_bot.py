@@ -202,23 +202,25 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
-        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
-        choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
-        normalize_sphere_emoji, parse_sphere_game_status, SphereButtonBudget, WebhookDispatcher,
+        parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
+    from mudae_core.bot_config import configure_client
     from mudae_core.config import atomic_write_json, load_json, validate_preset
+    from mudae_core.loot import LootAutomation
+    from mudae_core.roll_mode import adaptive_slash_ledger
 except (ModuleNotFoundError, ImportError) as core_error:
     missing_module = str(getattr(core_error, "name", ""))
     if missing_module and not missing_module.startswith("mudae_core"):
@@ -235,23 +237,25 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
-        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, harvest_reveal_is_free, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
         record_tu_success, reconcile_private_claim_deadline, reconcile_roll_reset_deadline, roll_reset_wait_minutes, rolls_usage_is_active, set_client_paused, status_dirty_fields, parse_claim_denied_cooldown,
-        status_message_addresses_identity, status_refresh_reasons, split_command_batches, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
+        status_message_addresses_identity, status_refresh_reasons, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
         KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
-        choose_chest_position, choose_harvest_position, count_harvest_bonus_clicks, sphere_click_recovery_decision,
-        normalize_sphere_emoji, parse_sphere_game_status, SphereButtonBudget, WebhookDispatcher,
+        parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
+    from mudae_core.bot_config import configure_client
     from mudae_core.config import atomic_write_json, load_json, validate_preset
+    from mudae_core.roll_mode import adaptive_slash_ledger
+    from mudae_core.loot import LootAutomation
 
 if os.name == 'nt':
     import msvcrt
@@ -968,94 +972,17 @@ def parse_mudae_ranks(embed_description: str) -> Tuple[int, int]:
         return int(m.group(1).replace(",", "").replace(".", "")) if m else 0
     return get_rank("CLAIMS_RANK"), get_rank("LIKES_RANK")
 
-def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_seconds, mudae_prefix,
-            log_function, preset_name, key_mode, start_delay, snipe_mode, snipe_delay,
-            snipe_ignore_min_kakera_reset, wishlist,
-            series_snipe_mode, series_snipe_delay, series_wishlist, roll_speed,
-            kakera_snipe_mode_preset, kakera_snipe_threshold_preset,
-            enable_reactive_self_snipe_preset, rolling_enabled,
-            kakera_reaction_snipe_mode_preset, kakera_reaction_snipe_delay_preset,
-            kakera_reaction_snipe_targets,
-            character_snipe_targets=None,
-            humanization_enabled=False, humanization_window_minutes=0, humanization_inactivity_seconds=0,
-            dk_power_management=True, skip_initial_commands=False, use_slash_rolls=False, only_chaos=False,
-            reactive_snipe_delay=0.5, time_rolls_to_claim_reset_preset=False,
-            rt_ignore_min_kakera_for_wishlist_preset=False,
-            claim_emojis_preset=None, kakera_emojis_preset=None, chaos_emojis_preset=None, sphere_perk_emojis_preset=None,
-            rt_only_self_rolls_preset=False, reactive_kakera_delay_range_preset=None,
-            claim_interval_preset=180, roll_interval_preset=60, avoid_list=None,
-            inactive_hours_preset=None,
-            auto_us_enabled=False, auto_us_limit=10, auto_us_stop_on_claim=True,
-            kakera_power_thresholds=None, debug_mode=False, auto_mk_enabled_preset=False,
-            auto_rolls_enabled=False, auto_rolls_limit=10, auto_rolls_in_key_mode=False,
-            auto_rolls_only_claim_hour_preset=False,
-            panic_roll_minutes_preset=5, lurker_mode_preset=False,
-            bulk_us_enabled_preset=False,
-            max_dk_power_preset=100,
-            randomized_claim_reactions_preset=None,
-            main_account_id_preset="",
-            scheduled_roll_times_preset=None,
-            kakera_priority_order_preset=None,
-            auto_rt_after_claim_preset=False,
-            mk_only_preset=False,
-            auto_dk_enabled_preset=True,
-            command_channel_id_preset="",
-            enable_snipe_chat_reactions_preset=False,
-            snipe_chat_messages_preset=None,
-            farm_character_preset="",
-            op_perk_5_only_preset=False,
-            farm_character_enabled_preset=False,
-            auto_divorce_enabled_preset=False,
-            auto_divorce_max_kakera_preset=50,
-            auto_divorce_series_preset=None,
-            auto_divorce_blacklist_preset=None,
-            auto_divorce_blacklist_series_preset=None,
-            mk_bypass_power_check=False,
-            snipe_channels_preset=None,
-            max_claim_rank_preset=0,
-            max_like_rank_preset=0,
-            auto_p_enabled=True,
-            enable_hybrid_panic_claim_preset=False,
-            hybrid_panic_instant_claim_min_kakera_preset=300,
-            hybrid_panic_instant_claim_max_rank_preset=200,
-            claim_rounds_thresholds_preset=None,
-            persistent_stagger_seconds_preset=0,
-            sphere_click_targets_preset=None,
-            immediate_kakera_click_preset=True,
-            farm_forcedivorce_after_claim_preset=False,
-            farm_forcedivorce_before_roll_preset=True,
-            farm_forcedivorce_after_other_claim_preset=False,
-            auto_oh_enabled_preset=False,
-            auto_oc_enabled_preset=False,
-            series_snipe_only_self_rolls_preset=False,
-            forcedivorce_channel_id_preset="",
-            wish_starwish_kakera_only_preset=False,
-            auto_mk_full_power_only_preset=False,
-            auto_divorce_protect_wishes_preset=True,
-            farm_characters_preset=None,
-            enable_kakera_snipe_chat_reactions_preset=False,
-            kakera_snipe_chat_messages_preset=None,
-            oh_priority_order_preset=None,
-            oh_unknown_explore_clicks_preset=3,
-            oc_reward_priority_order_preset=None,
-            oc_collect_after_red_preset=True,
-            webhook_url_preset="",
-            webhook_log_types_preset=None,
-            debug_log_categories_preset=None,
-            auto_free_claim_preset=True,
-            collect_purple_kakera_preset=True,
-            oh_use_individually_preset=False,
-            auto_dk_min_power_preset=0,
-            kakera_snipe_channels_preset=None,
-            mk_kakera_emojis_preset=None,
-            server_reset_minute_preset=None,
-            shop_perk_7_only_preset=False, kakera_filter_match_mode_preset="all",
-            hourly_tu_refresh_preset=False, perk_eight_only_preset=False,
-            pause_on_key_limit_preset=True):
+def run_bot(preset_name, preset_data, log_function=print_log):
+    token = preset_data.get("token")
+    prefix = preset_data.get("prefix", "/////////////")
+    target_channel_id = preset_data.get("channel_id")
+    roll_command = preset_data.get("roll_command", "wa")
+    delay_seconds = preset_data.get("delay_seconds", 0)
+    start_delay = preset_data.get("start_delay", 0)
 
     client = commands.Bot(command_prefix=prefix, chunk_guilds_at_startup=False, self_bot=True)
     client.is_paused = _global_paused
-    client.hourly_tu_refresh = bool(hourly_tu_refresh_preset)
+    client.hourly_tu_refresh = bool(preset_data.get("hourly_tu_refresh", False))
     client._pause_generation = 1 if _global_paused else 0
     client.command_pacer = CommandPacer(0.6, 0.8)
     with _active_clients_lock:
@@ -1063,400 +990,30 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             return
         _active_clients.append(client)
 
-    discord_logger = logging.getLogger('discord')
-    discord_logger.propagate = False
-    handlers = [h for h in discord_logger.handlers if isinstance(h, logging.StreamHandler)]
-    for h in handlers:
-        discord_logger.removeHandler(h)
+    # All account workers share this logger. Configure it atomically and keep
+    # Client.run from adding another handler for every concurrent account.
+    with _active_clients_lock:
+        discord_logger = logging.getLogger('discord')
+        discord_logger.propagate = False
+        handlers = [h for h in discord_logger.handlers if isinstance(h, logging.StreamHandler)]
+        for h in handlers:
+            discord_logger.removeHandler(h)
+        discord.utils.setup_logging(root=False)
 
-    # Bind preset configs
-    client.preset_name = preset_name
-    client.min_kakera = min_kakera
-    client.snipe_mode = snipe_mode
-    client.snipe_delay = snipe_delay
-    client.snipe_ignore_min_kakera_reset = snipe_ignore_min_kakera_reset
-    client.wishlist = set([w.lower() for w in wishlist])
-    client.series_snipe_mode = series_snipe_mode
-    client.series_snipe_only_self_rolls = bool(series_snipe_only_self_rolls_preset)
-    client.series_snipe_delay = series_snipe_delay
-    client.series_wishlist = set([sw.lower() for sw in series_wishlist])
-    client.avoid_list = set([a.lower() for a in (avoid_list or [])])
-
-    client.snipe_channels = set()
-    for ch in snipe_channels_preset or []:
-        try: client.snipe_channels.add(int(ch))
-        except (TypeError, ValueError): pass
-    client.kakera_snipe_channels = set()
-    configured_kakera_snipe_channels = kakera_snipe_channels_preset or snipe_channels_preset or []
-    for ch in configured_kakera_snipe_channels:
-        try: client.kakera_snipe_channels.add(int(ch))
-        except (TypeError, ValueError): pass
-
-    client.max_claim_rank = int(max_claim_rank_preset or 0)
-    client.max_like_rank = int(max_like_rank_preset or 0)
-    client.muda_name = BOT_NAME
-    client.claim_right_available = False
-    # Presets may store Discord snowflakes as strings, while Discord exposes
-    # message.channel.id as an int. Keep the runtime value normalized so
-    # own-roll messages are recognized by on_message.
-    try:
-        client.target_channel_id = int(target_channel_id)
-    except (TypeError, ValueError):
-        client.target_channel_id = target_channel_id
-    client.roll_command = str(roll_command or "wa").strip().lstrip("/") or "wa"
-    client.command_channel_id_preset = str(command_channel_id_preset or "").strip()
-    client.forcedivorce_channel_id_preset = str(forcedivorce_channel_id_preset or "").strip()
-    client.roll_speed = roll_speed
-    client.mudae_prefix = mudae_prefix
-    client.key_mode = key_mode
-    client.pause_on_key_limit = bool(pause_on_key_limit_preset)
-    client.delay_seconds = delay_seconds
-    client.sniped_messages = set()
-    client.snipe_happened = False
-    client.series_sniped_messages = set()
-    client.series_snipe_happened = False
-    client.kakera_value_sniped_messages = set()
-    client.is_actively_rolling = False
-    client._roll_batch_deferred_status_fields = set()
-    client.active_cycle_id = 0
-    client.tu_lock = None
-    client.interrupt_rolling = False
-    client._roll_interrupt_reason = None
-    client.current_min_kakera_for_roll_claim = client.min_kakera
-    client.kakera_snipe_mode_active = kakera_snipe_mode_preset
-    client.kakera_snipe_threshold = kakera_snipe_threshold_preset
-    client.enable_reactive_self_snipe = enable_reactive_self_snipe_preset
-    client.auto_free_claim_enabled = bool(auto_free_claim_preset)
-    client.reactive_snipe_delay = reactive_snipe_delay
-    client.rolling_enabled = rolling_enabled
-    client.rt_available = False
-    client.rt_available_at_utc = None
-    client.kakera_reaction_snipe_mode_active = kakera_reaction_snipe_mode_preset
-    client.kakera_reaction_snipe_delay_value = kakera_reaction_snipe_delay_preset
-    client.kakera_reaction_snipe_targets = set([t.lower() for t in kakera_reaction_snipe_targets])
-    client.character_snipe_targets = set([t.lower().strip() for t in (character_snipe_targets or []) if t.strip()])
-    client.kakera_reaction_sniped_messages = set()
-    client.kakera_react_available = None
-    client.kakera_react_cooldown_until_utc = None
-
-    client.humanization_enabled = humanization_enabled
-    client.humanization_window_minutes = humanization_window_minutes
-    client.inactive_hours = inactive_hours_preset or []
-    client.humanization_inactivity_seconds = humanization_inactivity_seconds
-
-    client.auto_dk_enabled = auto_dk_enabled_preset
-    client.dk_power_management = dk_power_management
-    client.skip_initial_commands = skip_initial_commands
-    client.dk_stock_count = 0
-    client.max_dk_power = max_dk_power_preset
-    client.auto_dk_min_power = max(0, int(auto_dk_min_power_preset or 0))
-    client.maintenance_until = None
-    client.only_chaos = only_chaos
-    client.perk_eight_only = bool(perk_eight_only_preset)
-    client.shop_perk_7_only = shop_perk_7_only_preset
-    client.kakera_filter_match_mode = "any" if kakera_filter_match_mode_preset == "any" else "all"
-    client.mk_only = mk_only_preset
-
-    client.auto_us_enabled = auto_us_enabled
-    client.auto_us_limit = auto_us_limit
-    client.auto_us_stop_on_claim = auto_us_stop_on_claim
-    client.bulk_us_enabled = bulk_us_enabled_preset
-    client.us_pulled_this_cycle = 0
-    client.mk_rolls_left = 0
-    client.auto_mk_enabled = auto_mk_enabled_preset
-    client.auto_mk_full_power_only = bool(auto_mk_full_power_only_preset)
-    client._mk_full_power_refresh_at = None
-    client._mk_full_power_refresh_handle = None
-    client._mk_full_power_wait_signature = None
-
-    client.auto_rolls_enabled = auto_rolls_enabled
-    client.auto_rolls_limit = auto_rolls_limit
-    client.auto_rolls_in_key_mode = auto_rolls_in_key_mode
-    client.auto_rolls_only_claim_hour = auto_rolls_only_claim_hour_preset
-    client.rolls_item_used_count = 0
-    client.rolls_used_this_interval_utc = None
-    client.panic_roll_minutes = panic_roll_minutes_preset if panic_roll_minutes_preset is not None else 5
-    client.lurker_mode = lurker_mode_preset
-    client.auto_rt_after_claim = auto_rt_after_claim_preset
-
-    client.randomized_claim_reactions = randomized_claim_reactions_preset or ["💖", "💗", "💘", "❤️", "👍", "🔥"]
-    client.main_account_id = str(main_account_id_preset or "").strip()
-    client.scheduled_roll_times = scheduled_roll_times_preset or []
-    client.kakera_priority_order = kakera_priority_order_preset or [
-        'kakeraP', 'kakeraC', 'kakeraL', 'kakeraW', 'kakeraR', 'kakeraO', 'kakeraD', 'kakeraY', 'kakeraG', 'kakeraT', 'kakera'
-    ]
-    sphere_click_targets = (
-        ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
-        if sphere_click_targets_preset is None
-        else sphere_click_targets_preset
+    configure_client(
+        client, preset_name, preset_data,
+        bot_name=BOT_NAME,
+        claim_emojis=CLAIM_EMOJIS,
+        kakera_emojis=KAKERA_EMOJIS,
+        sphere_emojis=SPHERE_EMOJIS,
+        slash_available=(Route is not None),
     )
-    client.sphere_click_targets = {
-        normalize_character_sphere_emoji(target).casefold()
-        for target in sphere_click_targets
-        if str(target or "").strip()
-    }
-    client.immediate_kakera_click = immediate_kakera_click_preset
-    # Purple Kakera is free, but in a shared channel every account may race
-    # for it. Keep legacy presets opt-in by default while allowing each preset
-    # to opt out independently.
-    client.collect_purple_kakera = bool(collect_purple_kakera_preset)
-    client.auto_oh_enabled = bool(auto_oh_enabled_preset)
-    client.auto_oc_enabled = bool(auto_oc_enabled_preset)
-    client.oh_use_individually = bool(oh_use_individually_preset)
-    client.oh_priority_order = [
-        str(item).strip() for item in (oh_priority_order_preset or []) if str(item).strip()
-    ]
-    client.oh_unknown_explore_clicks = max(0, int(oh_unknown_explore_clicks_preset or 0))
-    client.oc_reward_priority_order = [
-        str(item).strip() for item in (oc_reward_priority_order_preset or []) if str(item).strip()
-    ]
-    client.oc_collect_after_red = bool(oc_collect_after_red_preset)
-    client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
-    client.sphere_button_budget = SphereButtonBudget()
-    client._sphere_quota_recheck_requested = False
-    client.sphere_game_refill_at_utc = None
-    client._pre_roll_status_required = False
-    client._pre_roll_status_cycle_id = None
-    client._pre_roll_status_requested_at = None
-    # run_bot is entered from a worker thread before discord.py creates that
-    # thread's event loop. Bind per-client locks lazily from their first async task.
-    client._sphere_game_lock = None
-    client._kakera_action_lock = None
-    client._sphere_game_response_future = None
-    client._sphere_game_response_channel_id = None
-    client._sphere_game_response_kind = None
-    client._sphere_game_bonus_clicks = 0
-    client._sphere_game_bonus_event = None
-    client._sphere_game_bonus_counts = {}
-    client._sphere_game_retry_after = {"oh": 0.0, "oc": 0.0}
-    client._sphere_board_update_events = {}
-    client._kakera_power_reconcile_handle = None
-    client.kakera_power_ledger = KakeraPowerLedger()
-    client.kakera_interaction_ledger = KakeraInteractionLedger()
-    client._mudae_command_ack_waiters = {}
-    client._recent_mudae_command_acks = {}
-    client._rt_command_in_flight = None
-    client._manual_rt_pending_claims = []
-    client._manual_rt_timeout_handle = None
-    client._daily_rolls_claim_wake_handle = None
-    client._daily_rolls_claim_wake_at_utc = None
-    client._daily_rolls_claim_hour_until_utc = None
-    client._daily_rolls_observed_claim_reset_utc = None
-    client._rolls_item_limit_reset_at_utc = None
-    client._rolls_ack_retry_after = 0.0
-    client._auto_rolls_ack_ambiguous_cycle_id = None
-    client._auto_rolls_reconcile_cycle_id = None
-    client._deferred_independent_known_work = False
-    client._normal_roll_transaction_cycle_id = None
-    client._normal_roll_deferred_until_utc = None
-    client._normal_roll_deferred_cycle_id = None
-    client._confirmed_kakera_c_bonus_until = 0.0
-    client._confirmed_kakera_c_discount_until = 0.0
-    client._confirmed_kakera_c_discount_channel_id = None
-    client.collected_kakera_rolls = []
-    client._pending_mk_roll = None
-    client._mk_roll_generation = 0
-    client._classified_mk_roll_messages = {}
-    client.roll_command_correlation = RollCommandCorrelation()
-    client.roll_action_timing = RollActionTiming()
-    client.normal_roll_action_owner = NormalRollActionOwner(client.roll_action_timing)
 
-    client.enable_snipe_chat_reactions = enable_snipe_chat_reactions_preset
-    client.snipe_chat_messages = snipe_chat_messages_preset or ["omg", "ezz"]
-    client.enable_kakera_snipe_chat_reactions = bool(enable_kakera_snipe_chat_reactions_preset)
-    client.kakera_snipe_chat_messages = kakera_snipe_chat_messages_preset or ["nice", "free kakera"]
-    configured_farm_characters = list(farm_characters_preset or [])
-    if farm_character_preset:
-        configured_farm_characters.insert(0, farm_character_preset)
-    client.farm_characters = []
-    seen_farm_characters = set()
-    for farm_name in configured_farm_characters:
-        cleaned_farm_name = str(farm_name or "").strip()
-        normalized_farm_name = cleaned_farm_name.casefold()
-        if cleaned_farm_name and normalized_farm_name not in seen_farm_characters:
-            seen_farm_characters.add(normalized_farm_name)
-            client.farm_characters.append(cleaned_farm_name)
-    client.farm_character = client.farm_characters[0] if client.farm_characters else ""
-    client.farm_character_enabled = farm_character_enabled_preset
-    client.farm_forcedivorce_after_claim = bool(farm_forcedivorce_after_claim_preset)
-    client.farm_forcedivorce_before_roll = bool(farm_forcedivorce_before_roll_preset)
-    client.farm_forcedivorce_after_other_claim = bool(farm_forcedivorce_after_other_claim_preset)
-    client.forcedivorce_channel = None
-    client._farm_release_recent = {}
-    client._farm_release_lock = None
-    client.op_perk_5_only = op_perk_5_only_preset
-    client.auto_divorce_protect_wishes = bool(auto_divorce_protect_wishes_preset)
-    client.wish_starwish_kakera_only = bool(wish_starwish_kakera_only_preset)
+    # Window estimates retain configured slash speed: a shared claim window can
+    # reset mid-batch. Dispatch and actual pacing follow the current mode.
+    def effective_slash_rolls():
+        return adaptive_slash_ledger.should_use_slash(client)
 
-    client.next_claim_reset_at_utc = None
-    client.roll_reset_at_utc = None
-    client.claim_cooldown_until_utc = None
-    client.is_claiming = False
-    client.snipe_watch = {}
-    client.snipe_watch_expiry_seconds = 180
-    client.snipe_globally_disabled_until = None
-
-    client.current_dk_power = None
-    client.dk_power_revision = 0
-    client._us_lock = None
-    client._us_in_flight = False
-    client._us_pending_amount = 0
-    client._us_retry_after = 0.0
-    client.us_failed_this_cycle = False
-    client.dk_consumption = 35
-    client._kakera_result_waiters = {}
-    client.processed_claim_messages = set()
-    client._rt_failed_message_ids = set()
-    client.claim_retry_counts = {}
-    client.last_successfully_claimed_character = None
-    client._has_initialized = False
-    client._main_loop_task = None
-    client._immediate_check_event = None
-    client._runtime_state_event = None
-    client.scheduled_roll_due = False
-    client.pending_claim = None
-    client._claim_evidence_event = None
-    client._claim_text_evidence = None
-    client._claim_reset_refresh_requested = False
-    client._status_cycle_not_before_monotonic = 0.0
-    client._shared_reset_observed_at_utc = None
-    client._shared_claim_reset_handle = None
-    client._snipe_claim_refresh_reset_at_utc = None
-    client._snipe_claim_refresh_at_utc = None
-    client._snipe_claim_refresh_completed_for = None
-
-    client.use_slash_rolls = bool(use_slash_rolls and Route is not None)
-    client.slash_fallback_active = False
-    client.slash_retry_at = 0.0
-    client.mudae_slash_cache = {}
-    client.mudae_slash_missing = set()
-    client.mudae_session_id = None
-    client.slash_fail_streak = 0
-    client.slash_fail_threshold = 3
-    client.slash_min_interval = max(1.0, float(roll_speed)) if roll_speed else 1.0
-    client.slash_max_backoff = 6.0
-    client.last_slash_attempt = 0.0
-    client.slash_rate_limited_until = 0.0
-
-    client.auto_divorce_enabled = auto_divorce_enabled_preset
-    client.auto_divorce_max_kakera = auto_divorce_max_kakera_preset if auto_divorce_max_kakera_preset is not None else 50
-    client.auto_divorce_series = [s.lower().strip() for s in (auto_divorce_series_preset or []) if s.strip()]
-    client.auto_divorce_blacklist = set([c.lower().strip() for c in (auto_divorce_blacklist_preset or []) if c.strip()])
-    client.auto_divorce_blacklist_series = [s.lower().strip() for s in (auto_divorce_blacklist_series_preset or []) if s.strip()]
-    client.mk_bypass_power_check = mk_bypass_power_check
-    client.auto_p_enabled = auto_p_enabled
-    client.enable_hybrid_panic_claim = enable_hybrid_panic_claim_preset
-    client.hybrid_panic_instant_claim_min_kakera = int(hybrid_panic_instant_claim_min_kakera_preset or 300)
-    client.hybrid_panic_instant_claim_max_rank = int(hybrid_panic_instant_claim_max_rank_preset or 200)
-    client.claim_rounds_thresholds = claim_rounds_thresholds_preset or []
-    client.base_min_kakera = min_kakera
-    client.base_max_claim_rank = int(max_claim_rank_preset or 0)
-    client.base_max_like_rank = int(max_like_rank_preset or 0)
-    client.p_available = False
-    client.next_p_claim_at_utc = None
-    client.key_limit_hit = False
-    client.time_rolls_to_claim_reset = time_rolls_to_claim_reset_preset
-    client.is_timing_mode_active = False
-    client.rt_ignore_min_kakera_for_wishlist = rt_ignore_min_kakera_for_wishlist_preset
-
-    client.last_tu_query_utc = None
-    client._tu_timing_deadline_utc = None
-    initialize_status_tracking(client)
-    client.last_tu_snapshot_complete = False
-    client._tu_response_future = None
-    client._tu_response_channel_id = None
-    client._tu_request_started_at = None
-    client._local_extra_rolls_pending = 0
-    client.rolls_left = 0
-    client._claim_reset_rolls_pending = False
-    client._roll_count_sync_cycle_id = None
-    client._roll_count_sync_at_utc = None
-    client._roll_count_sync_handle = None
-    client._roll_count_sync_requested_cycle_id = None
-    client._roll_count_reconcile_cycle_id = None
-    client._roll_count_reconcile_started_at_utc = None
-    client._schedule_private_roll_count_sync = None
-    client._advance_predicted_reset_cycles = None
-    client._rolls_sent = 0
-    client._rolls_received = 0
-    client.collected_rolls = []
-    client.rt_only_self_rolls = rt_only_self_rolls_preset
-
-    if reactive_kakera_delay_range_preset and isinstance(reactive_kakera_delay_range_preset, (list, tuple)) and len(reactive_kakera_delay_range_preset) == 2:
-        client.reactive_kakera_delay_range = (float(reactive_kakera_delay_range_preset[0]), float(reactive_kakera_delay_range_preset[1]))
-    else:
-        client.reactive_kakera_delay_range = (0.3, 1.0)
-
-    client.claim_interval = claim_interval_preset or 180
-    client.roll_interval = roll_interval_preset or 60
-    if server_reset_minute_preset is not None and str(server_reset_minute_preset).strip() != "":
-        try:
-            client.server_reset_minute = int(server_reset_minute_preset)
-        except (TypeError, ValueError):
-            client.server_reset_minute = None
-    else:
-        client.server_reset_minute = None
-
-    # Complete self-$tu snapshots establish these runtime-only anchors.  They
-    # intentionally survive gateway RESUME but are discarded on a full start.
-    client.roll_reset_anchor = ResetAnchor("roll", client.roll_interval, authoritative_minute=client.server_reset_minute)
-    client.claim_reset_anchor = ResetAnchor("claim", client.claim_interval)
-    if client.server_reset_minute is not None:
-        init_anchor_now = datetime.datetime.now(timezone.utc)
-        client.roll_reset_anchor.advance_through(init_anchor_now)
-        client.roll_reset_at_utc = client.roll_reset_anchor.next_boundary_at_utc
-        client.current_roll_cycle_id = client.roll_reset_anchor.cycle_id_for_boundary(
-            client.roll_reset_anchor.next_boundary_index - 1
-        )
-    else:
-        client.current_roll_cycle_id = None
-    client.current_claim_cycle_id = None
-    client.normal_roll_replenishment_capacity = None
-    client.normal_roll_replenishment_capacity_confidence = False
-    client._normal_roll_cycle_state = {}
-    client._pending_boundary_roll_origins = {}
-    client.rolls_used_cycle_id = None
-    client._rolls_item_limit_cycle_id = None
-    client._predicted_roll_action_handle = None
-    client._predicted_roll_action_cycle_id = None
-    client._normal_roll_action_roll_counts = {}
-    client._active_normal_roll_cycle_id = None
-    client._active_normal_batch_remaining = 0
-    client._normal_roll_action_scheduled_triggers = set()
-    client._last_automation_roll_command_token = None
-    client._normal_roll_handoff_from_cycle_id = None
-    client._normal_roll_handoff_to_cycle_id = None
-    client._normal_roll_handoff_boundary_utc = None
-    client._local_boundary_wake_pending = False
-    client.predicted_roll_state_valid = False
-    client.predicted_roll_cycle_id = None
-    client.cross_cycle_roll_count_uncertain = False
-    client.cross_cycle_uncertain_cycle_id = None
-    client._manual_roll_sync_at_utc = None
-    client._sanity_sync_at_utc = None
-
-    client.claim_emojis = claim_emojis_preset if claim_emojis_preset is not None else CLAIM_EMOJIS
-    client.kakera_emojis = kakera_emojis_preset if kakera_emojis_preset is not None else KAKERA_EMOJIS
-    # Context-specific lists are overrides. If omitted, inherit the preset's
-    # regular selection instead of silently re-enabling every default colour.
-    client.chaos_emojis = chaos_emojis_preset if chaos_emojis_preset is not None else list(client.kakera_emojis)
-    client.sphere_perk_emojis = sphere_perk_emojis_preset if sphere_perk_emojis_preset is not None else list(client.kakera_emojis)
-    client.mk_kakera_emojis = mk_kakera_emojis_preset if mk_kakera_emojis_preset is not None else list(client.kakera_emojis)
-    client.sphere_emojis = SPHERE_EMOJIS
-    client.kakera_power_thresholds = kakera_power_thresholds or {}
-    client.debug_mode = debug_mode
-    client.debug_log_categories = {
-        str(item).strip().casefold()
-        for item in (debug_log_categories_preset or ["all"])
-        if str(item).strip()
-    }
-    client.webhook_url = str(webhook_url_preset or "").strip()
-    client.webhook_log_types = {
-        str(item).strip().upper()
-        for item in (webhook_log_types_preset or ["ERROR", "WARN", "CLAIM", "KAKERA"])
-        if str(item).strip()
-    }
-    client.persistent_stagger_seconds = max(0.0, float(persistent_stagger_seconds_preset or 0.0))
     account_index = int(client.persistent_stagger_seconds // active_stagger_seconds(1))
 
     BotLogger.log(
@@ -1741,95 +1298,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         )
         command_name = str(getattr(interaction, 'name', '') or '').strip().lower().lstrip('/')
         return command_name == "tu" or looks_like_tu_status_snapshot(message.content)
-
-    def sphere_game_kind(message):
-        interaction = (
-            getattr(message, 'interaction_metadata', None)
-            or getattr(message, 'interaction', None)
-        )
-        command_name = str(getattr(interaction, 'name', '') or '').strip().lower().lstrip('/')
-        if command_name in {"oh", "oc"}:
-            return command_name
-        text = str(getattr(message, 'content', '') or '').lower()
-        if "1 red sphere" in text and "never at the center" in text:
-            return "oc"
-        if "blue spheres unveil 3 buttons" in text and "multiplier:" in text:
-            return "oh"
-        return None
-
-    def sphere_game_buttons(message):
-        buttons = []
-        for component in getattr(message, 'components', None) or []:
-            buttons.extend(getattr(component, 'children', None) or [])
-        return buttons
-
-    def sphere_game_belongs_to_self(message):
-        interaction = (
-            getattr(message, 'interaction', None)
-            or getattr(message, 'interaction_metadata', None)
-        )
-        interaction_user = getattr(interaction, 'user', None)
-        interaction_user_id = getattr(interaction_user, 'id', None)
-        client_user_id = getattr(getattr(client, 'user', None), 'id', None)
-        return interaction_user_id is None or interaction_user_id == client_user_id
-
-    def capture_sphere_game_response(message):
-        future = getattr(client, '_sphere_game_response_future', None)
-        if future is None or future.done():
-            return False
-        if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
-            return False
-        expected_channel_id = getattr(client, '_sphere_game_response_channel_id', None)
-        if expected_channel_id is not None and getattr(message.channel, 'id', None) != expected_channel_id:
-            return False
-        buttons = sphere_game_buttons(message)
-        if len(buttons) != 25:
-            return False
-        expected_kind = getattr(client, '_sphere_game_response_kind', None)
-        detected_kind = sphere_game_kind(message)
-        # Text-command boards do not expose the command name, and their
-        # descriptions are localized. While a specific game response is
-        # pending, a fresh 25-button Mudae board in that channel is sufficient.
-        if detected_kind is not None and detected_kind != expected_kind:
-            return False
-        if detected_kind is None and expected_kind not in {"oh", "oc"}:
-            return False
-        if not sphere_game_belongs_to_self(message):
-            return False
-        future.set_result(message)
-        return True
-
-    def capture_sphere_game_bonus(message):
-        if getattr(getattr(message, 'author', None), 'id', None) != TARGET_BOT_ID:
-            return False
-        if getattr(client, '_sphere_game_response_kind', None) != "oh":
-            return False
-        expected_channel_id = getattr(client, '_sphere_game_response_channel_id', None)
-        if expected_channel_id is not None and getattr(message.channel, 'id', None) != expected_channel_id:
-            return False
-        bonus_text = [str(getattr(message, 'content', '') or '')]
-        for embed in getattr(message, 'embeds', ()) or ():
-            bonus_text.append(str(getattr(embed, 'description', '') or ''))
-            for field in getattr(embed, 'fields', ()) or ():
-                bonus_text.append(str(getattr(field, 'name', '') or ''))
-                bonus_text.append(str(getattr(field, 'value', '') or ''))
-        total_bonus_clicks = count_harvest_bonus_clicks("\n".join(bonus_text))
-        message_id = getattr(message, 'id', None)
-        previous_bonus_clicks = client._sphere_game_bonus_counts.get(message_id, 0)
-        bonus_clicks = max(0, total_bonus_clicks - previous_bonus_clicks)
-        if bonus_clicks <= 0:
-            return False
-        client._sphere_game_bonus_counts[message_id] = total_bonus_clicks
-        client._sphere_game_bonus_clicks += bonus_clicks
-        bonus_event = getattr(client, '_sphere_game_bonus_event', None)
-        if bonus_event is not None:
-            bonus_event.set()
-        BotLogger.log(
-            f"$oh: spD turned into spP; added {bonus_clicks} extra click(s).",
-            preset_name,
-            "KAKERA",
-        )
-        return True
 
     def claim_text_message_matches_attempt(message, pending):
         """Scope both gateway and history evidence to this new claim attempt."""
@@ -2397,321 +1865,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     async def active_delay(seconds):
         return await pause_interruptible_sleep(client, seconds, abort_on_pause=True)
 
-    def sphere_board_snapshot(message):
-        buttons = sphere_game_buttons(message)
-        emojis = [str(getattr(getattr(button, 'emoji', None), 'name', '') or '') for button in buttons]
-        disabled = [bool(getattr(button, 'disabled', False)) for button in buttons]
-        styles = [str(getattr(button, 'style', '')) for button in buttons]
-        return buttons, emojis, disabled, tuple(zip(emojis, disabled, styles))
-
-    async def wait_for_sphere_board_update(channel, message_id, previous_snapshot, update_event=None):
-        latest = None
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline:
-            if client.is_paused or is_maintenance_active():
-                return None
-            if update_event is not None:
-                try:
-                    await asyncio.wait_for(update_event.wait(), timeout=0.75)
-                    update_event.clear()
-                except asyncio.TimeoutError:
-                    pass
-            elif not await active_delay(0.75):
-                return None
-            try:
-                latest = await channel.fetch_message(message_id)
-            except Exception:
-                continue
-            if sphere_board_snapshot(latest)[3] != previous_snapshot:
-                return latest
-        return latest
-
-    async def play_sphere_game(channel, message, kind):
-        clicked_positions = set()
-        current = message
-        game_label = "$oh" if kind == "oh" else "$oc"
-
-        paid_clicks = 0
-        total_clicks = 0
-        red_found = False
-        while total_clicks < 25:
-            paid_limit = 5 + int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0)
-            if paid_clicks >= paid_limit:
-                break
-            buttons, emojis, disabled, snapshot = sphere_board_snapshot(current)
-            if len(buttons) != 25:
-                BotLogger.log(f"{game_label}: Expected 25 sphere buttons but received {len(buttons)}.", preset_name, "WARN")
-                return False
-            if all(disabled):
-                break
-
-            if kind == "oc":
-                position = choose_chest_position(
-                    emojis,
-                    disabled,
-                    reward_priority_order=client.oc_reward_priority_order,
-                )
-            else:
-                position = choose_harvest_position(
-                    emojis,
-                    disabled,
-                    paid_clicks=paid_clicks,
-                    priority_order=client.oh_priority_order,
-                    unknown_explore_clicks=client.oh_unknown_explore_clicks,
-                )
-            if position is None or position < 0 or position >= len(buttons):
-                BotLogger.log(f"{game_label}: No safe enabled sphere button remains.", preset_name, "WARN")
-                break
-
-            if not await active_delay(random.uniform(0.45, 0.85)):
-                return False
-            bonus_before_click = int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0)
-            bonus_event = getattr(client, '_sphere_game_bonus_event', None)
-            if bonus_event is not None:
-                bonus_event.clear()
-            refreshed = None
-            current_button = buttons[position]
-            for click_attempt in range(2):
-                update_event = asyncio.Event()
-                client._sphere_board_update_events[current.id] = update_event
-                ack_ambiguous = False
-                try:
-                    if not click_attempt:
-                        BotLogger.log(
-                            f"{game_label}: Clicking row {position // 5 + 1}, column {position % 5 + 1} ({emojis[position]}).",
-                            preset_name,
-                            "INFO",
-                        )
-                    else:
-                        BotLogger.log(f"{game_label}: No board edit received; retrying the click once.", preset_name, "WARN")
-                    try:
-                        if not await guarded_click(current_button):
-                            return False
-                    except Exception as error:
-                        if not is_ambiguous_component_interaction_error(error):
-                            raise
-                        ack_ambiguous = True
-                        BotLogger.log(
-                            f"{game_label}: Discord acknowledgement was ambiguous; checking the board before any retry.",
-                            preset_name,
-                            "WARN",
-                        )
-                    refreshed = await wait_for_sphere_board_update(
-                        channel,
-                        current.id,
-                        snapshot,
-                        update_event=update_event,
-                    )
-                except Exception as error:
-                    BotLogger.log(f"{game_label}: Sphere click failed: {error}", preset_name, "WARN")
-                    return False
-                finally:
-                    if client._sphere_board_update_events.get(current.id) is update_event:
-                        client._sphere_board_update_events.pop(current.id, None)
-                delivery_decision = sphere_click_recovery_decision(
-                    snapshot,
-                    sphere_board_snapshot(refreshed)[3] if refreshed is not None else None,
-                    click_attempt + 1,
-                )
-                if delivery_decision == "delivered":
-                    break
-                if delivery_decision == "retry":
-                    # The logical position, not the stale component object,
-                    # identifies the bounded retry.  Re-fetch and reacquire it
-                    # only after proving the pre-click board is unchanged.
-                    latest = refreshed
-                    if latest is None:
-                        try:
-                            latest = await channel.fetch_message(current.id)
-                        except Exception:
-                            latest = None
-                    if latest is None or sphere_board_snapshot(latest)[3] != snapshot:
-                        refreshed = latest
-                        break
-                    retry_buttons = sphere_game_buttons(latest)
-                    if position >= len(retry_buttons) or getattr(retry_buttons[position], "disabled", False):
-                        refreshed = latest
-                        break
-                    current = latest
-                    current_button = retry_buttons[position]
-                    if ack_ambiguous:
-                        BotLogger.log(
-                            f"{game_label}: Ambiguous click was not reflected on the board; retrying the refreshed logical button once.",
-                            preset_name,
-                            "WARN",
-                        )
-
-            if refreshed is None or sphere_board_snapshot(refreshed)[3] == snapshot:
-                BotLogger.log(f"{game_label}: Board did not update after two click attempts; stopping safely.", preset_name, "WARN")
-                return False
-
-            clicked_positions.add(position)
-            total_clicks += 1
-            current = refreshed
-            _, revealed_emojis, _, _ = sphere_board_snapshot(current)
-            revealed = normalize_sphere_emoji(
-                revealed_emojis[position] if position < len(revealed_emojis) else ""
-            )
-            if kind != "oh" or not harvest_reveal_is_free(revealed):
-                paid_clicks += 1
-            if kind == "oh" and revealed == "spD" and bonus_event is not None:
-                if int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0) == bonus_before_click:
-                    try:
-                        await asyncio.wait_for(bonus_event.wait(), timeout=5.0)
-                    except asyncio.TimeoutError:
-                        pass
-            paid_limit = 5 + int(getattr(client, '_sphere_game_bonus_clicks', 0) or 0)
-            BotLogger.log(
-                f"{game_label}: Click {total_clicks} ({paid_clicks}/{paid_limit} used) at row {position // 5 + 1}, column {position % 5 + 1}"
-                + (f" revealed {revealed}." if revealed else "."),
-                preset_name,
-                "INFO",
-            )
-            if kind == "oc" and revealed == "sp" and position in clicked_positions:
-                if not red_found:
-                    BotLogger.log(
-                        f"$oc: Red sphere found with {5 - paid_clicks} paid click(s) remaining; collecting bonus spheres.",
-                        preset_name,
-                        "KAKERA",
-                    )
-                red_found = True
-                if not client.oc_collect_after_red:
-                    BotLogger.log("$oc: Configured to stop immediately after finding red.", preset_name, "INFO")
-                    break
-
-        if kind == "oh":
-            BotLogger.log(f"$oh: Harvest finished after {len(clicked_positions)} click(s).", preset_name, "KAKERA")
-        elif red_found:
-            BotLogger.log("$oc: Chest finished after finding red and using all available clicks.", preset_name, "KAKERA")
-        else:
-            BotLogger.log("$oc: Board finished without finding the red sphere.", preset_name, "WARN")
-        return bool(clicked_positions)
-
-    async def find_recent_sphere_game(channel, kind, started_at):
-        try:
-            async for candidate in channel.history(limit=15):
-                created_at = getattr(candidate, 'created_at', None)
-                if created_at is not None and created_at < started_at - datetime.timedelta(seconds=1):
-                    continue
-                if (getattr(getattr(candidate, 'author', None), 'id', None) == TARGET_BOT_ID
-                        and sphere_game_kind(candidate) in (None, kind)
-                        and sphere_game_belongs_to_self(candidate)
-                        and len(sphere_game_buttons(candidate)) == 25):
-                    return candidate
-        except Exception:
-            return None
-        return None
-
-    async def run_sphere_game(channel, kind, uses):
-        # Sphere boards are administrative commands.  Resolve their channel at
-        # the physical send boundary so a stale per-client Discord cache cannot
-        # turn a configured command channel into the roll-channel fallback.
-        channel = await _resolve_administrative_command_channel(channel)
-        if channel is None:
-            return False
-        uses = max(1, min(10, int(uses or 1)))
-        if kind == "oh" and client.oh_use_individually:
-            uses = 1
-        if client._sphere_game_lock is None:
-            client._sphere_game_lock = asyncio.Lock()
-        async with client._sphere_game_lock:
-            if claim_critical_work_pending():
-                client._deferred_independent_known_work = True
-                return False
-            started_at = datetime.datetime.now(timezone.utc)
-            response_future = asyncio.get_running_loop().create_future()
-            client._sphere_game_response_future = response_future
-            client._sphere_game_response_channel_id = getattr(channel, 'id', None)
-            client._sphere_game_response_kind = kind
-            client._sphere_game_bonus_clicks = 0
-            client._sphere_game_bonus_event = asyncio.Event()
-            client._sphere_game_bonus_counts = {}
-            try:
-                BotLogger.log(f"{kind.upper()}: Starting with {uses} available use(s).", preset_name, "INFO")
-                if not await guarded_send(channel, f"{client.mudae_prefix}{kind} {uses}"):
-                    return False
-                try:
-                    game_message = await asyncio.wait_for(asyncio.shield(response_future), timeout=8.0)
-                except asyncio.TimeoutError:
-                    game_message = await find_recent_sphere_game(channel, kind, started_at)
-                if game_message is None:
-                    BotLogger.log(f"${kind}: Game board did not arrive; retrying later.", preset_name, "WARN")
-                    return False
-                # Starting the board consumes the selected stock even if the chest is lost.
-                client.sphere_game_counts[kind] = max(0, client.sphere_game_counts.get(kind, 0) - uses)
-                return await play_sphere_game(channel, game_message, kind)
-            finally:
-                if client._sphere_game_response_future is response_future:
-                    client._sphere_game_response_future = None
-                    client._sphere_game_response_channel_id = None
-                    client._sphere_game_response_kind = None
-                    client._sphere_game_bonus_clicks = 0
-                    client._sphere_game_bonus_event = None
-                    client._sphere_game_bonus_counts = {}
-                if not response_future.done():
-                    response_future.cancel()
-
-    async def run_available_sphere_games(channel, status=None):
-        if getattr(client, "_sphere_games_running", False):
-            client._deferred_independent_known_work = True
-            return
-        if status is not None:
-            client.sphere_game_counts = {
-                kind: status.available_for(kind) for kind in ("oh", "oc", "oq", "ot")
-            }
-        if status is not None and status.refill_minutes is not None:
-            previous_refill = client.sphere_game_refill_at_utc
-            client.sphere_game_refill_at_utc = (
-                datetime.datetime.now(timezone.utc) + datetime.timedelta(minutes=status.refill_minutes)
-            ).replace(second=0, microsecond=0)
-            if previous_refill != client.sphere_game_refill_at_utc:
-                client.loop.call_later(max(5.0, status.refill_minutes * 60.0 + 2.0), wake_status_loop)
-
-        if (status is not None and getattr(client, "is_processing_cycle", False)) or claim_critical_work_pending():
-            # A reconciliation $tu may still update local sphere stock, but it
-            # must not inject a board command ahead of claim-state handling.
-            client._deferred_independent_known_work = True
-            return
-
-        client._sphere_games_running = True
-        try:
-            enabled_games = (
-                ("oh", client.auto_oh_enabled, client.sphere_game_counts.get("oh", 0)),
-                ("oc", client.auto_oc_enabled, client.sphere_game_counts.get("oc", 0)),
-            )
-            for kind, enabled, available in enabled_games:
-                if not enabled or available <= 0:
-                    continue
-                now_monotonic = time.monotonic()
-                if now_monotonic < client._sphere_game_retry_after.get(kind, 0.0):
-                    continue
-                completed_all = True
-                batch_sizes = (
-                    [1] * available
-                    if kind == "oh" and client.oh_use_individually
-                    else split_command_batches(available, 10)
-                )
-                if kind == "oh" and client.oh_use_individually and available > 1:
-                    BotLogger.log(
-                        f"OH: Individual-use mode will play {available} separate board(s).",
-                        preset_name,
-                        "INFO",
-                    )
-                for batch_size in batch_sizes:
-                    if not await run_sphere_game(channel, kind, batch_size):
-                        completed_all = False
-                        break
-                if completed_all:
-                    refill_seconds = max(300.0, float(getattr(status, "refill_minutes", None) or 60) * 60.0)
-                    client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
-                else:
-                    for waiting_kind in ("oh", "oc"):
-                        client._sphere_game_retry_after[waiting_kind] = time.monotonic() + 300.0
-                    client.loop.call_later(302.0, wake_status_loop)
-                    return  # An unfinished board must settle before another minigame starts.
-        finally:
-            client._sphere_games_running = False
-
     async def series_wishlist_matches(message, series, known_self_roll=None):
         if not client.series_snipe_mode or not client.series_wishlist:
             return False
@@ -3236,7 +2389,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 if on_sent is not None:
                     on_sent(receipt)
 
-            if _slash_ready():
+            if effective_slash_rolls() and _slash_ready():
                 override = {"w": "wx", "h": "hx", "m": "mx"}.get(cmd.lower(), cmd)
                 if await _trigger_mudae_slash(
                     channel,
@@ -3592,6 +2745,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         if ws and getattr(ws, "session_id", None): client.mudae_session_id = ws.session_id
 
         if client._has_initialized:
+            if client.loot_automation is not None:
+                task = client._main_loop_task
+                if task is None or task.done():
+                    client._main_loop_task = client.loop.create_task(client.loot_automation.run(client._main_channel))
+                return
             clear_pending_mk_roll(reason="discord-reconnect")
             release_roll_count_reconciliation(client)
             BotLogger.log(f"Reconnected: {client.user}. Checking health...", preset_name, "INFO")
@@ -3664,7 +2822,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             except Exception:
                 BotLogger.log("Forcedivorce channel config failed. Falling back to roll channel.", preset_name, "WARN")
 
-        if client.rolling_enabled:
+        if client.rolling_enabled or client.loot_automation is not None:
             if not channel.permissions_for(channel.guild.me).send_messages:
                 BotLogger.log("No Send Permissions in roll channel", preset_name, "ERROR"); await client.close(); return
 
@@ -3686,6 +2844,11 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             wait_s = seconds_until_active()
             BotLogger.log(f"Inactive hours active. Sleeping {wait_s/60:.0f}m.", preset_name, "RESET")
             await pause_interruptible_sleep(client, wait_s)
+
+        if client.loot_automation is not None:
+            BotLogger.log(f"Kakera Loot mode: {preset_data['loot_mode']}. Normal rolling and sniping are disabled for this profile.", preset_name, "INFO")
+            client._main_loop_task = client.loop.create_task(client.loot_automation.run(channel))
+            return
 
         if client.rolling_enabled:
             if not client.skip_initial_commands:
@@ -4824,7 +3987,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                     datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=2)
                 ).replace(second=0, microsecond=0)
                 schedule_points_refresh(client.next_p_claim_at_utc)
-        await run_available_sphere_games(channel)
+        await client.sphere_runtime.run_available_sphere_games(channel)
         return True
 
     async def drain_deferred_independent_work(channel):
@@ -5361,7 +4524,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         preset_name,
                         "INFO",
                     )
-                await run_available_sphere_games(cmd_channel, sphere_status)
+                await client.sphere_runtime.run_available_sphere_games(cmd_channel, sphere_status)
             elif client.auto_oh_enabled or client.auto_oc_enabled:
                 BotLogger.log(
                     "Auto $oh/$oc is enabled but sphere-game stocks are missing from $tu.",
@@ -5568,6 +4731,31 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 schedule_periodic_sanity_sync(now_utc)
                 client._pre_roll_status_cycle_id = client.current_roll_cycle_id
                 client._pre_roll_status_requested_at = client._tu_last_sent_at_utc or request_started_at
+                if (
+                    "rolls" in fresh_fields
+                    and action_owner.state == "executing"
+                    and action_owner.cycle_id != client.current_roll_cycle_id
+                    and action_owner.cycle_id in {
+                        client._auto_rolls_ack_ambiguous_cycle_id,
+                        client._auto_rolls_reconcile_cycle_id,
+                    }
+                    and not normal_roll_action_state_is_dirty(client, client.current_roll_cycle_id)
+                ):
+                    # The item response belongs to the newly observed cycle.
+                    # Release the old transaction instead of polling forever
+                    # for a snapshot of a cycle that has already expired.
+                    old_cycle_id = action_owner.cycle_id
+                    if client.rolls_used_cycle_id == old_cycle_id:
+                        client.rolls_used_cycle_id = client.current_roll_cycle_id
+                    client._auto_rolls_ack_ambiguous_cycle_id = None
+                    client._auto_rolls_reconcile_cycle_id = None
+                    client._rolls_ack_retry_after = 0.0
+                    client._normal_roll_transaction_cycle_id = None
+                    client._preserve_collected_rolls = True
+                    action_owner.schedule(
+                        cycle_id=client.current_roll_cycle_id, now_utc=now_utc,
+                    )
+                    await complete_owned_normal_roll_transaction(old_cycle_id, channel)
             if client.key_limit_hit:
                 return
             if client._pre_roll_status_required:
@@ -6066,7 +5254,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
             ):
                 if client.is_paused or is_maintenance_active() or client.interrupt_rolling:
                     break
-                command_label = "/mk" if client.use_slash_rolls and not client.slash_fallback_active else f"{client.mudae_prefix}mk"
+                command_label = "/mk" if effective_slash_rolls() and not client.slash_fallback_active else f"{client.mudae_prefix}mk"
                 BotLogger.log(f"Using {command_label} ({client.mk_rolls_left} left, Power: {get_current_dk_power()}%)", preset_name, "KAKERA")
                 operation = begin_pending_mk_roll(channel)
                 response_received = False
@@ -6416,7 +5604,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                         logical_roll_cycle_id,
                     )
 
-                roll_delay = (max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed) + random.uniform(0.05, 0.25)
+                roll_delay = (max(2.0, client.roll_speed) if effective_slash_rolls() else client.roll_speed) + random.uniform(0.05, 0.25)
                 if not await active_delay(roll_delay):
                     mark_status_dirty(client, {"rolls"}, reason="roll-delay-interrupted")
                     break
@@ -6774,6 +5962,9 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
         now = datetime.datetime.now(timezone.utc)
         if consumes_claim:
+            adaptive_slash_ledger.record(
+                getattr(channel, "id", None), char_name, pending.get("message_id")
+            )
             client.claim_right_available = False
             client.last_successfully_claimed_character = char_name.lower()
             base = client.next_claim_reset_at_utc
@@ -8124,15 +7315,20 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_message_edit(before, after):
+        if client.loot_automation is not None:
+            client.loot_automation.on_message(after)
+            return
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
         if update_event is not None:
             update_event.set()
-        capture_sphere_game_bonus(after)
+        client.sphere_runtime.capture_sphere_game_bonus(after)
         schedule_farm_release_after_other_claim(after, previous_message=before)
         await process_edited_wish(after)
 
     @client.event
     async def on_raw_reaction_add(payload):
+        if client.loot_automation is not None:
+            return
         message_id = getattr(payload, 'message_id', None)
         if not mudae_command_ack_matches(payload, message_id, TARGET_BOT_ID):
             return
@@ -8149,6 +7345,8 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_raw_message_edit(payload):
+        if client.loot_automation is not None:
+            return
         update_event = client._sphere_board_update_events.get(getattr(payload, 'message_id', None))
         if update_event is not None:
             update_event.set()
@@ -8179,13 +7377,18 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
 
     @client.event
     async def on_message(message):
+        if client.loot_automation is not None:
+            client.loot_automation.on_message(message)
+            if not client.is_paused:
+                await client.process_commands(message)
+            return
         update_dynamic_thresholds()
         observe_roll_command_message(message)
         observe_manual_rt_command(message)
         observe_shared_tu_resets(message)
         capture_tu_response(message)
-        capture_sphere_game_response(message)
-        capture_sphere_game_bonus(message)
+        client.sphere_runtime.capture_sphere_game_response(message)
+        client.sphere_runtime.capture_sphere_game_bonus(message)
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (
@@ -8797,6 +8000,36 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
                 print_log(f"Sniping free event card: {c_name}", preset_name, "CLAIM")
                 if await claim_character(client, message.channel, message, is_free_claim=True): process = False
 
+    async def send_loot_command(channel, content):
+        if is_inactive_hour():
+            return False
+        return await guarded_send(channel, content)
+
+    client.loot_automation = (
+        LootAutomation(
+            client, preset_data, send=send_loot_command, wait=active_delay,
+            log=lambda message, level: BotLogger.log(message, preset_name, level),
+        )
+        if preset_data.get("loot_mode", "off") != "off" else None
+    )
+
+    # Sphere mini-game orchestration owns no state of its own; it reuses the
+    # client and the shared board lock, and every dependency it needs is a
+    # nested definition above.
+    client.sphere_runtime = SphereRuntime(
+        client,
+        target_bot_id=TARGET_BOT_ID,
+        log=lambda message, log_type: BotLogger.log(message, preset_name, log_type),
+        send=guarded_send,
+        click=guarded_click,
+        wait=active_delay,
+        maintenance_active=is_maintenance_active,
+        claim_pending=claim_critical_work_pending,
+        resolve_channel=_resolve_administrative_command_channel,
+        wake_status=wake_status_loop,
+        ambiguous_error=is_ambiguous_component_interaction_error,
+    )
+
     # Keep the production orchestration callable for focused runtime testing
     # and diagnostics without duplicating these nested state transitions.
     client._runtime_defer_owned_normal_roll_window = defer_owned_normal_roll_window
@@ -8806,7 +8039,6 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
     client._runtime_request_private_roll_count_sync_now = request_private_roll_count_sync_now
     client._runtime_start_roll_commands = start_roll_commands
     client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
-    client._runtime_run_available_sphere_games = run_available_sphere_games
     client._runtime_check_status = check_status
     client._runtime_is_tu_still_required = is_tu_still_required
     client._runtime_send_claim_click = send_claim_click
@@ -8835,7 +8067,7 @@ def run_bot(token, prefix, target_channel_id, roll_command, min_kakera, delay_se
         ).start()
 
     try:
-        client.run(token, reconnect=True)
+        client.run(token, reconnect=True, log_handler=None)
     except Exception as e:
         if isinstance(e, getattr(discord, "LoginFailure", ())):
             raise
@@ -8862,95 +8094,7 @@ def bot_lifecycle_wrapper(preset_name, preset_data):
         return
     while not _mobile_runtime_stop_event.is_set():
         try:
-            run_bot(
-                preset_data["token"], preset_data["prefix"], preset_data["channel_id"],
-                preset_data["roll_command"], preset_data["min_kakera"], preset_data["delay_seconds"],
-                preset_data["mudae_prefix"], print_log, preset_name,
-                preset_data.get("key_mode", False), preset_data.get("start_delay", 0),
-                preset_data.get("snipe_mode", False), preset_data.get("snipe_delay", 2),
-                preset_data.get("snipe_ignore_min_kakera_reset", False), preset_data.get("wishlist", []),
-                preset_data.get("series_snipe_mode", False), preset_data.get("series_snipe_delay", 3),
-                preset_data.get("series_wishlist", []), preset_data.get("roll_speed", 0.4),
-                preset_data.get("kakera_snipe_mode", False), preset_data.get("kakera_snipe_threshold", 0),
-                preset_data.get("reactive_snipe_on_own_rolls", True), preset_data.get("rolling", True),
-                preset_data.get("kakera_reaction_snipe_mode", False), preset_data.get("kakera_reaction_snipe_delay", 0.75),
-                preset_data.get("kakera_reaction_snipe_targets", []),
-                preset_data.get("character_snipe_targets", []),
-                preset_data.get("humanization_enabled", False), preset_data.get("humanization_window_minutes", 40),
-                preset_data.get("humanization_inactivity_seconds", 5),
-                preset_data.get("dk_power_management", False), preset_data.get("skip_initial_commands", False),
-                preset_data.get("use_slash_rolls", False), preset_data.get("only_chaos", False),
-                preset_data.get("reactive_snipe_delay", 0), preset_data.get("time_rolls_to_claim_reset", False),
-                preset_data.get("rt_ignore_min_kakera_for_wishlist", False),
-                preset_data.get("claim_emojis", None), preset_data.get("kakera_emojis", None),
-                preset_data.get("chaos_emojis", None), preset_data.get("sphere_perk_emojis", None),
-                preset_data.get("rt_only_self_rolls", False), preset_data.get("reactive_kakera_delay_range", [0.3, 1.0]),
-                preset_data.get("claim_interval", 180), preset_data.get("roll_interval", 60),
-                preset_data.get("avoid_list", []), preset_data.get("inactive_hours", []),
-                preset_data.get("auto_us_enabled", False), preset_data.get("auto_us_limit", 0),
-                preset_data.get("auto_us_stop_on_claim", True), preset_data.get("kakera_power_thresholds", {}),
-                preset_data.get("debug_mode", False), preset_data.get("auto_mk_enabled", True),
-                preset_data.get("auto_rolls_enabled", False), preset_data.get("auto_rolls_limit", 0),
-                preset_data.get("auto_rolls_in_key_mode", False), preset_data.get("auto_rolls_only_claim_hour", False),
-                preset_data.get("panic_roll_minutes", 5), preset_data.get("lurker_mode", False),
-                preset_data.get("bulk_us_enabled", False), preset_data.get("max_dk_power", 100),
-                preset_data.get("randomized_claim_reactions", None), preset_data.get("main_account_id", ""),
-                preset_data.get("scheduled_roll_times", None), preset_data.get("kakera_priority_order", None),
-                preset_data.get("auto_rt_after_claim", False), preset_data.get("mk_only", False),
-                preset_data.get("auto_dk_enabled", True), preset_data.get("command_channel_id", ""),
-                preset_data.get("enable_snipe_chat_reactions", False), preset_data.get("snipe_chat_messages", None),
-                preset_data.get("farm_character", ""), preset_data.get("op_perk_5_only", False),
-                preset_data.get("farm_character_enabled", False), preset_data.get("auto_divorce_enabled", False),
-                preset_data.get("auto_divorce_max_kakera", 50), preset_data.get("auto_divorce_series", []),
-                preset_data.get("auto_divorce_blacklist", []), preset_data.get("auto_divorce_blacklist_series", []),
-                preset_data.get("mk_bypass_power_check", False), preset_data.get("snipe_channels", []),
-                preset_data.get("max_claim_rank", 0), preset_data.get("max_like_rank", 0),
-                preset_data.get("auto_p_enabled", True),
-                preset_data.get("enable_hybrid_panic_claim", False),
-                preset_data.get("hybrid_panic_instant_claim_min_kakera", 300),
-                preset_data.get("hybrid_panic_instant_claim_max_rank", 200),
-                preset_data.get("claim_rounds_thresholds", None),
-                preset_data.get("persistent_stagger_seconds", 0),
-                preset_data.get("sphere_click_targets", None),
-                preset_data.get("immediate_kakera_click", True),
-                preset_data.get("farm_forcedivorce_after_claim", False),
-                preset_data.get(
-                    "farm_forcedivorce_before_roll",
-                    bool(preset_data.get("farm_character_enabled", False))
-                    and not preset_data.get("farm_forcedivorce_after_claim", False)
-                    and not preset_data.get("farm_forcedivorce_after_other_claim", False),
-                ),
-                preset_data.get("farm_forcedivorce_after_other_claim", False),
-                preset_data.get("auto_oh_enabled", False),
-                preset_data.get("auto_oc_enabled", False),
-                preset_data.get("series_snipe_only_self_rolls", False),
-                preset_data.get("forcedivorce_channel_id", ""),
-                preset_data.get("wish_starwish_kakera_only", False),
-                preset_data.get("auto_mk_full_power_only", False),
-                preset_data.get("auto_divorce_protect_wishes", True),
-                preset_data.get("farm_characters", []),
-                preset_data.get("enable_kakera_snipe_chat_reactions", False),
-                preset_data.get("kakera_snipe_chat_messages", None),
-                preset_data.get("oh_priority_order", None),
-                preset_data.get("oh_unknown_explore_clicks", 3),
-                preset_data.get("oc_reward_priority_order", None),
-                preset_data.get("oc_collect_after_red", True),
-                preset_data.get("webhook_url", ""),
-                preset_data.get("webhook_log_types", None),
-                preset_data.get("debug_log_categories", None),
-                preset_data.get("auto_free_claim", True),
-                preset_data.get("collect_purple_kakera", True),
-                preset_data.get("oh_use_individually", False),
-                preset_data.get("auto_dk_min_power", 0),
-                preset_data.get("kakera_snipe_channels", None),
-                preset_data.get("mk_kakera_emojis", None),
-                preset_data.get("server_reset_minute", None),
-                shop_perk_7_only_preset=preset_data.get("shop_perk_7_only", False),
-                kakera_filter_match_mode_preset=preset_data.get("kakera_filter_match_mode", "all"),
-                hourly_tu_refresh_preset=preset_data.get("hourly_tu_refresh", False),
-                perk_eight_only_preset=preset_data.get("perk_eight_only", False),
-                pause_on_key_limit_preset=preset_data.get("pause_on_key_limit", True),
-            )
+            run_bot(preset_name, preset_data)
         except Exception as e:
             if isinstance(e, getattr(discord, "LoginFailure", ())):
                 print_log(
