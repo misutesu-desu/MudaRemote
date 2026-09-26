@@ -364,12 +364,17 @@ class KakeraPowerTests(unittest.TestCase):
         for marker in ("💎/2", "💎 / 2", "💎 ÷ 2", "💎 ➗ 2️⃣", "⚡/2", "⚡ / 2"):
             self.assertTrue(has_perk_eight_discount("Perk 8: {}".format(marker)), marker)
         self.assertFalse(has_perk_eight_discount("<:spR:1234567890>"))
+        self.assertTrue(has_perk_eight_discount("46<:sp:123><:sp:456> ☑️"))
+        self.assertTrue(has_perk_eight_discount("46<a:sp:123> <a:sp:456> ☑️"))
+        self.assertTrue(has_perk_eight_discount("46🔴🔴 ☑️"))
+        self.assertFalse(has_perk_eight_discount("46<:sp:123> ☑️"))
+        self.assertTrue(has_perk_eight_discount("⚡/2 ... 23🔴 ☑️"))
         self.assertFalse(has_perk_eight_discount("2x spheres"))
 
     def test_perk_markers_are_collected_from_embed_fields_and_footer(self):
         embed = SimpleNamespace(
             description="Series",
-            fields=[SimpleNamespace(name="Bonus", value="💎 / 2")],
+            fields=[SimpleNamespace(name="Bonus", value="46<:sp:123><:sp:456> ☑️")],
             footer=SimpleNamespace(text="<:sp:1234567890>"),
         )
         marker_text = kakera_embed_text(embed)

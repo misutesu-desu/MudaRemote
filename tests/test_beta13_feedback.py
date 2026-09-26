@@ -69,6 +69,29 @@ class BetaFeedbackTests(unittest.IsolatedAsyncioTestCase):
         button.click.assert_awaited_once()
         self.assertEqual(client.current_dk_power, 82)
 
+    async def test_own_roll_post_forty_double_sphere_marker_halves_cost(self):
+        """The post-40 paired red-sphere marker selects Perk 8 at half price."""
+        client, channel = _create_test_client()
+        client.kakera_emojis = ['kakeraO']
+        client.sphere_perk_emojis = ['kakeraY']
+        client.dk_consumption = 36
+        message, button = _build_roll_message(
+            channel, 1014, client.user.id, client.user.name, client=client,
+        )
+        message.embeds[0].description += '\n46<:sp:123><:sp:456> ☑️'
+
+        async def deliver_result():
+            await client.events['on_message'](SimpleNamespace(
+                id=3014, channel=channel, author=message.author,
+                content='<:kakeraY:123> **snipe-bot +150** ($k)',
+                created_at=message.created_at, embeds=[], components=[], interaction=None,
+            ))
+
+        button.click.side_effect = deliver_result
+        await client.events['on_message'](message)
+        button.click.assert_awaited_once()
+        self.assertEqual(client.current_dk_power, 82)
+
     async def test_key_limit_notice_interrupts_rolling_but_still_collects_notice_and_followup_kakera(self):
         """A key-cap notice stops rolling without discarding that roll's own Kakera."""
         client, channel = _create_test_client(

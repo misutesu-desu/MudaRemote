@@ -293,7 +293,11 @@ def list_includes_purple(emoji_list: object) -> bool:
 def has_perk_eight_discount(description: object) -> bool:
     """Detect Perk 8's rendered half-power marker across Unicode variants."""
     normalized = str(description or "").replace("\ufe0f", "").replace("\u20e3", "")
-    return re.search(r"(?:💎|⚡)\s*(?:/|÷|➗)\s*2", normalized) is not None
+    return (
+        re.search(r"(?:💎|⚡)\s*(?:/|÷|➗)\s*2", normalized) is not None
+        or re.search(r"(?:<a?:sp:\d+>\s*){2}", normalized) is not None
+        or re.search(r"🔴\s*🔴", normalized) is not None
+    )
 
 
 def kakera_embed_text(embed: object) -> str:
