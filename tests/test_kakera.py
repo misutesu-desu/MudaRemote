@@ -361,7 +361,7 @@ class KakeraPowerTests(unittest.TestCase):
         self.assertTrue(has_op_perk_five_marker("<a:sp:1234567890>"))
         self.assertFalse(has_op_perk_five_marker("💎 / 2"))
         self.assertFalse(has_op_perk_five_marker("<:spR:1234567890>"))
-        for marker in ("💎/2", "💎 / 2", "💎 ÷ 2", "💎 ➗ 2️⃣"):
+        for marker in ("💎/2", "💎 / 2", "💎 ÷ 2", "💎 ➗ 2️⃣", "⚡/2", "⚡ / 2"):
             self.assertTrue(has_perk_eight_discount("Perk 8: {}".format(marker)), marker)
         self.assertFalse(has_perk_eight_discount("<:spR:1234567890>"))
         self.assertFalse(has_perk_eight_discount("2x spheres"))
