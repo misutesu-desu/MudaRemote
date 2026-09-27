@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.7**\n\n### ⚡ Improvements\n- **Live Preset Updates:** Changes to supported settings now reach running accounts without reconnecting the bot. Settings that affect account or channel lifecycles still clearly indicate when a restart is required.\n- **Scheduled Auto $dk:** Auto $dk can now be limited to a daily local-time window, preventing repeated use during later status checks.\n- **Background Actions During Long Waits:** Independent sphere and reward actions can be processed before long claim or roll waits, so available resources are not left idle.\n- **Android Runtime Controls:** Mobile runtime updates and live preset changes now use the same guarded lifecycle flow, reducing unnecessary restarts and keeping active sessions consistent.\n\n### 🐛 Bug Fixes\n- **Rolls Before Claim Reset:** When rolls are available shortly before a claim reset, the bot now starts the roll batch after its planned timing wait instead of repeatedly sending `$tu` and waiting on the rounded `1 min` response.\n\nRestart the bot after updating to apply the release.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.7/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.7/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "f8e9ed8a3e67e4ce4894955d31831e3b64c0020bab63cb8dd92bd2a410908d4c",
   "source_files": [
     {
       "path": "mudae_bot.py",
