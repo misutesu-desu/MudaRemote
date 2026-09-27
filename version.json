@@ -33,7 +33,7 @@
     {
       "path": "mudae_core/kakera.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.7/mudae_core/kakera.py",
-      "sha256": "f33832e9b44b2011f6f3ef7e1ce9cb9f4ae4b7d3564c3542c3ca8cbed3aa78f7"
+      "sha256": "d3b0891cacf9741d52c9109c94a1d1a4e6198f529d2e5c743b887f1e18d7d40a"
     },
     {
       "path": "mudae_core/coordinator.py",
@@ -111,7 +111,7 @@
       "sha256": "a19c515081931d6a10aa95e4453537e036eca9cce6648213f26a05fdb9b191ce"
     }
   ],
-  "apk_version": "1.2.25",
-  "apk_version_code": 33,
+  "apk_version": "1.2.26",
+  "apk_version_code": 34,
   "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.7/Mudaremote.apk"
 }
