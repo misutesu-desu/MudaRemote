@@ -210,11 +210,49 @@ class SphereBoardTests(unittest.TestCase):
             2,
         )
 
-    def test_harvest_secures_high_value_reveal_before_early_unknown(self):
+    def test_harvest_explores_before_spending_clicks_on_green(self):
         board = ["spU"] * 25
         board[3] = "spT"
         board[7] = "spG"
-        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 7)
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 12)
+
+    def test_harvest_reserves_clicks_for_rewards_above_unknown_value(self):
+        board = ["spU"] * 25
+        board[7], board[18] = "spR", "spW"
+        disabled = [False] * 25
+        # Reveal first while there is room, then collect both visible prizes.
+        self.assertEqual(choose_harvest_position(board, disabled, paid_clicks=2), 12)
+        self.assertEqual(choose_harvest_position(board, disabled, paid_clicks=3), 18)
+        disabled[18] = True
+        self.assertEqual(choose_harvest_position(board, disabled, paid_clicks=4), 7)
+
+    def test_harvest_endgame_uses_expected_value_including_dark_and_red_alias(self):
+        for color, expected in (("spG", 0), ("spY", 0), ("spO", 7), ("sp", 7), ("spD", 7)):
+            with self.subTest(color=color):
+                board = ["spU"] * 25
+                board[7] = color
+                self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), expected)
+
+    def test_harvest_resolves_dark_before_flat_rewards_when_both_fit(self):
+        board = ["spB"] * 25
+        board[4], board[7] = "spD", "spW"
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=3), 4)
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), 7)
+
+    def test_harvest_uses_actual_remaining_clicks_after_bonus(self):
+        board = ["spB"] * 25
+        board[4], board[7] = "spD", "spW"
+        self.assertEqual(
+            choose_harvest_position(board, [False] * 25, paid_clicks=4, remaining_clicks=2), 4,
+        )
+        self.assertIsNone(choose_harvest_position(board, [False] * 25, remaining_clicks=0))
+
+    def test_harvest_does_not_reserve_disabled_prizes_or_pick_disabled_purple(self):
+        board = ["spU"] * 25
+        board[7], board[18] = "spW", "spP"
+        disabled = [False] * 25
+        disabled[7] = disabled[18] = True
+        self.assertEqual(choose_harvest_position(board, disabled, paid_clicks=3), 12)
 
     def test_free_purple_variant_is_normalized(self):
         self.assertEqual(normalize_sphere_emoji("spP2"), "spP")

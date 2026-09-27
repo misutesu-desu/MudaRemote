@@ -1695,6 +1695,7 @@ def prepare_active_presets(preset_names, preset_mapping, start_index=0):
                 tokens.append(cleaned)
         for token_index, token in enumerate(tokens, 1):
             account_data = dict(data)
+            account_data["_source_preset_name"] = name
             account_data.pop("tokens", None)
             account_data["token"] = token
             active_index = max(0, int(start_index or 0)) + len(prepared)

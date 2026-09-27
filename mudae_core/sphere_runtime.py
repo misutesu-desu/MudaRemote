@@ -193,6 +193,7 @@ class SphereRuntime:
                     paid_clicks=paid_clicks,
                     priority_order=self._client.oh_priority_order,
                     unknown_explore_clicks=self._client.oh_unknown_explore_clicks,
+                    remaining_clicks=paid_limit - paid_clicks,
                 )
             if position is None or position < 0 or position >= len(buttons):
                 self._log(f"{game_label}: No safe enabled sphere button remains.", "WARN")

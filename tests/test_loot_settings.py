@@ -46,6 +46,7 @@ class LootSettingsTests(unittest.TestCase):
             "slash_claim_limit": "2", "slash_claim_window_minutes": "180",
             "inactive_hours": "", "reactive_kakera_delay_min": "0.3",
             "reactive_kakera_delay_max": "1.0",
+            "dk_schedule_time": "21:00",
         }
         editor.widgets = {key: mock.Mock(get=lambda value=value: value) for key, value in values.items()}
         editor._persist_preset_data.return_value = True
@@ -57,6 +58,7 @@ class LootSettingsTests(unittest.TestCase):
         self.assertEqual(saved["loot_min_cooldown"], 1.5)
         self.assertEqual(saved["slash_claim_target"], "Rem")
         self.assertEqual(saved["slash_claim_limit"], 2)
+        self.assertEqual(saved["dk_schedule_time"], "21:00")
 
     def test_validation_is_mode_aware_and_rejects_invalid_numbers(self):
         base = build_recommended_preset()

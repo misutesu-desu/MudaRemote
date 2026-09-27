@@ -459,14 +459,19 @@ def choose_harvest_position(
     paid_clicks: int = 0,
     priority_order: Optional[Sequence[str]] = None,
     unknown_explore_clicks: int = 3,
+    remaining_clicks: Optional[int] = None,
 ) -> Optional[int]:
-    """Choose an $oh cell with an EV-oriented reveal and endgame heuristic."""
+    """Explore while rewards can still be collected, then harvest by value."""
     board = [normalize_sphere_emoji(value) for value in emojis]
     blocked = [bool(value) for value in disabled]
     if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
         return None
     enabled = [index for index in range(BOARD_CELLS) if not blocked[index]]
     if not enabled:
+        return None
+    used_clicks = max(0, int(paid_clicks or 0))
+    clicks_left = max(0, 5 - used_clicks if remaining_clicks is None else int(remaining_clicks))
+    if not clicks_left:
         return None
 
     def closest_to_center(positions):
@@ -500,30 +505,29 @@ def choose_harvest_position(
         if unknown and max(0, int(paid_clicks or 0)) < max(0, int(unknown_explore_clicks or 0)):
             return closest_to_center(unknown)
 
-    guaranteed_high_value = [
-        index for index in enabled
-        if board[index] in {"spW", "spL", "spR", "spO", "spY", "spG"}
-    ]
     unknown = [index for index in enabled if board[index] == UNKNOWN_SPHERE]
-    used_clicks = max(0, int(paid_clicks or 0))
+    valuable = [
+        index for index in enabled
+        if _SPHERE_VALUES.get(board[index], 0.0) > _HARVEST_UNKNOWN_VALUE
+    ]
+    spare_clicks = clicks_left - len(valuable)
 
-    # Secure visible green-or-better rewards before exploring more blue/teal
-    # reveal chains, matching the guaranteed-value preference users expect.
-    if guaranteed_high_value:
-        return max(guaranteed_high_value, key=lambda index: (_SPHERE_VALUES[board[index]], -index))
-
-    # Early unknown clicks can expose blue/teal chains, purple free clicks, or the
-    # hidden $oc reward while the guaranteed prizes remain available for later.
-    if used_clicks < max(0, int(unknown_explore_clicks or 0)) and unknown:
+    # Reserve enough paid clicks for every reward worth more than exploring.
+    # Green/yellow must not consume the early clicks needed for reveal chains.
+    if spare_clicks > 0 and unknown and used_clicks < max(0, int(unknown_explore_clicks or 0)):
         return closest_to_center(unknown)
 
     dark = [index for index in enabled if board[index] == "spD"]
-    if used_clicks == 3 and dark:
+    # Resolve dark before flat rewards when all still fit: a blue/teal result
+    # needs a follow-up click, and purple can refund this paid click.
+    if clicks_left > 1 and spare_clicks >= 0 and dark:
         return closest_to_center(dark)
 
-    if used_clicks < 4 and unknown:
+    if clicks_left > 1 and spare_clicks > 0 and unknown:
         return closest_to_center(unknown)
 
+    # ponytail: fixed reward estimates, not an exact stochastic solver;
+    # replace with a calibrated probability model if measured yield needs it.
     def expected_value(position: int) -> Tuple[float, int]:
         value = (
             _HARVEST_UNKNOWN_VALUE

@@ -8,6 +8,7 @@ independently of the event-loop harness.
 
 import datetime
 from datetime import timezone
+from types import SimpleNamespace
 
 from mudae_core.kakera import (
     KakeraInteractionLedger,
@@ -33,6 +34,7 @@ def configure_client(
     kakera_emojis,
     sphere_emojis,
     slash_available,
+    register_adaptive=True,
 ):
     """Apply one preset to a fresh discord.py client.
 
@@ -82,7 +84,7 @@ def configure_client(
         client.slash_claim_window_minutes = max(1, int(preset_data.get("slash_claim_window_minutes") or 180))
     except (TypeError, ValueError):
         client.slash_claim_window_minutes = 180
-    if client.use_slash_rolls and client.slash_claim_target and client.slash_claim_limit:
+    if register_adaptive and client.use_slash_rolls and client.slash_claim_target and client.slash_claim_limit:
         from .roll_mode import adaptive_slash_ledger
         adaptive_slash_ledger.register(
             client.target_channel_id, client.slash_claim_target, client.slash_claim_window_minutes
@@ -170,6 +172,8 @@ def configure_client(
     # DK / power / US / MK / rolls automation
     client.auto_dk_enabled = preset_data.get("auto_dk_enabled", True)
     client.dk_power_management = preset_data.get("dk_power_management", False)
+    client.dk_schedule_time = preset_data.get("dk_schedule_time", "")
+    client._last_scheduled_dk_window = None
     client.dk_stock_count = 0
     client.max_dk_power = preset_data.get("max_dk_power", 100)
     client.auto_dk_min_power = max(
@@ -624,3 +628,102 @@ def configure_client(
     client._rolls_sent = 0
     client._rolls_received = 0
     client.collected_rolls = []
+
+
+# Only preset-derived behavior belongs in a live update. In particular, the
+# initializer also creates ledgers, reset anchors, counters, locks and pending
+# events, none of which may be replaced while the client is running.
+LIVE_CONFIG_ATTRIBUTES = frozenset({
+    "roll_command", "base_min_kakera", "roll_speed", "mudae_prefix",
+    "key_mode", "pause_on_key_limit", "delay_seconds", "use_slash_rolls",
+    "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes",
+    "slash_min_interval", "snipe_mode", "snipe_delay",
+    "snipe_ignore_min_kakera_reset", "wishlist", "series_snipe_mode",
+    "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
+    "snipe_channels", "kakera_snipe_channels", "main_account_id",
+    "avoid_list", "base_max_claim_rank", "base_max_like_rank",
+    "kakera_snipe_mode_active", "kakera_snipe_threshold",
+    "enable_reactive_self_snipe", "reactive_snipe_delay",
+    "kakera_reaction_snipe_mode_active", "kakera_reaction_snipe_delay_value",
+    "kakera_reaction_snipe_targets", "character_snipe_targets",
+    "auto_free_claim_enabled", "humanization_enabled",
+    "humanization_window_minutes", "humanization_inactivity_seconds",
+    "inactive_hours", "auto_dk_enabled", "dk_power_management",
+    "dk_schedule_time", "max_dk_power", "auto_dk_min_power", "only_chaos",
+    "perk_eight_only", "shop_perk_7_only", "kakera_filter_match_mode",
+    "mk_only", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim",
+    "bulk_us_enabled", "auto_mk_enabled", "auto_mk_full_power_only",
+    "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode",
+    "auto_rolls_only_claim_hour", "panic_roll_minutes", "lurker_mode",
+    "auto_rt_after_claim", "time_rolls_to_claim_reset",
+    "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls",
+    "reactive_kakera_delay_range", "auto_p_enabled",
+    "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera",
+    "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds",
+    "randomized_claim_reactions", "scheduled_roll_times",
+    "kakera_priority_order", "claim_emojis", "kakera_emojis",
+    "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis",
+    "sphere_emojis", "sphere_click_targets", "immediate_kakera_click",
+    "collect_purple_kakera", "auto_oh_enabled", "auto_oc_enabled",
+    "oh_use_individually", "oh_priority_order", "oh_unknown_explore_clicks",
+    "oc_reward_priority_order", "oc_collect_after_red",
+    "enable_snipe_chat_reactions", "snipe_chat_messages",
+    "enable_kakera_snipe_chat_reactions", "kakera_snipe_chat_messages",
+    "farm_characters", "farm_character", "farm_character_enabled",
+    "farm_forcedivorce_after_claim", "farm_forcedivorce_before_roll",
+    "farm_forcedivorce_after_other_claim", "op_perk_5_only",
+    "auto_divorce_protect_wishes", "wish_starwish_kakera_only",
+    "auto_divorce_enabled", "auto_divorce_max_kakera", "auto_divorce_series",
+    "auto_divorce_blacklist", "auto_divorce_blacklist_series",
+    "mk_bypass_power_check", "kakera_power_thresholds", "debug_mode",
+    "debug_log_categories", "webhook_url", "webhook_log_types",
+})
+
+
+def apply_live_config(
+    client,
+    preset_data,
+    *,
+    bot_name,
+    claim_emojis,
+    kakera_emojis,
+    sphere_emojis,
+    slash_available,
+):
+    """Project a validated preset onto the live client's behavioral settings.
+
+    Normalization completes before any live attribute is changed. The caller
+    handles validation and recalculation of current threshold overrides.
+    """
+    projected = SimpleNamespace()
+    configure_client(
+        projected,
+        client.preset_name,
+        preset_data,
+        bot_name=bot_name,
+        claim_emojis=claim_emojis,
+        kakera_emojis=kakera_emojis,
+        sphere_emojis=sphere_emojis,
+        slash_available=slash_available,
+        register_adaptive=False,
+    )
+    values = {name: getattr(projected, name) for name in LIVE_CONFIG_ATTRIBUTES}
+    values["hourly_tu_refresh"] = bool(preset_data.get("hourly_tu_refresh", False))
+    values["command_prefix"] = preset_data.get("prefix", "/////////////")
+    missing = object()
+    changed = {
+        name for name, value in values.items()
+        if getattr(client, name, missing) != value
+    }
+    for name in changed:
+        setattr(client, name, values[name])
+
+    if projected.use_slash_rolls and projected.slash_claim_target and projected.slash_claim_limit:
+        from .roll_mode import adaptive_slash_ledger
+
+        adaptive_slash_ledger.register(
+            client.target_channel_id,
+            projected.slash_claim_target,
+            projected.slash_claim_window_minutes,
+        )
+    return changed

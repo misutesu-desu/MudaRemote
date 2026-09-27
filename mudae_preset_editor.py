@@ -596,6 +596,7 @@ DEFAULTS = {
     "lurker_mode": False,
     "auto_rt_after_claim": False,
     "auto_dk_enabled": True,
+    "dk_schedule_time": "",
     "auto_dk_min_power": 0,
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
@@ -760,6 +761,7 @@ TEXT_SETTINGS = [
     ("oh_priority_order", "$oh Reward Priority (highest first)", [], True),
     ("oc_reward_priority_order", "$oc Reward Priority After Red (highest first)", [], True),
     ("webhook_url", "Remote Log Discord Webhook URL", "", False),
+    ("dk_schedule_time", "Auto $dk Schedule (HH:MM local time; empty = immediate)", "", False),
     ("webhook_log_types", "Webhook Log Types", ["ERROR", "WARN", "CLAIM", "KAKERA"], True),
     ("debug_log_categories", "Expert Log Categories", ["all"], True),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
@@ -2541,9 +2543,9 @@ class PresetEditor:
         char_snipe_frame.pack(fill=tk.X)
 
         snipe_mode_var = self.add_checkbox(char_snipe_frame.content, "snipe_mode", "Snipe Characters (Claim characters rolled by other people)")
+        self.add_checkbox(char_snipe_frame.content, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
         snipe_sub = self.create_subframe(char_snipe_frame.content, snipe_mode_var, "snipe_mode")
         self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
-        self.add_checkbox(snipe_sub, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
         self.add_list_field(snipe_sub, "snipe_channels", "Character Snipe Channels (Comma-separated IDs of external channels to monitor for character sniping)")
 
         reactive_snipe_var = self.add_checkbox(char_snipe_frame.content, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
@@ -2798,6 +2800,11 @@ class PresetEditor:
         )
         self.add_checkbox(power_frame.content, "auto_oc_enabled", "Auto $oc (Automatically solve Sphere Chest when available)")
         self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
+        self.add_text_field(
+            power_frame.content, "dk_schedule_time",
+            "Auto $dk Daily Schedule (HH:MM local time; empty = immediate)",
+            description="Use local 24-hour time, for example 21:00. Empty keeps immediate Auto $dk behavior.",
+        )
         self.add_number_field(
             power_frame.content,
             "auto_dk_min_power",
@@ -3544,7 +3551,13 @@ class PresetEditor:
             return False
 
         if show_success:
-            messagebox.showinfo("Success", f"Settings for '{self.current_preset}' are now saved!")
+            messagebox.showinfo(
+                "Success",
+                f"Settings for '{self.current_preset}' are now saved!\n\n"
+                "Running bots automatically apply supported changes after the current action finishes.\n"
+                "Account/token, channel, reset interval, rolling mode, loot settings and startup changes require a restart. "
+                "Check the bot log for application results.",
+            )
         self.is_dirty = False
         self.title_label.config(text=f"Editing: {self.current_preset}")
         self._manage_autostart(self.current_preset, data.get("autostart", False))
@@ -3583,7 +3596,7 @@ class PresetEditor:
 
         # Collect text fields
         # [NEW] Include main_account_id and farm_character in text fields collection
-        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "webhook_url", "scrap_target_id", "slash_claim_target"]:
+        for key in ["prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id", "roll_command", "main_account_id", "webhook_url", "scrap_target_id", "slash_claim_target", "dk_schedule_time"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 # Special handling for channel_id
@@ -4019,7 +4032,7 @@ class PresetEditor:
 
         existing = self.bot_processes.get(self.current_preset)
         if existing and existing.poll() is None:
-            messagebox.showinfo("Already Running", f"'{self.current_preset}' is already running.")
+            messagebox.showinfo("Already Running", f"'{self.current_preset}' is already running.\nSaved changes will be applied automatically where supported; check the bot log.")
             return
 
         is_frozen = getattr(sys, 'frozen', False)

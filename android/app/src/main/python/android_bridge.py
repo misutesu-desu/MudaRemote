@@ -822,6 +822,7 @@ def _inject_runtime_presets(mudae_bot, files_dir, token_overrides=None):
             continue
         data.pop("token", None)
         _normalize_preset_value(data)
+        data["_live_preset_push_only"] = True
         # Multi-account presets carry a "tokens" list in the staged JSON; env
         # vars only ever hold the primary token from the Android input. Merge
         # both (env first), preserving order and dropping duplicates, so every
@@ -1085,6 +1086,57 @@ def is_running():
     """Expose state only while at least one owned account worker is alive."""
     with _lock:
         return bool(_running and _worker_count_locked())
+
+
+def apply_profile(name, profile_json):
+    """Queue a saved profile on its existing account loops without replacing workers."""
+    def result(status, account_count=0, restart_required=None, errors=None):
+        payload = {
+            "status": status,
+            "account_count": account_count,
+            "restart_required": list(restart_required or []),
+        }
+        if errors:
+            payload["errors"] = list(errors)
+        return json.dumps(payload, ensure_ascii=False)
+
+    try:
+        requested = json.loads(str(profile_json))
+    except (TypeError, ValueError) as exc:
+        return result("invalid", errors=["Profile JSON is invalid: {}".format(exc)])
+    if not isinstance(requested, dict) or not str(name).strip():
+        return result("invalid", errors=["A named profile object is required."])
+
+    profile_name = str(name)
+    clean_profile = dict(requested)
+    for key in ("token", "tokens", "additional_tokens"):
+        clean_profile.pop(key, None)
+
+    with _lock:
+        _prune_dead_workers_locked()
+        if _stopping or not _running or profile_name not in _profile_threads:
+            return result("inactive")
+        account_count = len(_profile_threads[profile_name])
+        engine = _runtime_module
+        apply_runtime_preset = getattr(engine, "apply_runtime_preset", None)
+        if not callable(apply_runtime_preset):
+            return result("invalid", account_count, errors=[
+                "The active Python runtime does not support applying settings without a restart."
+            ])
+        try:
+            response = apply_runtime_preset(profile_name, clean_profile)
+        except Exception as exc:
+            return result("invalid", account_count, errors=["Live apply failed: {}".format(exc)])
+        if not isinstance(response, dict) or response.get("status") not in {"queued", "inactive", "invalid"}:
+            return result("invalid", account_count, errors=["Live apply returned an invalid response."])
+        if response["status"] == "queued":
+            _active_profiles[profile_name] = clean_profile
+        return result(
+            response["status"],
+            response.get("account_count", account_count),
+            response.get("restart_required"),
+            response.get("errors"),
+        )
 
 
 def stop(timeout_seconds=12.0):

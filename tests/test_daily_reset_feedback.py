@@ -88,6 +88,78 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PreRollStatusTests(unittest.IsolatedAsyncioTestCase):
+    def test_runtime_dk_schedule_parser_is_fail_closed(self):
+        self.assertEqual(mudae_bot.parse_dk_schedule_time(" 21:00 "), "21:00")
+        self.assertEqual(mudae_bot.parse_dk_schedule_time("00:00"), "00:00")
+        self.assertEqual(mudae_bot.parse_dk_schedule_time("23:59"), "23:59")
+        for value in ("9:00", "24:00", "21:60", "21.00", "tonight"):
+            with self.subTest(value=value):
+                self.assertIsNone(mudae_bot.parse_dk_schedule_time(value))
+
+    def test_due_window_uses_local_minute_date_and_schedule_marker(self):
+        local_zone = datetime.timezone(datetime.timedelta(hours=-3))
+        before = datetime.datetime(2026, 9, 26, 20, 59, tzinfo=local_zone)
+        exact = before + datetime.timedelta(minutes=1)
+        after = exact + datetime.timedelta(minutes=1)
+        window = (exact.date(), "21:00")
+        self.assertIsNone(mudae_bot.scheduled_dk_window_if_due("21:00", before))
+        self.assertEqual(mudae_bot.scheduled_dk_window_if_due("21:00", exact), window)
+        # A failed/no-stock send leaves the marker unchanged, so the due
+        # window remains eligible on the next ordinary status iteration.
+        self.assertEqual(mudae_bot.scheduled_dk_window_if_due("21:00", after), window)
+        self.assertIsNone(mudae_bot.scheduled_dk_window_if_due("21:00", after, window))
+        tomorrow = exact + datetime.timedelta(days=1)
+        self.assertEqual(
+            mudae_bot.scheduled_dk_window_if_due("21:00", tomorrow),
+            (tomorrow.date(), "21:00"),
+        )
+        self.assertEqual(
+            mudae_bot.scheduled_dk_window_if_due("00:00", exact.replace(hour=0, minute=0))[1],
+            "00:00",
+        )
+        self.assertEqual(
+            mudae_bot.scheduled_dk_window_if_due("23:59", exact.replace(hour=23, minute=59))[1],
+            "23:59",
+        )
+        self.assertIsNone(mudae_bot.scheduled_dk_window_if_due("bad", exact))
+
+    async def test_scheduled_dk_waits_until_local_configured_minute(self):
+        bot = _build_runtime()
+        channel = _Channel(bot.target_channel_id)
+        bot._main_channel = channel
+        bot.auto_dk_enabled = True
+        bot.dk_power_management = False
+        bot.dk_schedule_time = "21:00"
+        bot.auto_p_enabled = False
+        bot.last_tu_snapshot_complete = True
+        bot.last_tu_query_utc = datetime.datetime.now(datetime.timezone.utc)
+        bot.rolls_left = 0
+        clear_status_dirty(bot)
+        bot._pre_roll_status_required = True
+        bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
+        local_now = datetime.datetime.now().astimezone().replace(hour=20, minute=59, second=0, microsecond=0)
+        clock = mock.Mock(wraps=datetime.datetime)
+        clock.now.return_value = local_now
+        snapshot = ('You can claim now!\nNext claim reset in **60** min.\n'
+                    'You have **10** rolls left. Next rolls reset in **60** min.\n'
+                    'Power: **100%**\n$dk is ready!\n7/20 buttons clicked.\n'
+                    '(Perk 8) Clicked today: 0/40.')
+
+        async def send(content, **kwargs):
+            channel.sent.append(content)
+            if content == '$tu':
+                bot._tu_response_future.set_result(snapshot)
+            return SimpleNamespace(id=len(channel.sent))
+
+        channel.send = send
+        with mock.patch.object(mudae_bot.datetime, "datetime", clock), \
+                mock.patch.object(mudae_bot, '_tu_interval_coordinator', GlobalIntervalCoordinator()), \
+                mock.patch.object(mudae_bot, 'pause_interruptible_sleep', mock.AsyncMock(return_value=True)):
+            await bot._runtime_check_status(bot, channel, '$', proceed_to_rolls=False)
+        self.assertNotIn('$dk', channel.sent)
+        self.assertEqual(bot.dk_stock_count, 1)
+        self.assertIsNone(bot._last_scheduled_dk_window)
+
     async def test_forced_status_runs_daily_commands_even_with_executing_owner(self):
         for owner_state in ('pending', 'executing'):
             for dk_status in ('$dk is ready!', '$dk is available!', '1 $dk available'):

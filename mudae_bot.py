@@ -20,6 +20,26 @@ import shutil
 from typing import Tuple
 
 
+def parse_dk_schedule_time(value):
+    """Return a normalized valid daily DK schedule, or None if malformed."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) else None
+
+
+def scheduled_dk_window_if_due(schedule, local_now, last_window=None):
+    """Return this local-date schedule window when due and not already used."""
+    normalized = parse_dk_schedule_time(schedule)
+    if normalized is None:
+        return None
+    due_minute = int(normalized[:2]) * 60 + int(normalized[3:])
+    if local_now.hour * 60 + local_now.minute < due_minute:
+        return None
+    window = (local_now.date(), normalized)
+    return None if window == last_window else window
+
+
 def _recover_interrupted_source_update(base_path):
     """Pure-stdlib crash recovery executed before any core packages are imported."""
     journal_path = os.path.join(base_path, "update_journal.json")
@@ -217,7 +237,8 @@ try:
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
-    from mudae_core.bot_config import configure_client
+    from mudae_core.bot_config import configure_client, apply_live_config
+    from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
     from mudae_core.config import atomic_write_json, load_json, validate_preset
     from mudae_core.loot import LootAutomation
     from mudae_core.roll_mode import adaptive_slash_ledger
@@ -252,7 +273,8 @@ except (ModuleNotFoundError, ImportError) as core_error:
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
-    from mudae_core.bot_config import configure_client
+    from mudae_core.bot_config import configure_client, apply_live_config
+    from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
     from mudae_core.config import atomic_write_json, load_json, validate_preset
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.loot import LootAutomation
@@ -972,6 +994,31 @@ def parse_mudae_ranks(embed_description: str) -> Tuple[int, int]:
         return int(m.group(1).replace(",", "").replace(".", "")) if m else 0
     return get_rank("CLAIMS_RANK"), get_rank("LIKES_RANK")
 
+def apply_runtime_preset(preset_name, preset_data):
+    """Queue settings on existing accounts' event loops without reconnecting."""
+    errors = validate_live_preset(preset_data)
+    if errors:
+        return {"status": "invalid", "account_count": 0, "restart_required": [], "errors": errors}
+    data = clean_preset(preset_data)
+    with _active_clients_lock:
+        clients = list(_active_clients)
+    queued = 0
+    restart = set()
+    for client in clients:
+        reload = getattr(client, "_preset_reload", None)
+        loop = getattr(client, "_mobile_owned_loop", None)
+        if reload is None or reload.name != preset_name or loop is None or loop.is_closed():
+            continue
+        try:
+            loop.call_soon_threadsafe(reload.offer, data)
+        except RuntimeError:
+            continue
+        restart.update(reload.restart_required(data))
+        queued += 1
+    return {"status": "queued" if queued else "inactive", "account_count": queued,
+            "restart_required": sorted(restart)}
+
+
 def run_bot(preset_name, preset_data, log_function=print_log):
     token = preset_data.get("token")
     prefix = preset_data.get("prefix", "/////////////")
@@ -1007,6 +1054,39 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         kakera_emojis=KAKERA_EMOJIS,
         sphere_emojis=SPHERE_EMOJIS,
         slash_available=(Route is not None),
+    )
+    client._live_preset_ready = False
+    client._scheduled_roll_task = None
+
+    def apply_saved_settings(data):
+        changed = apply_live_config(
+            client, data, bot_name=BOT_NAME, claim_emojis=CLAIM_EMOJIS,
+            kakera_emojis=KAKERA_EMOJIS, sphere_emojis=SPHERE_EMOJIS,
+            slash_available=(Route is not None),
+        )
+        # The lifecycle wrapper reuses this dictionary after a client failure.
+        # Keep successfully applied behavior across that recovery as well.
+        for key in clean_preset(preset_data):
+            preset_data.pop(key, None)
+        preset_data.update(data)
+        if changed:
+            update_dynamic_thresholds()
+            if "scheduled_roll_times" in changed:
+                task = client._scheduled_roll_task
+                if task is not None:
+                    task.cancel()
+                client._scheduled_roll_task = None
+                client.scheduled_roll_due = False
+                if client.rolling_enabled and client.scheduled_roll_times:
+                    client._scheduled_roll_task = client.loop.create_task(scheduled_roll_task(client._main_channel))
+            wake_status_loop()
+        return changed
+
+    client._preset_reload = LivePresetReload(
+        client, preset_data, apply_saved_settings,
+        lambda message, level: BotLogger.log(message, preset_name, level),
+        path=None if preset_data.get("_live_preset_push_only") else presets_path,
+        name=preset_data.get("_source_preset_name", preset_name),
     )
 
     # Window estimates retain configured slash speed: a shared claim window can
@@ -2848,6 +2928,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if client.loot_automation is not None:
             BotLogger.log(f"Kakera Loot mode: {preset_data['loot_mode']}. Normal rolling and sniping are disabled for this profile.", preset_name, "INFO")
             client._main_loop_task = client.loop.create_task(client.loot_automation.run(channel))
+            client._live_preset_ready = True
             return
 
         if client.rolling_enabled:
@@ -2861,9 +2942,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 except Exception as e:
                     BotLogger.log(f"Setup error: {e}", preset_name, "ERROR"); await client.close(); return
             client._main_loop_task = client.loop.create_task(main_status_loop(client, channel))
-            if client.scheduled_roll_times: client.loop.create_task(scheduled_roll_task(channel))
+            if client.scheduled_roll_times and client._scheduled_roll_task is None:
+                client._scheduled_roll_task = client.loop.create_task(scheduled_roll_task(channel))
         else:
             client._main_loop_task = client.loop.create_task(snipe_only_status_loop(client, channel))
+        client._live_preset_ready = True
 
     @client.event
     async def on_disconnect():
@@ -2873,7 +2956,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def health_monitor_task():
         unhealthy = 0
         while not client.is_closed():
-            await asyncio.sleep(60)
+            for _ in range(30):
+                await asyncio.sleep(2)
+                if client.is_closed():
+                    return
+                await client._preset_reload.poll_once()
             request_hourly_status_refresh()
             if client.latency == float('inf'):
                 unhealthy += 1
@@ -4475,12 +4562,30 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
                 if client.auto_dk_enabled and not client.dk_power_management:
                     if client.dk_stock_count > 0:
-                        BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
-                        if not await guarded_send(cmd_channel, f"{client.mudae_prefix}dk"):
-                            return
-                        client.dk_stock_count = max(0, client.dk_stock_count - 1)
-                        if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
-                            return
+                        schedule_value = getattr(client, "dk_schedule_time", "")
+                        scheduled_window = None
+                        eligible = True
+                        if schedule_value:
+                            schedule = parse_dk_schedule_time(schedule_value)
+                            if schedule is None:
+                                BotLogger.log("Invalid Auto $dk schedule; expected HH:MM local time.", preset_name, "WARN")
+                                eligible = False
+                            else:
+                                local_now = datetime.datetime.now().astimezone()
+                                scheduled_window = scheduled_dk_window_if_due(
+                                    schedule, local_now,
+                                    getattr(client, "_last_scheduled_dk_window", None),
+                                )
+                                eligible = scheduled_window is not None
+                        if eligible:
+                            BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
+                            if not await guarded_send(cmd_channel, f"{client.mudae_prefix}dk"):
+                                return
+                            client.dk_stock_count = max(0, client.dk_stock_count - 1)
+                            if scheduled_window is not None:
+                                client._last_scheduled_dk_window = scheduled_window
+                            if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
+                                return
 
                 if client.auto_p_enabled:
                     p_on_cooldown = client.next_p_claim_at_utc and now_utc < client.next_p_claim_at_utc
@@ -5384,6 +5489,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             ignore_limit_for_post_roll = True
 
         is_timing_mode_active = False
+        timing_wait_completed = False
         if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and reset_soon:
             now_utc = datetime.datetime.now(timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
@@ -5401,6 +5507,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if not await active_delay(wait_s):
                         mark_status_dirty(client, {"rolls"}, reason="timed-roll-wait-interrupted")
                         return
+                # The timing decision itself is the synchronization point. If
+                # the remaining wait is only a few seconds, querying again is
+                # especially likely to receive the same rounded claim timer.
+                timing_wait_completed = True
                 is_timing_mode_active = True
         client.is_timing_mode_active = is_timing_mode_active
 
@@ -5417,6 +5527,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     break
                 # Smart Timing and channel patience can outlive the earlier
                 # snapshot. Keep ownership while refreshing before the first roll.
+                # Once Smart Timing has completed its deliberate wait, the
+                # already-authoritative roll count is enough to start. A fresh
+                # $tu here can still show the rounded pre-reset claim minute
+                # and send the same batch back into the wait loop.
+                if timing_wait_completed:
+                    break
                 checked_before = getattr(client, "last_tu_query_utc", None)
                 if not await refresh_status_before_rolls(channel, logical_roll_cycle_id):
                     if (client.current_roll_cycle_id != logical_roll_cycle_id
@@ -7133,6 +7249,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         else:
             BotLogger.log(f"Waiting {wait_seconds/60:.1f}m ({reason}).", preset_name, "RESET")
         deadline = time.monotonic() + wait_seconds
+        # A fresh $tu defers spheres until claim/roll state is settled. Drain
+        # before sleeping: check_status's finally may be a full reset away.
+        # Keep the original deadline so playing boards does not delay reset.
+        await drain_deferred_independent_work(channel)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:

@@ -19,6 +19,7 @@ MudaRemote_update*.exe
 update.bat
 
 # Local environments and editors
+/.kilo/
 .venv/
 venv/
 .idea/

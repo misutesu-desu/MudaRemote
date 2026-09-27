@@ -21,6 +21,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 
 class MudaRemoteService : Service() {
@@ -31,6 +32,7 @@ class MudaRemoteService : Service() {
     private lateinit var commandExecutor: ScheduledExecutorService
     private var runtimeWatch: ScheduledFuture<*>? = null
     @Volatile private var latestCommandStartId = 0
+    @Volatile private var latestServiceStartId = 0
     @Volatile private var latestCommandIsStop = false
     @Volatile private var lastStopStartId = 0
     @Volatile private var destroyed = false
@@ -47,8 +49,30 @@ class MudaRemoteService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestServiceStartId = startId
         // Satisfy the startForegroundService() contract on every delivery, then act.
         createChannel()
+        if (intent?.action == ACTION_APPLY) {
+            val previousState = runtimeState
+            startForeground(NOTIFICATION_ID, notification(if (previousState == RuntimeState.STOPPING) "Stopping..." else "Running"))
+            if (previousState == RuntimeState.STOPPED) {
+                appendLocalLog("[WARN] [ANDROID] Live apply ignored because the runtime is stopped.")
+                showToast("Profile saved. Start the runtime to use the changes.")
+                stopSelfResult(startId)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                return START_NOT_STICKY
+            }
+            if (previousState == RuntimeState.RUNNING) {
+                val name = intent.getStringExtra(EXTRA_PROFILE_NAME).orEmpty()
+                val profileJson = intent.getStringExtra(EXTRA_PROFILE).orEmpty()
+                val accountTokensJson = intent.getStringExtra(EXTRA_ACCOUNT_TOKENS).orEmpty()
+                commandExecutor.execute { applyRuntimeProfile(name, profileJson, accountTokensJson, startId) }
+            } else {
+                appendLocalLog("[WARN] [ANDROID] Live apply skipped while runtime is starting or stopping.")
+                showToast("Profile saved. Apply again after the runtime finishes starting or stopping.")
+            }
+            return START_STICKY
+        }
         val isStop = intent?.action == ACTION_STOP
         val wasActive = runtimeState != RuntimeState.STOPPED
         runtimeState = if (isStop) RuntimeState.STOPPING else RuntimeState.STARTING
@@ -220,7 +244,7 @@ class MudaRemoteService : Service() {
             if (latestCommandStartId == startId) {
                 SecretVault(this).put(DESIRED_RUNNING_KEY, "false")
             }
-            val stopped = stopSelfResult(startId)
+            val stopped = stopSelfResult(stopDeliveryId(startId))
             if (stopped) {
                 runtimeState = RuntimeState.STOPPED
                 releaseLocks()
@@ -247,6 +271,65 @@ class MudaRemoteService : Service() {
             appendLocalLog("[WARN] [ANDROID] Stop timed out; the service is retaining ownership until workers exit.")
             showToast("Still stopping account workers. A queued Run will start automatically afterward.")
             ensureRuntimeWatch()
+        }
+    }
+
+    private fun applyRuntimeProfile(name: String, profileJson: String, accountTokensJson: String, startId: Int) {
+        if (destroyed || startWasCancelled(startId)) return
+        try {
+            val vault = SecretVault(this)
+            val profiles = JSONObject(vault.get(ACTIVE_PROFILES_KEY).ifBlank { "{}" })
+            if (!profiles.has(name)) {
+                appendLocalLog("[WARN] [ANDROID] Live apply skipped: '$name' is no longer active.")
+                showToast("Profile saved. '$name' is not active in the runtime.")
+                return
+            }
+            val currentTokens = JSONArray(activeTokens.optString(name, "[]"))
+            val requestedTokens = JSONArray(accountTokensJson)
+            val tokensChanged = currentTokens.toString() != requestedTokens.toString()
+            val responseText = Python.getInstance().getModule("android_bridge")
+                .callAttr("apply_profile", name, profileJson).toString()
+            val response = JSONObject(responseText)
+            if (startWasCancelled(startId)) return
+            when (response.optString("status")) {
+                "queued" -> {
+                    val cleanProfile = JSONObject(profileJson).apply {
+                        remove("token")
+                        remove("tokens")
+                        remove("additional_tokens")
+                    }
+                    profiles.put(name, cleanProfile)
+                    activeProfiles.put(name, cleanProfile)
+                    vault.put(ACTIVE_PROFILES_KEY, profiles.toString())
+                    val restartRequired = response.optJSONArray("restart_required")
+                    val restartKeys = (0 until (restartRequired?.length() ?: 0)).mapNotNull { index ->
+                        restartRequired?.optString(index)?.takeIf { it.isNotBlank() }
+                    }.toMutableList()
+                    if (tokensChanged) restartKeys.add("account tokens")
+                    val restartMessage = if (restartKeys.isEmpty()) "" else
+                        " Restart required for: ${restartKeys.distinct().joinToString(", ")}."
+                    val count = response.optInt("account_count", 0)
+                    appendLocalLog("[INFO] [ANDROID] Live settings QUEUED for '$name' ($count account(s)).$restartMessage")
+                    showToast("'$name' settings QUEUED for $count account(s).$restartMessage")
+                }
+                "inactive" -> {
+                    appendLocalLog("[WARN] [ANDROID] Live apply skipped: '$name' is inactive.")
+                    showToast("Profile saved. '$name' is no longer active.")
+                }
+                "invalid" -> {
+                    val errors = response.optJSONArray("errors")
+                    val reason = (0 until (errors?.length() ?: 0))
+                        .mapNotNull { index -> errors?.optString(index)?.takeIf { it.isNotBlank() } }
+                        .joinToString("; ").ifBlank { "The active Python runtime rejected the profile." }
+                    appendLocalLog("[ERROR] [ANDROID] Live apply failed for '$name': $reason")
+                    showToast("Profile saved, but live apply failed: $reason")
+                }
+                else -> throw IllegalStateException("Unexpected live apply response.")
+            }
+        } catch (error: Exception) {
+            if (destroyed || startWasCancelled(startId)) return
+            appendLocalLog("[ERROR] [ANDROID] Live apply failed for '$name': ${error.message}")
+            showToast("Profile saved, but live apply failed: ${error.message}")
         }
     }
 
@@ -296,7 +379,7 @@ class MudaRemoteService : Service() {
             vault.put(DESIRED_RUNNING_KEY, "false")
         }
         releaseLocks()
-        val stopped = stopSelfResult(startId)
+        val stopped = stopSelfResult(stopDeliveryId(startId))
         if (stopped) {
             runtimeState = RuntimeState.STOPPED
             stopRuntimeWatch()
@@ -314,6 +397,11 @@ class MudaRemoteService : Service() {
             appendLocalLog("[INFO] [ANDROID] Previous workers stopped; processing the queued start request.")
         }
     }
+
+    // Apply deliveries do not supersede start/stop ownership, but Android's
+    // stopSelfResult must account for those newer deliveries when stopping.
+    private fun stopDeliveryId(startId: Int): Int =
+        if (latestCommandStartId == startId) latestServiceStartId else startId
 
     private fun startWasCancelled(startId: Int): Boolean =
         destroyed || lastStopStartId > startId || (latestCommandStartId > startId && latestCommandIsStop)
@@ -431,8 +519,12 @@ class MudaRemoteService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.mudaremote.android.STOP"
+        private const val ACTION_APPLY = "com.mudaremote.android.APPLY"
         private const val EXTRA_PROFILES = "com.mudaremote.android.PROFILES"
         private const val EXTRA_TOKENS = "com.mudaremote.android.TOKENS"
+        private const val EXTRA_PROFILE_NAME = "com.mudaremote.android.PROFILE_NAME"
+        private const val EXTRA_PROFILE = "com.mudaremote.android.PROFILE"
+        private const val EXTRA_ACCOUNT_TOKENS = "com.mudaremote.android.ACCOUNT_TOKENS"
         private const val CHANNEL_ID = "mudaremote_runtime"
         private const val NOTIFICATION_ID = 41
         private const val LOG_FILE = "mudaremote_android.log"
@@ -470,16 +562,17 @@ class MudaRemoteService : Service() {
             val vault = SecretVault(context)
             val profiles = JSONObject(vault.get(ACTIVE_PROFILES_KEY).ifBlank { "{}" })
             if (!profiles.has(name)) return false
-            val tokens = JSONObject(vault.get(ACTIVE_TOKENS_KEY).ifBlank { "{}" })
-            profiles.put(name, JSONObject(profile.toString()).apply {
+            val cleanProfile = JSONObject(profile.toString()).apply {
                 remove("token")
                 remove("tokens")
                 remove("additional_tokens")
-            })
-            tokens.put(name, org.json.JSONArray(accountTokens).toString())
-            // Reuse the supervised Stop/Run queue so old workers exit before settings take effect.
-            stop(context)
-            start(context, profiles.toString(), tokens.toString())
+            }
+            context.startForegroundService(
+                Intent(context, MudaRemoteService::class.java).setAction(ACTION_APPLY)
+                    .putExtra(EXTRA_PROFILE_NAME, name)
+                    .putExtra(EXTRA_PROFILE, cleanProfile.toString())
+                    .putExtra(EXTRA_ACCOUNT_TOKENS, JSONArray(accountTokens).toString())
+            )
             return true
         }
     }

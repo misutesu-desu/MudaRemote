@@ -1519,7 +1519,7 @@ class MainActivity : ComponentActivity() {
         persist()
         if (showStatus) {
             val applying = MudaRemoteService.applySavedProfile(this, currentProfile, data, allTokensForProfile(currentProfile))
-            toast(if (applying) "Saved '$currentProfile'. Restarting active profiles to apply changes."
+            toast(if (applying) "Saved '$currentProfile'. Live update requested; see logs for the result."
                   else "Committed changes to '$currentProfile' 💾")
         }
     }

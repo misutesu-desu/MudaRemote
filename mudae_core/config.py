@@ -70,6 +70,16 @@ def parse_scheduled_times(values):
     return result, errors
 
 
+def parse_dk_schedule_time(value):
+    """Normalize an optional local daily Auto $dk time."""
+    if not isinstance(value, str):
+        return None, ["dk_schedule_time must be text in HH:MM format."]
+    normalized = value.strip()
+    if normalized and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized):
+        return None, ["dk_schedule_time must be empty or a valid 24-hour HH:MM time."]
+    return normalized, []
+
+
 def parse_inactive_hours(value):
     if isinstance(value, str):
         result = []
@@ -111,6 +121,8 @@ def parse_inactive_hours(value):
 def validate_preset(data, resolved_token=None, require_runtime=True):
     """Return validation errors, optionally allowing an incomplete editor draft."""
     errors = []
+    _, dk_schedule_errors = parse_dk_schedule_time(data.get("dk_schedule_time", ""))
+    errors.extend(dk_schedule_errors)
     loot_mode = data.get("loot_mode", "off")
     if loot_mode not in ("off", "kl", "scrap"):
         errors.append("Loot mode must be off, kl, or scrap.")

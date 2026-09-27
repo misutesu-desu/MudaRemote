@@ -3,10 +3,23 @@ import os
 import tempfile
 import unittest
 
-from mudae_core.config import atomic_write_json, parse_inactive_hours, parse_scheduled_times, validate_preset
+from mudae_core.config import atomic_write_json, parse_dk_schedule_time, parse_inactive_hours, parse_scheduled_times, validate_preset
 
 
 class ConfigTests(unittest.TestCase):
+    def test_dk_schedule_time_validation_and_normalization(self):
+        for value in ("", "  ", "00:00", "23:59", "21:00"):
+            normalized, errors = parse_dk_schedule_time(value)
+            self.assertEqual(normalized, value.strip())
+            self.assertEqual(errors, [])
+        for value in ("9:00", "24:00", "21:60", "21.00", "evening", None):
+            with self.subTest(value=value):
+                self.assertTrue(parse_dk_schedule_time(value)[1])
+                self.assertTrue(any(
+                    "dk_schedule_time" in error
+                    for error in validate_preset({"dk_schedule_time": value}, require_runtime=False)
+                ))
+
     def test_atomic_json_write_round_trips_unicode(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "presets.json")
