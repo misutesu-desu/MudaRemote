@@ -116,7 +116,7 @@ class LivePresetReload:
     async def poll_once(self):
         if self.path:
             try:
-                data = await asyncio.to_thread(self._read)
+                data = await asyncio.get_running_loop().run_in_executor(None, self._read)
                 if data is not None:
                     self.offer(data)
                 self.read_failed = False
