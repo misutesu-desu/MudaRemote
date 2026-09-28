@@ -66,27 +66,48 @@ def validate_live_preset(data):
 class LivePresetReload:
     """Owned by one client event loop; invalid saves never replace live state."""
 
-    def __init__(self, client, initial, apply, log, *, path=None, name=None):
+    def __init__(self, client, initial, apply, log, *, path=None, name=None, observer=None):
         self.client = client
         self.initial = normalize_preset(initial)
         self.seen = self.initial
         self.pending = None
+        self.pending_request_id = None  # Track request ID for pending preset
         self.apply = apply
         self.log = log
         self.path = path
         self.name = name
         self.read_failed = False
+        self.observer = observer  # Optional callback for outcome reporting
+        self.active_preset = self.initial  # Current applied preset
+        self.desired_preset = self.initial  # Latest seen/pending preset
+        self._deferred_reported = False
 
     def restart_required(self, data):
         candidate = normalize_preset(data)
         return sorted(key for key in RESTART_ONLY_KEYS
                       if candidate.get(key) != self.initial.get(key))
 
-    def offer(self, data):
+    def offer(self, data, request_id=None):
+        """Queue a preset update with optional request_id for correlation."""
         candidate = normalize_preset(data)
-        if candidate != self.seen:
-            self.seen = candidate
+        changed = candidate != self.seen
+        if request_id is None and self.pending is not None and candidate == self.pending:
+            return  # Repeated disk poll must not steal a correlated host request.
+        if changed or self.pending is not None:
+            if self.pending_request_id is not None and self.pending_request_id != request_id:
+                self._report_outcome(self.pending_request_id, "superseded", "Replaced by newer preset request")
+            self.pending_request_id = request_id
             self.pending = candidate
+            self.seen = candidate
+            self.desired_preset = candidate
+            self._deferred_reported = False
+        elif request_id is not None and candidate == self.active_preset:
+            self._report_outcome(request_id, "applied", "No changes needed", changed_keys=[])
+        elif request_id is not None:
+            self.pending = candidate
+            self.pending_request_id = request_id
+            self.desired_preset = candidate
+            self._deferred_reported = False
 
     def _read(self):
         with open(self.path, encoding="utf-8") as handle:
@@ -118,19 +139,43 @@ class LivePresetReload:
             try:
                 data = await asyncio.get_running_loop().run_in_executor(None, self._read)
                 if data is not None:
-                    self.offer(data)
+                    self.offer(data)  # File-based updates have no request_id
                 self.read_failed = False
             except (OSError, ValueError, TypeError):
                 if not self.read_failed:
                     self.log("Preset reload: saved settings could not be read; keeping active settings.", "WARN")
                 self.read_failed = True
-        if self.pending is None or self.busy():
+
+        if getattr(self.client, "_stopping", False):
+            self.cancel_pending()
             return
-        candidate, self.pending = self.pending, None
+
+        if self.pending is None:
+            return
+
+        if self.busy():
+            # Still busy - report deferred but keep pending
+            if self.pending_request_id is not None and not self._deferred_reported:
+                self._report_outcome(self.pending_request_id, "deferred",
+                                    "Waiting for active transactions to complete")
+                self._deferred_reported = True
+            return
+
+        # Extract pending request for processing
+        candidate = self.pending
+        request_id = self.pending_request_id
+        self.pending = None
+        self.pending_request_id = None
+        self._deferred_reported = False
+
         errors = validate_live_preset(candidate)
         if errors:
-            self.log("Preset reload rejected: " + " | ".join(errors), "WARN")
+            error_msg = " | ".join(errors)
+            self.log("Preset reload rejected: " + error_msg, "WARN")
+            self._report_outcome(request_id, "rejected", error_msg)
+            self.desired_preset = self.active_preset
             return
+
         restart = self.restart_required(candidate)
         effective = copy.deepcopy(candidate)
         for key in RESTART_ONLY_KEYS:
@@ -138,12 +183,57 @@ class LivePresetReload:
                 effective[key] = self.initial[key]
             else:
                 effective.pop(key, None)
+
         try:
             changed = self.apply(effective)
-        except (TypeError, ValueError, AttributeError, OverflowError):
+        except (TypeError, ValueError, AttributeError, OverflowError) as exc:
+            error_msg = f"Invalid setting values: {exc}"
             self.log("Preset reload rejected: invalid setting values; keeping active settings.", "WARN")
+            self._report_outcome(request_id, "rejected", error_msg)
+            self.desired_preset = self.active_preset
             return
+
+        # Successfully applied
+        self.active_preset = effective
+
         if changed:
             self.log("Saved preset changes applied without restarting the bot.", "INFO")
         if restart:
             self.log("These saved settings require a restart: " + ", ".join(restart), "WARN")
+            self._report_outcome(request_id, "restart_required",
+                               f"Applied changes: {sorted(changed)}. Restart required for: {restart}",
+                               changed_keys=sorted(changed), restart_keys=restart)
+        else:
+            self._report_outcome(request_id, "applied",
+                               f"Applied changes: {sorted(changed)}" if changed else "No changes needed",
+                               changed_keys=sorted(changed))
+
+    def cancel_pending(self):
+        """Cancel any queued request during client shutdown."""
+        if self.pending_request_id is not None:
+            self._report_outcome(self.pending_request_id, "cancelled", "Client is stopping")
+        self.pending = None
+        self.pending_request_id = None
+        self.desired_preset = self.active_preset
+        self._deferred_reported = False
+
+    def _report_outcome(self, request_id, status, message, changed_keys=None, restart_keys=None):
+        """Report preset outcome to observer if configured."""
+        if self.observer is None or request_id is None:
+            return
+
+        try:
+            outcome = {
+                "request_id": request_id,
+                "status": status,
+                "message": message,
+            }
+            if changed_keys is not None:
+                outcome["changed_keys"] = changed_keys
+            if restart_keys is not None:
+                outcome["restart_keys"] = restart_keys
+
+            self.observer(outcome)
+        except Exception as exc:
+            # Observer exceptions must not break reload
+            self.log(f"Preset outcome observer error: {exc}", "ERROR")

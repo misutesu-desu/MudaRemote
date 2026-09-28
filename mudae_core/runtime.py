@@ -1813,6 +1813,8 @@ async def pause_interruptible_sleep(client, seconds: float, abort_on_pause: bool
     start_generation = int(getattr(client, "_pause_generation", 0))
 
     while True:
+        if bool(getattr(client, "_runtime_stopping", False)):
+            return False
         if abort_on_pause and (
             bool(getattr(client, "is_paused", False))
             or int(getattr(client, "_pause_generation", 0)) != start_generation

@@ -850,27 +850,29 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None, pr
         return "failed"
 presets = {}
 presets_path = os.path.join(get_base_path(), "presets.json")
-if not os.path.exists(presets_path):
+
+
+def load_desktop_presets():
+    """Initialize legacy CLI state only when the desktop entry point runs."""
+    global presets
+    if not os.path.exists(presets_path):
+        try:
+            atomic_write_json(presets_path, {})
+            print_system_log(f"Created missing {presets_path}", "INFO")
+        except Exception as e:
+            print_system_log(f"Error creating {presets_path}: {e}", "ERROR")
     try:
-        atomic_write_json(presets_path, {})
-        print_system_log(f"Created missing {presets_path}", "INFO")
+        loaded = load_json(presets_path, {})
+        store = SecretStore(get_base_path())
+        for name, data in loaded.items():
+            data["tokens"] = store.get_tokens(name, data.get("tokens") or data.get("token", ""))
+            data["token"] = data["tokens"][0] if data["tokens"] else ""
+        # Android injects into this mapping before launching account threads.
+        presets.clear()
+        presets.update(loaded)
     except Exception as e:
-        print_system_log(f"Error creating {presets_path}: {e}", "ERROR")
-
-try:
-    presets = load_json(presets_path, {})
-    _secret_store = SecretStore(get_base_path())
-    for _preset_name, _preset_data in presets.items():
-        _preset_data["tokens"] = _secret_store.get_tokens(
-            _preset_name,
-            _preset_data.get("tokens") or _preset_data.get("token", ""),
-        )
-        _preset_data["token"] = _preset_data["tokens"][0] if _preset_data["tokens"] else ""
-except Exception as e:
-    print_system_log(f"Failed to load {presets_path}: {e}", "ERROR")
-    sys.exit(1)
-
-if os.name == 'nt': os.system('')
+        print_system_log(f"Failed to load {presets_path}: {e}", "ERROR")
+        sys.exit(1)
 
 TARGET_BOT_ID = 432610292342587392
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
@@ -1020,6 +1022,32 @@ def apply_runtime_preset(preset_name, preset_data):
 
 
 def run_bot(preset_name, preset_data, log_function=print_log):
+    # Shadow the module logger only in this invocation's closures. Desktop still
+    # uses BotLogger's console/file/webhook behavior; concurrent accounts cannot
+    # change one another's logging policy.
+    BotLogger = globals()["BotLogger"]
+    if preset_data.get("_runtime_mode"):
+        secret = str(preset_data.get("token") or "")
+        other_secrets = [str(value) for value in (preset_data.get("tokens") or ()) if value]
+        secrets = sorted(set([secret] + other_secrets) - {""}, key=len, reverse=True)
+
+        class RuntimeLogger:
+            @staticmethod
+            def log(message, name=preset_name, log_type="INFO", client_ref=None):
+                if str(log_type).upper() == "DEBUG" and not getattr(client_ref or client, "debug_mode", False):
+                    return
+                safe = str(message)
+                safe_name = str(name)
+                for value in secrets:
+                    safe = safe.replace(value, "[REDACTED]")
+                    safe_name = safe_name.replace(value, "[REDACTED]")
+                log_function(safe, safe_name, log_type)
+
+        BotLogger = RuntimeLogger
+
+        def print_log(message, name=preset_name, log_type="INFO"):
+            BotLogger.log(message, name, log_type)
+
     token = preset_data.get("token")
     prefix = preset_data.get("prefix", "/////////////")
     target_channel_id = preset_data.get("channel_id")
@@ -1036,6 +1064,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if _mobile_runtime_stop_event.is_set():
             return
         _active_clients.append(client)
+    created_callback = preset_data.get("_runtime_client_created_callback")
+    if callable(created_callback):
+        created_callback(client)
 
     # All account workers share this logger. Configure it atomically and keep
     # Client.run from adding another handler for every concurrent account.
@@ -1057,6 +1088,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     )
     client._live_preset_ready = False
     client._scheduled_roll_task = None
+    client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
+    client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
     def apply_saved_settings(data):
         changed = apply_live_config(
@@ -1087,6 +1120,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         lambda message, level: BotLogger.log(message, preset_name, level),
         path=None if preset_data.get("_live_preset_push_only") else presets_path,
         name=preset_data.get("_source_preset_name", preset_name),
+        observer=preset_data.get("_preset_outcome_observer"),
     )
 
     # Window estimates retain configured slash speed: a shared claim window can
@@ -2929,6 +2963,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"Kakera Loot mode: {preset_data['loot_mode']}. Normal rolling and sniping are disabled for this profile.", preset_name, "INFO")
             client._main_loop_task = client.loop.create_task(client.loot_automation.run(channel))
             client._live_preset_ready = True
+
+            # Notify runtime instance that client is ready
+            runtime_callback = preset_data.get("_runtime_ready_callback")
+            if callable(runtime_callback):
+                try:
+                    runtime_callback(client)
+                except Exception as e:
+                    BotLogger.log(f"Runtime ready callback error: {e}", preset_name, "WARN")
             return
 
         if client.rolling_enabled:
@@ -2947,6 +2989,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         else:
             client._main_loop_task = client.loop.create_task(snipe_only_status_loop(client, channel))
         client._live_preset_ready = True
+
+        # Notify runtime instance that client is ready
+        runtime_callback = preset_data.get("_runtime_ready_callback")
+        if callable(runtime_callback):
+            try:
+                runtime_callback(client)
+            except Exception as e:
+                BotLogger.log(f"Runtime ready callback error: {e}", preset_name, "WARN")
 
     @client.event
     async def on_disconnect():
@@ -3063,6 +3113,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             await _interruptible_sleep(10)
 
     async def _interruptible_sleep(seconds):
+        if getattr(client, "_runtime_stopping", False):
+            return
         evt = client._immediate_check_event
         if evt is None:
             await pause_interruptible_sleep(client, seconds)
@@ -3070,6 +3122,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         try:
             await asyncio.wait_for(evt.wait(), timeout=max(0.0, seconds))
             evt.clear()
+        except asyncio.CancelledError:
+            raise
         except asyncio.TimeoutError:
             pass
 
@@ -4322,12 +4376,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 is_maintenance_fn=is_maintenance_active,
             )
             if not required:
-                BotLogger.log(
-                    f"Skipping $tu; required state already reconciled ({skip_reason}).",
-                    preset_name,
-                    "DEBUG",
-                    client,
-                )
+                # Deduplicate repeated skip logs for the same reason in the same cycles
+                reason_key = f"{skip_reason}:{getattr(client, 'current_claim_cycle_id', None)}:{getattr(client, 'current_roll_cycle_id', None)}"
+                if getattr(client, "_last_tu_skip_reason_key", None) != reason_key:
+                    BotLogger.log(
+                        f"Skipping $tu; required state already reconciled ({skip_reason}).",
+                        preset_name,
+                        "DEBUG",
+                        client,
+                    )
+                    client._last_tu_skip_reason_key = reason_key
                 return
 
             # Only the configured random window delays status queries. Account
@@ -4450,6 +4508,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     return
 
                 record_tu_success(client)
+                # Reset skip reason cache after successful physical $tu
+                client._last_tu_skip_reason_key = None
                 c_lower = tu_content.lower()
 
             sphere_budget_observed = client.sphere_button_budget.observe(tu_content, request_started_at)
@@ -4966,7 +5026,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             raise
         finally:
             client.is_processing_cycle = False
-            if getattr(client, "_deferred_independent_known_work", False) and not _mobile_runtime_stop_event.is_set():
+            if (getattr(client, "_deferred_independent_known_work", False)
+                    and not getattr(client, "_runtime_stopping", False)
+                    and not _mobile_runtime_stop_event.is_set()):
                 client.loop.create_task(drain_deferred_independent_work(channel))
 
     async def send_auto_us(amount, fallback_channel):
@@ -7261,10 +7323,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         # Keep the original deadline so playing boards does not delay reset.
         await drain_deferred_independent_work(channel)
         while True:
+            if getattr(client, "_runtime_stopping", False):
+                return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             await _interruptible_sleep(remaining)
+            if getattr(client, "_runtime_stopping", False):
+                return
             if client.is_paused:
                 return
             if time.monotonic() >= deadline:
@@ -7304,6 +7370,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             wait_s = seconds_until_active()
             BotLogger.log(f"Inactive hours. Sleeping {wait_s/60:.0f}m.", preset_name, "RESET")
             await _interruptible_sleep(wait_s)
+            if getattr(client, "_runtime_stopping", False):
+                return
             if client.is_paused:
                 return
 
@@ -7318,6 +7386,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     await _interruptible_sleep(client.humanization_inactivity_seconds - diff + 0.5)
                     if client.is_paused:
                         return
+                except asyncio.CancelledError:
+                    raise
                 except Exception: break
 
     async def handle_birthday_candle(msg):
@@ -8194,12 +8264,20 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         ).start()
 
     try:
-        client.run(token, reconnect=True, log_handler=None)
+        execution_hook = preset_data.get("_runtime_execution_hook")
+        if callable(execution_hook):
+            execution_completed = execution_hook(client, token)
+            if preset_data.get("_runtime_mode") and execution_completed:
+                raise RuntimeError("Discord client exited unexpectedly")
+        else:
+            client.run(token, reconnect=True, log_handler=None)
     except Exception as e:
         if isinstance(e, getattr(discord, "LoginFailure", ())):
             raise
         if _mobile_runtime_stop_event.is_set():
             return
+        if preset_data.get("_runtime_mode"):
+            raise
         if "set_wakeup_fd" not in str(e):
             BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
     finally:
@@ -8423,6 +8501,9 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 def run_cli(argv=None):
+    load_desktop_presets()
+    if os.name == 'nt':
+        os.system('')
     cleanup_after_update()
     update_result = check_for_updates()
     if update_result == "frozen":

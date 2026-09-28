@@ -7,6 +7,7 @@ from unittest import mock
 import mudae_bot
 from mudae_core.coordinator import GlobalIntervalCoordinator
 from mudae_core.runtime import is_tu_still_required
+from mudae_core.status import clear_status_dirty, mark_status_dirty
 
 
 class _Handle:
@@ -151,6 +152,72 @@ def _create_snipe_only_client():
 
 
 class SnipeStartupProductionTests(unittest.IsolatedAsyncioTestCase):
+    def _is_skip_log(self, call):
+        return bool(call.args and "Skipping $tu; required state already reconciled" in call.args[0])
+
+    async def _check_status(self, client, channel):
+        await client._runtime_check_status(
+            client, channel, client.mudae_prefix, proceed_to_rolls=False,
+        )
+
+    def _fresh_coordinator(self):
+        old_coordinator = mudae_bot._tu_interval_coordinator
+        mudae_bot._tu_interval_coordinator = GlobalIntervalCoordinator()
+        self.addCleanup(setattr, mudae_bot, "_tu_interval_coordinator", old_coordinator)
+
+    async def test_reconciled_rolling_disabled_skip_logs_once(self):
+        client, roll_channel, command_channel = _create_snipe_only_client()
+        self._fresh_coordinator()
+        await self._check_status(client, roll_channel)
+        mark_status_dirty(client, {"rolls"}, reason="regression")
+
+        with mock.patch.object(mudae_bot.BotLogger, "log") as log:
+            await self._check_status(client, roll_channel)
+            await self._check_status(client, roll_channel)
+
+        self.assertEqual(sum(self._is_skip_log(call) for call in log.call_args_list), 1)
+        self.assertEqual(command_channel.sent, ["$tu"])
+
+    async def test_rolling_disabled_skip_logs_again_for_each_new_cycle(self):
+        client, roll_channel, command_channel = _create_snipe_only_client()
+        self._fresh_coordinator()
+        await self._check_status(client, roll_channel)
+        mark_status_dirty(client, {"rolls"}, reason="regression")
+
+        with mock.patch.object(mudae_bot.BotLogger, "log") as log:
+            await self._check_status(client, roll_channel)
+            client.current_claim_cycle_id = ("claim", 1700003600, 2)
+            await self._check_status(client, roll_channel)
+            client.current_roll_cycle_id = ("roll", 1700003660, 2)
+            await self._check_status(client, roll_channel)
+
+        self.assertEqual(sum(self._is_skip_log(call) for call in log.call_args_list), 3)
+        self.assertEqual(command_channel.sent, ["$tu"])
+
+    async def test_physical_tu_resets_skip_log_deduplication(self):
+        client, roll_channel, command_channel = _create_snipe_only_client()
+        self._fresh_coordinator()
+        await self._check_status(client, roll_channel)
+        mark_status_dirty(client, {"rolls"}, reason="regression")
+
+        with mock.patch.object(mudae_bot.BotLogger, "log") as log:
+            await self._check_status(client, roll_channel)
+            self.assertTrue(getattr(client, "_last_tu_skip_reason_key", None))
+
+            clear_status_dirty(client, {"rolls"})
+            mark_status_dirty(client, {"claim"}, reason="regression-required-tu")
+            required, reason = is_tu_still_required(client, proceed_to_rolls=False)
+            self.assertTrue(required, reason)
+            await self._check_status(client, roll_channel)
+            self.assertEqual(command_channel.sent, ["$tu", "$tu"])
+            self.assertIsNone(client._last_tu_skip_reason_key)
+
+            mark_status_dirty(client, {"rolls"}, reason="regression-after-tu")
+            await self._check_status(client, roll_channel)
+
+        self.assertEqual(sum(self._is_skip_log(call) for call in log.call_args_list), 2)
+        self.assertTrue(client._last_tu_skip_reason_key)
+
     async def test_snipe_only_handshake_hydrates_once_then_unblocks_configured_spheres(self):
         client, roll_channel, command_channel = _create_snipe_only_client()
         old_coordinator = mudae_bot._tu_interval_coordinator

@@ -59,6 +59,57 @@ class PresetReloadTests(unittest.IsolatedAsyncioTestCase):
         await reload.poll_once()
         self.assertEqual(self.apply.call_args.args[0]["min_kakera"], 300)
 
+    async def test_request_outcomes_keep_correlation_through_all_states(self):
+        outcomes = []
+        reload = self.make_reload(observer=outcomes.append)
+        self.client.is_claiming = True
+        reload.offer({**BASE, "min_kakera": 200}, 1)
+        await reload.poll_once()
+        await reload.poll_once()
+        self.assertEqual([(item["request_id"], item["status"]) for item in outcomes], [(1, "deferred")])
+
+        reload.offer({**BASE, "min_kakera": 300}, 2)
+        self.client.is_claiming = False
+        await reload.poll_once()
+        self.assertEqual([(item["request_id"], item["status"]) for item in outcomes[-2:]],
+                         [(1, "superseded"), (2, "applied")])
+
+        reload.offer({**BASE, "min_kakera": 300, "channel_id": "5678"}, 3)
+        await reload.poll_once()
+        self.assertEqual((outcomes[-1]["request_id"], outcomes[-1]["status"]), (3, "restart_required"))
+
+        reload.offer({**BASE, "roll_speed": -1}, 4)
+        await reload.poll_once()
+        self.assertEqual((outcomes[-1]["request_id"], outcomes[-1]["status"]), (4, "rejected"))
+
+        self.client.is_claiming = True
+        reload.offer({**BASE, "min_kakera": 400}, 5)
+        reload.cancel_pending()
+        self.assertEqual((outcomes[-1]["request_id"], outcomes[-1]["status"]), (5, "cancelled"))
+        self.assertEqual(reload.desired_preset, reload.active_preset)
+
+    async def test_identical_pending_request_and_desktop_poll_settle_original(self):
+        outcomes = []
+        reload = self.make_reload(observer=outcomes.append)
+        self.client.is_claiming = True
+        value = {**BASE, "min_kakera": 200}
+        reload.offer(value, 11)
+        await reload.poll_once()
+        reload.offer(value, 12)
+        self.assertIn((11, "superseded"), [(o["request_id"], o["status"]) for o in outcomes])
+        reload.offer(value)  # Desktop file poll does not take ownership of a host request.
+        self.assertEqual(reload.pending_request_id, 12)
+        reload.cancel_pending()
+        self.assertIn((12, "cancelled"), [(o["request_id"], o["status"]) for o in outcomes])
+        self.assertEqual(reload.desired_preset, reload.active_preset)
+
+    async def test_observer_exception_does_not_block_apply(self):
+        reload = self.make_reload(observer=mock.Mock(side_effect=RuntimeError("observer failed")))
+        reload.offer({**BASE, "min_kakera": 200}, 7)
+        await reload.poll_once()
+        self.apply.assert_called_once()
+        self.assertTrue(any("observer error" in call.args[0] for call in self.log.call_args_list))
+
     async def test_restart_fields_retained_but_hot_settings_apply(self):
         reload = self.make_reload()
         reload.offer({**BASE, "channel_id": "5678", "rolling": False,

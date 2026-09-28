@@ -48,6 +48,30 @@ class BuildContractTests(unittest.TestCase):
         self.assertIn("Changelog:", launch_source)
         self.assertIn("check_for_updates(confirm_update=confirm_update)", launch_source)
 
+    def test_android_release_requires_signing_and_verifies_stable_signer(self):
+        workflow = read_project_file(".github", "workflows", "android-release.yml")
+        required_step = workflow.index("- name: Require and restore release signing configuration")
+        build_step = workflow.index("- name: Build ux APK")
+        verify_step = workflow.index("- name: Verify stable APK signer continuity")
+        artifact_upload = workflow.index("uses: actions/upload-artifact@v4")
+        publish_step = workflow.index("- name: Publish Android asset")
+
+        self.assertLess(required_step, build_step)
+        self.assertLess(build_step, verify_step)
+        self.assertLess(verify_step, artifact_upload)
+        self.assertLess(artifact_upload, publish_step)
+        for secret in (
+            "ANDROID_KEYSTORE_B64",
+            "ANDROID_KS_STORE_PASSWORD",
+            "ANDROID_KS_ALIAS",
+            "ANDROID_KS_KEY_PASSWORD",
+        ):
+            self.assertIn(f": \"${{{secret}:?", workflow)
+        self.assertIn("keytool -list -keystore mudaremote-release.jks", workflow)
+        self.assertIn("verify --verbose --print-certs Mudaremote.apk", workflow)
+        self.assertIn("aefcfd68eae4fcddf789a654b90c4818fa128aca9e52bceb2767b39ff6587839", workflow)
+        self.assertNotIn("falling back to debug signing", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
