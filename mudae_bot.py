@@ -5499,11 +5499,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 wait_s = (target_start - now_utc).total_seconds()
 
                 if client.roll_reset_at_utc:
-                    max_wait = (client.roll_reset_at_utc - now_utc).total_seconds() - total_duration - 5
+                    # Use the final admission check's conservative batch estimate,
+                    # leaving reserve for channel patience and wake-up jitter.
+                    latest_start, _ = normal_roll_start_window(
+                        now_utc, client.roll_reset_at_utc, rolls_left,
+                        client.roll_speed, client.use_slash_rolls,
+                        pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                    )
+                    max_wait = (latest_start - now_utc).total_seconds()
                     wait_s = min(wait_s, max_wait)
 
                 if wait_s > 2:
-                    BotLogger.log(f"Timing rolls to finish after reset. Waiting {wait_s/60:.1f}m.", preset_name, "RESET")
+                    BotLogger.log(f"Timing rolls for claim reset within the safe roll window. Waiting {wait_s/60:.1f}m.", preset_name, "RESET")
                     if not await active_delay(wait_s):
                         mark_status_dirty(client, {"rolls"}, reason="timed-roll-wait-interrupted")
                         return
