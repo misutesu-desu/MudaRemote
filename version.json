@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.9.8**\n\n### 🐛 Bug Fixes\n- **Smart Timing Near Claim Reset:** Fixed an issue where the bot could wait until shortly before your claim reset, then skip available rolls and postpone them to the next cycle. Smart Timing now leaves enough time to start rolling safely instead of missing the opportunity because of its own planned wait.\n\n### ⚡ Improvements\n- **Clearer Timing Messages:** Roll-wait messages now make it clear that Smart Timing also respects the safe rolling window, rather than promising that every batch will finish after the reset.\n\nRestart the bot after updating to apply the fix.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "ae313cb396568797cb386a74fb8ee71b4b56f25e75135ebcdee9c2c9f6709053",
   "source_files": [
     {
       "path": "mudae_bot.py",
