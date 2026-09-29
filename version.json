@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.0**\n\n### ✨ New Features\n- **Manage Bot Sessions (Opt-In):** Use the runtime API to start, stop, restart, and update individual bot sessions without disrupting your other accounts.\n- **Live Update Feedback:** When using the runtime API, see whether a preset change is waiting, applied, rejected, or requires a restart.\n\n### 🐛 Bug Fixes\n- **Safer Stops and Restarts:** Prevent sessions from staying active in the background after shutdown or overlapping during a restart.\n- **Clearer Connection Failures:** Connection problems now produce a clear failure status after limited retries instead of leaving a session appearing active indefinitely.\n\n### ⚡ Improvements\n- **Protected Account Details:** Account credentials stay hidden in runtime messages and are not saved to local preset or log files during bot sessions.\n- **Familiar Bot Behavior:** Keep the same claim, roll, kakera, wishlist, and scheduling behavior, including the Smart Timing fix from v4.9.8.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.0/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "5c1bcc2db168987457d7d33809c67d187bfd71f5dc3f0c707338af3ef7f4b06a",
   "source_files": [
     {
       "path": "mudae_bot.py",
