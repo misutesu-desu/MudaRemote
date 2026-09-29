@@ -45,7 +45,7 @@ class _Bot:
         self.events[function.__name__] = function
         return function
 
-    def run(self, _token, reconnect=True):
+    def run(self, _token, reconnect=True, log_handler=None):
         return None
 
     def get_channel(self, _channel_id):

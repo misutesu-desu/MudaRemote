@@ -7,6 +7,7 @@ Usage:
     python build.py --onefile          # Single-file build
     python build.py --console          # Build with console window visible
     python build.py --onefile --console
+    python build.py --update-source-manifest  # No build; preserves exe_sha256
 """
 
 import argparse
@@ -14,6 +15,20 @@ import hashlib
 import json
 import os
 import sys
+
+
+def update_source_manifest(script_dir):
+    """Refresh source fingerprints without modifying the executable checksum."""
+    manifest_path = os.path.join(script_dir, "version.json")
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    for entry in manifest["source_files"]:
+        source_path = os.path.join(script_dir, *entry["path"].split("/"))
+        with open(source_path, "rb") as source_file:
+            entry["sha256"] = hashlib.sha256(source_file.read()).hexdigest()
+    with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(manifest, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
 
 
 def build(onefile=False, console=False, update_manifest=False):
@@ -108,13 +123,10 @@ def build(onefile=False, console=False, update_manifest=False):
                 print("[BUILD] ERROR: --update-manifest requires --onefile.")
                 sys.exit(1)
             manifest_path = os.path.join(script_dir, "version.json")
+            update_source_manifest(script_dir)
             with open(manifest_path, "r", encoding="utf-8") as handle:
                 manifest = json.load(handle)
             manifest["exe_sha256"] = digest
-            for entry in manifest.get("source_files", []):
-                source_path = os.path.join(script_dir, *entry["path"].split("/"))
-                with open(source_path, "rb") as source_file:
-                    entry["sha256"] = hashlib.sha256(source_file.read()).hexdigest()
             with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(manifest, handle, indent=2, ensure_ascii=False)
                 handle.write("\n")
@@ -127,6 +139,12 @@ if __name__ == "__main__":
     parser.add_argument("--onefile", action="store_true", help="Build as a single .exe file (slower startup)")
     parser.add_argument("--console", action="store_true", help="Show console window (useful for debugging)")
     parser.add_argument("--update-manifest", action="store_true", help="Write the exact one-file EXE checksum to version.json")
+    parser.add_argument("--update-source-manifest", action="store_true", help="Refresh source hashes without building or changing exe_sha256")
     args = parser.parse_args()
 
-    build(onefile=args.onefile, console=args.console, update_manifest=args.update_manifest)
+    if args.update_source_manifest:
+        if args.update_manifest or args.onefile or args.console:
+            parser.error("--update-source-manifest cannot be combined with build options")
+        update_source_manifest(os.path.dirname(os.path.abspath(__file__)))
+    else:
+        build(onefile=args.onefile, console=args.console, update_manifest=args.update_manifest)

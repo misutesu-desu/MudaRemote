@@ -31,6 +31,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - run: python -m unittest tests.test_release_manifest -v
       - run: python -m unittest discover -s tests -v
       - run: python -m compileall -q mudae_bot.py mudae_preset_editor.py mudae_core tests build.py
 

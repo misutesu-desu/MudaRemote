@@ -1,6 +1,6 @@
 {
   "version": "4.10.0",
-  "changelog": "**🆕 MudaRemote v4.10.0**\n\n### ✨ New Features\n- **Run Without the Desktop Window:** Run your bot from your own hosting setup while continuing to use the desktop app as before.\n- **Manage Bot Sessions:** Start, stop, restart, and update individual bot sessions without disrupting your other accounts.\n- **Live Update Feedback:** See whether a preset change is waiting, applied, rejected, or requires a restart.\n\n### 🐛 Bug Fixes\n- **Safer Stops and Restarts:** Prevent sessions from staying active in the background after shutdown or overlapping during a restart.\n- **Clearer Connection Failures:** Connection problems now produce a clear failure status after limited retries instead of leaving a session appearing active indefinitely.\n\n### ⚡ Improvements\n- **Protected Account Details:** Account credentials stay hidden in runtime messages and are not saved to local preset or log files by hosted sessions.\n- **Familiar Bot Behavior:** Keep the same claim, roll, kakera, wishlist, and scheduling behavior, including the Smart Timing fix from v4.9.8.\n\nRestart the bot after updating.",
+  "changelog": "**🆕 MudaRemote v4.10.0**\n\n### ✨ New Features\n- **Manage Bot Sessions (Opt-In):** Use the runtime API to start, stop, restart, and update individual bot sessions without disrupting your other accounts.\n- **Live Update Feedback:** When using the runtime API, see whether a preset change is waiting, applied, rejected, or requires a restart.\n\n### 🐛 Bug Fixes\n- **Safer Stops and Restarts:** Prevent sessions from staying active in the background after shutdown or overlapping during a restart.\n- **Clearer Connection Failures:** Connection problems now produce a clear failure status after limited retries instead of leaving a session appearing active indefinitely.\n\n### ⚡ Improvements\n- **Protected Account Details:** Account credentials stay hidden in runtime messages and are not saved to local preset or log files during bot sessions.\n- **Familiar Bot Behavior:** Keep the same claim, roll, kakera, wishlist, and scheduling behavior, including the Smart Timing fix from v4.9.8.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.0/MudaRemote.exe",
   "exe_sha256": "pending-github-actions",
@@ -88,7 +88,7 @@
     {
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/bot_runtime.py",
-      "sha256": "865da85e77f92bee16608d747209f1831c05f6022b605c9f5ac88fe78e4ad4fe"
+      "sha256": "e5231371f247125c1e718228beff2ca64cb098627d16bbd975296f42f5440fd9"
     },
     {
       "path": "mudae_core/sphere_runtime.py",

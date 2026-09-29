@@ -576,7 +576,9 @@ class BotInstance:
                                     pending_task.cancel()
                                 await asyncio.gather(*pending, return_exceptions=True)
                             await loop.shutdown_asyncgens()
-                            await loop.shutdown_default_executor()
+                            shutdown_executor = getattr(loop, "shutdown_default_executor", None)
+                            if shutdown_executor is not None:
+                                await shutdown_executor()
 
                         try:
                             loop.run_until_complete(cleanup())

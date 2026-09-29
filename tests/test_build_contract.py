@@ -1,7 +1,11 @@
 import json
+import hashlib
 import os
 import re
+import tempfile
 import unittest
+
+from build import update_source_manifest
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +17,21 @@ def read_project_file(*parts):
 
 
 class BuildContractTests(unittest.TestCase):
+    def test_source_only_manifest_refresh_preserves_executable_checksum(self):
+        with tempfile.TemporaryDirectory() as root:
+            manifest_path = os.path.join(root, "version.json")
+            with open(os.path.join(root, "runtime.py"), "wb") as handle:
+                handle.write(b"current source\n")
+            with open(manifest_path, "w", encoding="utf-8") as handle:
+                json.dump({"exe_sha256": "pending-github-actions", "source_files": [
+                    {"path": "runtime.py", "sha256": "stale"}]}, handle)
+            update_source_manifest(root)
+            with open(manifest_path, encoding="utf-8") as handle:
+                updated = json.load(handle)
+            self.assertEqual(updated["exe_sha256"], "pending-github-actions")
+            self.assertEqual(updated["source_files"][0]["sha256"],
+                             hashlib.sha256(b"current source\n").hexdigest())
+
     def test_release_spec_disables_upx_and_avoids_collect_all(self):
         spec = read_project_file("MudaRemote.spec")
         self.assertIn("upx=False", spec)
@@ -26,6 +45,7 @@ class BuildContractTests(unittest.TestCase):
     def test_release_build_can_update_the_manifest_from_the_exact_artifact(self):
         build_script = read_project_file("build.py")
         self.assertIn('manifest["exe_sha256"] = digest', build_script)
+        self.assertIn('update_source_manifest(script_dir)', build_script)
         self.assertIn('entry["sha256"] = hashlib.sha256', build_script)
         self.assertIn('"--update-manifest"', build_script)
 

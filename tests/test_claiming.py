@@ -230,7 +230,7 @@ class _MockBot:
         self.events[fn.__name__] = fn
         return fn
 
-    def run(self, token, reconnect=True):
+    def run(self, token, reconnect=True, log_handler=None):
         return None
 
     def is_closed(self):

@@ -64,6 +64,18 @@ class ReleaseManifestTests(unittest.TestCase):
         with open(notes_path, encoding="utf-8") as handle:
             self.assertEqual(handle.read().strip(), manifest["changelog"].strip())
 
+    def test_windows_release_workflow_targets_manifest_version(self):
+        with open(os.path.join(PROJECT_ROOT, "version.json"), encoding="utf-8") as handle:
+            version = json.load(handle)["version"]
+        workflow_path = os.path.join(PROJECT_ROOT, ".github", "workflows", "windows-release.yml")
+        with open(workflow_path, encoding="utf-8") as handle:
+            workflow = handle.read()
+        self.assertIn("group: windows-release-v{}".format(version), workflow)
+        self.assertIn("RELEASE_VERSION: {}".format(version), workflow)
+        self.assertIn("RELEASE_TAG: v{}".format(version), workflow)
+        self.assertIn("RELEASE_TITLE: MudaRemote v{}".format(version), workflow)
+        self.assertIn("release-notes-v{}.md".format(version), workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

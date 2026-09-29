@@ -1,5 +1,6 @@
 """Focused tests for headless runtime imports and credential-safe logging."""
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -30,10 +31,25 @@ class _RuntimeClient(_Bot):
         return self.closed
 
     def run(self, token, reconnect=True, log_handler=None):
+        assert reconnect is True and log_handler is None
         self.on_run(self, token)
 
 
 class RuntimeIsolationTests(unittest.TestCase):
+    def test_desktop_runner_disables_duplicate_discord_log_handler(self):
+        client = _RuntimeClient(lambda *_args: None)
+        mudae_bot._mobile_runtime_stop_event.clear()
+        with patch.object(mudae_bot.commands, "Bot", return_value=client), \
+             patch.object(mudae_bot, "IS_TERMUX", False):
+            mudae_bot.run_bot("desktop-contract", {
+                "token": "dummy-token",
+                "channel_id": 1234,
+                "prefix": "!",
+                "mudae_prefix": "$",
+                "rolling": False,
+                "skip_initial_commands": True,
+            })
+
     def test_import_is_headless_with_missing_app_directory_and_denied_writes(self):
         script = r'''
 import builtins
@@ -44,7 +60,9 @@ from unittest.mock import patch
 sys.path.insert(0, os.getcwd())
 import mudae_bot
 
-app_dir = os.path.join(os.environ["TEMP"], "mudae-headless-missing-app-dir")
+import tempfile
+
+app_dir = os.path.join(tempfile.gettempdir(), "mudae-headless-missing-app-dir-{}".format(os.getpid()))
 assert not os.path.exists(app_dir)
 mudae_bot.get_base_path = lambda: app_dir
 mudae_bot.presets_path = os.path.join(app_dir, "presets.json")
@@ -61,13 +79,16 @@ with patch.object(mudae_bot, "atomic_write_json", side_effect=denied) as writes,
     writes.assert_not_called()
     reads.assert_not_called()
 '''
+        env = os.environ.copy()
+        env.pop("TEMP", None)
+        env.pop("TMP", None)
         result = subprocess.run(
             [sys.executable, "-c", script],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             capture_output=True,
             text=True,
             timeout=20,
-            env=os.environ.copy(),
+            env=env,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -164,6 +185,21 @@ with patch.object(mudae_bot, "atomic_write_json", side_effect=denied) as writes,
                  patch.object(mudae_bot.SecretStore, "get_tokens", side_effect=PermissionError):
                 self._run_real_runtime_setup("q7")
             self.assertEqual(os.listdir(app_dir), [])
+
+    def test_runtime_cleanup_without_python39_executor_shutdown(self):
+        # Exercise the real owned-loop cleanup while simulating Python 3.8's API.
+        sample_loop = asyncio.new_event_loop()
+        loop_class = type(sample_loop)
+        sample_loop.close()
+
+        class LegacyLoop(loop_class):
+            def __getattribute__(self, name):
+                if name == "shutdown_default_executor":
+                    raise AttributeError(name)
+                return super().__getattribute__(name)
+
+        with patch("mudae_core.bot_runtime.asyncio.new_event_loop", side_effect=LegacyLoop):
+            self._run_real_runtime_setup("legacy-loop-token")
 
     def test_independent_runtime_tokens_do_not_cross_leak(self):
         with tempfile.TemporaryDirectory() as app_dir:
