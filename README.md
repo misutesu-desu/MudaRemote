@@ -31,6 +31,8 @@ Rolls, claims, Kakera, wishlists, `$mk`, `$rt`, multiple accounts and a bunch of
 
 If you're on Windows you can just download the `.exe`, open it and set everything up from the interface. You don't need Python and you don't need to edit JSON files just to get started.
 
+Don't want to leave your PC on all day? There's also an optional cloud version, **MudaRemote Pro**, that runs the bot on a server for you. More about it [further down](https://github.com/misutesu-desu/MudaRemote#mudaremote-pro-closed-beta).
+
 > [!WARNING]
 > MudaRemote is a self-bot. Self-bots are against Discord's Terms of Service and using one can get your account banned.
 >
@@ -38,9 +40,9 @@ If you're on Windows you can just download the `.exe`, open it and set everythin
 
 ## ❤️ If you use MudaRemote a lot
 
-MudaRemote is free and I want to keep it that way.
+MudaRemote is free and open source and I want to keep it that way.
 
-There isn't a paid version and I'm not planning to lock useful features behind a subscription.
+The app you download here isn't a trial and I'm not planning to lock its features behind a subscription. **MudaRemote Pro** (see below) is a separate, optional cloud add-on on top of it, it doesn't take anything away from the free app.
 
 I spend quite a bit of my free time fixing weird Mudae behavior, Discord changes, regressions, packaging problems and whatever new edge case somebody manages to find in the Discord server.
 
@@ -248,6 +250,41 @@ These settings exist to control when the bot acts.
 The first `$tu` status query runs promptly. Later queries can use a configurable random wait (default 0–40 minutes). Eligible rolls start after the response once the channel is quiet, without another random wait.
 
 They do **not** make self-botting safe and they do not guarantee protection from Discord bans.
+
+---
+
+## MudaRemote Pro (closed beta) ☁️
+
+MudaRemote Pro is for people who'd rather not keep their PC running all day just for Mudae.
+
+Instead of running on your computer, your bot runs on a server. You open the same MudaRemote app, sign in, and check what it's doing from there.
+
+What you get:
+
+* ☁️ your bot keeps rolling and claiming while your PC is off
+* 📜 an activity feed in plain words: what it claimed, what it missed, Kakera it collected, roll rounds and resets
+* 🤖 an AI assistant that sets up your preset: tell it what you want in normal words, it shows you the changes and nothing is applied until you approve them
+* 🔁 if the connection to Discord drops or the bot crashes, it reconnects or restarts by itself
+* 🖥️ Local and Cloud live side by side in the same app, and using MudaRemote locally works exactly like before
+
+The bot itself is still the open source MudaRemote. Pro is the hosted part on top of it.
+
+### How do I get in?
+
+It's a closed beta for now, so access is by request:
+
+1. Ask for your account in `#pro-request` in the [Discord server](https://discord.gg/4WHXkDzuZx). You'll get a login and a key from me.
+2. Grab the app from `#pro-download`.
+3. Sign in and put your key in the **Account** tab.
+
+If something breaks, `#pro-support` is the place. Bugs and ideas go in `#pro-feedback` and `#pro-status` tells you whether the server is up.
+
+A few honest things:
+
+* it's a beta, so expect some rough edges. Tell me what you run into and I'll fix it
+* the Windows installer isn't signed yet, so SmartScreen might warn you. Click **More info** and then **Run anyway**
+* your Discord token is stored encrypted on the server
+* a self-bot is still a self-bot. Running it on a server doesn't make it safe or undetectable, the warning at the top applies to Pro too
 
 ---
 
