@@ -60,6 +60,8 @@ A few people from the community have already chipped in toward the current goal 
 
 Sponsors can also ask me for the **Donator** role in the MudaRemote Discord server.
 
+During the closed beta of **MudaRemote Pro** (see below), donors are also the people who can use it.
+
 <details>
 <summary>Prefer crypto?</summary>
 
@@ -271,9 +273,11 @@ The bot itself is still the open source MudaRemote. Pro is the hosted part on to
 
 ### How do I get in?
 
-It's a closed beta for now, so access is by request:
+It's a closed beta for now and during the beta it's available to people who support the project, so donors can use it. If you've sponsored me on GitHub or sent crypto, you're who I'm opening it to first ❤️
 
-1. Ask for your account in `#pro-request` in the [Discord server](https://discord.gg/4WHXkDzuZx). You'll get a login and a key from me.
+Access is by request:
+
+1. Ask for your account in `#pro-request` in the [Discord server](https://discord.gg/4WHXkDzuZx) and mention how you supported MudaRemote. You'll get a login and a key from me.
 2. Grab the app from `#pro-download`.
 3. Sign in and put your key in the **Account** tab.
 
