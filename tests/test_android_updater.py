@@ -44,9 +44,13 @@ class _MockResponse:
 class AndroidUpdaterTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="android-test-")
+        # The bridge can change into its data directory; deleting that directory while it is the working
+        # directory makes every later test that spawns a process fail with FileNotFoundError (os.getcwd()).
+        self.original_cwd = os.getcwd()
 
     def tearDown(self):
         import shutil
+        os.chdir(self.original_cwd)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         for p in list(sys.path):
             if "android-test-" in p:

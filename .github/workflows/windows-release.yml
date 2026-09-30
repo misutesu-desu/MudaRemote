@@ -8,6 +8,8 @@ on:
       - .github/workflows/windows-release.yml
       - packaging/windows_version_info.txt
       - version.json
+  # Lets the release be started again from main without touching a tracked file (for example after a CI fix).
+  workflow_dispatch:
 
 permissions:
   contents: write
