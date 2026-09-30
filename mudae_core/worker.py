@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import multiprocessing
+import os
 import queue
 import threading
 import time
@@ -45,7 +46,14 @@ def _runtime_process(connection, events, heartbeat, dropped, instance_id):
             with dropped.get_lock():
                 dropped.value += 1
 
-    manager = RuntimeManager(event_callback=emit)
+    def give_up(reason):
+        # The connection watchdog could not repair the client in this process. Exit so the supervisor
+        # reports the instance as crashed and the Cloud starts it again. The pause lets the last events
+        # (what the watchdog saw) leave through the queue feeder thread.
+        time.sleep(1.5)
+        os._exit(70)
+
+    manager = RuntimeManager(event_callback=emit, fatal_callback=give_up)
     started = False
     try:
         while True:

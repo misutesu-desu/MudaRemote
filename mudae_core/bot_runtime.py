@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from .activity_events import ActivityClassifier
+from .watchdog import ConnectionWatchdog
 
 
 def _redact_credentials(obj, known_secrets=None):
@@ -122,6 +123,7 @@ class BotInstance:
         preset_data: Dict[str, Any],
         credentials: Dict[str, Any],
         event_callback: Optional[Callable[[InstanceEvent], None]] = None,
+        fatal_callback: Optional[Callable[[str], None]] = None,
     ):
         """
         Initialize bot instance.
@@ -132,6 +134,8 @@ class BotInstance:
             preset_data: Bot configuration (validated by caller)
             credentials: {"token": str} - single account only (use RuntimeManager for multi-account)
             event_callback: Optional callback for structured events
+            fatal_callback: Optional; called with a reason when the connection watchdog could not
+                recover the client by reconnecting. A worker process exits here so the Cloud restarts it.
         """
         self.instance_id = instance_id
         self.preset_name = preset_name
@@ -163,6 +167,12 @@ class BotInstance:
         # Build known secrets set for comprehensive redaction
         self._known_secrets = {token}
         self._activity_classifier = ActivityClassifier()
+        self._watchdog_tripped = False
+        self._watchdog = None
+        settings = preset_data.get("_runtime_watchdog", True)
+        if settings is not False:
+            self._watchdog = ConnectionWatchdog(
+                self, fatal=fatal_callback, **(settings if isinstance(settings, dict) else {}))
 
         self.preset_data["token"] = token
         self.preset_data["_runtime_mode"] = True  # Signal to avoid desktop fallbacks
@@ -240,6 +250,8 @@ class BotInstance:
                 name=f"BotInstance-{self.instance_id}", daemon=False,
             )
             self._thread.start()
+        if self._watchdog is not None:
+            self._watchdog.start()
 
         self._emit_event("state_change", {
             "old_state": old_state.value,
@@ -280,6 +292,8 @@ class BotInstance:
                 old_state = self._state
                 self._state = InstanceState.STOPPING
             self._stop_event.set()
+        if self._watchdog is not None:
+            self._watchdog.stop()
 
         if transition:
             self._emit_event("state_change", {
@@ -314,6 +328,37 @@ class BotInstance:
 
         self._set_state(InstanceState.STOPPED)
         return True
+
+    # ---- hooks for the connection watchdog (see watchdog.py) --------------------------------
+    def watch_target(self):
+        with self._client_lock:
+            return self._client, self._client_loop
+
+    def stopping(self) -> bool:
+        return self._stop_event.is_set()
+
+    def is_running(self) -> bool:
+        return self.state == InstanceState.RUNNING
+
+    def watchdog_event(self, event_type: str, reason: str, stage: str):
+        if event_type == "watchdog_recovered":
+            message = "Connection restored"
+        elif stage == "hard":
+            message = f"Discord connection could not be repaired ({reason}); restarting MudaRemote"
+        else:
+            message = f"Discord connection stalled ({reason}); reconnecting"
+        self._emit_event(event_type, {"message": message, "reason": reason, "stage": stage})
+
+    def soft_restart(self):
+        """Ask the run loop to drop the current client and connect again (not counted as a crash)."""
+        self._watchdog_tripped = True
+        with self._client_lock:
+            loop, task = self._client_loop, self._root_task
+        try:
+            if loop is not None and task is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(task.cancel)
+        except Exception:
+            pass
 
     def _on_preset_outcome(self, outcome: Dict[str, Any]):
         """Store and publish a redacted live preset request outcome."""
@@ -468,6 +513,13 @@ class BotInstance:
             }
 
     def _run_lifecycle(self):
+        try:
+            self._run_lifecycle_inner()
+        finally:
+            if self._watchdog is not None:
+                self._watchdog.stop()
+
+    def _run_lifecycle_inner(self):
         """Thread entry point: run bot with proper retry logic."""
         from .config import validate_preset
 
@@ -490,6 +542,7 @@ class BotInstance:
             return
 
         retry_count = 0
+        self._ready_at = None
         try:
             max_retries = max(1, int(self.preset_data.get("_runtime_max_retries", 10)))
         except (TypeError, ValueError):
@@ -527,6 +580,7 @@ class BotInstance:
                         if self._client is None:
                             self._client = client
                             self._client_loop = getattr(client, "loop", None)
+                    self._ready_at = time.monotonic()
                     if not self._stop_event.is_set():
                         self._set_state(InstanceState.RUNNING)
 
@@ -616,6 +670,14 @@ class BotInstance:
                 # Cancellation from an intentional stop is a normal exit.
                 if self._stop_event.is_set():
                     break
+                if self._watchdog_tripped:
+                    # The watchdog dropped a dead connection on purpose: reconnect quickly, no crash.
+                    self._watchdog_tripped = False
+                    self._ready_at = None
+                    self._set_state(InstanceState.STARTING)
+                    if self._stop_event.wait(min(5.0, retry_delay)):
+                        break
+                    continue
                 error_msg = f"Instance crashed: {e}"
 
                 # Check for login failure (don't retry)
@@ -634,6 +696,13 @@ class BotInstance:
                 except ImportError:
                     pass
 
+                try:
+                    stable = max(0.0, float(self.preset_data.get("_runtime_retry_reset_seconds", 600)))
+                except (TypeError, ValueError):
+                    stable = 600.0
+                if self._ready_at is not None and time.monotonic() - self._ready_at >= stable:
+                    retry_count = 0     # it ran fine for a long time: only failures in a row count
+                self._ready_at = None
                 retry_count += 1
                 safe_error_msg = _redact_credentials(error_msg, self._known_secrets)
                 self._emit_event("error", {
@@ -654,6 +723,8 @@ class BotInstance:
                     break
 
         # Clean shutdown
+        if self._watchdog is not None:
+            self._watchdog.stop()
         if self.state not in (InstanceState.FAILED, InstanceState.STOPPED):
             self._set_state(InstanceState.STOPPED)
 
@@ -670,14 +741,17 @@ class RuntimeManager:
     def __init__(
         self,
         event_callback: Optional[Callable[[InstanceEvent], None]] = None,
+        fatal_callback: Optional[Callable[[str], None]] = None,
     ):
         """
         Initialize runtime manager.
 
         Args:
             event_callback: Optional callback for all instance events
+            fatal_callback: Optional; see BotInstance. A host that can restart its own process passes one.
         """
         self.event_callback = event_callback
+        self.fatal_callback = fatal_callback
         self._instances: Dict[str, BotInstance] = {}
         self._lock = threading.Lock()
         self._next_id = 1
@@ -720,6 +794,7 @@ class RuntimeManager:
                 preset_data=preset_data,
                 credentials=credentials,
                 event_callback=self.event_callback,
+                fatal_callback=self.fatal_callback,
             )
             self._instances[instance_id] = instance
             self._starting_ids.add(instance_id)

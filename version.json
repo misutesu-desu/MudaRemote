@@ -93,12 +93,17 @@
     {
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/bot_runtime.py",
-      "sha256": "aefb3c4207345f4809411919035cd322915f85e800a2a70fd9a0f67963285ac2"
+      "sha256": "fbd050694f6effb8858f636d572aae2b451594b2fb2512ea313e985ac8eb18c1"
     },
     {
       "path": "mudae_core/worker.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/worker.py",
-      "sha256": "f5bd48df284ffac37d269f0bbff279c7ed3b268ae45bddb29a5338d969ad6ee4"
+      "sha256": "6aa03693cef703d6d448051498ea3b3ea116eea95f0f0f97076c571fd7486a3d"
+    },
+    {
+      "path": "mudae_core/watchdog.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/watchdog.py",
+      "sha256": "7e24bb5e295f4e3835f02bc1a5f012d7cb6338feecfdc86e94b5e5c8909a84a5"
     },
     {
       "path": "mudae_core/cloud_protocol.py",

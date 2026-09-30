@@ -586,6 +586,52 @@ class TestOwnedClientStartup(RuntimeTestCase):
         finally:
             self.stop_and_join(instance)
 
+    def test_watchdog_reconnects_a_client_whose_gateway_went_silent(self):
+        clients, events = [], []
+        ready = threading.Event()
+        behavior = self.ready_behavior(ready)
+        instance, clients, client_type = self.make_instance(behavior, client_sink=clients)
+
+        class Fresh:                      # a healthy gateway: something was received just now
+            @property
+            def _last_recv(self):
+                return time.perf_counter()
+
+        original_init = client_type.__init__
+
+        def init(client):
+            original_init(client)
+            silent = len(clients) == 1    # the first client's gateway is dead, the second is fine
+            client.ws = SimpleNamespace(_keep_alive=SimpleNamespace(_last_recv=time.perf_counter() - 1000)
+                                        if silent else Fresh())
+        client_type.__init__ = init
+        instance.event_callback = events.append
+        instance.preset_data.update({"_runtime_retry_delay": 0.05, "_runtime_max_retries": 1,
+                                     "_runtime_watchdog": {"interval": 0.05, "stale_after": 0.2,
+                                                           "recover_timeout": 10}})
+        instance._watchdog.interval, instance._watchdog.stale_after = 0.05, 0.2
+        instance._watchdog.recover_timeout = 10
+        try:
+            self.start_with_real_run_bot(instance, clients, client_type)
+            deadline = time.monotonic() + 10
+            while len(clients) < 2 and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertGreaterEqual(len(clients), 2, "the dead client was never replaced")
+            deadline = time.monotonic() + 5
+            while instance.state != InstanceState.RUNNING and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(instance.state, InstanceState.RUNNING)
+            kinds = [event.event_type for event in events]
+            self.assertIn("watchdog_reconnect", kinds)
+            deadline = time.monotonic() + 5
+            while "watchdog_recovered" not in [e.event_type for e in events] and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertIn("watchdog_recovered", [e.event_type for e in events])
+            self.assertNotIn("error", [e.event_type for e in events])   # a reconnect is not a crash
+            self.assertTrue(clients[0].closed)
+        finally:
+            self.stop_and_join(instance)
+
     def test_real_run_bot_normal_and_loot_ready_callbacks(self):
         for loot_mode in ("off", "kl"):
             ready = threading.Event()
