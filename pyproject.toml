@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mudaremote"
+dynamic = ["version"]
+description = "MudaRemote bot core, runtime, preset validation and Cloud worker"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+    "discord.py-self>=2.0.0,<3",
+    "inquirer>=3.1,<4",
+    "keyring>=24,<25",
+    "requests>=2.31,<3",
+]
+
+[tool.setuptools]
+packages = ["mudae_core"]
+py-modules = ["mudae_bot", "mudae_preset_editor"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mudae_core.versioning.CURRENT_VERSION" }

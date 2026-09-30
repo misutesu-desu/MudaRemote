@@ -1119,8 +1119,18 @@ class VersionSelectorDialog:
         self.on_install(target, "beta" if self.beta_var.get() else "main")
 
 class PresetEditor:
-    def __init__(self, root):
+    """Local preset editor.
+
+    ``extensions`` lets a host application embed extra top-level views next to the
+    local editor. Each extension is any object with a string ``title`` and a
+    ``build(parent, editor)`` method that populates the given ``tk.Frame``; an
+    optional ``on_show()`` runs each time its view is opened. The editor itself
+    stays unaware of what an extension does.
+    """
+
+    def __init__(self, root, extensions=()):
         self.root = root
+        self.extensions = list(extensions or ())
         self.root.title("MudaRemote Preset Editor")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
@@ -1157,6 +1167,7 @@ class PresetEditor:
 
         # Build UI
         self.build_ui()
+        self._install_extensions()
 
         # Bind close window protocol
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -1166,9 +1177,73 @@ class PresetEditor:
             first_preset = list(self.presets.keys())[0]
             self.select_preset(first_preset)
 
+    def _install_extensions(self):
+        """Add a top navigation strip when host extensions are registered."""
+        self._extension_frames = {}
+        self._extension_buttons = {}
+        self._active_view = "Local"
+        if not self.extensions:
+            return
+        self._nav_bar = tk.Frame(self.root, bg=BG_DARK)
+        self._nav_bar.pack(side=tk.TOP, fill=tk.X, padx=15, pady=(10, 0), before=self.main_frame)
+        self._extension_buttons["Local"] = self._make_nav_button("Local")
+        for extension in self.extensions:
+            title = str(extension.title)
+            frame = tk.Frame(self.root, bg=BG_DARK)
+            extension.build(frame, self)
+            self._extension_frames[title] = frame
+            self._extension_buttons[title] = self._make_nav_button(title)
+        self._highlight_nav()
+
+    def _make_nav_button(self, title):
+        button = self.create_flat_button(
+            self._nav_bar, title, lambda t=title: self.show_view(t),
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+            font=("Segoe UI", 10, "bold"),
+        )
+        button.pack(side=tk.LEFT, padx=(0, 6))
+        return button
+
+    def _highlight_nav(self):
+        for title, button in self._extension_buttons.items():
+            active = title == self._active_view
+            if active:
+                self.set_flat_button_colors(button, ACCENT, BG_DARK, ACCENT_ALT)
+            else:
+                self.set_flat_button_colors(button, BG_PANEL, TEXT_MAIN, BG_INPUT)
+
+    def show_view(self, title):
+        """Switch between the local editor ("Local") and an extension view."""
+        if title != "Local" and title not in self._extension_frames:
+            raise KeyError(title)
+        if title == self._active_view:
+            return
+        if title != "Local" and self._active_view == "Local" and not self.prompt_unsaved_changes():
+            return
+        if self._active_view == "Local":
+            self.main_frame.pack_forget()
+        else:
+            self._extension_frames[self._active_view].pack_forget()
+        self._active_view = title
+        if title == "Local":
+            self.main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        else:
+            self._extension_frames[title].pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+            for extension in self.extensions:
+                if str(extension.title) == title and hasattr(extension, "on_show"):
+                    extension.on_show()
+        self._highlight_nav()
+
     def on_close(self):
         """Prompt to save changes when closing the window."""
         if self.prompt_unsaved_changes():
+            for extension in self.extensions:
+                closer = getattr(extension, "on_close", None)
+                if closer:
+                    try:
+                        closer()
+                    except Exception:
+                        pass
             self.root.destroy()
 
     def mark_dirty(self, event=None):
@@ -1551,6 +1626,7 @@ class PresetEditor:
         """Build the main UI with a modern design system."""
         # Main container
         main_frame = ttk.Frame(self.root)
+        self.main_frame = main_frame
         main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
         # Left sidebar - Preset list
@@ -4331,8 +4407,17 @@ def _relaunch_editor():
         print(f"[MudaRemote] Relaunch failed after update: {e}. Start MudaRemote manually.")
 
 
-def launch_gui():
-    """Launch the Tkinter GUI preset editor."""
+class _UpdatesDisabled(Exception):
+    pass
+
+
+def launch_gui(extensions=None, check_updates=True):
+    """Launch the Tkinter GUI preset editor.
+
+    ``extensions`` are embedded as extra views (see ``PresetEditor``). A host that
+    ships its own release channel passes ``check_updates=False`` so the public
+    self-updater never replaces the host's files.
+    """
     # When built with --console (needed for headless bot mode), hide the console
     if sys.platform == "win32" and getattr(sys, 'frozen', False):
         try:
@@ -4346,6 +4431,8 @@ def launch_gui():
     root = tk.Tk()
     root.withdraw()
     try:
+        if not check_updates:
+            raise _UpdatesDisabled()
         import mudae_bot
 
         mudae_bot.cleanup_after_update()
@@ -4380,10 +4467,12 @@ def launch_gui():
             return
         if startup_result == "git":
             print("[MudaRemote] This install is managed by Git; run 'git pull' to update.")
+    except _UpdatesDisabled:
+        pass
     except Exception as e:
         print(f"[MudaRemote] Update check failed: {e}")
 
-    app = PresetEditor(root)
+    app = PresetEditor(root, extensions=extensions)
     root.deiconify()
     root.mainloop()
 

@@ -282,12 +282,16 @@ class TestBotInstance(unittest.TestCase):
                 cleaned.set()
         class Client:
             loop = None
+            def __init__(self):
+                # asyncio keeps only weak references to tasks; a pending task with no
+                # owner is garbage-collectable and would never run its cleanup.
+                self.background_tasks = []
             def is_closed(self):
                 return False
             async def close(self):
                 pass
             async def start(self, token):
-                asyncio.create_task(background())
+                self.background_tasks.append(asyncio.create_task(background()))
                 started.set()
                 await asyncio.Event().wait()
         client = Client()

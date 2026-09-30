@@ -77,3 +77,24 @@ startup settings. Credential changes require a new start/restart.
 See [examples/runtime_api_examples.py](examples/runtime_api_examples.py) for
 minimal single-account and multi-account examples. They require project
 dependencies and real Discord credentials; they are not offline tests.
+
+## Embedding and extending
+
+The package is installable (`pip install .`) and exposes `mudae_core`, `mudae_bot`
+and `mudae_preset_editor`. A host application can add views to the desktop editor:
+
+```python
+import mudae_preset_editor
+
+class MyView:
+    title = "My Tab"
+    def build(self, parent, editor):   # parent is a tk.Frame owned by the editor
+        ...
+    def on_show(self): ...              # optional, runs each time the tab opens
+    def on_close(self): ...             # optional, runs when the window closes
+
+mudae_preset_editor.launch_gui(extensions=[MyView()], check_updates=False)
+```
+
+`check_updates=False` keeps the public self-updater from replacing files the host
+ships. Without extensions the editor is unchanged.

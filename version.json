@@ -13,7 +13,7 @@
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_preset_editor.py",
-      "sha256": "85669d473b162fc1fe68edf130653d1a03ad8da2825a9ec59bb1b02734e34da5"
+      "sha256": "e85c959ae21d9b0e4ae5cc3f730301a4ac67fabb4ccbf3be761870fea548bbdc"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -89,6 +89,26 @@
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/bot_runtime.py",
       "sha256": "e5231371f247125c1e718228beff2ca64cb098627d16bbd975296f42f5440fd9"
+    },
+    {
+      "path": "mudae_core/worker.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/worker.py",
+      "sha256": "f5bd48df284ffac37d269f0bbff279c7ed3b268ae45bddb29a5338d969ad6ee4"
+    },
+    {
+      "path": "mudae_core/cloud_protocol.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/cloud_protocol.py",
+      "sha256": "138291cce58a0925aa3e28397c9b0c605b7b8493c652b70389d2508ab4ba695e"
+    },
+    {
+      "path": "mudae_core/worker_outbox.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/worker_outbox.py",
+      "sha256": "95152e16bf6745c20c70ce499ba1421c39d13159d119435e77cb959577a81beb"
+    },
+    {
+      "path": "mudae_core/cloud_worker.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/cloud_worker.py",
+      "sha256": "c8acc8900fc8f970d30f458f7318b246504a816ce15fee36907776c4ad1de5d0"
     },
     {
       "path": "mudae_core/sphere_runtime.py",

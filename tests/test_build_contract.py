@@ -61,7 +61,7 @@ class BuildContractTests(unittest.TestCase):
 
     def test_gui_update_prompt_shows_changelog_before_installing(self):
         editor = read_project_file("mudae_preset_editor.py")
-        launch_start = editor.index("def launch_gui():")
+        launch_start = editor.index("def launch_gui(")
         launch_end = editor.index("\ndef run_headless(", launch_start)
         launch_source = editor[launch_start:launch_end]
         self.assertIn("messagebox.askyesno", launch_source)

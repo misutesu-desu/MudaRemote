@@ -46,3 +46,7 @@ android/*.jks
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 .aider*
+
+# Packaging / session artifacts
+*.egg-info/
+pi-session-*.html
