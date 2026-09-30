@@ -27,6 +27,8 @@ from typing import Optional, Callable, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .activity_events import ActivityClassifier
+
 
 def _redact_credentials(obj, known_secrets=None):
     """
@@ -160,6 +162,7 @@ class BotInstance:
 
         # Build known secrets set for comprehensive redaction
         self._known_secrets = {token}
+        self._activity_classifier = ActivityClassifier()
 
         self.preset_data["token"] = token
         self.preset_data["_runtime_mode"] = True  # Signal to avoid desktop fallbacks
@@ -508,20 +511,15 @@ class BotInstance:
                         "level": level,
                     })
 
-                    # Emit structured events for important messages
+                    # Emit structured events for the moments a user cares about (see activity_events)
                     if level == "ERROR":
                         self._emit_event("error", {
                             "message": safe_message,
                             "fatal": False,
                         })
-                    elif "claimed" in safe_message.lower() and "kakera" not in safe_message.lower():
-                        self._emit_event("claim", {"message": safe_message})
-                    elif "reset" in safe_message.lower() and "roll" in safe_message.lower():
-                        self._emit_event("roll_reset", {"message": safe_message})
-                    elif "kakera" in safe_message.lower():
-                        self._emit_event("kakera", {"message": safe_message})
-                    elif any(term in safe_message.lower() for term in ["wish", "wishlist"]):
-                        self._emit_event("wishlist", {"message": safe_message})
+                    else:
+                        for event_type, event_data in self._activity_classifier.classify(level, safe_message):
+                            self._emit_event(event_type, event_data)
 
                 def on_client_ready(client):
                     """Called by run_bot when client is ready."""

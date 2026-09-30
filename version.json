@@ -86,9 +86,14 @@
       "sha256": "809f764e5bb026159876664ae1f79267f6599a7b4ee4626e8bed00547203f0bd"
     },
     {
+      "path": "mudae_core/activity_events.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/activity_events.py",
+      "sha256": "c23a6319325380ca032e6fdd72379e8322156fa11d1c969adb37b704a3673063"
+    },
+    {
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.0/mudae_core/bot_runtime.py",
-      "sha256": "e5231371f247125c1e718228beff2ca64cb098627d16bbd975296f42f5440fd9"
+      "sha256": "aefb3c4207345f4809411919035cd322915f85e800a2a70fd9a0f67963285ac2"
     },
     {
       "path": "mudae_core/worker.py",

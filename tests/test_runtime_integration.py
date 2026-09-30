@@ -760,10 +760,11 @@ class TestEventEmission(RuntimeTestCase):
                 callback(mock_client)
 
             # Simulate various log messages
-            log_function("Character claimed successfully!", name, "INFO")
+            log_function("Claim Verification: SUCCESS! We got Rem. (message edit)", name, "CLAIM")
             log_function("Roll reset detected at 12:00", name, "INFO")
-            log_function("Collected 150 kakera", name, "INFO")
-            log_function("Wishlist character appeared!", name, "INFO")
+            log_function("Kakera click sent: Rem [kakeraP] (Estimated Pw: 72%)", name, "KAKERA")
+            log_function("Wish detected on edited roll: Rem. Checking claim.", name, "CLAIM")
+            log_function("Claim Thresholds: Base Min Kakera: 175 | Effective Min Kakera: 175", name, "INFO")
             log_function("Connection failed", name, "ERROR")
             captured_logs.append(log_function)
             time.sleep(0.3)
@@ -799,9 +800,11 @@ class TestEventEmission(RuntimeTestCase):
             reset_events = [e for e in events if e.event_type == "roll_reset"]
             self.assertTrue(len(reset_events) > 0)
 
-            # Should have kakera event
+            # Should have exactly one kakera event: technical threshold lines are not activity
             kakera_events = [e for e in events if e.event_type == "kakera"]
-            self.assertTrue(len(kakera_events) > 0)
+            self.assertEqual(len(kakera_events), 1)
+            self.assertEqual(claim_events[0].data["character"], "Rem")
+            self.assertEqual(claim_events[0].data["message"], "Claimed Rem")
 
             # Should have wishlist event
             wishlist_events = [e for e in events if e.event_type == "wishlist"]
