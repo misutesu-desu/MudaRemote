@@ -71,7 +71,8 @@ class WatchdogTests(unittest.TestCase):
                                   perf=self.perf, **kw)
 
     def settle(self):
-        time.sleep(0.05)            # let the probe callback run on the loop thread
+        # callbacks run in order, so once this round trip returns the probe has been serviced
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.looper.loop).result(5)
 
     def test_healthy_connection_is_left_alone(self):
         inst = FakeInstance(make_client(self.perf, 5), self.looper.loop)
@@ -119,6 +120,7 @@ class WatchdogTests(unittest.TestCase):
         inst = FakeInstance(make_client(self.perf, keepalive=False), self.looper.loop)
         dog = self.dog(inst)
         self.assertIsNone(dog.problem())
+        self.assertTrue(dog._probe_done.wait(5))                      # the loop answered the probe
         self.clock.now += 61
         self.assertIn("not connected", dog.problem())
 

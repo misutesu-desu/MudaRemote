@@ -1543,6 +1543,15 @@ def mudae_command_ack_matches(payload, message_id, target_bot_id) -> bool:
     )
 
 
+def mudae_command_rejection_matches(payload, message_id, target_bot_id) -> bool:
+    """Match Mudae's stop-sign reaction, which it leaves on a command it refused."""
+    return (
+        getattr(payload, "message_id", None) == message_id
+        and getattr(payload, "user_id", None) == target_bot_id
+        and str(getattr(getattr(payload, "emoji", None), "name", "") or "") in ("\U0001F6D1", "octagonal_sign")
+    )
+
+
 def normalized_mudae_command_matches(content, prefix, command) -> bool:
     """Match one self-authored Mudae command without accepting arguments."""
     normalized = " ".join(str(content or "").split()).casefold()

@@ -230,7 +230,7 @@ try:
         status_message_addresses_identity, status_refresh_reasons, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
-        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, mudae_command_rejection_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
@@ -266,7 +266,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         status_message_addresses_identity, status_refresh_reasons, tu_cache_seconds_remaining, tu_retry_wait, has_perk_eight_discount,
         find_refreshed_component_button, get_kakera_emoji_targets, get_regular_kakera_filter_reason, has_op_perk_five_marker,
         has_purple_kakera_button, is_character_sphere_emoji, kakera_embed_text, kakera_interaction_key, list_includes_purple,
-        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
+        KakeraInteractionLedger, KakeraPowerLedger, NormalRollActionOwner, NormalRollCycleState, get_normal_roll_cycle_state, reconcile_authoritative_current_roll_count as reconcile_authoritative_roll_count_state_only, add_roll_cycle_uncertainty, add_provisional_roll_cycle_uncertainty, remove_roll_cycle_uncertainty, mark_roll_cycle_count_uncertain, roll_cycle_needs_authoritative_reconcile, roll_cycle_uncertainty_requires_status, normal_roll_schedule_count, can_clear_roll_status_after_exact_batch, claim_roll_count_reconciliation, release_roll_count_reconciliation, record_definite_normal_roll_consumption, record_ambiguous_normal_roll_consumption, rearm_existing_normal_roll_action, resolve_pending_boundary_roll_uncertainty, resolve_pending_boundary_roll_and_rearm, successor_roll_cycle_id, roll_cycle_matches_anchor_lineage, PendingMkRollOperation, RollActionTiming, RollCommandCorrelation, interaction_command_name, mudae_command_ack_matches, mudae_command_rejection_matches, next_daily_rolls_wake_deadline, normalized_mudae_command_matches, normalize_character_sphere_emoji, parse_kakera_result, queued_kakera_sort_key, roll_replenishment_cycle_key,
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
@@ -525,6 +525,24 @@ def parse_timer_minutes(pattern_name, text):
     if not m: return None
     h, m_val = parse_hm(m)
     return h * 60 + m_val
+
+# Mudae says we cannot react to kakera but the wait was not parseable (a different phrasing or seconds
+# only). Without an expiry the block used to last until a later $tu happened to say "you can react", so a
+# single unparsed message silenced every Kakera click until the bot was restarted. Bound it instead.
+KAKERA_COOLDOWN_FALLBACK_MINUTES = 5
+
+# A $dk sent right after a paid Kakera click can be refused by Mudae, which marks the $dk message with a
+# stop-sign reaction. Pause briefly before sending, watch for that reaction, and retry a refused $dk a
+# couple of times; if it is still refused, stop trying for a while instead of waiting for the next $tu.
+DK_SETTLE_SECONDS = 0.6
+DK_REJECT_WINDOW_SECONDS = 1.2
+DK_RETRY_DELAYS = (0.7, 1.5)
+DK_REFUSED_PAUSE_SECONDS = 30.0
+
+def kakera_cooldown_deadline(now_utc, minutes):
+    """When a "can't react to kakera" block ends: the reported wait, or a short bounded guess."""
+    wait = KAKERA_COOLDOWN_FALLBACK_MINUTES if minutes is None else minutes
+    return now_utc + datetime.timedelta(minutes=wait)
 
 def first_configured(mapping, *keys):
     """Return the first explicitly configured value, preserving valid zeroes."""
@@ -1516,13 +1534,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         cooldown_minutes = parse_timer_minutes("KAKERA_COOLDOWN", c_low)
         client.kakera_react_available = False
-        if cooldown_minutes is not None:
-            client.kakera_react_cooldown_until_utc = (
-                datetime.datetime.now(datetime.timezone.utc)
-                + datetime.timedelta(minutes=cooldown_minutes)
-            )
-        else:
-            client.kakera_react_cooldown_until_utc = None
+        client.kakera_react_cooldown_until_utc = kakera_cooldown_deadline(
+            datetime.datetime.now(datetime.timezone.utc), cooldown_minutes,
+        )
         remaining = f" ({cooldown_minutes}m left)" if cooldown_minutes is not None else ""
         BotLogger.log(
             f"Detected Kakera reaction cooldown from Mudae{remaining}. Blocking further Kakera clicks.",
@@ -1964,6 +1978,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 cancel_kakera_power_click(power_token)
                 client.kakera_interaction_ledger.release(interaction_key)
             elif confirmed and power_cost > 0 and str(emoji_name).rstrip("2").casefold() not in ("kakerad", "kakerac"):
+                client._last_paid_kakera_result_monotonic = time.monotonic()
                 # Dark rewards may refund power and a Chaos kakeraC may still
                 # be settling its bonus/discount evidence; their status
                 # reconciliation must settle first. Other paid results can
@@ -2120,21 +2135,65 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if not (client.auto_dk_enabled and client.dk_power_management and client.dk_stock_count > 0
                 and should_auto_refill_dk(current_power, required_power)):
             return False
+        if time.monotonic() < getattr(client, "_dk_refused_until", 0.0):
+            return False
         trigger = client.auto_dk_min_power or required_power
         try:
-            BotLogger.log(f"DK: Activating. ({current_power}% < {trigger}%)", preset_name, "KAKERA")
-            if not await guarded_send(_get_command_channel() or channel, f"{client.mudae_prefix}dk"):
+            # Right after a paid click Mudae is still settling that reaction; a $dk sent in the same
+            # instant can be refused. Give it a moment (only when a refill is actually needed).
+            settle = DK_SETTLE_SECONDS - (time.monotonic() - getattr(client, "_last_paid_kakera_result_monotonic", -1e9))
+            if settle > 0 and not await active_delay(settle + random.uniform(0.02, 0.15)):
                 return False
+            for attempt in range(len(DK_RETRY_DELAYS) + 1):
+                BotLogger.log(
+                    f"DK: Activating. ({current_power}% < {trigger}%)" + (f" Retry {attempt}." if attempt else ""),
+                    preset_name, "KAKERA",
+                )
+                sent = await guarded_send(_get_command_channel() or channel, f"{client.mudae_prefix}dk")
+                if not sent:
+                    return False
+                if not await dk_refused(getattr(sent, "id", None)):
+                    break
+                if attempt == len(DK_RETRY_DELAYS):
+                    client._dk_refused_until = time.monotonic() + DK_REFUSED_PAUSE_SECONDS
+                    BotLogger.log(
+                        f"DK: Mudae refused $dk {attempt + 1} times; trying again in {DK_REFUSED_PAUSE_SECONDS:.0f}s.",
+                        preset_name, "WARN",
+                    )
+                    return False
+                BotLogger.log("DK: Mudae refused $dk; retrying shortly.", preset_name, "WARN")
+                if not await active_delay(DK_RETRY_DELAYS[attempt] + random.uniform(0.02, 0.15)):
+                    return False
             client.dk_stock_count = max(0, client.dk_stock_count - 1)
             client.current_dk_power = client.max_dk_power
             client.kakera_power_ledger.clear()
             mark_dk_power_changed()
             client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
             request_status_refresh({"power"}, reason="auto-dk-used")
-            return await active_delay(1.5 + random.uniform(0.1, 0.4))
+            return True
         except Exception as error:
             BotLogger.log(f"DK refill failed: {error}", preset_name, "ERROR")
             return False
+
+    async def dk_refused(message_id):
+        """Wait briefly for Mudae's stop-sign reaction on our $dk; False when it was accepted (or unknowable)."""
+        if message_id is None:
+            return False
+        if message_id in client._recent_mudae_command_rejections:
+            client._recent_mudae_command_rejections.pop(message_id, None)
+            return True
+        waiter = asyncio.get_running_loop().create_future()
+        client._mudae_command_reject_waiters[message_id] = waiter
+        try:
+            await asyncio.wait_for(asyncio.shield(waiter), timeout=DK_REJECT_WINDOW_SECONDS)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            client._mudae_command_reject_waiters.pop(message_id, None)
+            client._recent_mudae_command_rejections.pop(message_id, None)
+            if not waiter.done():
+                waiter.cancel()
 
     def chaos_kakera_discount_reported(content):
         text = str(content or "").replace("*", "").replace("_", "")
@@ -4846,10 +4905,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if any(x in reaction_text for x in ["can't react", "cannot react", "não pode reagir", "no puedes reaccionar", "ne pouvez pas réagir"]):
                 client.kakera_react_available = False
                 k_cooldown = parse_timer_minutes("KAKERA_COOLDOWN", reaction_text)
-                client.kakera_react_cooldown_until_utc = (
-                    now_utc + datetime.timedelta(minutes=k_cooldown)
-                    if k_cooldown is not None else None
-                )
+                client.kakera_react_cooldown_until_utc = kakera_cooldown_deadline(now_utc, k_cooldown)
             elif any(x in reaction_text for x in ["you can react", "pode reagir", "pegar kakera", "puedes reaccionar", "pouvez réagir"]):
                 client.kakera_react_available = True
                 client.kakera_react_cooldown_until_utc = None
@@ -7527,6 +7583,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if client.loot_automation is not None:
             return
         message_id = getattr(payload, 'message_id', None)
+        if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
+            client._recent_mudae_command_rejections[message_id] = time.monotonic()
+            while len(client._recent_mudae_command_rejections) > 200:
+                client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
+            reject_waiter = client._mudae_command_reject_waiters.get(message_id)
+            if reject_waiter is not None and not reject_waiter.done():
+                reject_waiter.set_result(True)
+            return
         if not mudae_command_ack_matches(payload, message_id, TARGET_BOT_ID):
             return
         client._recent_mudae_command_acks[message_id] = time.monotonic()

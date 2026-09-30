@@ -496,6 +496,8 @@ def configure_client(
     client.kakera_interaction_ledger = KakeraInteractionLedger()
     client._mudae_command_ack_waiters = {}
     client._recent_mudae_command_acks = {}
+    client._mudae_command_reject_waiters = {}
+    client._recent_mudae_command_rejections = {}
     client._rt_command_in_flight = None
     client._manual_rt_pending_claims = []
     client._manual_rt_timeout_handle = None
