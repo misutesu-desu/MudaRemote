@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.1**\n\n### 🐛 Bug Fixes\n- **Kakera Reactions No Longer Get Stuck:** If Mudae told the bot it couldn't react to kakera right now and the bot couldn't read how long to wait, it could stop clicking kakera completely until you restarted it, and with no clicks your power was never used and `$dk` never ran. The bot now retries on its own after a few minutes, so you no longer need to restart it.\n- **More Reliable `$dk` Refills:** When Mudae refused a `$dk` sent right after collecting kakera, the bot assumed it worked and didn't try again until the next status check, missing the kakera in your rolls. The bot now gives Mudae a brief moment before refilling, notices when `$dk` is refused, and retries right away.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.1/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.1/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "bb338b2e1a8458588d9725b3f84c2d17e2ead92570a5baedd56da76511d7bc72",
   "source_files": [
     {
       "path": "mudae_bot.py",
