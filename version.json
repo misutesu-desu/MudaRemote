@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.4**\n\n### 🐛 Bug Fixes\n- **$dk Now Used When Mudae Refuses Kakera Clicks:** When Mudae said \"can't react to kakera\", the bot kept its old power estimate and never used your $dk. It now treats that refusal as \"out of power\", uses an available $dk and clicks again. A used $dk also lifts the Kakera block immediately instead of waiting out the whole cooldown, and Chaos/perk buttons no longer keep re-clicking into the same refusal.\n- **Wishlist $rt Respected:** Snipes no longer spend $rt on cheap wishlist cards when \"Restore for Wishlist\" is turned off.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.4/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.4/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "33d665c51d3e9a58538a4f97e1673f104160fba1b759bea8fccd354eb6c7300f",
   "source_files": [
     {
       "path": "mudae_bot.py",
