@@ -346,6 +346,29 @@ def sphere_target_matches(value: object, targets: object) -> bool:
     return bool(normalized and normalized in configured)
 
 
+DEFAULT_SPHERE_CLICK_TARGETS = (
+    "spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU",
+)
+# What presets saved before spP/spB/spT were offered kept as their "default" list.
+_LEGACY_SPHERE_CLICK_TARGETS = frozenset(
+    {"spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"}
+)
+
+
+def resolve_sphere_click_targets(value: object):
+    """Normalized sphere targets to click; unset means all, and the old 9-colour default is upgraded."""
+    if value is None:
+        value = DEFAULT_SPHERE_CLICK_TARGETS
+    targets = {
+        normalize_character_sphere_emoji(target).casefold()
+        for target in value
+        if str(target or "").strip()
+    }
+    if targets == {name.casefold() for name in _LEGACY_SPHERE_CLICK_TARGETS}:
+        targets |= {name.casefold() for name in DEFAULT_SPHERE_CLICK_TARGETS}
+    return targets
+
+
 def get_kakera_emoji_targets(
     kakera_emojis: object,
     chaos_emojis: object,

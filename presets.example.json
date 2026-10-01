@@ -106,7 +106,7 @@
     "dk_power_management": false,
     "max_dk_power": 100,
 
-    "sphere_click_targets": ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
+    "sphere_click_targets": ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"],
     "auto_oh_enabled": false,
     "oh_use_individually": false,
     "oh_priority_order": [],

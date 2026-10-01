@@ -14,6 +14,7 @@ from mudae_core.kakera import (
     KakeraInteractionLedger,
     KakeraPowerLedger,
     normalize_character_sphere_emoji,
+    resolve_sphere_click_targets,
 )
 from mudae_core.runtime import (
     NormalRollActionOwner,
@@ -299,16 +300,9 @@ def configure_client(
     client.sphere_emojis = sphere_emojis
 
     # Sphere games
-    sphere_click_targets = (
-        ["spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"]
-        if preset_data.get("sphere_click_targets") is None
-        else preset_data.get("sphere_click_targets")
+    client.sphere_click_targets = resolve_sphere_click_targets(
+        preset_data.get("sphere_click_targets")
     )
-    client.sphere_click_targets = {
-        normalize_character_sphere_emoji(target).casefold()
-        for target in sphere_click_targets
-        if str(target or "").strip()
-    }
     client.immediate_kakera_click = preset_data.get("immediate_kakera_click", True)
     client.collect_purple_kakera = bool(
         preset_data.get("collect_purple_kakera", True)
