@@ -4,7 +4,7 @@ import json
 import math
 import os
 import re
-import tempfile
+import uuid
 
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
@@ -36,11 +36,27 @@ def load_json(path, default=None):
         return json.load(handle)
 
 
+def _create_temp_file(directory):
+    """Create a private temp file beside the target, trying once per name.
+
+    ``tempfile.mkstemp`` treats a refused creation as a name clash on Windows and retries thousands of
+    times, so a folder the user cannot write to (an install in Program Files) froze the app for minutes.
+    Here only a real name clash is retried; a refusal raises at once."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    for _ in range(100):
+        temp_path = os.path.join(directory, ".mudae-{}.tmp".format(uuid.uuid4().hex[:12]))
+        try:
+            return os.open(temp_path, flags, 0o600), temp_path
+        except FileExistsError:
+            continue
+    raise FileExistsError("Could not find a free temporary file name in {}".format(directory))
+
+
 def atomic_write_json(path, data, indent=4):
     """Write JSON beside its destination, fsync it, then atomically replace."""
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
-    fd, temp_path = tempfile.mkstemp(prefix=".mudae-", suffix=".tmp", dir=directory)
+    fd, temp_path = _create_temp_file(directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(data, handle, indent=indent, ensure_ascii=False)

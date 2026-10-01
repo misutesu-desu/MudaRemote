@@ -159,7 +159,12 @@ class SecretStore:
             values[preset_name] = self._dpapi_protect(token)
         else:
             values.pop(preset_name, None)
-        atomic_write_json(self.path, values)
+        try:
+            atomic_write_json(self.path, values)
+        except OSError as exc:
+            raise SecretStoreError(
+                "The token store could not be written to {}. MudaRemote needs a folder you can write to.".format(self.path)
+            ) from exc
 
     def _load_dpapi_values(self):
         try:
