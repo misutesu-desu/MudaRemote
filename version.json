@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.3**\n\n### 🐛 Bug Fixes\n- **No More Freezing When Saving:** If MudaRemote lives in a folder you are not allowed to write to (for example Program Files), saving a preset or a token could freeze the window for minutes. It now tells you right away that the folder is read-only instead of hanging.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.3/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.3/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "9d732f695ba08eaa51dbcb53d52fcd6bb408a4f64b4a2c9b347451f41d8cc252",
   "source_files": [
     {
       "path": "mudae_bot.py",
