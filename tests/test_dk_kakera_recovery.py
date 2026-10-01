@@ -176,6 +176,33 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.command_channel.sent.count('$dk'), 1)
         self.assertEqual(bot.dk_stock_count, 1)
 
+    async def test_a_refused_click_means_no_power_and_uses_a_dk_instead_of_clicking_on(self):
+        bot = self.refill_setup(power=100)                    # the estimate says plenty, Mudae says none
+        bot.dk_consumption, bot.auto_dk_min_power = 40, 0
+        bot.kakera_emojis = ['kakeraO']
+        self.command_channel_refusing(refusals=0)
+        rejection = SimpleNamespace(
+            id=9101, channel=self.channel, author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+            content="<@%s> You can't react to kakera for **40** min." % bot.user.id,
+            created_at=datetime.datetime.now(datetime.timezone.utc), embeds=[], components=[], interaction=None,
+        )
+        msg, button = _build_roll_message(self.channel, 9100, bot.user.id, bot.user.name, 'kakeraO', client=bot)
+        confirm = button.click.side_effect
+
+        async def click():
+            if button.click.await_count == 1:
+                await bot.events['on_message'](rejection)     # first click is refused
+            else:
+                await confirm()                               # the click after the $dk works
+
+        button.click.side_effect = click
+        self.channel.fetch_message = mock.AsyncMock(return_value=msg)
+        await bot.events['on_message'](msg)
+        self.assertEqual(self.command_channel.sent.count('$dk'), 1)
+        self.assertEqual(button.click.await_count, 2)
+        self.assertIs(bot.kakera_react_available, True, '$dk lifts the refusal')
+        self.assertEqual(bot.dk_stock_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

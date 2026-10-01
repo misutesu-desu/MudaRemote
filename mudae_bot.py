@@ -1538,6 +1538,15 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             datetime.datetime.now(datetime.timezone.utc), cooldown_minutes,
         )
         remaining = f" ({cooldown_minutes}m left)" if cooldown_minutes is not None else ""
+        # Mudae refuses a reaction because the real power is below the cost, so
+        # the local estimate was too high. Trust the refusal: with an estimate
+        # of 0 the next click goes through the $dk refill (or stops cleanly
+        # instead of re-clicking Chaos/perk buttons that bypass the block).
+        client.current_dk_power = 0
+        client.last_dk_power_update_utc = datetime.datetime.now(datetime.timezone.utc)
+        client.kakera_power_ledger.clear()
+        client._kakera_rejection_revision = getattr(client, "_kakera_rejection_revision", 0) + 1
+        mark_dk_power_changed()
         BotLogger.log(
             f"Detected Kakera reaction cooldown from Mudae{remaining}. Blocking further Kakera clicks.",
             preset_name,
@@ -1872,16 +1881,21 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         current_button = button
         waiter_key, waiter = register_kakera_result_waiter(emoji_name)
         try:
+            rejection_revision = getattr(client, "_kakera_rejection_revision", 0)
             for attempt in range(attempt_limit):
                 if waiter.done():
                     client.kakera_interaction_ledger.mark_terminal(interaction_key, state="confirmed", custom_id=custom_id)
                     terminal = True
                     return True
+                # A Mudae refusal means the power estimate was wrong; the retry
+                # may refill with $dk, which is what actually unblocks clicking.
+                refused_since = getattr(client, "_kakera_rejection_revision", 0) != rejection_revision
+                rejection_revision = getattr(client, "_kakera_rejection_revision", 0)
                 cancel_kakera_power_click(power_token)
                 power_token = None
                 power_cost = await prepare_kakera_click(
                     msg, current_button, is_mk_roll=is_mk_roll, is_snipe=is_snipe,
-                    allow_special_purple=allow_special_purple, allow_refill=attempt == 0,
+                    allow_special_purple=allow_special_purple, allow_refill=attempt == 0 or refused_since,
                 )
                 if power_cost is None:
                     return False
@@ -2169,6 +2183,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             client.kakera_power_ledger.clear()
             mark_dk_power_changed()
             client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+            # $dk refills the power Mudae refused a reaction for.
+            client.kakera_react_available = True
+            client.kakera_react_cooldown_until_utc = None
             request_status_refresh({"power"}, reason="auto-dk-used")
             return True
         except Exception as error:
@@ -6897,7 +6914,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         name = button.emoji.name
         needs_reaction = cost > 0 or (name.rstrip('2') == 'kakeraP' and not is_green_kakera(button) and not client.collect_purple_kakera)
         if needs_reaction and not is_kakera_reaction_allowed() and not ((chaos_count > 0 and not is_snipe) or has_sp_perk):
-            return None
+            # The block usually means "out of power": a $dk lifts it at once.
+            if not (cost > 0 and allow_refill and await refill_dk_if_needed(msg.channel, cost)
+                    and is_kakera_reaction_allowed()):
+                return None
         current_pow = get_current_dk_power()
 
         if cost > 0 and current_pow is None:
