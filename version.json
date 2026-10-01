@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.2**\n\n### 🐛 Bug Fixes\n- **Perk 9 Spheres Are Clicked Again:** With the default sphere targets the bot skipped the purple, blue and teal spheres on your rolls, so part of them went unclicked. All sphere colors are now clicked by default, and presets still on the old default list are upgraded automatically. A list you chose yourself stays exactly as you set it.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.2/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.2/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "d612ab2b16166a61873b1ab932e90bf194435fa3a7557bc79a80e59f7f0288b9",
   "source_files": [
     {
       "path": "mudae_bot.py",
