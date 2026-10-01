@@ -7063,6 +7063,30 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 return False
 
         if not is_kakera:
+            if (allow_rt and not is_free_claim and not is_rt_claim
+                    and not client.claim_right_available and client.rt_available):
+                # Snipes reach here without the value gate the self-roll paths apply,
+                # so "Restore for Wishlist" off must still keep $rt for min_kakera cards.
+                try:
+                    rt_value = int(re.sub(r"[^\d]", "", str(val))) if val is not None else 0
+                except ValueError:
+                    rt_value = 0
+                claims_rt, likes_rt = parse_mudae_ranks(embed.description or "")
+                is_ranked_rt = (client.max_claim_rank > 0 and 0 < claims_rt <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_rt <= client.max_like_rank)
+                series_line = (embed.description or "").splitlines()[0].lower() if embed.description else ""
+                is_wishlist_rt = (
+                    char_name.lower() in client.wishlist
+                    or is_wished_by_self(msg, client.user.id)
+                    or is_ranked_rt
+                    or await series_wishlist_matches(msg, series_line, known_self_roll=None if is_snipe else True)
+                )
+                if not can_spend_restore_on_character(
+                    rt_value,
+                    client.min_kakera,
+                    is_wishlist_rt,
+                    client.rt_ignore_min_kakera_for_wishlist,
+                ):
+                    allow_rt = False
             # Check lock and register
             needs_rt = (
                 allow_rt
