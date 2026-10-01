@@ -44,11 +44,9 @@ class UnwritableDirectoryTest(unittest.TestCase):
     def test_the_token_store_reports_an_unwritable_folder_as_a_store_error(self):
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(config.os, "open", side_effect=PermissionError(13, "denied")), \
-                mock.patch("mudae_core.secrets.os.name", "nt"), \
-                mock.patch.object(SecretStore, "_dpapi_protect", return_value="x"), \
-                mock.patch.object(SecretStore, "_is_termux", return_value=False):
+                mock.patch.object(SecretStore, "_dpapi_protect", return_value="x"):
             with self.assertRaises(SecretStoreError):
-                SecretStore(folder).set_tokens("Main", ["abc.def.ghi"])
+                SecretStore(folder)._set_dpapi_secret("Main", "abc.def.ghi")      # the Windows store, on any OS
 
     @unittest.skipUnless(os.name == "nt", "folder permissions are checked with icacls on Windows")
     def test_a_folder_denied_by_permissions_answers_quickly(self):
