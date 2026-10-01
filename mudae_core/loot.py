@@ -108,7 +108,16 @@ class LootAutomation:
         reference = getattr(message, "reference", None)
         if getattr(reference, "message_id", None) in self._sent_ids:
             return True
-        return bool(leading_mention) or addressed_by_name
+        if leading_mention or addressed_by_name:
+            return True
+        # Mudae sometimes posts the $kl prompt with neither a reply reference
+        # nor a mention. Our own exact amount is then the only identity we
+        # have; a prompt replying to someone else's message never qualifies.
+        if (self.mode == "kl" and reference is None and not leading_name
+                and any(pattern in text for pattern in CONFIRMATIONS["kl"])):
+            amounts = {int(re.sub(r"[^0-9]", "", raw)) for raw in re.findall(r"[0-9][0-9.,]*[0-9]|[0-9]", text)}
+            return self.kl_amount in amounts
+        return False
 
     def on_message(self, message):
         if self._queue is None or getattr(getattr(message, "author", None), "id", None) != MUDAE_ID:

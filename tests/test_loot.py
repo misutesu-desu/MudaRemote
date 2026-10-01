@@ -112,12 +112,26 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
             loot.on_message(message(receipt_id + 2, prompt, author_id=99, reply=receipt_id))
             loot.on_message(message(receipt_id + 3, "<@11> " + prompt, reply=receipt_id))
             loot.on_message(message(receipt_id + 4, "other: " + prompt, reply=receipt_id))
-            loot.on_message(message(receipt_id + 5, prompt))  # Unaddressed is ambiguous.
+            loot.on_message(message(receipt_id + 5, "Do you want to spend 999? y/n"))  # Unaddressed, other amount.
             loot.on_message(message(receipt_id + 6, "<@10> " + prompt))
 
         self.on_send = on_send
         await loot._cycle(self.channel)
         self.assertEqual(self.sent, ["$kl 1000", "y"])
+
+    async def test_unaddressed_prompt_with_our_exact_amount_is_confirmed(self):
+        # Mudae sometimes posts the kl prompt without a reply reference or a mention.
+        loot = self.loot(kl_amount=6000000)
+
+        def on_send(content, receipt_id):
+            if content == "y":
+                loot.on_message(message(receipt_id + 1, "Rolls stacked", reply=receipt_id))
+            else:
+                loot.on_message(message(receipt_id + 1, "Do you want to spend 6,000,000 ? (y/n/ yes/no)"))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 6000000", "y"])
 
     async def test_later_own_recipient_mention_does_not_authorize_y(self):
         loot = self.loot(loot_mode="scrap", scrap_target_id="10")
