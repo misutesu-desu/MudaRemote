@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.5**\n\n### ✨ New\n- **$rt in the Command Channel:** New option \"Send $rt in the Command Channel\" (Character Sniping). When it is on, an account that snipes in another channel sends its $rt in its own command channel instead, so it no longer clashes with a forcedivorce sent at the same moment.\n- **Version in the Preset Editor:** The editor window title now shows the installed version.\n\n### 🐛 Bug Fixes\n- **No More $tu Spam:** While Mudae said \"You can't react to kakera\", the bot kept sending $tu every few seconds. It now reads that line as a normal status, and it never sends more than 4 $tu per minute.\n- **Kakera Loot $kl Prompt:** Kakera loot now answers a $kl prompt even when it arrives without a reply or mention.\n- **Readable Cloud Logs:** Cloud activity logs no longer hide ordinary messages as \"[REDACTED_TOKEN]\".\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.5/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.5/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "e1894c835b024777ff1fe0c5a640358d079de963789addd2677a8451201f8cd5",
   "source_files": [
     {
       "path": "mudae_bot.py",
