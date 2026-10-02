@@ -52,6 +52,7 @@
 
     "rt_ignore_min_kakera_for_wishlist": false,
     "rt_only_self_rolls": false,
+    "rt_in_command_channel": false,
     "auto_rt_after_claim": false,
 
     "auto_rolls_enabled": false,

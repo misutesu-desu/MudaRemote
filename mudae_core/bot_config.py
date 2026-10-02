@@ -226,6 +226,7 @@ def configure_client(
         "rt_ignore_min_kakera_for_wishlist", False
     )
     client.rt_only_self_rolls = preset_data.get("rt_only_self_rolls", False)
+    client.rt_in_command_channel = bool(preset_data.get("rt_in_command_channel", False))
 
     reactive_kakera_delay_range = preset_data.get("reactive_kakera_delay_range")
     if (
@@ -652,7 +653,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode",
     "auto_rolls_only_claim_hour", "panic_roll_minutes", "lurker_mode",
     "auto_rt_after_claim", "time_rolls_to_claim_reset",
-    "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls",
+    "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel",
     "reactive_kakera_delay_range", "auto_p_enabled",
     "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera",
     "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds",

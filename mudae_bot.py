@@ -1531,6 +1531,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         c_low = message.content.lower().replace("*", "").replace("_", "")
         if not any(phrase in c_low for phrase in ("can't react to kakera", "não pode reagir", "no puedes reaccionar")):
             return False
+        if re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_low, re.DOTALL) or re.search(REGEX_PATTERNS["DK_POWER"], c_low):
+            # A $tu reports the same wait as a status line. The status parser
+            # owns it; treating it as a refused click zeroed the power estimate
+            # and changed the power revision under the $tu that carried it.
+            return False
 
         cooldown_minutes = parse_timer_minutes("KAKERA_COOLDOWN", c_low)
         client.kakera_react_available = False
@@ -1731,6 +1736,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def send_rt_command(channel, source='automated'):
         """Send one restore command and apply the shared successful-restore transition."""
         sent_message_id = None
+        if client.rt_in_command_channel:
+            # Alts that snipe in someone else's channel keep their $rt in their
+            # own command channel, away from a forcedivorce sent at the same time.
+            command_channel = await _resolve_administrative_command_channel(channel)
+            if command_channel is not None and command_channel is not channel:
+                BotLogger.log(
+                    f"Sending $rt in the command channel (#{getattr(command_channel, 'name', command_channel.id)}).",
+                    preset_name, "INFO",
+                )
+                channel = command_channel
 
         def record_sent(message):
             nonlocal sent_message_id
@@ -4442,7 +4457,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 now_mono = time.monotonic()
                 if now_mono - getattr(client, '_tu_last_defer_log_monotonic', 0.0) >= 15.0:
                     dirty = ", ".join(sorted(status_dirty_fields(client))) or "scheduled status"
-                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after an incomplete status update ({dirty}).", preset_name, "INFO")
+                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after repeated or incomplete status queries ({dirty}).", preset_name, "INFO")
                     client._tu_last_defer_log_monotonic = now_mono
                 return
 

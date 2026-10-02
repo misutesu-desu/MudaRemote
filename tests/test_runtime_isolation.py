@@ -160,7 +160,7 @@ with patch.object(mudae_bot, "atomic_write_json", side_effect=denied) as writes,
         self.assertEqual(
             log_messages,
             [
-                "[REDACTED_TOKEN]",
+                "Automated Staggering: Assigned active index 0 (Preset: 'Isolation') -> +0.0s startup offset applied.",
                 "Preset outcome observer error: reload observer rejected [REDACTED]",
             ],
         )

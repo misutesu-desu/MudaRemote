@@ -679,6 +679,7 @@ BOOL_SETTINGS = [
     ("time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)", False),
     ("rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)", False),
     ("rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)", False),
+    ("rt_in_command_channel", "Send $rt in the Command Channel (Instead of the channel the character was sniped in)", False),
     ("auto_us_enabled", "Automatically Use Saved Rolls ($us)", False),
     ("auto_us_stop_on_claim", "Save Rolls While Claim Is Unavailable (Do not use $us without a claim)", True),
     ("bulk_us_enabled", "Bulk US Mode (Pull all saved rolls at once instead of in batches of 20)", False),
@@ -1131,7 +1132,7 @@ class PresetEditor:
     def __init__(self, root, extensions=()):
         self.root = root
         self.extensions = list(extensions or ())
-        self.root.title("MudaRemote Preset Editor")
+        self.root.title(f"MudaRemote Preset Editor v{CURRENT_VERSION}")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
 
@@ -2645,6 +2646,7 @@ class PresetEditor:
 
         # $rt settings
         self.add_checkbox(char_snipe_frame.content, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
+        self.add_checkbox(char_snipe_frame.content, "rt_in_command_channel", "Send $rt in the Command Channel (Instead of the channel the character was sniped in)")
         self.add_checkbox(char_snipe_frame.content, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
 
         # Snipe Chat Reactions
@@ -3462,7 +3464,7 @@ class PresetEditor:
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
+                    "rt_only_self_rolls", "rt_in_command_channel", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
@@ -3771,7 +3773,7 @@ class PresetEditor:
                     "auto_free_claim",
                     "humanization_enabled", "dk_power_management", "skip_initial_commands",
                     "time_rolls_to_claim_reset", "rt_ignore_min_kakera_for_wishlist",
-                    "rt_only_self_rolls", "auto_us_enabled", "auto_us_stop_on_claim",
+                    "rt_only_self_rolls", "rt_in_command_channel", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",

@@ -49,7 +49,8 @@ def _redact_credentials(obj, known_secrets=None):
                 obj = obj.replace(secret, "[REDACTED]")
 
         # Pattern-based redaction for Discord tokens (length > 50, contains dots)
-        if len(obj) > 50 and '.' in obj and obj.count('.') >= 2:
+        # A token is one unbroken word; log sentences also have dots in them.
+        if len(obj) > 50 and '.' in obj and obj.count('.') >= 2 and not any(c.isspace() for c in obj):
             return "[REDACTED_TOKEN]"
         return obj
     elif isinstance(obj, dict):
