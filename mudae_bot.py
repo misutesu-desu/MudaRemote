@@ -1004,8 +1004,13 @@ def get_character_owner(embed):
     m = re.search(REGEX_PATTERNS["OWNER"], embed.footer.text)
     return m.group(1).strip().lower() if m else None
 
+# Mudae writes the wish line in the server's language ("Souhaité par" in French).
+WISH_LINE_MARKERS = ("wished by", "souhaité par")
+
 def is_wished_by_self(message, client_user_id: int) -> bool:
-    return bool(message and message.content and "wished by" in message.content.lower() and client_user_id in [m.id for m in message.mentions])
+    if not (message and message.content): return False
+    content = message.content.lower()
+    return any(k in content for k in WISH_LINE_MARKERS) and client_user_id in [m.id for m in message.mentions]
 
 def parse_mudae_ranks(embed_description: str) -> Tuple[int, int]:
     if not embed_description: return 0, 0
