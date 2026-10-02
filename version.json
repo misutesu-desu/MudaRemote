@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.6**\n\n### ⚡ Improvements\n- **Fewer $tu After $us:** When Mudae confirms your saved rolls with a ✅, the bot now counts them itself and starts rolling right away instead of sending another $tu.\n\n### 🐛 Bug Fixes\n- **$tu Limit Removed:** The per-minute $tu limit added in v4.10.5 is gone. The real cause of the $tu flood was already fixed in that version.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.6/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.6/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "9c7de1724925081b5226291c9f32f9a3d370a3b25ba88a86665a01cdcdca1bd2",
   "source_files": [
     {
       "path": "mudae_bot.py",
