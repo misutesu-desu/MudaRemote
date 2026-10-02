@@ -14,10 +14,6 @@ from typing import Optional
 STATUS_FIELDS = frozenset(("claim", "rolls", "rt", "power", "dk", "points"))
 TU_FAILURE_BACKOFF_SECONDS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
 TU_CACHE_TTL_SECONDS = 30.0 * 60.0
-# More than this many complete answers inside the window is a runaway: some
-# flag is re-armed by every answer. Further queries wait for the window to end.
-TU_STORM_QUERIES = 4
-TU_STORM_WINDOW_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -323,8 +319,6 @@ def initialize_status_tracking(client) -> None:
     client.desync_detected = False
     client._tu_failure_streak = 0
     client._tu_next_allowed_monotonic = 0.0
-    client._tu_recent_successes = []
-    client._tu_storm_until_monotonic = 0.0
     client._tu_last_defer_log_monotonic = 0.0
     client._tu_missing_categories = set()
     client._tu_missing_category_warnings = set()
@@ -530,8 +524,6 @@ def consume_tu_urgent_bypass(client) -> bool:
     """Allow one urgent state change to bypass an existing failure backoff."""
     if not bool(getattr(client, "_status_refresh_urgent", False)):
         return False
-    if time.monotonic() < float(getattr(client, "_tu_storm_until_monotonic", 0.0)):
-        return False
     if bool(getattr(client, "_tu_urgent_bypass_used", False)):
         return False
     client._tu_urgent_bypass_used = True
@@ -645,15 +637,7 @@ def record_tu_failure(client, now_monotonic=None) -> float:
     return delay
 
 
-def record_tu_success(client, now_monotonic=None) -> None:
-    now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+def record_tu_success(client) -> None:
     client._tu_failure_streak = 0
     client._tu_next_allowed_monotonic = 0.0
-    recent = [t for t in getattr(client, "_tu_recent_successes", []) if now - t < TU_STORM_WINDOW_SECONDS]
-    recent.append(now)
-    client._tu_recent_successes = recent[-TU_STORM_QUERIES:]
-    if len(client._tu_recent_successes) >= TU_STORM_QUERIES:
-        until = client._tu_recent_successes[0] + TU_STORM_WINDOW_SECONDS
-        client._tu_storm_until_monotonic = until
-        defer_tu_queries(client, until - now, now_monotonic=now)
     client._tu_urgent_bypass_used = False

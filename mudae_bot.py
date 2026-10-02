@@ -1597,7 +1597,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             })
         if on_sent is not None:
             on_sent(sent)
+        return await await_mudae_command_ack(message_id, content, timeout)
 
+    async def await_mudae_command_ack(message_id, content, timeout=6.0):
+        """Wait for Mudae's ✅ on a command message that was already sent."""
         loop = asyncio.get_running_loop()
         waiter = loop.create_future()
         client._mudae_command_ack_waiters[message_id] = waiter
@@ -4457,7 +4460,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 now_mono = time.monotonic()
                 if now_mono - getattr(client, '_tu_last_defer_log_monotonic', 0.0) >= 15.0:
                     dirty = ", ".join(sorted(status_dirty_fields(client))) or "scheduled status"
-                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after repeated or incomplete status queries ({dirty}).", preset_name, "INFO")
+                    BotLogger.log(f"Deferring $tu for {retry_wait:.0f}s after an incomplete status update ({dirty}).", preset_name, "INFO")
                     client._tu_last_defer_log_monotonic = now_mono
                 return
 
@@ -5130,20 +5133,40 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if client.bulk_us_enabled and amount > 20:
                 chunks = [20] * (amount // 20) + ([amount % 20] if amount % 20 else [])
             sent = 0
+            all_acknowledged = True
             for chunk in chunks:
                 if client.key_limit_hit:
                     break
-                if not await guarded_send(cmd_channel, f"{client.mudae_prefix}us {chunk}"):
+                command = f"{client.mudae_prefix}us {chunk}"
+                message = await guarded_send(cmd_channel, command)
+                if not message:
                     if sent == 0:
                         client._us_retry_after = time.monotonic() + 30
                         return False
+                    all_acknowledged = False
                     break
                 sent += chunk
+                # Mudae answers `$us N` with a ✅ when it used exactly N stacked
+                # rolls, and with a text when it used none.
+                message_id = getattr(message, "id", None)
+                if message_id is None or not await await_mudae_command_ack(message_id, command):
+                    all_acknowledged = False
                 if len(chunks) > 1 and sent < amount:
                     if not await active_delay(random.uniform(1.5, 2.5)):
                         break
             if sent == 0:
                 return False
+            if all_acknowledged:
+                # The ✅ already settled the count; another $tu would only repeat it.
+                client.us_pulled_this_cycle += sent
+                client.rolls_left += sent
+                client._local_extra_rolls_pending += sent
+                BotLogger.log(
+                    f"Auto $us: Mudae confirmed {sent} saved roll(s); rolling them without another $tu.",
+                    preset_name, "INFO",
+                )
+                wake_status_loop()
+                return True
             client._us_in_flight = True
             client._us_pending_amount = sent
             mode = " in bulk mode" if len(chunks) > 1 else ""

@@ -8,7 +8,7 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.5/mudae_bot.py",
-      "sha256": "bdfada8f881a0d200ac9bce0e0496ef0e0c17985cccdf9134830f79783aaac9c"
+      "sha256": "d1bdaca5eeefe5ad7d9246afa160070767e481d4adbd918ca9f050cadc3d3ba4"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -53,7 +53,7 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.5/mudae_core/status.py",
-      "sha256": "ceca847e46015f96422dbf11139068ef2675da7fd34db4ede26429db17a5c9bc"
+      "sha256": "af73776a7fd5b30ae1adb9e3083a0ab3405dd3d2d21f04bcf438c9275dc39231"
     },
     {
       "path": "mudae_core/spheres.py",
