@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.7**\n\n### 🐛 Bug Fixes\n- **Wishes Detected on French Servers:** If your server runs Mudae in French, the bot can now tell when a rolled character is wished by you, so it claims it like it does on English servers.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.7/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.7/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "2d1e6b7edef94fda58e6f8415a9b222e5d77cb1ca8caba6f06045aa52d4274d9",
   "source_files": [
     {
       "path": "mudae_bot.py",
