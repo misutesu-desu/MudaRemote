@@ -16,6 +16,9 @@ import threading
 import queue
 import math
 import re
+import webbrowser
+
+REPO_URL = "https://github.com/misutesu-desu/MudaRemote"
 
 try:
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
@@ -1793,6 +1796,21 @@ class PresetEditor:
             mode="indeterminate",
             length=220,
         )
+
+        # A quiet, always-visible link instead of a popup: stars are how new
+        # users find the project.
+        self.star_link = tk.Label(
+            sidebar,
+            text="⭐ Enjoying it? Star us on GitHub",
+            font=("Segoe UI", 8, "underline"),
+            bg=BG_DARK,
+            fg=TEXT_MUTED,
+            cursor="hand2",
+        )
+        self.star_link.pack(anchor=tk.W, pady=(10, 0))
+        self.star_link.bind("<Button-1>", lambda e: webbrowser.open(REPO_URL))
+        self.star_link.bind("<Enter>", lambda e: self.star_link.config(fg=ACCENT))
+        self.star_link.bind("<Leave>", lambda e: self.star_link.config(fg=TEXT_MUTED))
 
         # Right side - Settings panel
         self.settings_container = tk.Frame(main_frame, bg=BG_DARK)

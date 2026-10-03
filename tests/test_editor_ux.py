@@ -52,6 +52,15 @@ class EditorUxContractTests(unittest.TestCase):
         preset["channel_id"] = 123456789
         self.assertEqual(validate_preset(preset, resolved_token=["token"]), [])
 
+    def test_sidebar_links_to_the_repository_for_stars(self):
+        import mudae_preset_editor
+        self.assertEqual(mudae_preset_editor.REPO_URL, "https://github.com/misutesu-desu/MudaRemote")
+        self.assertIn("webbrowser.open(REPO_URL)", self.editor)
+
+    def test_readme_screenshot_exists(self):
+        self.assertIn('src="screenshots/editor.png"', self.readme)
+        self.assertTrue(os.path.isfile(os.path.join(PROJECT_ROOT, "screenshots", "editor.png")))
+
     def test_recommended_profiles_do_not_share_mutable_values(self):
         first = build_recommended_preset()
         second = build_recommended_preset()

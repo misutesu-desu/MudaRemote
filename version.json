@@ -13,7 +13,7 @@
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.7/mudae_preset_editor.py",
-      "sha256": "adb31cb2f4232c7d83d96eab1a1fb9aadca18c35b26ae809cca540881838f547"
+      "sha256": "eb0074091afd226f69a725a1f10cd3f8eb0405db52502ea6a82cba11694436e5"
     },
     {
       "path": "mudae_core/__init__.py",
