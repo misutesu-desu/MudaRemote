@@ -125,6 +125,32 @@ class _FakeBoard:
         return self.message
 
 
+class _HarvestChestBoard(_FakeBoard):
+    """$oh/$oc boards: blue/teal unveil the lowest covered buttons; "H" is the Hidden Ourosphere."""
+
+    def __init__(self, client, kind, truth, visible=()):
+        super().__init__(client, kind, truth, 5)
+        for index in visible:
+            self.buttons[index].emoji = SimpleNamespace(name=truth[index])
+
+    async def click(self, button):
+        revealed = self.truth[button.index]
+        button.emoji = SimpleNamespace(name="spU" if revealed == "H" else revealed)
+        button.disabled = True
+        self.paid += revealed != "spP"
+        unveils = {"spB": 3, "spT": 1}.get(revealed, 0) if self.kind == "oh" else 0
+        for other in self.buttons:
+            if unveils and other.emoji.name == "spU" and not other.disabled:
+                unveils -= 1
+                if self.truth[other.index] != "H":  # it stays covered
+                    other.emoji = SimpleNamespace(name=self.truth[other.index])
+        if self.paid >= self.paid_limit:
+            for other in self.buttons:
+                other.disabled = True
+        self.client._sphere_board_update_events[self.message.id].set()
+        return True
+
+
 def _runtime(board_factory):
     client = SimpleNamespace(
         is_paused=False, _sphere_board_update_events={}, _sphere_game_bonus_clicks=0,
@@ -159,6 +185,32 @@ class SphereBoardFlowTests(unittest.IsolatedAsyncioTestCase):
         found = [name for name in board.names() if name not in {"spU", "spB"}]
         self.assertEqual(len(found), 14)
         self.assertLessEqual(board.paid, 4)
+
+    async def test_harvest_notices_an_unveil_that_landed_on_the_hidden_ourosphere(self):
+        truth = ["spB"] * 20 + ["spT"] * 5
+        truth[1] = "H"
+        runtime, board = _runtime(
+            lambda client: _HarvestChestBoard(client, "oh", truth, visible=range(20, 25)),
+        )
+        self.assertTrue(await runtime.play_sphere_game(board, board.message, "oh"))
+        self.assertEqual(board.paid, 5)
+        logged = [call.args[0] for call in runtime._log.call_args_list]
+        # The opening blue unveils buttons 0-2; button 1 stays covered.
+        self.assertIn("$oh: An unveil landed on the Hidden Ourosphere; it is still covered.", logged)
+
+    async def test_chest_finds_red_and_keeps_collecting(self):
+        truth = [
+            "spG", "spT", "spT", "spO", "sp",
+            "spB", "spB", "spB", "spY", "spO",
+            "spB", "spB", "spY", "spB", "spG",
+            "spB", "spT", "spB", "spB", "spG",
+            "spY", "spB", "spB", "spB", "spG",
+        ]
+        runtime, board = _runtime(lambda client: _HarvestChestBoard(client, "oc", truth))
+        self.assertTrue(await runtime.play_sphere_game(board, board.message, "oc"))
+        self.assertEqual(board.paid, 5)
+        self.assertIn("sp", board.names())
+        self.assertEqual(board.names().count("spO"), 2)
 
     async def test_enabled_quest_and_trace_stock_is_played(self):
         client = SimpleNamespace(

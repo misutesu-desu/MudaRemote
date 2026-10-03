@@ -8,6 +8,7 @@ explicit callback.
 
 import asyncio
 import datetime
+import functools
 import random
 import time
 from datetime import timezone
@@ -20,10 +21,12 @@ from .spheres import (
     choose_trace_position,
     count_harvest_bonus_clicks,
     harvest_reveal_is_free,
+    harvest_unveil_fell_short,
     normalize_sphere_emoji,
     parse_trace_rules,
     sphere_click_recovery_decision,
     SPHERE_GAME_KINDS,
+    UNKNOWN_SPHERE,
 )
 
 
@@ -193,6 +196,14 @@ class SphereRuntime:
         paid_clicks = 0
         total_clicks = 0
         red_found = False
+        # $oh: where the Hidden Ourosphere ($oc use) can be depends on how
+        # many buttons were covered at the start and on unveils that fell short.
+        _, opening_emojis, opening_disabled, _ = sphere_board_snapshot(message)
+        harvest_initial_covered = sum(
+            1 for name, off in zip(opening_emojis, opening_disabled)
+            if normalize_sphere_emoji(name) == UNKNOWN_SPHERE and not off
+        )
+        harvest_hidden_confirmed = False
         while total_clicks < 25:
             paid_limit = 5 + int(getattr(self._client, '_sphere_game_bonus_clicks', 0) or 0)
             if click_limited and paid_clicks >= paid_limit:
@@ -215,14 +226,18 @@ class SphereRuntime:
                     reward_priority_order=self._client.oc_reward_priority_order,
                 )
             else:
-                position = choose_harvest_position(
+                # The exact search can take a few hundred ms on a fresh board.
+                position = await asyncio.get_running_loop().run_in_executor(None, functools.partial(
+                    choose_harvest_position,
                     emojis,
                     disabled,
                     paid_clicks=paid_clicks,
                     priority_order=self._client.oh_priority_order,
                     unknown_explore_clicks=self._client.oh_unknown_explore_clicks,
                     remaining_clicks=paid_limit - paid_clicks,
-                )
+                    initial_covered=harvest_initial_covered,
+                    hidden_confirmed=harvest_hidden_confirmed,
+                ))
             if position is None or position < 0 or position >= len(buttons):
                 self._log(f"{game_label}: No safe enabled sphere button remains.", "WARN")
                 break
@@ -313,6 +328,11 @@ class SphereRuntime:
             revealed = normalize_sphere_emoji(
                 revealed_emojis[position] if position < len(revealed_emojis) else ""
             )
+            if kind == "oh" and not harvest_hidden_confirmed and harvest_unveil_fell_short(
+                emojis, disabled, revealed_emojis, sphere_board_snapshot(current)[2], position,
+            ):
+                harvest_hidden_confirmed = True
+                self._log("$oh: An unveil landed on the Hidden Ourosphere; it is still covered.", "KAKERA")
             if sphere_reveal_costs_click(kind, revealed):
                 paid_clicks += 1
             if kind == "oh" and revealed == "spD" and bonus_event is not None:

@@ -743,7 +743,7 @@ NUMERIC_SETTINGS = [
     ("max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0, int),
     ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
-    ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (before fallback strategy)", 3, int),
+    ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (only with a custom $oh priority)", 3, int),
     ("kl_amount", "$kl Spend Amount", 1000, int),
     ("scrap_amount", "$givescrap Amount", 500000000, int),
     ("loot_min_cooldown", "Minimum Loot Cooldown (seconds)", 30.0, float),
@@ -2798,7 +2798,7 @@ class PresetEditor:
         # [NEW] Sphere click targets setting
         self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis")
         self.add_list_field(emoji_frame.content, "oh_priority_order", "$oh Reward Priority (Highest first; e.g. spD, spP, spU)")
-        self.add_number_field(emoji_frame.content, "oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks", 3)
+        self.add_number_field(emoji_frame.content, "oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (custom priority only)", 3)
         self.add_list_field(emoji_frame.content, "oc_reward_priority_order", "$oc Reward Priority After Red (Highest first)")
         self.add_checkbox(emoji_frame.content, "oc_collect_after_red", "$oc: Keep Collecting Rewards After Finding Red")
 

@@ -1,3 +1,4 @@
+from itertools import combinations
 import unittest
 
 from mudae_core.spheres import (
@@ -7,6 +8,7 @@ from mudae_core.spheres import (
     choose_harvest_position,
     count_harvest_bonus_clicks,
     harvest_reveal_is_free,
+    harvest_unveil_fell_short,
     normalize_sphere_emoji,
     parse_sphere_game_status,
     sphere_click_recovery_decision,
@@ -124,8 +126,62 @@ class SphereBoardTests(unittest.TestCase):
 
         self.assertTrue(found)
 
-    def test_first_chest_click_uses_guaranteed_safe_center(self):
-        self.assertEqual(choose_chest_position(["spU"] * 25, [False] * 25), 12)
+    def test_first_chest_click_follows_the_optimal_opening(self):
+        # Row 2, column 4 can already be red; the always-safe center cannot.
+        self.assertEqual(choose_chest_position(["spU"] * 25, [False] * 25), 8)
+
+    def test_chest_policy_is_optimal_over_every_possible_board(self):
+        values = {"sp": 150, "spO": 90, "spY": 55, "spG": 35, "spT": 20, "spB": 10}
+        per_red_ev, per_red_found = [], []
+        for red in range(25):
+            if red == 12:
+                continue
+            red_row, red_column = divmod(red, 5)
+            orth, diag, aligned, other = [], [], [], []
+            for cell in range(25):
+                row, column = divmod(cell, 5)
+                row_delta, column_delta = abs(row - red_row), abs(column - red_column)
+                if cell == red:
+                    continue
+                if row_delta + column_delta == 1:
+                    orth.append(cell)
+                elif row_delta == column_delta:
+                    diag.append(cell)
+                elif row_delta == 0 or column_delta == 0:
+                    aligned.append(cell)
+                else:
+                    other.append(cell)
+            total = found = boards = 0
+            for oranges in combinations(orth, 2):
+                green_pool = [cell for cell in orth if cell not in oranges] + aligned
+                for greens in combinations(green_pool, 4):
+                    for yellows in combinations(diag, 3):
+                        hidden = ["spT"] * 25
+                        hidden[red] = "sp"
+                        for cells, name in ((other, "spB"), (oranges, "spO"),
+                                            (greens, "spG"), (yellows, "spY")):
+                            for cell in cells:
+                                hidden[cell] = name
+                        visible, disabled = ["spU"] * 25, [False] * 25
+                        for _ in range(5):
+                            position = choose_chest_position(visible, disabled)
+                            visible[position], disabled[position] = hidden[position], True
+                            total += values[hidden[position]]
+                        found += disabled[red]
+                        boards += 1
+            per_red_ev.append(total / boards)
+            per_red_found.append(found / boards)
+
+        self.assertEqual(len(per_red_ev), 24)
+        self.assertGreaterEqual(sum(per_red_ev) / 24, 344.7)
+        self.assertGreaterEqual(sum(per_red_found) / 24, 0.999)
+
+    def test_chest_board_off_the_policy_table_falls_back_to_clues(self):
+        board, disabled = ["spU"] * 25, [False] * 25
+        board[12], disabled[12] = "spY", True  # the table never opens on the center
+        position = choose_chest_position(board, disabled)
+        self.assertIsNotNone(position)
+        self.assertFalse(disabled[position])
 
     def test_revealed_clues_reduce_red_candidates(self):
         board = ["spU"] * 25
@@ -227,11 +283,65 @@ class SphereBoardTests(unittest.TestCase):
         self.assertEqual(choose_harvest_position(board, disabled, paid_clicks=4), 7)
 
     def test_harvest_endgame_uses_expected_value_including_dark_and_red_alias(self):
-        for color, expected in (("spG", 0), ("spY", 0), ("spO", 7), ("sp", 7), ("spD", 7)):
+        # A covered button is worth ~20 spheres plus a small Hidden Ourosphere
+        # chance on a fresh board, so even green beats it on the last click.
+        for color in ("spG", "spY", "spO", "sp", "spD"):
             with self.subTest(color=color):
                 board = ["spU"] * 25
                 board[7] = color
-                self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), expected)
+                self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), 7)
+
+    def test_harvest_last_click_goes_for_a_confirmed_hidden_ourosphere(self):
+        board = ["spB"] * 25
+        board[3], board[7] = "spU", "spO"
+        disabled = [True] * 25
+        disabled[3] = disabled[7] = False
+        self.assertEqual(
+            choose_harvest_position(board, disabled, remaining_clicks=1, initial_covered=15), 7,
+        )
+        self.assertEqual(
+            choose_harvest_position(
+                board, disabled, remaining_clicks=1, initial_covered=15, hidden_confirmed=True,
+            ),
+            3,
+        )
+
+    def test_harvest_opens_covered_buttons_while_many_clicks_remain(self):
+        board = ["spU"] * 25
+        board[7], board[8] = "spW", "spB"
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 12)
+        # The white stays for the last click; exploring first loses nothing.
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=3), 12)
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=4), 7)
+
+    def test_harvest_hidden_ourosphere_is_gone_once_clicked(self):
+        board = ["spB"] * 25
+        board[3], board[4], board[7] = "spU", "spU", "spG"
+        disabled = [True] * 25
+        disabled[3] = disabled[7] = False  # 4 is the clicked Hidden Ourosphere
+        self.assertEqual(
+            choose_harvest_position(
+                board, disabled, remaining_clicks=1, initial_covered=15, hidden_confirmed=True,
+            ),
+            7,
+        )
+
+    def test_unveil_that_fell_short_by_one_confirms_the_hidden_ourosphere(self):
+        before = ["spU"] * 25
+        before[0] = "spB"
+        disabled = [False] * 25
+        after = list(before)
+        after[1], after[2] = "spT", "spG"  # blue unveiled 2 of 3
+        after_disabled = list(disabled)
+        after_disabled[0] = True
+        self.assertTrue(harvest_unveil_fell_short(before, disabled, after, after_disabled, 0))
+        after[3] = "spB"  # all 3 unveiled
+        self.assertFalse(harvest_unveil_fell_short(before, disabled, after, after_disabled, 0))
+        partial = list(before)  # nothing unveiled yet: likely a partial edit
+        self.assertFalse(harvest_unveil_fell_short(before, disabled, partial, after_disabled, 0))
+        dark = list(before)
+        dark[0] = "spD"  # a dark that became blue unveils nothing
+        self.assertFalse(harvest_unveil_fell_short(dark, disabled, after, after_disabled, 0))
 
     def test_harvest_resolves_dark_before_flat_rewards_when_both_fit(self):
         board = ["spB"] * 25
