@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.9**\n\n### ✨ New Features\n- **Auto `$oq`:** The bot can now play your `$oq` boards. It works out where the purple spheres can be from the clues and goes for the 3 purples that turn the last one red.\n- **Auto `$ot`:** The bot can now play your `$ot` boards. Only blue costs a click there, so it follows the color lines and avoids blue as much as it can.\n\nTurn them on under Power & Expert Settings. Both are off by default.\n\n### 🐛 Bug Fixes\n- **No More Broken APK Download:** Fetch app updates could say a new APK was available and send you to a page that didn't exist. The bot code still updates on its own like before, and the app now only mentions an APK that's really there.\n- **APK Downloads From Switch Version:** With the next Android app, releases that come with an APK show \"+ APK\" in Switch Version, where you can choose to update the bot code or download the APK.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.9/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "21681e4decafc741e01f1c567d66f4bf3633afb07d1dbb1c5026058657840399",
   "source_files": [
     {
       "path": "mudae_bot.py",
