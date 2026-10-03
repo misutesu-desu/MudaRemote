@@ -58,7 +58,7 @@
     {
       "path": "mudae_core/spheres.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/spheres.py",
-      "sha256": "516e13c7b7fb2b709a149a59665a65127ed5faf6872fe02382ac1db63747cb46"
+      "sha256": "eb9756e042ee31a144eff6fb9d8aa640bd2ca44ccacba16c65b068b7f4c2b413"
     },
     {
       "path": "mudae_core/filters.py",
@@ -123,7 +123,7 @@
     {
       "path": "mudae_core/sphere_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/sphere_runtime.py",
-      "sha256": "2985e1a9ce348bffc5c4b4d0b3b94d9a1cd8b40cc43faa2cd53c57340d8af0d6"
+      "sha256": "c35b7b92bb77a5b0bc290c80bf3e90eb9c137dcc45ae48b548d77edd9981472e"
     },
     {
       "path": "requirements.txt",

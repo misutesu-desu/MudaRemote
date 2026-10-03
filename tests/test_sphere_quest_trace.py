@@ -48,8 +48,51 @@ class QuestSolverTests(unittest.TestCase):
         self.assertEqual(len(layouts), 1)
         self.assertEqual([i for i in range(25) if layouts[0] >> i & 1], [2, 4, 7, 10])
 
-    def test_first_click_is_the_center(self):
-        self.assertEqual(choose_quest_position(["spU"] * 25, [False] * 25), 12)
+    def test_first_click_follows_the_offline_policy(self):
+        # Row 2, column 2 beat the center for the whole-board average.
+        self.assertEqual(choose_quest_position(["spU"] * 25, [False] * 25), 6)
+
+    def test_red_sphere_is_clicked_as_soon_as_it_shows(self):
+        board = ["spU"] * 25
+        disabled = [False] * 25
+        for index, name in ((2, "spP"), (7, "spP"), (10, "spP"), (0, "spB")):
+            board[index], disabled[index] = name, True
+        board[4] = "sp"  # the 4th purple, shown red and still clickable
+        self.assertEqual(choose_quest_position(board, disabled), 4)
+
+    def test_quest_policy_averages_near_the_optimum(self):
+        values = {"spB": 10, "spT": 20, "spG": 35, "spY": 55, "spO": 90}
+        layouts = quest_purple_layouts(["spU"] * 25)[::50]
+        total = reds = 0
+        for layout in layouts:
+            purples = {i for i in range(25) if layout >> i & 1}
+            board, disabled = ["spU"] * 25, [False] * 25
+            clicks = found = 0
+            while clicks < 7:
+                position = choose_quest_position(board, disabled)
+                disabled[position] = True
+                if position in purples:
+                    if found == 3:
+                        board[position] = "sp"
+                        total += 150
+                        reds += 1
+                        clicks += 1
+                    else:
+                        board[position] = "spP"
+                        total += 5
+                    found += 1
+                    if found == 3:
+                        for other in purples:
+                            if not disabled[other]:
+                                board[other] = "sp"
+                else:
+                    count = min(4, sum(1 for other in purples if abs(other // 5 - position // 5) <= 1
+                                       and abs(other % 5 - position % 5) <= 1))
+                    board[position] = ("spB", "spT", "spG", "spY", "spO")[count]
+                    total += values[board[position]]
+                    clicks += 1
+        self.assertGreaterEqual(total / len(layouts), 345)
+        self.assertGreaterEqual(reds / len(layouts), 0.9)
 
     def test_certain_purple_is_clicked_next(self):
         board = ["spU"] * 25
@@ -66,12 +109,32 @@ class TraceSolverTests(unittest.TestCase):
         self.assertEqual(rules.lengths, {"spT": 4, "spG": 3, "spY": 3})
         self.assertEqual((rules.rare_length, rules.rare_colors), (2, 2))
 
-    def test_partial_run_is_extended_along_its_line(self):
+    def test_ships_wait_while_extra_chance_keeps_blues_free(self):
         board = ["spU"] * 25
         disabled = [False] * 25
         for index in (3, 8):
             board[index], disabled[index] = "spT", True
-        self.assertIn(choose_trace_position(board, disabled, parse_trace_rules(TRACE_TEXT)), {13, 18})
+        # Two teal cells: extending the line would spend Extra Chance on a
+        # ship that stays free to collect later.
+        self.assertNotIn(choose_trace_position(board, disabled, parse_trace_rules(TRACE_TEXT)), {13, 18})
+
+    def test_certain_ship_is_collected_once_extra_chance_is_over(self):
+        board = list(TRACE_BOARD)
+        disabled = [True] * 25
+        for index in (18, 9, 14, 19):  # hidden: the teal end, two blues and a light
+            board[index], disabled[index] = "spU", False
+        board[24], disabled[24] = "spU", False
+        # 5+ ships are hit, so blues now cost clicks; 18 must be the teal end.
+        self.assertEqual(choose_trace_position(board, disabled, parse_trace_rules(TRACE_TEXT)), 18)
+
+    def test_trace_falls_back_when_layouts_cannot_be_counted(self):
+        board = ["spU"] * 25
+        board[0] = "spX"  # an emoji the solver does not know
+        disabled = [False] * 25
+        disabled[0] = True
+        position = choose_trace_position(board, disabled, parse_trace_rules(TRACE_TEXT))
+        self.assertIsNotNone(position)
+        self.assertFalse(disabled[position])
 
 
 class SphereKindTests(unittest.TestCase):
@@ -104,18 +167,31 @@ class _FakeBoard:
     def names(self):
         return [button.emoji.name for button in self.buttons]
 
+    hits = 0
+
     async def click(self, button):
         revealed = self.truth[button.index]
-        button.emoji = SimpleNamespace(name="spP" if revealed == "sp" else revealed)
+        over = False
+        if self.kind == "oq":
+            # Purples are free; after the 3rd the last one shows red and costs a click.
+            if revealed in {"spP", "sp"}:
+                revealed = "sp" if self.names().count("spP") >= 3 else "spP"
+            self.paid += revealed != "spP"
+            over = self.paid >= self.paid_limit
+        elif revealed == "spB":
+            # Extra Chance: blues cannot end the board before 5 ship cells are hit.
+            if not (self.paid == self.paid_limit - 1 and self.hits < 5):
+                self.paid += 1
+            over = self.paid >= self.paid_limit and self.hits >= 5
+        else:
+            self.hits += 1
+        button.emoji = SimpleNamespace(name=revealed)
         button.disabled = True
-        if sphere_reveal_costs_click(self.kind, revealed):
-            self.paid += 1
-        found_purples = self.names().count("spP")
-        if self.kind == "oq" and found_purples >= 3:
+        if self.kind == "oq" and revealed == "spP" and self.names().count("spP") == 3:
             for other in self.buttons:
                 if self.truth[other.index] in {"spP", "sp"} and other.emoji.name == "spU":
                     other.emoji = SimpleNamespace(name="sp")
-        if self.paid >= self.paid_limit or (self.kind == "oq" and found_purples >= 3):
+        if over or all(other.disabled for other in self.buttons):
             for other in self.buttons:
                 other.disabled = True
         self.client._sphere_board_update_events[self.message.id].set()
@@ -176,7 +252,8 @@ class SphereBoardFlowTests(unittest.IsolatedAsyncioTestCase):
         runtime, board = _runtime(lambda client: _FakeBoard(client, "oq", QUEST_BOARD, 7))
         self.assertTrue(await runtime.play_sphere_game(board, board.message, "oq"))
         self.assertEqual(board.names().count("spP"), 3)
-        self.assertEqual(board.names().count("sp"), 1)
+        red = [button for button in board.buttons if button.emoji.name == "sp"]
+        self.assertEqual(len(red), 1)
         self.assertLessEqual(board.paid, 7)
 
     async def test_trace_finds_every_colored_sphere_with_four_blue_clicks(self):

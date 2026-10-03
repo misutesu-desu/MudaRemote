@@ -3,7 +3,8 @@
 from dataclasses import dataclass, field
 from itertools import combinations
 import re
-from typing import Dict, Iterable, Optional, Sequence, Tuple
+import time
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 BOARD_SIZE = 5
@@ -931,7 +932,6 @@ def _sphere_game_candidates(board: Sequence[str], blocked: Sequence[bool]):
 # neighbors (8 tiles around). The 4th purple turns red when 3 are found.
 _QUEST_PURPLE_COUNT = 4
 _QUEST_CLUES = {"spB": 0, "spT": 1, "spG": 2, "spY": 3, "spO": 4}
-_QUEST_CLUE_BY_COUNT = {count: name for name, count in _QUEST_CLUES.items()}
 # A purple costs no click and moves toward the red, so it outranks any clue.
 _QUEST_PURPLE_VALUE = 100.0
 
@@ -979,34 +979,328 @@ def quest_purple_layouts(emojis: Sequence[str]) -> Tuple[int, ...]:
     )
 
 
-def choose_quest_position(emojis: Sequence[str], disabled: Sequence[bool]) -> Optional[int]:
-    """Pick the $oq cell with the best purple chance, weighted by the clue it reveals otherwise."""
+_QUEST_CLICKS = 7
+_QUEST_CLUE_VALUES = (10.0, 20.0, 35.0, 55.0, 90.0)
+_QUEST_RED_VALUE = 150.0
+_QUEST_PURPLE_SPHERES = 5.0
+_QUEST_CODES = {"spB": "B", "spT": "T", "spG": "G", "spY": "Y", "spO": "O", "spP": "P"}
+# Up to this many purple layouts the next click is solved exactly on the spot.
+_QUEST_EXACT_LAYOUTS = 12
+# Decisions of the offline $oq policy (7 clicks) for every board state with
+# more than _QUEST_EXACT_LAYOUTS layouts left that it meets on any of the
+# 12,650 layouts: open at row 2, column 2, then the exact search on small
+# layout sets and purple chance + clue value on large ones. Averages
+# 351.8 spheres per board (with red on 95.0% of them) under the
+# rules the community measured: the red costs a click, purples are free.
+# Entry format as in _CHEST_POLICY, with B/T/G/Y/O for clues and P for purple.
+_QUEST_POLICY = (
+    ":g gB:s gG:h gO:h gP:m gT:s gY:h gBsB:i gBsG:n gBsO:t gBsP:n gBsT:i gBsY:t gGhB:f gGhG:m gGhO:i "
+    "gGhP:i gGhT:f gGhY:i gOhG:k gOhP:l gPmG:h gPmO:h gPmP:h gPmT:b gPmY:h gTsB:i gTsG:n gTsP:n "
+    "gTsT:i gTsY:n gYhG:l gYhP:l gYhT:f gYhY:m bGgPmT:f bPgPmT:f bTgPmT:k bYgPmT:a fGgGhT:k fPgGhB:k "
+    "fPgGhT:l fPgYhT:k fTgGhT:m gBiBsT:p gBiGsB:d gBiGsT:j gBiPsB:d gBiPsT:j gBiTsT:q gBiYsT:d "
+    "gBnBsG:v gBnGsG:o gBnGsP:w gBnPsG:i gBnPsP:r gBnTsG:x gBnTsP:w gBnYsG:i gBnYsP:o gBsOtP:x "
+    "gBsYtG:r gBsYtP:x gBsYtY:i gGhGmB:c gGhGmG:l gGhGmP:l gGhGmT:c gGhPiG:l gGhPiO:n gGhPiP:m "
+    "gGhPiT:l gGhPiY:n gGhYiG:l gGhYiP:m gGhYiY:m gOhPlP:m gPhGmG:l gPhGmP:l gPhGmY:r gPhOmP:l "
+    "gPhPmG:b gPhPmO:c gPhPmY:l gPhTmG:r gPhTmY:l gPhYmG:c gPhYmP:l gPhYmY:l gTiBsB:p gTiBsT:q "
+    "gTiGsB:d gTiGsT:d gTiOsT:d gTiPsB:d gTiPsT:h gTiTsB:q gTiTsT:q gTiYsB:d gTiYsT:d gTmPsO:n "
+    "gTnBsG:x gTnGsG:r gTnGsP:r gTnGsY:r gTnOsP:o gTnPsG:i gTnPsP:m gTnPsY:r gTnTsG:x gTnTsP:w "
+    "gTnTsY:x gTnYsG:i gTnYsP:m gTnYsY:m gYhGlG:m gYhGlP:f gYhGlT:a gYhPlG:b gYhPlP:m gYhPlT:c "
+    "gYhPlY:m gYhYmP:l gYhYmT:b aPbYgPmT:c aPgYhGlT:b bGfGgPmT:a bGfPgPmT:k bGgPhPmG:l bGgYhPlG:i "
+    "bPfGgPmT:c bPfYgPmT:a bPgYhPlG:c bPgYhYmT:c bTgPkPmT:q bTgPkTmT:j bYgPhPmG:l bYgYhPlG:c "
+    "cGgGhGmT:a cGgPhYmG:f cPgGhGmB:b cPgGhGmT:i cPgPhYmG:b cPgYhPlT:d cTgGhGmT:l cYgPhYmG:a "
+    "dGgTiGsB:h dGgTiGsT:j dGgTiPsB:h dGgTiYsT:j dPgBiPsB:e dPgBiYsT:e dPgTiGsB:h dPgTiGsT:j "
+    "dPgTiPsB:c dPgTiYsB:h dPgTiYsT:j dTgTiGsT:n dTgTiPsB:q dYgTiPsB:e fGgGhTkP:l fGgYhGlP:q "
+    "fPgGhBkP:l fPgGhTlG:m fPgGhTlP:r fPgGhTlT:b fPgGhTlY:q fPgYhGlP:k fPgYhTkP:l fTgGhTmP:k "
+    "fYgYhGlP:b gBiBpPsT:q gBiGjGsT:n gBiGjPsT:n gBiGnPsG:j gBiGsYtY:j gBiPjGsT:n gBiPjPsT:d "
+    "gBiPjTsT:q gBiPjYsT:d gBiPnPsG:j gBiPnYsG:o gBiTnPsG:q gBiTqGsT:p gBiTqPsT:w gBiTqYsT:p "
+    "gBiYnPsG:j gBnBsGvG:w gBnBsGvP:w gBnGoGsG:i gBnGoPsG:i gBnGsPwG:x gBnGsPwP:r gBnGsPwT:i "
+    "gBnGsPwY:r gBnPrGsP:m gBnPrYsP:m gBnTsGxG:w gBnTsGxP:q gBnTsPwG:p gBnTsPwP:q gBnTsPwY:q "
+    "gBnYoPsP:t gBnYoYsP:t gBrPsYtG:x gBsYtPxG:n gBsYtPxP:y gBsYtPxY:n gGhGlGmG:b gGhGlGmP:i "
+    "gGhGlPmG:r gGhGlPmP:r gGhGlPmY:r gGhGlTmG:b gGhGlTmP:b gGhGlYmP:q gGhPiGlG:n gGhPiGlP:m "
+    "gGhPiGlT:b gGhPiGlY:m gGhPiPmG:d gGhPiPmY:d gGhPiTlG:b gGhPiTlP:m gGhPiTlT:s gGhPiTlY:k "
+    "gGhPiYnG:d gGhPiYnP:m gGhPiYnT:b gGhPiYnY:d gGhYiGlP:r gGhYiPmG:c gGhYiPmP:n gGhYiPmT:b "
+    "gGhYiYmP:n gPhGlGmG:c gPhGlGmP:n gPhGlPmG:k gPhGlTmG:n gPhGlYmG:c gPhGlYmP:q gPhGmYrG:k "
+    "gPhGmYrP:l gPhPlGmY:b gPhPlYmY:b gPhTlYmY:r gPhTmGrG:l gPhTmGrP:l gPhTmGrT:q gPhYlGmP:i "
+    "gPhYlGmY:c gPhYlPmY:f gPhYlTmY:c gPhYlYmP:c gThGiPsT:c gThPiPsT:d gThTiPsT:f gThYiPsT:n "
+    "gTiBpPsB:k gTiBqGsT:k gTiBqPsT:p gTiBqYsT:p gTiGnPsG:r gTiGnYsG:o gTiPnPsG:h gTiPnYsG:m "
+    "gTiTnPsG:r gTiTqGsB:k gTiTqGsT:p gTiTqPsB:l gTiTqPsT:l gTiTqTsT:b gTiTqYsB:p gTiTqYsT:l "
+    "gTiYnPsG:j gTiYnYsG:d gTmGnPsP:r gTmGnYsP:x gTmPnPsO:i gTmPnYsP:r gTmPnYsY:r gTmTnYsP:o "
+    "gTmYnPsP:o gTmYnYsP:r gTnBsGxP:w gTnGrBsG:o gTnGrGsG:m gTnGrGsP:o gTnGrGsY:m gTnGrPsG:q "
+    "gTnGrPsP:x gTnGrPsY:q gTnGrTsG:o gTnGrTsP:o gTnGrTsY:t gTnGrYsP:w gTnPrGsY:i gTnPrPsY:m "
+    "gTnPrTsY:o gTnPrYsY:m gTnTsGxG:w gTnTsGxP:r gTnTsGxT:o gTnTsPwG:q gTnTsPwP:r gTnTsPwT:p "
+    "gTnTsPwY:r gTnTsYxP:r gYhGlGmP:b gYhGlYmP:q gYhPlPmG:b gYhPlPmY:b gYhPlYmG:b gYhPlYmP:n "
+    "gYhPlYmT:b gYhYlGmP:i gYhYlPmG:f gYhYlPmP:r gYhYlTmP:b aGcYgPhYmG:b aPbGfGgPmT:j aPbPgYhGlT:f "
+    "aPcGgGhGmT:b aPfGgGhBkP:q aPfGgGhTkG:l aPfGgGhTkT:l aPfGgYhTkP:l aPfPgGhBkG:l aPfPgGhBkT:s "
+    "aPfPgYhTkG:b aPfPgYhTkT:b aPfYgYhTkP:l bGcPfTgPmT:i bGcPgPhYmG:l bGfPgGhTlT:c bGfPgPkGmT:x "
+    "bGgGhPiGlT:n bGgGhPiTlG:f bGgGhPiYnT:c bGgPhPlGmG:i bGgPhPlGmY:c bGgPhPlYmG:c bGgPhPlYmY:c "
+    "bGgYhGlGmP:c bGgYhPiGlG:m bGgYhPiYlG:d bGgYhPlPmG:f bGgYhPlPmY:f bPcGfGgPmT:t bPcGgYhPlG:m "
+    "bPcPgGhGmB:i bPcPgYhYmT:f bPfPgGhTlT:s bPfYgYhGlP:k bPgGhGlTmP:s bPgGhPiGlT:n bPgGhPiTlG:m "
+    "bPgGhYiGlB:c bPgGhYiGlT:m bPgGhYiPmT:c bPgGhYiTlP:r bPgTiTqTsT:n bPgYhGlGmP:f bPgYhYlTmP:c "
+    "bTgGhGlTmP:c bTgPjBkTmT:x bTgPjGkTmT:c bTgPjPkTmT:i bTgPjTkTmT:x bTgPkGmTpP:q bTgPkPmTqG:l "
+    "bTgPkPmTqT:d bTgTiTqTsT:a bYcPgYhPlG:d bYgPhPlGmG:c bYgPhPlYmG:d cGdPgTiPsB:e cGfGgPhYmG:a "
+    "cGfYgPhYmG:k cGgGhYiPmG:b cGgPhGlGmG:i cGgPhGlYmG:f cGgPhYlYmP:i cGgThGiPsT:b cPdGgYhPlT:b "
+    "cPfTgGhTmB:k cPfTgGhTmT:q cPgGhGiGmT:l cPgGhGiPmT:d cPgGhGiTmT:l cPgGhYiPmG:d cPgPhGlGmG:b "
+    "cPgThGiPsT:n cTgGhGlPmT:b cTgThGiPsT:l dGgBiPjPsT:n dGgGhPiPmG:n dGgGhPiPmY:n dGgGhPiYnG:m "
+    "dGgGhPiYnY:m dGgThGiPsB:c dGgThPiPsT:m dGgThTiGsB:c dGgThTiPsB:e dGgTiGjPsT:e dGgTiYjPsT:n "
+    "dPePgBiYsT:j dPgBiPjYsT:e dPgGhPiYnG:c dPgThGiGsB:c dPgThTiGsB:e dPgTiGjGsT:e dPgTiGjPsT:h "
+    "dPgTiGjTsT:l dPgTiYjGsT:h dPgTiYjPsT:h dTgTiGnGsT:j dTgTiGnPsT:j dTgTiGnTsT:e dTgTiPqPsB:m "
+    "dYePgTiPsB:j dYgGhPiPmG:c dYgGhPiYnG:b dYgThPiPsT:n fGgGhTkPlG:b fGgGhTkPlP:q fGgGhTkPlT:b "
+    "fGgPhYlPmY:k fGgYhGlPqG:m fGgYhGlPqY:p fPgGhBkPlG:q fPgGhBkPlY:q fPgGhTlGmB:p fPgGhTlGmP:s "
+    "fPgGhTlGmT:k fPgGhTlPrG:q fPgGhTlPrT:k fPgGhTlYqG:m fPgGhTlYqP:k fPgThTiPsT:n fPgYhGkGlP:m "
+    "fPgYhTkPlG:b fPgYhTkPlY:m fTgGhTkPmP:q fTgThTiPsT:k gBiGjGnPsG:d gBiGjGnTsT:o gBiGjPnGsT:o "
+    "gBiGjPnPsG:r gBiGjPnTsT:d gBiGnGoPsG:t gBiGnGsPwT:o gBiPjGnGsT:o gBiPjGnPsG:m gBiPjGnTsT:d "
+    "gBiPjTqPsT:m gBiPjYnPsG:h gBiPnGoGsG:t gBiPnGoPsG:j gBiPnYoPsG:j gBiTnPqPsG:r gBiTpPqGsT:r "
+    "gBiTpPqYsT:u gBiTqPsTwG:p gBiTqPsTwT:p gBiYjPnPsG:o gBiYjYnPsG:d gBmGnPrGsP:t gBmGnPrYsP:o "
+    "gBnGoTrPsG:i gBnGrGsPwP:o gBnGrPsPwY:m gBnGsPwGxG:q gBnGsPwGxP:o gBnGsPwGxT:q gBnGsYtPxY:q "
+    "gBnPsYtPxG:o gBnToPsGxT:q gBnTqGsGxP:p gBnTqPsGxP:r gBnTqTsGxP:i gBnTsGwPxG:q gBnYoGrPsP:w "
+    "gBnYoPsPtG:r gBnYoYsPtP:x gBrGsYtGwP:x gBrPsYtGxP:w gBrPsYtTwP:q gBrYsYtGwP:q gBsYtPxPyG:n "
+    "gGhGiGlGmP:q gGhGiPlGmP:n gGhGiYlGmP:j gGhGlPmGrG:q gGhGlPmGrP:q gGhGlPmGrY:w gGhGlPmPrG:q "
+    "gGhGlPmPrY:q gGhPiGlGnG:f gGhPiGlGnP:b gGhPiGlGnT:c gGhPiGlGnY:s gGhPiGlPmG:d gGhPiGlPmY:n "
+    "gGhPiGlYmG:q gGhPiGlYmP:n gGhPiTkGlY:b gGhPiTkPlY:q gGhPiTlPmG:q gGhPiTlPmY:q gGhPiTlTsT:b "
+    "gGhPiYmGnP:d gGhYiGlPrG:d gGhYiGlPrY:m gGhYiPmPnG:l gGhYiPmPnY:c gGhYiYmPnP:s gPhGiPmYrT:k "
+    "gPhGkGlPmG:q gPhGkGmYrG:s gPhGkYlPmG:f gPhGlGmPnG:s gPhGlGmPnT:q gPhGlGmYrP:n gPhGlTmGnG:i "
+    "gPhGlTmGnP:s gPhGlTmGnT:s gPhGlYmPqG:r gPhTlGmGrG:q gPhTlGmGrP:s gPhTlGmYsP:r gPhTlYmGrP:k "
+    "gPhTlYmYrP:v gPhTmGqPrT:k gPhYiGlGmP:n gThGiPnPsG:o gThYiPnPsG:m gThYiPnPsT:j gTiBkTqGsT:p "
+    "gTiBpGqPsT:r gTiBpPqPsT:v gTiBpPqYsT:v gTiBpYqPsT:v gTiGnPrGsG:x gTiGnPrGsY:t gTiGnPrPsG:m "
+    "gTiGnPrTsG:o gTiGnPrYsG:l gTiGnYoPsG:l gTiPmGnYsG:h gTiPmPnYsG:j gTiTkTqGsB:p gTiTlGqPsB:p "
+    "gTiTlGqPsT:k gTiTlGqYsT:p gTiTlPqPsT:p gTiTlPqYsT:p gTiTlTqPsB:u gTiTlTqPsT:c gTiTlYqPsT:v "
+    "gTiTnPrGsG:t gTiTnPrGsY:t gTiTnPrPsG:q gTiTnPrTsG:t gTiTnPrYsG:q gTiTpGqGsT:v gTiTpPqGsT:r "
+    "gTiTpPqYsB:k gTiTpTqGsT:r gTiYjGnPsG:h gTiYjPnPsG:h gTmGnPrGsP:t gTmGnPrPsY:t gTmGnPrYsP:w "
+    "gTmGnYsPxG:t gTmGnYsPxT:i gTmPnGrGsG:i gTmPnGrGsY:t gTmPnPrYsY:i gTmPnYrGsP:i gTmPnYrPsY:q "
+    "gTmPnYrYsP:o gTmYnPoGsP:r gTmYnYrPsP:l gTnBsGwPxP:r gTnGoGrGsP:t gTnGoGrTsP:t gTnGoPrBsG:t "
+    "gTnGoPrGsP:t gTnGoPrTsG:i gTnGoPrTsP:i gTnGoTrGsP:m gTnGoTrTsG:h gTnGqGrPsG:t gTnGqGrPsY:x "
+    "gTnGqPrPsG:l gTnGqTrPsG:x gTnGqTrPsY:t gTnGqYrPsG:m gTnGrPsPxG:q gTnGrTsYtP:x gTnGrYsPwG:m "
+    "gTnToPsGxT:w gTnTpPsPwT:k gTnTpTsPwT:d gTnTqGsPwG:r gTnTqPsPwG:l gTnTqTsPwG:x gTnTrGsGxP:w "
+    "gTnTrGsPwP:q gTnTrGsYxP:t gTnTrPsGxP:q gTnTrTsGxP:e gTnTrYsGxP:w gTnTrYsPwP:x gTnTrYsPwY:q "
+    "gTnTsGwPxG:r gYhPlYmPnG:i gYhPlYmPnY:s gYhYlPmPrG:q gYhYlPmPrY:s aGbPcYgPhYmG:f aPbGcPgYhGlT:i "
+    "aPbGfGgPjBmT:p aPbGfGgPjTmT:d aPbGfPgYhTkG:l aPbPcGgGhGmT:i aPbPfGgGhTkB:s aPbPfGgYhGlT:m "
+    "aPbTgTiTqTsT:j aPfGgGhBkPqG:p aPfGgGhBkPqT:s aPfGgGhTkGlP:q aPfGgGhTkTlP:r aPfGgYhTkPlG:q "
+    "aPfPgGhBkGlG:q aPfPgGhBkTsG:x aPfPgGhBkTsT:j aPfTgGhTkBmP:s aPfTgGhTkTmP:l aTcGgGhGkPmT:i "
+    "bGcGgPhPlGmY:n bGcGgPhPlYmG:k bGcGgPhPlYmY:k bGcPdPgGhGmB:i bGcPfPgGhTlT:i bGcPfTgPiGmT:d "
+    "bGcPfTgPiTmT:p bGcPgGhPiYnT:d bGcPgPhGlGmG:k bGcPgPhYlTmG:i bGcPgYhGlGmP:f bGfPgGhPiTlG:s "
+    "bGfPgPkGmTxB:j bGfPgPkGmTxT:t bGfPgYhTkPlG:c bGgGhPiGlTnG:c bGgGhPiGlTnT:c bGgGhPiTkGlY:f "
+    "bGgPhPiGlGmG:d bGgPhPiTlGmG:x bPcGdPgGhGmB:a bPcGfGgPmTtB:v bPcGfGgPmTtT:x bPcGgGhYiPmG:f "
+    "bPcGgThGiPsT:t bPcGgYhPlGmT:f bPcPfGgYhYmT:l bPcPgGhGiGmB:d bPcPgGhGiTmB:v bPcPgGhYiGlB:s "
+    "bPcTgGhGlPmT:v bPfGgGhTkPlG:q bPfGgGhTkPlT:q bPfGgYhGlGmP:k bPfPgGhTlTsT:j bPgGhGiTlGmP:q "
+    "bPgGhGlTmPsG:i bPgGhPiGlTnG:d bPgGhPiTlGmG:r bPgGhYiGlTmP:n bTcPgGhGlTmP:i bTgGhPiTkPlG:s "
+    "bTgPiGjPkTmT:d bTgPiTjPkTmT:x bTgPjTkTmTxP:t bTgPjTkTmTxT:v bTgPkGmTpPqG:u bTgPkGmTpPqT:d "
+    "bTgPkPlGmTqG:p bTgYhGkPlGmP:i cGdPeGgTiPsB:q cGdPgGhPiYnG:m cGgGhPiGlGnT:d cGgPhGiPlGmG:f "
+    "cGgPhGiTlGmG:d cPdGgGhGiPmT:b cPdGgGhYiPmG:l cPfTgGhTkPmB:v cPfTgGhTmTqG:k cPfTgGhTmTqP:k "
+    "cPfTgGhTmTqT:s cPgGhGiGlPmT:d cPgGhGiGlTmT:b cPgGhGiTlPmT:p cPgThGiPnGsT:d cPgThGiPnTsT:w "
+    "cTgGhGlTmTnP:a cTgPhGlGmGnP:f cTgThGiPlPsT:r cTgThGiPlTsT:n cTgTiTlTqPsT:b dGePgTiGjPsT:n "
+    "dGePgTiGjTsT:h dGePgTiYjGsT:h dGeTgTiGjPsT:h dGgGhPiGlPmG:n dGgGhPiPmGnG:b dGgGhPiYmGnP:c "
+    "dGgThPiPmGsT:n dGgTiYjPnGsT:e dGgTiYjPnPsT:h dPePgTiGjGsT:h dPeTgTiGjGsT:n dPgBiGjGnPsG:t "
+    "dPgThGiYjGsT:e dPgThGiYjPsT:o dPgThPiYjGsT:n dPgThTiGjPsT:k dPgThYiPnGsT:c dPgTiGjTlGsT:q "
+    "dPgTiGjTlTsT:c dTePgTiGnTsT:q dTgTiGjPnGsT:q dTgTiGjPnPsT:r eBgTnTrTsGxP:p eTgTnTrTsGxP:y "
+    "fBgGhPiGlGnG:m fGgGhTkPlPqG:s fGgGhTkPlPqY:p fGgPhYkGlPmY:c fPgGhBkPlGqG:p fPgGhBkPlGqT:s "
+    "fPgGhBkPlYqG:s fPgGhPiGlGnG:d fPgGhTkGlGmT:a fPgGhTkGlPrT:o fPgGhTkPlGmT:n fPgGhTlGmBpP:b "
+    "fPgGhTlGmPsG:i fPgGhTlPqGrG:p fPgGhTlYmPqG:r fPgThTiPnGsT:o fPgThTiPnTsT:w fPgYhGkGlPmT:b "
+    "fTgGhPiGlGnG:k fTgGhTkPmPqG:s fTgGhTkPmPqY:l fTgThTiPkPsT:p gBiPnGoGsGtP:x gBiPnGoTrPsG:w "
+    "gBiTnGoTrPsG:t gBmGnPoGrYsP:t gBnGoGrGsPwP:x gBnGoGsPwGxP:t gBnGsYtPxPyG:r gBnPoGsYtPxG:r "
+    "gBnTqGsGwPxG:t gBnTsGwTxGyP:t gBnYoGrPsPwG:x gBqGrPsYtTwP:x gBrPsYtGwGxP:n gBrPsYtGxGyP:n "
+    "gGhGiGlGmPqG:n gGhGiPlGmPnG:k gGhGiPlPmGrT:k gGhGlPmGqGrG:i gGhGlPmGqGrP:f gGhGlPmGqPrG:f "
+    "gGhGlPmGqTrG:s gGhGlPmPqYrY:p gGhYiPlTmPnG:c gPhGiPlTmGnG:j gPhGkGlPmGqG:p gPhGkGlPmGqT:t "
+    "gPhGlTmGnPsG:t gPhGlTmGnTsP:b gPhGlYmPqGrT:k gPhTkGlYmGrP:v gPhTkGmGqPrT:j gPhTkYmGqPrT:a "
+    "gPhTlGmGqPrG:v gPhTlGmGrPsG:x gPhTlTmGrGsP:w gPhTmGqBrTsP:o gPhTmGqTrTsP:k gPhYiGlGmPnT:c "
+    "gThGiYjGnPsG:e gThPiYjGnPsG:m gThPnGoTrTsG:t gTiBpPqPsTvG:k gTiGmGnPrPsG:j gTiGmPnGrGsG:q "
+    "gTiGnGoPrTsG:j gTiGnPoGrTsG:t gTiGnPrGsGxP:j gTiGnPrGsGxT:h gTiTkGlGqPsT:f gTiTkPlGqPsT:w "
+    "gTiTkTlGqPsT:r gTiTlPpGqPsT:r gTiTlYqPsTvG:p gTiTnPrGsGtG:y gTiTpGqGsTvP:x gTiTpPqGrBsT:y "
+    "gTiTpPqGrTsT:v gTiTpTqGrPsT:v gTmGnPrGsPtG:j gTmGnPrPsYtG:x gTmPnGrYsPwG:q gTmPnToBsGxT:q "
+    "gTmYnPoGrYsP:h gTnBrGsGwPxP:q gTnBrYsGwPxP:v gTnBsGwPxGyP:b gTnBsGwTxPyP:d gTnGoGrGsPtP:m "
+    "gTnGoGrGsPtT:i gTnGoGrTsGtP:i gTnGoGrTsPtP:b gTnGoGrTsPtT:i gTnGoPrBsGtP:i gTnGoPrGsPtG:w "
+    "gTnGqGrPsGtP:v gTnGqGrPsGtT:l gTnGqGrPsPxG:v gTnGqTrPsGxG:y gTnToPsGwPxT:b gTnTqGrGsPwG:v "
+    "gTnTqGrPsGxP:v gTnTqTsPwGxP:r gTnTrGsGwGxP:q gTnTrGsGwPxG:t gTnTrGsGwPxP:h gTnTrGsGwTxP:l "
+    "gTnTrPsGwPxG:q gTnTrTsGwPxG:t gTnTrYsPwPxG:v gTnTsGwTxGyP:r gYhPiGlYmPnG:b gYhYlPmPqGrG:f "
+    "aGbPcGfPgGhGmT:i aGbPcYfGgPhYmG:i aPbGcTfPgGhTlT:i aPbGfTgGhPiTlG:p aPbPfGgGhTkBsG:x "
+    "aPbPfGgGhTkBsT:e aPbPfGgGhTkTlT:q aPbTcTgGhGlTmP:i aPbTfGgGhTkPlT:d aPbTgTiTjTqTsT:d "
+    "aPcPfTgGhTkBmB:e aPfGgGhBkPpGqG:v aPfGgGhBkPpTqG:r aPfGgGhTkTlPrG:v aPfGgGhTkTlPrT:e "
+    "aPfTgGhTkBmPsG:u aPfTgGhTkBmPsY:x aPfTgGhTkTlGmP:q aPfTgThTiPkBsT:e aTbTfPgTiTqTsT:d "
+    "bGcPdGfTgPiGmT:e bGcPdGgGhGiPmT:f bGcPdPgGhGiGmB:f bGcPfPgGhTiGlT:e bGcPfPgGhTiTlT:s "
+    "bGfPgGhPiTkGlY:q bPcGgPhGiBlGmG:k bPcGgThGiPsTtT:x bPcPdGgGhGiGmB:j bPcPgGhGiTlTmT:r "
+    "bPcTgGhGlPmTvB:e bPcTgGhGlPmTvT:p bPfGgGhTkPlGqG:r bPfGgGhTkPlTqG:u bPfGgGhTkPlTqT:s "
+    "bTcPgGhGiGlTmP:s bTcPgGhGiYlTmP:e bTcTdPgGhGlPmT:f bTgPkPlGmTpGqG:u bTgTnBsGwPxGyP:a "
+    "bTgTnGoGrTsPtP:a bTgTnToPsGwPxT:a cGdPgPhGiTlGmG:k cPdGgGhGiGlPmT:j cPfTgGhTkPmBvB:e "
+    "cPfTgGhTkPmBvT:p cTgThGiPlPrGsT:q dGePgThPiGjTsT:q dGePgTiGjPnTsT:w dGeTgThPiGjPsT:t "
+    "dPePgThTiGjGsT:k dPeTgTiGjGnPsT:b dTePgBiGjGnPsG:t dTePgTiGjGnPsT:q fGgGhTkPlPpGqY:r "
+    "fGgGhTkPlPpYqY:v fPgGhBkPlGpGqG:v fPgGhTkTlGmTrP:a fPgTiTkGlGqPsT:d fTgGhPiGkPlGnG:d "
+    "fTgGhTkPlGmPqY:u fTgGhTkPlYmPqY:r fTgThTiPkPpGsT:q gPhGkGlPmGpGqG:v gPhGlTmGnPsGtG:x "
+    "gPhTlGmGrPsGxG:t gPhTlTmGrGsPwG:x gThGiGnPrGsGxT:d gThPmGnGoTrGsP:x gTiPnGoGrGsPtT:w "
+    "gTiPnGoGrTsPtT:e gTiTpGqGsTuPvT:k gTiTpGqGsTvPxT:t gTiTpPqGrTsTvG:u gTlGnGqGrPsGtT:p "
+    "gTmTnGoGrGsPtP:x gTnGoPrBsGtGyP:j gTnToPsGwBxTyP:e gTnTqYrPsGwPxG:v gTnTrGsGtPwPxG:v "
+    "gTnTrPsGwTxGyP:u gTnTrTsGtPwPxG:u gTnTsGtPwBxGyP:e aPcPeBfTgGhTkBmB:t cPdGePgThTiGjTsT:q "
+    "cPdGeTgThTiGjPsT:q dPeTgTiGjGnToPsT:p gTiTjPnGoGrGsPtT:w gTnTrTsGtTwPxGyP:i "
+)
+_quest_policy_table: Optional[Dict[str, str]] = None
+# _QUEST_OUTCOMES[cell][outcome] = bitset over _QUEST_ALL_LAYOUTS (5 = purple).
+_quest_outcomes: Optional[Tuple[Tuple[int, ...], ...]] = None
+
+
+def _quest_outcome_bits() -> Tuple[Tuple[int, ...], ...]:
+    global _quest_outcomes
+    if _quest_outcomes is None:
+        bits = [[0] * 6 for _ in range(BOARD_CELLS)]
+        for index, layout in enumerate(_QUEST_ALL_LAYOUTS):
+            bit = 1 << index
+            for cell in range(BOARD_CELLS):
+                outcome = 5 if layout >> cell & 1 else min(4, _bit_count(layout & _NEIGHBOR_MASKS[cell]))
+                bits[cell][outcome] |= bit
+        _quest_outcomes = tuple(tuple(row) for row in bits)
+    return _quest_outcomes
+
+
+class _QuestSolver:
+    """Exact best expected spheres for a small set of purple layouts.
+
+    Clicks whose outcome is already certain only add their spheres, so they
+    are saved for the end ("cash"); the search branches on informative clicks.
+    """
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.memo: Dict[tuple, Tuple[float, Optional[int]]] = {}
+
+    def cash(self, layouts: int, hidden, clicks: int, red: bool) -> float:
+        flats = [_QUEST_RED_VALUE] if red else []
+        for cell in hidden:
+            for outcome in range(5):
+                if layouts & self.outcomes[cell][outcome] == layouts:
+                    flats.append(_QUEST_CLUE_VALUES[outcome])
+                    break
+        flats.sort(reverse=True)
+        return sum(flats[:clicks])
+
+    def settle(self, layouts: int, hidden, found: int, clicks: int) -> float:
+        """Click certain purples (free); after the 3rd the last one shows as red."""
+        if clicks <= 0 or not layouts:
+            return 0.0
+        gain = 0.0
+        hidden = list(hidden)
+        while found < 3:
+            certain = next((c for c in hidden if layouts & self.outcomes[c][5] == layouts), None)
+            if certain is None:
+                break
+            hidden.remove(certain)
+            gain += _QUEST_PURPLE_SPHERES
+            found += 1
+        if found >= 3:
+            total = 0.0
+            for red in hidden:
+                part = layouts & self.outcomes[red][5]
+                if part:
+                    rest = [cell for cell in hidden if cell != red]
+                    total += _bit_count(part) * self.cash(part, rest, clicks, True)
+            return gain + total / _bit_count(layouts)
+        return gain + self.best(layouts, tuple(hidden), found, clicks)[0]
+
+    def best(self, layouts: int, hidden, found: int, clicks: int) -> Tuple[float, Optional[int]]:
+        if clicks <= 0 or not layouts:
+            return 0.0, None
+        key = (layouts, clicks)
+        cached = self.memo.get(key)
+        if cached is not None:
+            return cached
+        n = _bit_count(layouts)
+        best, best_cell = self.cash(layouts, hidden, clicks, False), None
+        for cell in hidden:
+            parts = [(o, layouts & self.outcomes[cell][o]) for o in range(6)]
+            parts = [(o, part) for o, part in parts if part]
+            if len(parts) < 2:
+                continue
+            rest = tuple(other for other in hidden if other != cell)
+            value = 0.0
+            for outcome, part in parts:
+                if outcome == 5:
+                    value += _bit_count(part) * (_QUEST_PURPLE_SPHERES + self.settle(part, rest, found + 1, clicks))
+                else:
+                    value += _bit_count(part) * (
+                        _QUEST_CLUE_VALUES[outcome] + self.settle(part, rest, found, clicks - 1)
+                    )
+            value /= n
+            if value > best + 1e-9:
+                best, best_cell = value, cell
+        self.memo[key] = (best, best_cell)
+        return best, best_cell
+
+
+def parse_sphere_click_limit(text, default: int) -> int:
+    """Read "You can click **N** times" from a sphere board message."""
+    match = re.search(r"click\s+(\d+)\s+times?", str(text or "").replace("**", ""), re.IGNORECASE)
+    return max(1, int(match.group(1))) if match else default
+
+
+def choose_quest_position(
+    emojis: Sequence[str],
+    disabled: Sequence[bool],
+    clicks: int = _QUEST_CLICKS,
+) -> Optional[int]:
+    """Pick the next $oq button: red, certain purples, then the offline policy or exact search."""
     board = [normalize_sphere_emoji(value) for value in emojis]
     blocked = [bool(value) for value in disabled]
     if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
         return None
+    # The red (4th purple) shows up after 3 purples; it costs a click and is
+    # worth the most, so take it as soon as it appears.
+    for index, name in enumerate(board):
+        if name in {RED_SPHERE, "spR"} and not blocked[index]:
+            return index
     candidates = _sphere_game_candidates(board, blocked)
     if not candidates:
         return None
-    layouts = quest_purple_layouts(board)
-    if not layouts:
+    hidden = [index for index in candidates if board[index] == UNKNOWN_SPHERE]
+    outcomes = _quest_outcome_bits()
+    layouts = (1 << len(_QUEST_ALL_LAYOUTS)) - 1
+    for index, name in enumerate(board):
+        if name in _QUEST_CLUES and blocked[index]:
+            layouts &= outcomes[index][_QUEST_CLUES[name]]
+        elif name in {"spP", RED_SPHERE, "spR"}:
+            layouts &= outcomes[index][5]
+    if not hidden or not layouts:
         return min(candidates, key=lambda index: (_center_distance(index), index))
+    for index in hidden:
+        if layouts & outcomes[index][5] == layouts:
+            return index  # certainly purple: free
+
+    global _quest_policy_table
+    if clicks == _QUEST_CLICKS:
+        table = _quest_policy_table
+        if table is None:
+            table = {}
+            for entry in _QUEST_POLICY.split():
+                state, move = entry.split(":")
+                table[state] = move
+            _quest_policy_table = table
+        key = "".join(
+            chr(97 + index) + _QUEST_CODES[name]
+            for index, name in enumerate(board) if blocked[index] and name in _QUEST_CODES
+        )
+        move = table.get(key)
+        if move is not None and ord(move) - 97 in hidden:
+            return ord(move) - 97
+
+    count = _bit_count(layouts)
+    if count <= _QUEST_EXACT_LAYOUTS:
+        found = sum(1 for name in board if name == "spP")
+        used = sum(
+            1 for index in range(BOARD_CELLS)
+            if blocked[index] and (board[index] in _QUEST_CLUES or board[index] in {RED_SPHERE, "spR"})
+        )
+        _, cell = _QuestSolver(outcomes).best(layouts, tuple(hidden), found, max(0, clicks - used))
+        if cell is not None:
+            return cell
+        # Nothing left to learn: take the best certain clue.
+        return max(hidden, key=lambda index: (
+            max((_QUEST_CLUE_VALUES[o] for o in range(5) if layouts & outcomes[index][o] == layouts), default=0.0),
+            -index,
+        ))
 
     def score(position: int):
-        bit = 1 << position
-        without = [layout for layout in layouts if not layout & bit]
-        purple_chance = 1.0 - len(without) / len(layouts)
-        clue_value = (
-            sum(
-                _SPHERE_VALUES[_QUEST_CLUE_BY_COUNT[_bit_count(layout & _NEIGHBOR_MASKS[position])]]
-                for layout in without
-            ) / len(without)
-            if without else 0.0
-        )
-        expected = purple_chance * _QUEST_PURPLE_VALUE + (1.0 - purple_chance) * clue_value
-        return expected, purple_chance, -_center_distance(position), -position
+        purple = _bit_count(layouts & outcomes[position][5]) / count
+        clue = sum(
+            _bit_count(layouts & outcomes[position][o]) * _QUEST_CLUE_VALUES[o] for o in range(5)
+        ) / count
+        return purple * _QUEST_PURPLE_VALUE + clue, -_center_distance(position), -position
 
-    return max(candidates, key=score)
+    return max(hidden, key=score)
 
 
 # $ot: each color sits on one straight run in a row or column; only blue
@@ -1019,6 +1313,7 @@ class TraceRules:
     lengths: Dict[str, int] = field(default_factory=lambda: {"spT": 4, "spG": 3, "spY": 3})
     rare_length: int = 2
     rare_colors: int = 2
+    blue_clicks: int = 4
 
 
 def parse_trace_rules(text: str) -> TraceRules:
@@ -1039,7 +1334,10 @@ def parse_trace_rules(text: str) -> TraceRules:
     if match:
         # Blue and the three named colors are always present.
         rare_colors = max(0, int(match.group(1)) - 1 - len(lengths))
-    return TraceRules(lengths=lengths, rare_length=rare_length, rare_colors=rare_colors)
+    return TraceRules(
+        lengths=lengths, rare_length=rare_length, rare_colors=rare_colors,
+        blue_clicks=parse_sphere_click_limit(normalized, defaults.blue_clicks),
+    )
 
 
 def _straight_runs(length: int) -> Tuple[Tuple[int, ...], ...]:
@@ -1054,12 +1352,222 @@ def _straight_runs(length: int) -> Tuple[Tuple[int, ...], ...]:
     return tuple(runs)
 
 
+_TRACE_VALUES = {
+    "spB": 10.0, "spT": 20.0, "spG": 35.0, "spY": 55.0, "spO": 90.0,
+    "spL": 76.0, "spD": 104.0, "spR": 150.0, "spW": 500.0,
+}
+_TRACE_RARES = ("spL", "spD", "spR", "spW")
+# How often each rare colour fills the extra ships, by number of extra ships
+# (community data from 1,177 real boards); values unknown rare cells.
+_TRACE_RARE_WEIGHTS = {
+    1: {"spL": 0.6697, "spD": 0.3303},
+    2: {"spL": 0.8182, "spD": 0.6071, "spR": 0.4156, "spW": 0.1591},
+    3: {"spL": 0.9063, "spD": 0.8750, "spR": 0.7500, "spW": 0.4688},
+}
+# Extra Chance: until this many ship cells are hit, a blue never ends the board.
+_TRACE_EXTRA_CHANCE_SHIPS = 5
+_TRACE_ENDGAME_BOARDS = 400        # exact endgame search up to this many boards
+# Boards counted live; every state the policy meets with more is in the table.
+_TRACE_COUNT_LIMIT = 300000
+_TRACE_COUNT_SECONDS = 2.0
+# Offline decisions for the default rules ("extra ships:<revealed cells>:<cell>")
+# in every state the policy meets with more than ~300k consistent boards.
+_TRACE_POLICY = (
+    "1::a 1:aB:b 1:aBbB:c 2::a 2:aB:b 2:aD:y 2:aG:e 2:aL:y 2:aO:y 2:aR:y 2:aT:e 2:aW:y 2:aY:e "
+    "2:aBbB:c 2:aBbD:d 2:aBbL:d 2:aBbR:d 2:aBbT:f 2:aBbW:d 2:aDyB:t 2:aLyB:t 2:aRyB:t 2:aTeB:u "
+    "2:aWyB:t 2:aBbBcB:d 2:aTeBuB:j 3::a 3:aB:b 3:aD:y 3:aG:y 3:aL:y 3:aO:y 3:aR:y 3:aT:e 3:aW:y "
+    "3:aY:y 3:aBbB:c 3:aBbD:d 3:aBbG:e 3:aBbL:d 3:aBbO:d 3:aBbR:d 3:aBbT:f 3:aBbW:d 3:aBbY:e 3:aDyB:t "
+    "3:aDyL:c 3:aDyR:c 3:aDyT:e 3:aDyW:c 3:aGyB:t 3:aLyB:t 3:aLyD:c 3:aLyR:c 3:aLyT:e 3:aLyW:c "
+    "3:aOyB:t 3:aRyB:t 3:aRyD:c 3:aRyL:c 3:aRyT:e 3:aRyW:c 3:aTeB:u 3:aTeD:u 3:aTeL:u 3:aTeR:u "
+    "3:aTeW:u 3:aWyB:t 3:aWyD:c 3:aWyL:c 3:aWyR:c 3:aWyT:e 3:aYyB:t 3:aBbBcB:d 3:aBbBcD:e 3:aBbBcL:e "
+    "3:aBbBcR:e 3:aBbBcW:e 3:aBbDdB:e 3:aBbLdB:e 3:aBbRdB:e 3:aBbTfB:k 3:aBbWdB:e 3:aDtByB:o "
+    "3:aLtByB:o 3:aRtByB:o 3:aTeBuB:j 3:aWtByB:o 4::a 4:aB:b 4:aD:y 4:aG:y 4:aL:y 4:aO:y 4:aR:y "
+    "4:aT:e 4:aW:y 4:aY:y 4:aBbB:c 4:aBbD:f 4:aBbG:e 4:aBbL:f 4:aBbR:f 4:aBbT:f 4:aBbW:f 4:aBbY:e "
+    "4:aDyB:t 4:aDyG:j 4:aDyL:c 4:aDyR:c 4:aDyT:e 4:aDyW:c 4:aDyY:j 4:aGyB:t 4:aGyD:d 4:aGyL:d "
+    "4:aGyR:d 4:aGyW:d 4:aLyB:t 4:aLyD:c 4:aLyG:j 4:aLyR:c 4:aLyT:e 4:aLyW:c 4:aLyY:j 4:aRyB:t "
+    "4:aRyD:c 4:aRyG:j 4:aRyL:c 4:aRyT:e 4:aRyW:c 4:aRyY:j 4:aTeB:u 4:aTeD:u 4:aTeL:u 4:aTeR:u "
+    "4:aTeW:u 4:aWyB:t 4:aWyD:c 4:aWyG:j 4:aWyL:c 4:aWyR:c 4:aWyT:e 4:aWyY:j 4:aYyB:t 4:aYyD:d "
+    "4:aYyL:d 4:aYyR:d 4:aYyW:d 4:aBbBcD:e 4:aBbBcL:e 4:aBbBcR:e 4:aBbBcW:e 4:aBbDfB:y 4:aBbLfB:y "
+    "4:aBbRfB:y 4:aBbWfB:y "
+)
+_trace_policy_table: Optional[Dict[str, int]] = None
+
+
+class _TraceBudget(Exception):
+    pass
+
+
+def _straight_masks(length: int) -> Tuple[int, ...]:
+    return tuple(sum(1 << cell for cell in run) for run in _straight_runs(length))
+
+
+def _trace_rare_value(extra_ships: int) -> float:
+    weights = _TRACE_RARE_WEIGHTS.get(extra_ships) or {name: 1.0 for name in _TRACE_RARES}
+    return sum(_TRACE_VALUES[name] * w for name, w in weights.items()) / sum(weights.values())
+
+
+class _TraceShips:
+    """Every ship placement still consistent with the revealed $ot cells.
+
+    Ships never overlap; orange and the extra rare ships have the rare length.
+    Rare ships whose colour is not revealed yet are interchangeable ("rare").
+    """
+
+    def __init__(self, board: Sequence[str], rules: TraceRules):
+        extra_ships = max(0, rules.rare_colors - 1)
+        blue = 0
+        cells: Dict[str, int] = {}
+        for index, name in enumerate(board):
+            if name == "spB":
+                blue |= 1 << index
+            elif name != UNKNOWN_SPHERE:
+                cells[name] = cells.get(name, 0) | (1 << index)
+        revealed = 0
+        for mask in cells.values():
+            revealed |= mask
+        known_rares = [name for name in _TRACE_RARES if name in cells]
+        named = list(rules.lengths.items()) + [("spO", rules.rare_length)]
+        named += [(name, rules.rare_length) for name in known_rares]
+        self.generic = extra_ships - len(known_rares)
+        self.valid = self.generic >= 0 and not set(cells) - {name for name, _ in named}
+        self.ships = []
+        for name, length in named:
+            need = cells.get(name, 0)
+            forbid = blue | (revealed & ~need)
+            self.ships.append((name, [m for m in _straight_masks(length) if not m & forbid and m & need == need]))
+        self.ships.sort(key=lambda ship: len(ship[1]))
+        self.generic_masks = [m for m in _straight_masks(rules.rare_length) if not m & (blue | revealed)]
+
+    def _generic(self, occupied: int, left: int, start: int):
+        if left == 0:
+            yield 0
+            return
+        masks = self.generic_masks
+        for index in range(start, len(masks)):
+            if not masks[index] & occupied:
+                for rest in self._generic(occupied | masks[index], left - 1, index + 1):
+                    yield masks[index] | rest
+
+    def _walk(self, visit, deadline: float):
+        chosen = [0] * len(self.ships)
+        steps = [0]
+
+        def walk(index, occupied):
+            if index == len(self.ships):
+                visit(chosen, occupied)
+                return
+            steps[0] += 1
+            if not steps[0] & 4095 and time.monotonic() > deadline:
+                raise _TraceBudget
+            for mask in self.ships[index][1]:
+                if not mask & occupied:
+                    chosen[index] = mask
+                    walk(index + 1, occupied | mask)
+
+        if self.valid:
+            walk(0, 0)
+
+    def count(self, limit: int, deadline: float) -> Tuple[int, Dict[str, List[int]]]:
+        """(boards, per-colour ship counts per cell); raises _TraceBudget when too big."""
+        per_mask: Dict[str, Dict[int, int]] = {name: {} for name, _ in self.ships}
+        per_mask["rare"] = {}
+        total = [0]
+
+        def visit(chosen, occupied):
+            ways = 0
+            rare = per_mask["rare"]
+            for union in self._generic(occupied, self.generic, 0):
+                ways += 1
+                if union:
+                    rare[union] = rare.get(union, 0) + 1
+            if not ways:
+                return
+            total[0] += ways
+            if total[0] > limit:
+                raise _TraceBudget
+            for slot, (name, _) in enumerate(self.ships):
+                bucket = per_mask[name]
+                bucket[chosen[slot]] = bucket.get(chosen[slot], 0) + ways
+
+        self._walk(visit, deadline)
+        colours: Dict[str, List[int]] = {}
+        for name, bucket in per_mask.items():
+            counts = [0] * BOARD_CELLS
+            for mask, ways in bucket.items():
+                while mask:
+                    low = mask & -mask
+                    counts[low.bit_length() - 1] += ways
+                    mask ^= low
+            if any(counts):
+                colours[name] = counts
+        return total[0], colours
+
+    def boards(self, limit: int) -> List[Tuple[str, ...]]:
+        out: List[Tuple[str, ...]] = []
+
+        def visit(chosen, occupied):
+            for union in self._generic(occupied, self.generic, 0):
+                board = ["spB"] * BOARD_CELLS
+                for slot, (name, _) in enumerate(self.ships):
+                    for cell in range(BOARD_CELLS):
+                        if chosen[slot] >> cell & 1:
+                            board[cell] = name
+                for cell in range(BOARD_CELLS):
+                    if union >> cell & 1:
+                        board[cell] = "rare"
+                out.append(tuple(board))
+                if len(out) > limit:
+                    raise _TraceBudget
+
+        self._walk(visit, time.monotonic() + _TRACE_COUNT_SECONDS)
+        return out
+
+
+def _trace_endgame(boards, hidden, lives: int, value_of) -> Optional[int]:
+    """Exact best click once Extra Chance is off: each blue costs one of `lives`."""
+    memo: Dict[tuple, Tuple[float, Optional[int]]] = {}
+
+    def solve(members, cells, lives):
+        if not cells or not members:
+            return 0.0, None
+        key = (members, cells, lives)
+        cached = memo.get(key)
+        if cached is not None:
+            return cached
+        best, best_cell = -1.0, None
+        for cell in cells:
+            groups: Dict[str, list] = {}
+            for member in members:
+                groups.setdefault(boards[member][cell], []).append(member)
+            rest = tuple(other for other in cells if other != cell)
+            value = 0.0
+            for label, group in groups.items():
+                if label == "spB":
+                    after = solve(tuple(group), rest, lives - 1)[0] if lives > 1 else 0.0
+                    value += len(group) * (_TRACE_VALUES["spB"] + after)
+                else:
+                    value += len(group) * (value_of(label) + solve(tuple(group), rest, lives)[0])
+            value /= len(members)
+            if value > best:
+                best, best_cell = value, cell
+        memo[key] = (best, best_cell)
+        return best, best_cell
+
+    return solve(tuple(range(len(boards))), tuple(hidden), lives)[1]
+
+
 def choose_trace_position(
     emojis: Sequence[str],
     disabled: Sequence[bool],
     rules: Optional[TraceRules] = None,
 ) -> Optional[int]:
-    """Pick the $ot cell least likely to be blue, the only color that costs a click."""
+    """Pick the next $ot button from every ship layout still possible.
+
+    While fewer than 5 ship cells are hit, Extra Chance keeps blues from ending
+    the board, so the safest cells are uncovered first and ships (always free)
+    wait. After that every blue costs a click: certain ships go first, then the
+    exact endgame search, or the most likely ship.
+    """
     board = [normalize_sphere_emoji(value) for value in emojis]
     blocked = [bool(value) for value in disabled]
     if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
@@ -1068,21 +1576,80 @@ def choose_trace_position(
     if not candidates:
         return None
     rules = rules or TraceRules()
-    hidden = {index for index, name in enumerate(board) if name == UNKNOWN_SPHERE}
+    hidden = [index for index in candidates if board[index] == UNKNOWN_SPHERE]
+    if not hidden:
+        return min(candidates, key=lambda index: (_center_distance(index), index))
+    hits = sum(1 for i in range(BOARD_CELLS) if blocked[i] and board[i] not in {"spB", UNKNOWN_SPHERE})
+    blues = sum(1 for i in range(BOARD_CELLS) if blocked[i] and board[i] == "spB")
+    extra_ships = max(0, rules.rare_colors - 1)
+
+    global _trace_policy_table
+    if rules == TraceRules(rare_colors=rules.rare_colors):
+        table = _trace_policy_table
+        if table is None:
+            table = {}
+            for entry in _TRACE_POLICY.split():
+                ships, state, move = entry.split(":")
+                table[ships + ":" + state] = ord(move) - 97
+            _trace_policy_table = table
+        key = f"{extra_ships}:" + "".join(
+            chr(97 + i) + board[i][2:] for i in range(BOARD_CELLS) if board[i] != UNKNOWN_SPHERE
+        )
+        move = table.get(key)
+        if move is not None and move in hidden:
+            return move
+
+    ships = _TraceShips(board, rules)
+    try:
+        total, colours = ships.count(_TRACE_COUNT_LIMIT, time.monotonic() + _TRACE_COUNT_SECONDS)
+    except _TraceBudget:
+        total, colours = 0, {}
+    if not total:
+        return _choose_trace_by_coverage(board, hidden, rules, hits)
+    ship_cells = [sum(counts[i] for counts in colours.values()) for i in range(BOARD_CELLS)]
+    rare_value = _trace_rare_value(extra_ships)
+
+    def value_of(label):
+        return rare_value if label == "rare" else _TRACE_VALUES.get(label, rare_value)
+
+    def ship_value(index):
+        if not ship_cells[index]:
+            return 0.0
+        return sum(counts[index] * value_of(name) for name, counts in colours.items()) / ship_cells[index]
+
+    if hits < _TRACE_EXTRA_CHANCE_SHIPS:
+        return max(hidden, key=lambda i: (total - ship_cells[i], -_center_distance(i), -i))
+    certain = [i for i in hidden if ship_cells[i] == total]
+    if certain:
+        return max(certain, key=lambda i: (ship_value(i), -i))
+    if total <= _TRACE_ENDGAME_BOARDS:
+        try:
+            boards = ships.boards(_TRACE_ENDGAME_BOARDS)
+        except _TraceBudget:
+            boards = []
+        if boards:
+            lives = rules.blue_clicks - min(blues, rules.blue_clicks - 1)
+            cell = _trace_endgame(boards, hidden, max(1, lives), value_of)
+            if cell is not None:
+                return cell
+    return max(hidden, key=lambda i: (ship_cells[i], ship_value(i), -i))
+
+
+def _choose_trace_by_coverage(board, hidden, rules: TraceRules, hits: int) -> int:
+    """Rough fallback when the layouts are too many to count: per-colour run coverage."""
+    hidden_set = set(hidden)
     coverage = [0.0] * BOARD_CELLS
 
-    # ponytail: colors are scored independently (overlaps between runs are
-    # ignored); swap in a joint enumeration if measured blue clicks need it.
     def add_runs(found, length, copies=1.0):
         if len(found) >= length or copies <= 0:
             return
         runs = [
             run for run in _straight_runs(length)
-            if found.issubset(run) and all(cell in hidden or cell in found for cell in run)
+            if found.issubset(run) and all(cell in hidden_set or cell in found for cell in run)
         ]
         for run in runs:
             for cell in run:
-                if cell in hidden:
+                if cell in hidden_set:
                     coverage[cell] += copies / len(runs)
 
     for emoji, length in rules.lengths.items():
@@ -1095,7 +1662,6 @@ def choose_trace_position(
         add_runs({index for index, value in enumerate(board) if value == name}, rules.rare_length)
     add_runs(set(), rules.rare_length, copies=float(max(0, rules.rare_colors - len(rare_names))))
 
-    return max(
-        candidates,
-        key=lambda index: (coverage[index], -_center_distance(index), -index),
-    )
+    if hits < _TRACE_EXTRA_CHANCE_SHIPS:
+        return min(hidden, key=lambda index: (coverage[index], _center_distance(index), index))
+    return max(hidden, key=lambda index: (coverage[index], -_center_distance(index), -index))

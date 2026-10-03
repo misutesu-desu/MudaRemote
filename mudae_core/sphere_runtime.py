@@ -23,6 +23,7 @@ from .spheres import (
     harvest_reveal_is_free,
     harvest_unveil_fell_short,
     normalize_sphere_emoji,
+    parse_sphere_click_limit,
     parse_trace_rules,
     sphere_click_recovery_decision,
     SPHERE_GAME_KINDS,
@@ -55,8 +56,8 @@ def sphere_reveal_costs_click(kind, revealed):
     if kind == "oh":
         return not harvest_reveal_is_free(revealed)
     if kind == "oq":
-        # A finished 7-click quest showed 6 clues plus 3 purples: purples are free.
-        return revealed not in {"spP", "sp"}
+        # Purples are free; the red they turn into costs a click like a clue.
+        return revealed != "spP"
     if kind == "ot":
         return revealed == "spB"
     return True
@@ -192,6 +193,7 @@ class SphereRuntime:
         # buttons when it is over, so only $oh/$oc track a local limit.
         click_limited = kind in {"oh", "oc"}
         trace_rules = parse_trace_rules(getattr(message, 'content', '')) if kind == "ot" else None
+        quest_clicks = parse_sphere_click_limit(getattr(message, 'content', ''), 7)
 
         paid_clicks = 0
         total_clicks = 0
@@ -216,9 +218,14 @@ class SphereRuntime:
                 break
 
             if kind == "oq":
-                position = choose_quest_position(emojis, disabled)
+                position = await asyncio.get_running_loop().run_in_executor(
+                    None, functools.partial(choose_quest_position, emojis, disabled, quest_clicks),
+                )
             elif kind == "ot":
-                position = choose_trace_position(emojis, disabled, trace_rules)
+                # Counting every ship layout can take a moment early on.
+                position = await asyncio.get_running_loop().run_in_executor(
+                    None, functools.partial(choose_trace_position, emojis, disabled, trace_rules),
+                )
             elif kind == "oc":
                 position = choose_chest_position(
                     emojis,
