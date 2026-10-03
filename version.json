@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.8**\n\n### ✨ New Features\n- **GitHub Link in the Editor:** There's now a small \"Star us on GitHub\" link at the bottom of the sidebar. If MudaRemote helps you, a star makes it easier for other people to find the project.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "be18c3014b60e7c5908f5b34e035470c78b88dc74f662201fb83e6e6e740393b",
   "source_files": [
     {
       "path": "mudae_bot.py",
