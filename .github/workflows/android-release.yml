@@ -81,7 +81,9 @@ jobs:
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs Mudaremote.apk)"
           printf '%s\n' "$VERIFY_OUTPUT"
           SIGNER_COUNT="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Number of signers: //p')"
-          SIGNER_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          # Older apksigner prints "Signer #1 certificate ...", newer "V2 Signer: certificate ...";
+          # every certificate line it prints must name the same, expected signer.
+          SIGNER_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest: //p' | sort -u)"
           EXPECTED_SIGNER_SHA256="aefcfd68eae4fcddf789a654b90c4818fa128aca9e52bceb2767b39ff6587839"
           test "$SIGNER_COUNT" = "1" || { echo "::error::Expected exactly one APK signer"; exit 1; }
           test "$SIGNER_SHA256" = "$EXPECTED_SIGNER_SHA256" || {
