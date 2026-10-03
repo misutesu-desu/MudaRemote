@@ -1,6 +1,7 @@
 """Pure character filters shared by runtime and tests."""
 
 import re
+import unicodedata
 
 
 _CUSTOM_EMOJI_RE = re.compile(r"<a?:[A-Za-z0-9_~]+:\d+>")
@@ -57,13 +58,28 @@ def series_line_has_emoji(description):
     return bool(_CUSTOM_EMOJI_RE.search(line) or _UNICODE_EMOJI_RE.search(line))
 
 
+def character_name_key(name):
+    """Compare names as a person reads them: case and spacing do not matter."""
+    text = unicodedata.normalize("NFKC", str(name or "")).casefold()
+    return "".join(text.split())
+
+
+class CharacterNameSet(frozenset):
+    """Wishlist/blacklist names that match "EiaiNano" against "Eiai Nano"."""
+
+    def __new__(cls, names=()):
+        keys = (character_name_key(name) for name in names or ())
+        return super().__new__(cls, (key for key in keys if key))
+
+    def __contains__(self, name):
+        return frozenset.__contains__(self, character_name_key(name))
+
+
 def name_or_series_is_configured_wish(name, series, wishlist, series_wishlist):
-    normalized_name = str(name or "").strip().casefold()
     normalized_series = str(series or "").strip().casefold()
-    names = {str(item or "").strip().casefold() for item in wishlist or ()}
     series_filters = [
         str(item or "").strip().casefold()
         for item in series_wishlist or ()
         if str(item or "").strip()
     ]
-    return normalized_name in names or any(item in normalized_series for item in series_filters)
+    return name in CharacterNameSet(wishlist) or any(item in normalized_series for item in series_filters)

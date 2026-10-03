@@ -22,6 +22,10 @@ class WishLanguageTests(unittest.TestCase):
     def test_mention_without_wish_text_is_ignored(self):
         self.assertFalse(mudae_bot.is_wished_by_self(_wish_message("<@7001> nice roll", 7001), 7001))
 
+    def test_decomposed_french_accent_is_detected(self):
+        # "e" + combining acute accent renders the same as "é".
+        self.assertTrue(mudae_bot.is_wished_by_self(_wish_message("Souhaité par <@7001>", 7001), 7001))
+
 
 if __name__ == "__main__":
     unittest.main()

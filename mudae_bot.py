@@ -3,6 +3,7 @@ import asyncio
 import discord
 from discord.ext import commands
 import re
+import unicodedata
 import json
 import threading
 import datetime
@@ -1011,7 +1012,7 @@ WISH_LINE_MARKERS = ("wished by", "souhaité par")
 
 def is_wished_by_self(message, client_user_id: int) -> bool:
     if not (message and message.content): return False
-    content = message.content.lower()
+    content = unicodedata.normalize("NFC", message.content).lower()
     return any(k in content for k in WISH_LINE_MARKERS) and client_user_id in [m.id for m in message.mentions]
 
 def parse_mudae_ranks(embed_description: str) -> Tuple[int, int]:

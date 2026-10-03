@@ -1,6 +1,7 @@
 import unittest
 
 from mudae_core.filters import (
+    CharacterNameSet,
     character_series_line,
     name_or_series_is_configured_wish,
     series_line_has_emoji,
@@ -45,6 +46,20 @@ class CharacterFilterTests(unittest.TestCase):
             )
         )
         self.assertEqual(character_series_line("\nSeries Name\nValue"), "Series Name")
+
+    def test_wishlist_name_ignores_spacing_and_case(self):
+        # Users type "EiaiNano" or paste a name with a non-breaking space;
+        # Mudae shows "Eiai Nano". Both are the same character.
+        wishlist = CharacterNameSet(["EiaiNano", "Hanazono Hakari", " Yoshimoto  Shizuka "])
+        self.assertIn("eiai nano", wishlist)
+        self.assertIn("Hanazono Hakari", wishlist)
+        self.assertIn("yoshimoto shizuka", wishlist)
+        self.assertNotIn("eiai", wishlist)
+        self.assertTrue(name_or_series_is_configured_wish("Eiai Nano", "Other", ["EiaiNano"], []))
+
+    def test_wishlist_name_set_ignores_blank_entries(self):
+        self.assertFalse(CharacterNameSet(["", "  "]))
+        self.assertEqual(CharacterNameSet(["AsUnA"]), {"asuna"})
 
 
 if __name__ == "__main__":

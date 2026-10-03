@@ -10,6 +10,7 @@ import datetime
 from datetime import timezone
 from types import SimpleNamespace
 
+from mudae_core.filters import CharacterNameSet
 from mudae_core.kakera import (
     KakeraInteractionLedger,
     KakeraPowerLedger,
@@ -97,7 +98,7 @@ def configure_client(
     client.snipe_ignore_min_kakera_reset = preset_data.get(
         "snipe_ignore_min_kakera_reset", False
     )
-    client.wishlist = set(w.lower() for w in preset_data.get("wishlist", []))
+    client.wishlist = CharacterNameSet(preset_data.get("wishlist") or [])
     client.series_snipe_mode = preset_data.get("series_snipe_mode", False)
     client.series_snipe_only_self_rolls = bool(
         preset_data.get("series_snipe_only_self_rolls", False)
@@ -106,9 +107,7 @@ def configure_client(
     client.series_wishlist = set(
         sw.lower() for sw in preset_data.get("series_wishlist", [])
     )
-    client.avoid_list = set(
-        a.lower() for a in (preset_data.get("avoid_list") or [])
-    )
+    client.avoid_list = CharacterNameSet(preset_data.get("avoid_list") or [])
 
     client.snipe_channels = set()
     for ch in preset_data.get("snipe_channels") or []:
