@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import random
 import time
 
+from .spheres import SPHERE_GAME_KINDS, any_sphere_game_enabled
 from .status import (
     STATUS_FIELDS,
     PendingStatusRequest,
@@ -1975,10 +1976,10 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
                     bool(getattr(client, f"auto_{kind}_enabled", False))
                     and int(getattr(client, "sphere_game_counts", {}).get(kind, 0) or 0) > 0
                     and time.monotonic() >= float(getattr(client, "_sphere_game_retry_after", {}).get(kind, 0.0) or 0.0)
-                    for kind in ("oh", "oc")
+                    for kind in SPHERE_GAME_KINDS
                 )
                 sphere_refill = bool(
-                    (getattr(client, "auto_oh_enabled", False) or getattr(client, "auto_oc_enabled", False))
+                    any_sphere_game_enabled(client)
                     and getattr(client, "sphere_game_refill_at_utc", None) is not None
                     and now_utc >= client.sphere_game_refill_at_utc
                 )

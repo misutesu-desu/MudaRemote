@@ -123,6 +123,12 @@ from .spheres import (
     harvest_reveal_is_free,
     normalize_sphere_emoji,
     parse_sphere_game_status,
+    SPHERE_GAME_KINDS,
+    any_sphere_game_enabled,
+    choose_quest_position,
+    choose_trace_position,
+    parse_trace_rules,
+    quest_purple_layouts,
 )
 from .sphere_runtime import SphereRuntime
 from .status import (
@@ -318,6 +324,12 @@ __all__ = [
     "prepare_active_presets",
     "roll_replenishment_cycle_key",
     "parse_sphere_game_status",
+    "SPHERE_GAME_KINDS",
+    "any_sphere_game_enabled",
+    "choose_quest_position",
+    "choose_trace_position",
+    "parse_trace_rules",
+    "quest_purple_layouts",
     "record_tu_failure",
     "record_tu_success",
     "reconcile_private_claim_deadline",

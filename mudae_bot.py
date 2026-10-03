@@ -234,6 +234,7 @@ try:
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
+        SPHERE_GAME_KINDS, any_sphere_game_enabled,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
@@ -270,6 +271,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         should_refill_kakera_power, sphere_target_matches, unique_messages_by_id,
         resolve_kakera_power_threshold,
         parse_sphere_game_status, SphereButtonBudget, SphereRuntime, WebhookDispatcher,
+        SPHERE_GAME_KINDS, any_sphere_game_enabled,
         character_series_line, name_or_series_is_configured_wish, series_line_has_emoji,
         PendingStatusRequest, coalesce_status_request, is_tu_still_required,
     )
@@ -4400,12 +4402,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             and client.sphere_game_counts.get(kind, 0) > 0
                             and time.monotonic() >= client._sphere_game_retry_after.get(kind, 0.0)
                             for kind, enabled in (
-                                ("oh", client.auto_oh_enabled),
-                                ("oc", client.auto_oc_enabled),
+                                (kind, getattr(client, f"auto_{kind}_enabled", False))
+                                for kind in SPHERE_GAME_KINDS
                             )
                         )
                         sphere_refill_due = bool(
-                            (client.auto_oh_enabled or client.auto_oc_enabled)
+                            any_sphere_game_enabled(client)
                             and client.sphere_game_refill_at_utc is not None
                             and now_utc >= client.sphere_game_refill_at_utc
                         )
@@ -4778,20 +4780,23 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             rt_ready = any(x in c_lower for x in ["$rt is available", "$rt está pronto", "$rt esta pronto", "$rt está disponível", "$rt está disponible", "$rt est disponible", "$rt est prêt", "$rt is ready"])
             sphere_status = parse_sphere_game_status(tu_content)
             if sphere_status is not None:
-                if client.auto_oh_enabled or client.auto_oc_enabled:
+                if any_sphere_game_enabled(client):
                     BotLogger.log(
-                        f"Sphere games: $oh {sphere_status.available_for('oh')}"
-                        + (f" ({sphere_status.oh} daily + {sphere_status.oh_stored} stored)" if sphere_status.oh_stored else "")
-                        + f", $oc {sphere_status.available_for('oc')}"
-                        + (f" ({sphere_status.oc} daily + {sphere_status.oc_stored} stored)" if sphere_status.oc_stored else "")
+                        "Sphere games: "
+                        + ", ".join(
+                            f"${kind} {sphere_status.available_for(kind)}"
+                            + (f" ({sphere_status.count_for(kind)} daily + {sphere_status.stored_for(kind)} stored)"
+                               if sphere_status.stored_for(kind) else "")
+                            for kind in SPHERE_GAME_KINDS
+                        )
                         + (f", refill in {sphere_status.refill_minutes}m." if sphere_status.refill_minutes is not None else "."),
                         preset_name,
                         "INFO",
                     )
                 await client.sphere_runtime.run_available_sphere_games(cmd_channel, sphere_status)
-            elif client.auto_oh_enabled or client.auto_oc_enabled:
+            elif any_sphere_game_enabled(client):
                 BotLogger.log(
-                    "Auto $oh/$oc is enabled but sphere-game stocks are missing from $tu.",
+                    "Auto sphere games are enabled but sphere-game stocks are missing from $tu.",
                     preset_name,
                     "WARN",
                 )
