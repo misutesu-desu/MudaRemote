@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v4.10.9-beta.1**\n\n### ✨ New Features\n- **Auto `$oq`:** The bot can now play your `$oq` boards. It works out where the purple spheres can be from the clues and goes for the 3 purples that turn the last one red.\n- **Auto `$ot`:** The bot can now play your `$ot` boards. Only blue costs a click there, so it follows the color lines and avoids blue as much as it can.\n\nTurn them on under Power & Expert Settings. Both are off by default.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9-beta.1/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.9-beta.1/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "19978b2452826383ec8e4ae4fffbe24953c23e66d948693a15062be9ef17376b",
   "source_files": [
     {
       "path": "mudae_bot.py",
