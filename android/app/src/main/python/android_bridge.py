@@ -469,6 +469,36 @@ def _download_file(url, timeout_seconds=15.0):
             return resp.read()
 
 
+_PUBLISHED_APK_URLS = set()
+
+
+def _apk_download_available(url, timeout_seconds=5.0):
+    """Whether the APK named by the manifest is really published.
+
+    A release manifest may name an APK before (or without) one being built;
+    offering it sent users to a 404, so only a live download is announced.
+    """
+    if url in _PUBLISHED_APK_URLS:
+        return True
+    try:
+        import requests
+        resp = requests.head(url, allow_redirects=True, timeout=(3.0, timeout_seconds))
+        available = 200 <= resp.status_code < 300
+    except ImportError:
+        try:
+            import urllib.request
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "MudaRemote-Android"})
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                available = 200 <= resp.status < 300
+        except Exception:
+            available = False
+    except Exception:
+        available = False
+    if available:
+        _PUBLISHED_APK_URLS.add(url)
+    return available
+
+
 def _format_changelog(manifest):
     changelog = manifest.get("changelog") if isinstance(manifest, dict) else None
     if isinstance(changelog, str):
@@ -559,7 +589,7 @@ def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=
             apk_version = manifest.get("apk_version")
             apk_url = manifest.get("apk_url") or manifest.get("apk_download_url")
             apk_update = None
-            if apk_version and apk_url:
+            if apk_version and apk_url and _apk_download_available(str(apk_url)):
                 apk_update = {
                     "version": str(apk_version),
                     "url": str(apk_url),

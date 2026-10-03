@@ -165,6 +165,7 @@ class AndroidUpdaterTests(unittest.TestCase):
             ],
         }
         with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._apk_download_available", return_value=True), \
              mock.patch("android_bridge._download_file", side_effect=lambda url, **kw: dummy_files[url.replace("https://example.com/", "")]):
             result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
         self.assertEqual(result["status"], "updated")
@@ -312,11 +313,28 @@ class AndroidUpdaterTests(unittest.TestCase):
             "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.4.0/Mudaremote.apk",
             "apk_version_code": 16,
         }
-        with mock.patch("android_bridge._download_manifest", return_value=manifest):
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._apk_download_available", return_value=True):
             result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=False))
         self.assertEqual(result["status"], "current")
         self.assertIsNotNone(result.get("apk_update"))
         self.assertEqual(result["apk_update"]["version"], "1.4.0")
+
+    def test_unpublished_apk_is_not_offered(self):
+        # A manifest that names an APK nobody built used to send users to a 404.
+        manifest = {
+            "version": "1.0.0",
+            "apk_version": "1.4.0",
+            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.4.0/Mudaremote.apk",
+            "apk_version_code": 16,
+        }
+        missing = mock.Mock(status_code=404)
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("requests.head", return_value=missing) as head:
+            result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=False))
+        head.assert_called_once()
+        self.assertEqual(result["status"], "current")
+        self.assertIsNone(result.get("apk_update"))
 
     def test_load_mudae_bot_cleans_poisoned_version_on_import_failure(self):
         gen_dir = os.path.join(self.temp_dir, "python_code", "generations", "bad_gen")

@@ -1935,20 +1935,10 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 updateStatusBadge(finalBadge, finalColor)
                 if (finalMessage.isNotBlank()) toast(finalMessage)
+                // Updates arrive as Python files; an APK is only downloaded on
+                // purpose from the version picker, so this is just a hint.
                 if (finalApkUrl.isNotBlank() && !isFinishing) {
-                    AlertDialog.Builder(this)
-                        .setTitle("📱 New Android APK Available")
-                        .setMessage("A newer MudaRemote Android APK (v$finalApkVer) is available. Native UI and service updates require installing the APK.\n\nOpen the download page?")
-                        .setPositiveButton("Download") { _, _ ->
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalApkUrl))
-                                startActivity(intent)
-                            } catch (e: Exception) {
-                                toast("Could not open browser: ${e.message}")
-                            }
-                        }
-                        .setNegativeButton("Later", null)
-                        .show()
+                    toast("Android APK v$finalApkVer is available under Switch Version.")
                 }
                 isUpdateInFlight = false
                 loadEngineVersion()
@@ -1990,9 +1980,11 @@ class MainActivity : ComponentActivity() {
                     if (tag.isEmpty()) continue
                     val isPre = obj.optBoolean("prerelease", false)
                     val isApk = obj.optBoolean("is_apk", false)
-                    val apkUrl = obj.optString("apk_url", "")
+                    // optString turns a JSON null into the text "null".
+                    val apkUrl = if (obj.isNull("apk_url")) "" else obj.optString("apk_url", "")
                     val typeLabel = if (isApk) "[APK]" else if (isPre) "[Beta]" else "[Stable]"
-                    items.add(Triple(tag, "$tag $typeLabel", apkUrl))
+                    val apkLabel = if (!isApk && apkUrl.isNotBlank()) " + APK" else ""
+                    items.add(Triple(tag, "$tag $typeLabel$apkLabel", apkUrl))
                 }
                 if (items.isEmpty()) {
                     runOnUiThread {
@@ -2022,7 +2014,7 @@ class MainActivity : ComponentActivity() {
                                     toast("No APK file was published for $selectedTag.")
                                 }
                             } else {
-                                promptConfirmInstallVersion(selectedTag)
+                                promptConfirmInstallVersion(selectedTag, apkUrl)
                             }
                         }
                         .setNeutralButton("Custom Tag") { _, _ ->
@@ -2039,15 +2031,27 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun promptConfirmInstallVersion(tag: String) {
-        AlertDialog.Builder(this)
+    private fun promptConfirmInstallVersion(tag: String, apkUrl: String = "") {
+        val apkNote = if (apkUrl.isNotBlank()) {
+            "\n\nThis release also has an Android APK. Download it only if you want the newer app itself; the bot code updates without it."
+        } else ""
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Confirm Version Switch")
-            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.")
+            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.$apkNote")
             .setPositiveButton("Install") { _, _ ->
                 installSpecificPythonVersion(tag)
             }
             .setNegativeButton("Cancel", null)
-            .show()
+        if (apkUrl.isNotBlank()) {
+            dialog.setNeutralButton("Download APK") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
+                } catch (e: Exception) {
+                    toast("Could not open browser: ${e.message}")
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun promptCustomVersionInput() {
