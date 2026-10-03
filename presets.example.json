@@ -115,6 +115,8 @@
     "auto_oc_enabled": false,
     "oc_reward_priority_order": [],
     "oc_collect_after_red": true,
+    "auto_oq_enabled": false,
+    "auto_ot_enabled": false,
     "auto_p_enabled": true,
 
     "farm_character_enabled": false,

@@ -1,4 +1,4 @@
-"""Sphere mini-game orchestration ($oh/$oc) for a single client.
+"""Sphere mini-game orchestration ($oh/$oc/$oq/$ot) for a single client.
 
 All mutable state stays on the client instance so the board lock stays shared
 with roll commands. This module only owns the orchestration flow and receives
@@ -16,10 +16,14 @@ from .runtime import split_command_batches
 from .spheres import (
     choose_chest_position,
     choose_harvest_position,
+    choose_quest_position,
+    choose_trace_position,
     count_harvest_bonus_clicks,
     harvest_reveal_is_free,
     normalize_sphere_emoji,
+    parse_trace_rules,
     sphere_click_recovery_decision,
+    SPHERE_GAME_KINDS,
 )
 
 
@@ -29,14 +33,30 @@ def sphere_game_kind(message):
         or getattr(message, 'interaction', None)
     )
     command_name = str(getattr(interaction, 'name', '') or '').strip().lower().lstrip('/')
-    if command_name in {"oh", "oc"}:
+    if command_name in SPHERE_GAME_KINDS:
         return command_name
     text = str(getattr(message, 'content', '') or '').lower()
     if "1 red sphere" in text and "never at the center" in text:
         return "oc"
     if "blue spheres unveil 3 buttons" in text and "multiplier:" in text:
         return "oh"
+    if "purple spheres" in text and "neighboring purples" in text:
+        return "oq"
+    if "all colors are free" in text and "follow one another" in text:
+        return "ot"
     return None
+
+
+def sphere_reveal_costs_click(kind, revealed):
+    """Whether a revealed sphere used up one of the board's limited clicks."""
+    if kind == "oh":
+        return not harvest_reveal_is_free(revealed)
+    if kind == "oq":
+        # A finished 7-click quest showed 6 clues plus 3 purples: purples are free.
+        return revealed not in {"spP", "sp"}
+    if kind == "ot":
+        return revealed == "spB"
+    return True
 
 
 def sphere_game_buttons(message):
@@ -101,7 +121,7 @@ class SphereRuntime:
         # pending, a fresh 25-button Mudae board in that channel is sufficient.
         if detected_kind is not None and detected_kind != expected_kind:
             return False
-        if detected_kind is None and expected_kind not in {"oh", "oc"}:
+        if detected_kind is None and expected_kind not in SPHERE_GAME_KINDS:
             return False
         if not self.sphere_game_belongs_to_self(message):
             return False
@@ -164,14 +184,18 @@ class SphereRuntime:
     async def play_sphere_game(self, channel, message, kind):
         clicked_positions = set()
         current = message
-        game_label = "$oh" if kind == "oh" else "$oc"
+        game_label = f"${kind}"
+        # $oq/$ot click allowances depend on the board; Mudae disables the
+        # buttons when it is over, so only $oh/$oc track a local limit.
+        click_limited = kind in {"oh", "oc"}
+        trace_rules = parse_trace_rules(getattr(message, 'content', '')) if kind == "ot" else None
 
         paid_clicks = 0
         total_clicks = 0
         red_found = False
         while total_clicks < 25:
             paid_limit = 5 + int(getattr(self._client, '_sphere_game_bonus_clicks', 0) or 0)
-            if paid_clicks >= paid_limit:
+            if click_limited and paid_clicks >= paid_limit:
                 break
             buttons, emojis, disabled, snapshot = sphere_board_snapshot(current)
             if len(buttons) != 25:
@@ -180,7 +204,11 @@ class SphereRuntime:
             if all(disabled):
                 break
 
-            if kind == "oc":
+            if kind == "oq":
+                position = choose_quest_position(emojis, disabled)
+            elif kind == "ot":
+                position = choose_trace_position(emojis, disabled, trace_rules)
+            elif kind == "oc":
                 position = choose_chest_position(
                     emojis,
                     disabled,
@@ -285,7 +313,7 @@ class SphereRuntime:
             revealed = normalize_sphere_emoji(
                 revealed_emojis[position] if position < len(revealed_emojis) else ""
             )
-            if kind != "oh" or not harvest_reveal_is_free(revealed):
+            if sphere_reveal_costs_click(kind, revealed):
                 paid_clicks += 1
             if kind == "oh" and revealed == "spD" and bonus_event is not None:
                 if int(getattr(self._client, '_sphere_game_bonus_clicks', 0) or 0) == bonus_before_click:
@@ -294,11 +322,17 @@ class SphereRuntime:
                     except asyncio.TimeoutError:
                         pass
             paid_limit = 5 + int(getattr(self._client, '_sphere_game_bonus_clicks', 0) or 0)
+            used_text = f"{paid_clicks}/{paid_limit} used" if click_limited else f"{paid_clicks} paid"
             self._log(
-                f"{game_label}: Click {total_clicks} ({paid_clicks}/{paid_limit} used) at row {position // 5 + 1}, column {position % 5 + 1}"
+                f"{game_label}: Click {total_clicks} ({used_text}) at row {position // 5 + 1}, column {position % 5 + 1}"
                 + (f" revealed {revealed}." if revealed else "."),
                 "INFO",
             )
+            if kind == "oq" and not red_found and any(
+                normalize_sphere_emoji(name) == "sp" for name in revealed_emojis
+            ):
+                red_found = True
+                self._log("$oq: Three purples found; the last one turned red.", "KAKERA")
             if kind == "oc" and revealed == "sp" and position in clicked_positions:
                 if not red_found:
                     self._log(
@@ -312,6 +346,11 @@ class SphereRuntime:
 
         if kind == "oh":
             self._log(f"$oh: Harvest finished after {len(clicked_positions)} click(s).", "KAKERA")
+        elif kind in {"oq", "ot"}:
+            self._log(
+                f"{game_label}: Board finished after {len(clicked_positions)} click(s) ({paid_clicks} paid).",
+                "KAKERA",
+            )
         elif red_found:
             self._log("$oc: Chest finished after finding red and using all available clicks.", "KAKERA")
         else:
@@ -406,9 +445,10 @@ class SphereRuntime:
 
         self._client._sphere_games_running = True
         try:
-            enabled_games = (
-                ("oh", self._client.auto_oh_enabled, self._client.sphere_game_counts.get("oh", 0)),
-                ("oc", self._client.auto_oc_enabled, self._client.sphere_game_counts.get("oc", 0)),
+            enabled_games = tuple(
+                (kind, getattr(self._client, f"auto_{kind}_enabled", False),
+                 self._client.sphere_game_counts.get(kind, 0))
+                for kind in SPHERE_GAME_KINDS
             )
             for kind, enabled, available in enabled_games:
                 if not enabled or available <= 0:
@@ -435,7 +475,7 @@ class SphereRuntime:
                     refill_seconds = max(300.0, float(getattr(status, "refill_minutes", None) or 60) * 60.0)
                     self._client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
                 else:
-                    for waiting_kind in ("oh", "oc"):
+                    for waiting_kind in SPHERE_GAME_KINDS:
                         self._client._sphere_game_retry_after[waiting_kind] = time.monotonic() + 300.0
                     self._client.loop.call_later(302.0, self._wake_status)
                     return  # An unfinished board must settle before another minigame starts.

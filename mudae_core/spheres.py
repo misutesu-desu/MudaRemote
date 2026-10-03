@@ -1,14 +1,20 @@
 """Parsing and deterministic board choices for Mudae sphere mini-games."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import combinations
 import re
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 
 BOARD_SIZE = 5
 BOARD_CELLS = BOARD_SIZE * BOARD_SIZE
 UNKNOWN_SPHERE = "spU"
 RED_SPHERE = "sp"
+SPHERE_GAME_KINDS = ("oh", "oc", "oq", "ot")
+
+
+def any_sphere_game_enabled(client) -> bool:
+    return any(getattr(client, f"auto_{kind}_enabled", False) for kind in SPHERE_GAME_KINDS)
 
 
 def parse_sphere_button_count(text):
@@ -537,3 +543,189 @@ def choose_harvest_position(
         return value, -position
 
     return max(enabled, key=expected_value)
+
+
+def _center_distance(index: int) -> int:
+    row, column = _coordinates(index)
+    return abs(row - 2) + abs(column - 2)
+
+
+def _sphere_game_candidates(board: Sequence[str], blocked: Sequence[bool]):
+    """Enabled hidden cells; any enabled cell when the board hides nothing."""
+    enabled = [index for index in range(BOARD_CELLS) if not blocked[index]]
+    hidden = [index for index in enabled if board[index] == UNKNOWN_SPHERE]
+    return hidden or enabled
+
+
+# $oq: four hidden purples; every other revealed color counts its purple
+# neighbors (8 tiles around). The 4th purple turns red when 3 are found.
+_QUEST_PURPLE_COUNT = 4
+_QUEST_CLUES = {"spB": 0, "spT": 1, "spG": 2, "spY": 3, "spO": 4}
+_QUEST_CLUE_BY_COUNT = {count: name for name, count in _QUEST_CLUES.items()}
+# A purple costs no click and moves toward the red, so it outranks any clue.
+_QUEST_PURPLE_VALUE = 100.0
+
+
+def _neighbor_mask(index: int) -> int:
+    row, column = _coordinates(index)
+    mask = 0
+    for other_row in range(max(0, row - 1), min(BOARD_SIZE, row + 2)):
+        for other_column in range(max(0, column - 1), min(BOARD_SIZE, column + 2)):
+            if (other_row, other_column) != (row, column):
+                mask |= 1 << (other_row * BOARD_SIZE + other_column)
+    return mask
+
+
+_NEIGHBOR_MASKS = tuple(_neighbor_mask(index) for index in range(BOARD_CELLS))
+_QUEST_ALL_LAYOUTS = tuple(
+    sum(1 << index for index in layout)
+    for layout in combinations(range(BOARD_CELLS), _QUEST_PURPLE_COUNT)
+)
+
+
+def _bit_count(value: int) -> int:
+    return bin(value).count("1")
+
+
+def quest_purple_layouts(emojis: Sequence[str]) -> Tuple[int, ...]:
+    """Return every purple placement (as a bitmask) matching the revealed $oq board."""
+    board = [normalize_sphere_emoji(value) for value in emojis]
+    if len(board) != BOARD_CELLS:
+        return ()
+    required = sum(1 << index for index, name in enumerate(board) if name in {"spP", RED_SPHERE})
+    excluded = sum(
+        1 << index for index, name in enumerate(board)
+        if name not in {"spP", RED_SPHERE, UNKNOWN_SPHERE}
+    )
+    clues = [
+        (_NEIGHBOR_MASKS[index], _QUEST_CLUES[name])
+        for index, name in enumerate(board) if name in _QUEST_CLUES
+    ]
+    return tuple(
+        layout for layout in _QUEST_ALL_LAYOUTS
+        if layout & required == required
+        and not layout & excluded
+        and all(_bit_count(layout & mask) == count for mask, count in clues)
+    )
+
+
+def choose_quest_position(emojis: Sequence[str], disabled: Sequence[bool]) -> Optional[int]:
+    """Pick the $oq cell with the best purple chance, weighted by the clue it reveals otherwise."""
+    board = [normalize_sphere_emoji(value) for value in emojis]
+    blocked = [bool(value) for value in disabled]
+    if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
+        return None
+    candidates = _sphere_game_candidates(board, blocked)
+    if not candidates:
+        return None
+    layouts = quest_purple_layouts(board)
+    if not layouts:
+        return min(candidates, key=lambda index: (_center_distance(index), index))
+
+    def score(position: int):
+        bit = 1 << position
+        without = [layout for layout in layouts if not layout & bit]
+        purple_chance = 1.0 - len(without) / len(layouts)
+        clue_value = (
+            sum(
+                _SPHERE_VALUES[_QUEST_CLUE_BY_COUNT[_bit_count(layout & _NEIGHBOR_MASKS[position])]]
+                for layout in without
+            ) / len(without)
+            if without else 0.0
+        )
+        expected = purple_chance * _QUEST_PURPLE_VALUE + (1.0 - purple_chance) * clue_value
+        return expected, purple_chance, -_center_distance(position), -position
+
+    return max(candidates, key=score)
+
+
+# $ot: each color sits on one straight run in a row or column; only blue
+# costs a click. Lengths come from the board text, these are the defaults.
+_TRACE_BASE_COLORS = {"spT": "teal", "spG": "green", "spY": "yellow"}
+
+
+@dataclass(frozen=True)
+class TraceRules:
+    lengths: Dict[str, int] = field(default_factory=lambda: {"spT": 4, "spG": 3, "spY": 3})
+    rare_length: int = 2
+    rare_colors: int = 2
+
+
+def parse_trace_rules(text: str) -> TraceRules:
+    """Read run lengths and the rare color count from an $ot board message."""
+    normalized = str(text or "").replace("**", "")
+    defaults = TraceRules()
+    lengths = dict(defaults.lengths)
+    for emoji, color in _TRACE_BASE_COLORS.items():
+        match = re.search(r"\b" + color + r"\s*=\s*(\d+)", normalized, re.IGNORECASE)
+        if match:
+            lengths[emoji] = max(1, min(BOARD_SIZE, int(match.group(1))))
+    rare_length = defaults.rare_length
+    match = re.search(r"rarer\s+spheres?\s*=\s*(\d+)", normalized, re.IGNORECASE)
+    if match:
+        rare_length = max(1, min(BOARD_SIZE, int(match.group(1))))
+    rare_colors = defaults.rare_colors
+    match = re.search(r"different\s+colou?rs?\s*:\s*(\d+)", normalized, re.IGNORECASE)
+    if match:
+        # Blue and the three named colors are always present.
+        rare_colors = max(0, int(match.group(1)) - 1 - len(lengths))
+    return TraceRules(lengths=lengths, rare_length=rare_length, rare_colors=rare_colors)
+
+
+def _straight_runs(length: int) -> Tuple[Tuple[int, ...], ...]:
+    runs = []
+    for row in range(BOARD_SIZE):
+        for start in range(BOARD_SIZE - length + 1):
+            runs.append(tuple(row * BOARD_SIZE + start + offset for offset in range(length)))
+    if length > 1:
+        for column in range(BOARD_SIZE):
+            for start in range(BOARD_SIZE - length + 1):
+                runs.append(tuple((start + offset) * BOARD_SIZE + column for offset in range(length)))
+    return tuple(runs)
+
+
+def choose_trace_position(
+    emojis: Sequence[str],
+    disabled: Sequence[bool],
+    rules: Optional[TraceRules] = None,
+) -> Optional[int]:
+    """Pick the $ot cell least likely to be blue, the only color that costs a click."""
+    board = [normalize_sphere_emoji(value) for value in emojis]
+    blocked = [bool(value) for value in disabled]
+    if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
+        return None
+    candidates = _sphere_game_candidates(board, blocked)
+    if not candidates:
+        return None
+    rules = rules or TraceRules()
+    hidden = {index for index, name in enumerate(board) if name == UNKNOWN_SPHERE}
+    coverage = [0.0] * BOARD_CELLS
+
+    # ponytail: colors are scored independently (overlaps between runs are
+    # ignored); swap in a joint enumeration if measured blue clicks need it.
+    def add_runs(found, length, copies=1.0):
+        if len(found) >= length or copies <= 0:
+            return
+        runs = [
+            run for run in _straight_runs(length)
+            if found.issubset(run) and all(cell in hidden or cell in found for cell in run)
+        ]
+        for run in runs:
+            for cell in run:
+                if cell in hidden:
+                    coverage[cell] += copies / len(runs)
+
+    for emoji, length in rules.lengths.items():
+        add_runs({index for index, name in enumerate(board) if name == emoji}, length)
+    rare_names = {
+        name for name in board
+        if name not in rules.lengths and name not in {UNKNOWN_SPHERE, "spB"}
+    }
+    for name in rare_names:
+        add_runs({index for index, value in enumerate(board) if value == name}, rules.rare_length)
+    add_runs(set(), rules.rare_length, copies=float(max(0, rules.rare_colors - len(rare_names))))
+
+    return max(
+        candidates,
+        key=lambda index: (coverage[index], -_center_distance(index), -index),
+    )

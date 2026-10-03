@@ -194,6 +194,8 @@ There is support for:
 * sphere detection
 * `$oh`
 * `$oc`
+* `$oq`
+* `$ot`
 
 If multiple eligible Kakera show up together, MudaRemote can use your configured priority instead of just clicking randomly.
 
