@@ -56,6 +56,10 @@ Her miktar değerlidir. Bir referans istersen **$5**, **$15** veya **$30** karş
 
 Bağış dışında GitHub yıldızı vermek, tekrar üretilebilir bir hata bildirmek veya Discord'da bir soruyu yanıtlamak da yardımcı olur.
 
+<p align="center">
+  <img src="screenshots/editor.png" alt="MudaRemote editor" width="820">
+</p>
+
 ---
 
 ## ❓ Bu Ne İşe Yarar?

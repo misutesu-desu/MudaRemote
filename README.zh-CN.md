@@ -27,6 +27,10 @@
   <a href="README.pt-BR.md">Português Brasileiro</a>
 </p>
 
+<p align="center">
+  <img src="screenshots/editor.png" alt="MudaRemote editor" width="820">
+</p>
+
 ---
 
 ## 💖 支持 MudaRemote

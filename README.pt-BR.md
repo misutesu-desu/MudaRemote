@@ -27,6 +27,10 @@
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
+<p align="center">
+  <img src="screenshots/editor.png" alt="MudaRemote editor" width="820">
+</p>
+
 ---
 
 ## 💖 Apoie o MudaRemote

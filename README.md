@@ -11,6 +11,7 @@
 <p align="center">
   <a href="https://github.com/misutesu-desu/MudaRemote/releases/latest"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
   <a href="https://discord.gg/4WHXkDzuZx"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="https://github.com/misutesu-desu/MudaRemote/stargazers"><img src="https://img.shields.io/github/stars/misutesu-desu/MudaRemote?style=for-the-badge&logo=github&color=f5c518"></a>
   <a href="https://github.com/sponsors/misutesu-desu"><img src="https://img.shields.io/badge/Support-%E2%9D%A4-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white"></a>
 </p>
 
@@ -21,6 +22,10 @@
   <a href="README.tr.md">Türkçe</a> •
   <a href="README.zh-CN.md">简体中文</a> •
   <a href="README.pt-BR.md">Português Brasileiro</a>
+</p>
+
+<p align="center">
+  <img src="screenshots/editor.png" alt="MudaRemote editor" width="820">
 </p>
 
 ---
@@ -425,6 +430,10 @@ I can't guarantee your account will be safe and I can't take responsibility for 
 Use it because you understand the risk, not because somebody told you it's undetectable.
 
 ---
+
+<p align="center">
+  ⭐ If MudaRemote saved you some time, a star on GitHub helps other people find it.
+</p>
 
 <p align="center">
   made by someone who got tired of doing repetitive Mudae stuff manually ❤️
