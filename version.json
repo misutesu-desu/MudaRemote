@@ -1,148 +1,148 @@
 {
-  "version": "4.10.9",
-  "changelog": "**🆕 MudaRemote v4.10.9**\n\n### ✨ New Features\n- **Auto `$oq`:** The bot can now play your `$oq` boards. It works out where the purple spheres can be from the clues and goes for the 3 purples that turn the last one red.\n- **Auto `$ot`:** The bot can now play your `$ot` boards. Only blue costs a click there, so it follows the color lines and avoids blue as much as it can.\n\nTurn them on under Power & Expert Settings. Both are off by default.\n\n### 🐛 Bug Fixes\n- **No More Broken APK Download:** Fetch app updates could say a new APK was available and send you to a page that didn't exist. The bot code still updates on its own like before, and the app now only mentions an APK that's really there.\n- **APK Downloads From Switch Version:** With the next Android app, releases that come with an APK show \"+ APK\" in Switch Version, where you can choose to update the bot code or download the APK.\n\nRestart the bot after updating.",
-  "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_bot.py",
-  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.10.9/MudaRemote.exe",
-  "exe_sha256": "21681e4decafc741e01f1c567d66f4bf3633afb07d1dbb1c5026058657840399",
+  "version": "5.0.0",
+  "changelog": "**🆕 MudaRemote v5.0.0**\n\n### ✨ New Features\n- **Smarter `$oc` Games:** The bot now plays every `$oc` board the best way it can, so you get more sphere points from each game on average.\n- **Better `$oh` Picks:** `$oh` chooses more carefully which spheres to open and gives the hidden sphere its proper value, so each board pays a bit more. If you set your own `$oh` reward priority, the bot still follows it.\n- **`$oq` Takes the Red Sphere:** The bot no longer skips the red sphere in `$oq` and plays the rest of the board with a much stronger strategy, for clearly more points per game.\n- **Stronger `$ot` Games:** `$ot` now works out where the ships can still be, uses Extra Chance to open safe spots first and plays the last moves more carefully, for more points per game.\n\n### 🐛 Bug Fixes\n- **Wishlist Names Match More Easily:** A wishlist name typed without its space, like `EiaiNano`, now matches the character Mudae shows as `Eiai Nano`. Different capital letters and extra spaces no longer stop a match, and the same goes for the blacklist.\n- **French Wish Detection Improved:** The bot now also spots \"Souhaité par\" when the accent comes through in a different form, so wishes on French servers are picked up more reliably.\n\nRestart the bot after updating.",
+  "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_bot.py",
+  "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.0.0/MudaRemote.exe",
+  "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_bot.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_bot.py",
       "sha256": "8b7b308a73c08dde9dfc184093dc34d6986421fdb13368ce4d610154dacae6fd"
     },
     {
       "path": "mudae_preset_editor.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_preset_editor.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_preset_editor.py",
       "sha256": "8f0723fb2dd5557c736d470d2c00da6c87d6099a426f8604aeb87570abd2b9b5"
     },
     {
       "path": "mudae_core/__init__.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/__init__.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/__init__.py",
       "sha256": "cf0ae576724c6f6f3539c5efa8570c2207284935818863735a0088abbd744474"
     },
     {
       "path": "mudae_core/claiming.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/claiming.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/claiming.py",
       "sha256": "d733e4b92ed0c767b89f2730839ceac806ad0dd54b8fbd3803590c2996b54f19"
     },
     {
       "path": "mudae_core/config.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/config.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/config.py",
       "sha256": "fec46b52be8f3feac8c6156fac598a509abfe687a2599ea613ab078f0c7b4970"
     },
     {
       "path": "mudae_core/kakera.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/kakera.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/kakera.py",
       "sha256": "b5c1b43c532b8221e72c64942951b811055a4518b00091413c4ebfdbf8641dc2"
     },
     {
       "path": "mudae_core/coordinator.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/coordinator.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/coordinator.py",
       "sha256": "bac97aee111f1b0d9c191aa0484bd018ebc7da7143771ee44d844b1166a40f6f"
     },
     {
       "path": "mudae_core/runtime.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/runtime.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/runtime.py",
       "sha256": "3fa4f651fd9dc2ec3c2d9a3ba1a5aba1b05660a649c1362d0f391eb431a676e0"
     },
     {
       "path": "mudae_core/secrets.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/secrets.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/secrets.py",
       "sha256": "45514aa631038a0a3087b14e2ed200a3d236969bd5631db6d863eb0f8e68f502"
     },
     {
       "path": "mudae_core/status.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/status.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/status.py",
       "sha256": "af73776a7fd5b30ae1adb9e3083a0ab3405dd3d2d21f04bcf438c9275dc39231"
     },
     {
       "path": "mudae_core/spheres.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/spheres.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/spheres.py",
       "sha256": "eb9756e042ee31a144eff6fb9d8aa640bd2ca44ccacba16c65b068b7f4c2b413"
     },
     {
       "path": "mudae_core/filters.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/filters.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/filters.py",
       "sha256": "12bbb4c08d000e07ddb74b963c3f4d8aa6d2b67f3ba592190fc5ecf4ceb4b59e"
     },
     {
       "path": "mudae_core/webhooks.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/webhooks.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/webhooks.py",
       "sha256": "a76782fa6c0c59bf1f3b5037de17cbc345469bcd172d08b10e3adcf53413e308"
     },
     {
       "path": "mudae_core/updater.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/updater.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/updater.py",
       "sha256": "62338a7efde2bd08475a71ab59106a2b941063a7cd6d89abe5c177e9f708c6af"
     },
     {
       "path": "mudae_core/versioning.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/versioning.py",
-      "sha256": "6d5e85ab49e21ed6b517fb5d970b6f22114e51e4644889fc20a0b0c1a4706dea"
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/versioning.py",
+      "sha256": "fa02585454b4ac440281c8eb80dfdb2115c80066cf7914ee1a440982fcdd243d"
     },
     {
       "path": "mudae_core/bot_config.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/bot_config.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/bot_config.py",
       "sha256": "9a526c7f95ba2ee0398a124f04fe62d98ddb5e0e1a1e6539b00a8cfbc34cb372"
     },
     {
       "path": "mudae_core/activity_events.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/activity_events.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/activity_events.py",
       "sha256": "c23a6319325380ca032e6fdd72379e8322156fa11d1c969adb37b704a3673063"
     },
     {
       "path": "mudae_core/bot_runtime.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/bot_runtime.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/bot_runtime.py",
       "sha256": "f86106380925b5894c264deceb51d0f3d4a70fd4a6e9ee6eef724109210f40fa"
     },
     {
       "path": "mudae_core/worker.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/worker.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/worker.py",
       "sha256": "6aa03693cef703d6d448051498ea3b3ea116eea95f0f0f97076c571fd7486a3d"
     },
     {
       "path": "mudae_core/watchdog.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/watchdog.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/watchdog.py",
       "sha256": "7e24bb5e295f4e3835f02bc1a5f012d7cb6338feecfdc86e94b5e5c8909a84a5"
     },
     {
       "path": "mudae_core/cloud_protocol.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/cloud_protocol.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/cloud_protocol.py",
       "sha256": "138291cce58a0925aa3e28397c9b0c605b7b8493c652b70389d2508ab4ba695e"
     },
     {
       "path": "mudae_core/worker_outbox.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/worker_outbox.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/worker_outbox.py",
       "sha256": "95152e16bf6745c20c70ce499ba1421c39d13159d119435e77cb959577a81beb"
     },
     {
       "path": "mudae_core/cloud_worker.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/cloud_worker.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/cloud_worker.py",
       "sha256": "c8acc8900fc8f970d30f458f7318b246504a816ce15fee36907776c4ad1de5d0"
     },
     {
       "path": "mudae_core/sphere_runtime.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/sphere_runtime.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/sphere_runtime.py",
       "sha256": "c35b7b92bb77a5b0bc290c80bf3e90eb9c137dcc45ae48b548d77edd9981472e"
     },
     {
       "path": "requirements.txt",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/requirements.txt",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/requirements.txt",
       "sha256": "be9ba4d455b5095e5df39730f078b561ddb7bf18abc132dbe8ea47bc7cd61c4f"
     },
     {
       "path": "mudae_core/loot.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/loot.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/loot.py",
       "sha256": "693ed123be471280c47f90cb91d046b7a91f7037409267529857bbf029ac22af"
     },
     {
       "path": "mudae_core/roll_mode.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/roll_mode.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/roll_mode.py",
       "sha256": "7c0bc09929e7c6c00bfb51ae0884b7f8a4d08f0cc3f1dd3930068ba36ef0dae7"
     },
     {
       "path": "mudae_core/preset_reload.py",
-      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.10.9/mudae_core/preset_reload.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/preset_reload.py",
       "sha256": "6909485f510505ba9783f376fd84b8a64d1b4f4a038e72595bc6679ea801522c"
     }
   ],
