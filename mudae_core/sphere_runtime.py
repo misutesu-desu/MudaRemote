@@ -25,6 +25,7 @@ from .spheres import (
     normalize_sphere_emoji,
     parse_sphere_click_limit,
     parse_trace_rules,
+    quest_reward_sphere,
     sphere_click_recovery_decision,
     SPHERE_GAME_KINDS,
     UNKNOWN_SPHERE,
@@ -185,6 +186,14 @@ class SphereRuntime:
                 return latest
         return latest
 
+    async def _board_already_finished(self, channel, message_id):
+        try:
+            latest = await channel.fetch_message(message_id)
+        except Exception:
+            return False
+        buttons = sphere_game_buttons(latest)
+        return bool(buttons) and all(getattr(button, "disabled", False) for button in buttons)
+
     async def play_sphere_game(self, channel, message, kind):
         clicked_positions = set()
         current = message
@@ -256,6 +265,7 @@ class SphereRuntime:
             if bonus_event is not None:
                 bonus_event.clear()
             refreshed = None
+            board_ended = False
             current_button = buttons[position]
             for click_attempt in range(2):
                 update_event = asyncio.Event()
@@ -287,6 +297,11 @@ class SphereRuntime:
                         update_event=update_event,
                     )
                 except Exception as error:
+                    if await self._board_already_finished(channel, current.id):
+                        # The player clicked the last button by hand meanwhile.
+                        self._log(f"{game_label}: The board ended before this click; nothing left to click.", "INFO")
+                        board_ended = True
+                        break
                     self._log(f"{game_label}: Sphere click failed: {error}", "WARN")
                     return False
                 finally:
@@ -323,6 +338,8 @@ class SphereRuntime:
                             f"{game_label}: Ambiguous click was not reflected on the board; retrying the refreshed logical button once.",
                             "WARN",
                         )
+            if board_ended:
+                break
 
             if refreshed is None or sphere_board_snapshot(refreshed)[3] == snapshot:
                 self._log(f"{game_label}: Board did not update after two click attempts; stopping safely.", "WARN")
@@ -355,11 +372,13 @@ class SphereRuntime:
                 + (f" revealed {revealed}." if revealed else "."),
                 "INFO",
             )
-            if kind == "oq" and not red_found and any(
-                normalize_sphere_emoji(name) == "sp" for name in revealed_emojis
-            ):
+            reward = next(
+                (name for name in map(normalize_sphere_emoji, revealed_emojis) if quest_reward_sphere(name)),
+                None,
+            ) if kind == "oq" else None
+            if reward is not None and not red_found:
                 red_found = True
-                self._log("$oq: Three purples found; the last one turned red.", "KAKERA")
+                self._log(f"$oq: Three purples found; the last one turned into {reward}.", "KAKERA")
             if kind == "oc" and revealed == "sp" and position in clicked_positions:
                 if not red_found:
                     self._log(

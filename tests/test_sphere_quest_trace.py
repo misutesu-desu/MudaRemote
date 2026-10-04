@@ -94,6 +94,22 @@ class QuestSolverTests(unittest.TestCase):
         self.assertGreaterEqual(total / len(layouts), 345)
         self.assertGreaterEqual(reds / len(layouts), 0.9)
 
+    def test_better_than_red_reward_is_clicked_as_soon_as_it_shows(self):
+        # "turn the 4th purple into a red sphere or more": it can also show
+        # as a rainbow or white sphere, which must be taken before any clue.
+        for reward in ("spL", "spW", "spR"):
+            board = ["spU"] * 25
+            disabled = [False] * 25
+            for index, name in ((2, "spP"), (7, "spP"), (10, "spP"), (0, "spB")):
+                board[index], disabled[index] = name, True
+            board[4] = reward
+            self.assertEqual(choose_quest_position(board, disabled), 4, reward)
+
+    def test_collected_reward_still_counts_as_the_fourth_purple(self):
+        layouts = quest_purple_layouts([name if name != "sp" else "spL" for name in QUEST_BOARD])
+        self.assertEqual(len(layouts), 1)
+        self.assertEqual([i for i in range(25) if layouts[0] >> i & 1], [2, 4, 7, 10])
+
     def test_certain_purple_is_clicked_next(self):
         board = ["spU"] * 25
         disabled = [False] * 25
@@ -152,8 +168,9 @@ class SphereKindTests(unittest.TestCase):
 class _FakeBoard:
     """A Mudae board that reveals the hidden answer and ends like Mudae does."""
 
-    def __init__(self, client, kind, truth, paid_limit):
+    def __init__(self, client, kind, truth, paid_limit, reward="sp"):
         self.client, self.kind, self.truth, self.paid_limit = client, kind, truth, paid_limit
+        self.reward = reward
         self.paid = 0
         self.buttons = [
             SimpleNamespace(index=i, emoji=SimpleNamespace(name="spU"), disabled=False, style=1)
@@ -175,7 +192,7 @@ class _FakeBoard:
         if self.kind == "oq":
             # Purples are free; after the 3rd the last one shows red and costs a click.
             if revealed in {"spP", "sp"}:
-                revealed = "sp" if self.names().count("spP") >= 3 else "spP"
+                revealed = self.reward if self.names().count("spP") >= 3 else "spP"
             self.paid += revealed != "spP"
             over = self.paid >= self.paid_limit
         elif revealed == "spB":
@@ -190,7 +207,7 @@ class _FakeBoard:
         if self.kind == "oq" and revealed == "spP" and self.names().count("spP") == 3:
             for other in self.buttons:
                 if self.truth[other.index] in {"spP", "sp"} and other.emoji.name == "spU":
-                    other.emoji = SimpleNamespace(name="sp")
+                    other.emoji = SimpleNamespace(name=self.reward)
         if over or all(other.disabled for other in self.buttons):
             for other in self.buttons:
                 other.disabled = True
@@ -255,6 +272,31 @@ class SphereBoardFlowTests(unittest.IsolatedAsyncioTestCase):
         red = [button for button in board.buttons if button.emoji.name == "sp"]
         self.assertEqual(len(red), 1)
         self.assertLessEqual(board.paid, 7)
+
+    async def test_quest_collects_a_rainbow_fourth_purple(self):
+        runtime, board = _runtime(lambda client: _FakeBoard(client, "oq", QUEST_BOARD, 7, reward="spL"))
+        self.assertTrue(await runtime.play_sphere_game(board, board.message, "oq"))
+        rainbow = [button for button in board.buttons if button.emoji.name == "spL"]
+        self.assertEqual(len(rainbow), 1)
+        self.assertTrue(rainbow[0].disabled)
+        logged = [call.args[0] for call in runtime._log.call_args_list]
+        self.assertIn("$oq: Clicking row 1, column 5 (spL).", logged)
+
+    async def test_click_on_a_board_that_already_ended_is_not_a_failure(self):
+        runtime, board = _runtime(lambda client: _FakeBoard(client, "oq", QUEST_BOARD, 7))
+
+        async def finished_elsewhere(_button):
+            # The player clicked the last button by hand; Mudae disabled the board.
+            for other in board.buttons:
+                other.disabled = True
+            raise RuntimeError("400 Bad Request (error code: 50035): Invalid Form Body "
+                               "In data: [{'code': 'COMPONENT_VALIDATION_FAILED'}]")
+
+        runtime._click = finished_elsewhere
+        board.client._sphere_board_update_events = {}
+        await runtime.play_sphere_game(board, board.message, "oq")
+        levels = [call.args[1] for call in runtime._log.call_args_list]
+        self.assertNotIn("WARN", levels)
 
     async def test_trace_finds_every_colored_sphere_with_four_blue_clicks(self):
         runtime, board = _runtime(lambda client: _FakeBoard(client, "ot", TRACE_BOARD, 4))

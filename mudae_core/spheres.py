@@ -936,6 +936,11 @@ _QUEST_CLUES = {"spB": 0, "spT": 1, "spG": 2, "spY": 3, "spO": 4}
 _QUEST_PURPLE_VALUE = 100.0
 
 
+def quest_reward_sphere(name: str) -> bool:
+    """The 4th purple once 3 are found: red, or better (rainbow, white...)."""
+    return name not in _QUEST_CLUES and name not in {UNKNOWN_SPHERE, "spP"}
+
+
 def _neighbor_mask(index: int) -> int:
     row, column = _coordinates(index)
     mask = 0
@@ -962,11 +967,11 @@ def quest_purple_layouts(emojis: Sequence[str]) -> Tuple[int, ...]:
     board = [normalize_sphere_emoji(value) for value in emojis]
     if len(board) != BOARD_CELLS:
         return ()
-    required = sum(1 << index for index, name in enumerate(board) if name in {"spP", RED_SPHERE})
-    excluded = sum(
+    required = sum(
         1 << index for index, name in enumerate(board)
-        if name not in {"spP", RED_SPHERE, UNKNOWN_SPHERE}
+        if name == "spP" or quest_reward_sphere(name)
     )
+    excluded = sum(1 << index for index, name in enumerate(board) if name in _QUEST_CLUES)
     clues = [
         (_NEIGHBOR_MASKS[index], _QUEST_CLUES[name])
         for index, name in enumerate(board) if name in _QUEST_CLUES
@@ -1238,10 +1243,10 @@ def choose_quest_position(
     blocked = [bool(value) for value in disabled]
     if len(board) != BOARD_CELLS or len(blocked) != BOARD_CELLS:
         return None
-    # The red (4th purple) shows up after 3 purples; it costs a click and is
-    # worth the most, so take it as soon as it appears.
+    # The 4th purple shows up as red (or better) after 3 purples; it costs a
+    # click and is worth the most, so take it as soon as it appears.
     for index, name in enumerate(board):
-        if name in {RED_SPHERE, "spR"} and not blocked[index]:
+        if quest_reward_sphere(name) and not blocked[index]:
             return index
     candidates = _sphere_game_candidates(board, blocked)
     if not candidates:
@@ -1252,7 +1257,7 @@ def choose_quest_position(
     for index, name in enumerate(board):
         if name in _QUEST_CLUES and blocked[index]:
             layouts &= outcomes[index][_QUEST_CLUES[name]]
-        elif name in {"spP", RED_SPHERE, "spR"}:
+        elif name == "spP" or quest_reward_sphere(name):
             layouts &= outcomes[index][5]
     if not hidden or not layouts:
         return min(candidates, key=lambda index: (_center_distance(index), index))
@@ -1282,7 +1287,7 @@ def choose_quest_position(
         found = sum(1 for name in board if name == "spP")
         used = sum(
             1 for index in range(BOARD_CELLS)
-            if blocked[index] and (board[index] in _QUEST_CLUES or board[index] in {RED_SPHERE, "spR"})
+            if blocked[index] and (board[index] in _QUEST_CLUES or quest_reward_sphere(board[index]))
         )
         _, cell = _QuestSolver(outcomes).best(layouts, tuple(hidden), found, max(0, clicks - used))
         if cell is not None:
