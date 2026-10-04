@@ -388,12 +388,28 @@ class SphereBoardTests(unittest.TestCase):
         board[23] = "spB"
         self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=0), 7)
 
-    def test_harvest_saves_dark_sphere_for_last_two_paid_clicks(self):
+    def test_harvest_clicks_a_dark_sphere_as_soon_as_it_shows(self):
         board = ["spB"] * 25
         board[4] = "spD"
         board[12] = "spU"
-        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=1), 12)
-        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=3), 4)
+        for paid in (0, 1, 3):
+            with self.subTest(paid=paid):
+                self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=paid), 4)
+        # The reported board: a dark unveiled while covered buttons remain.
+        board = ["spU"] * 25
+        board[9], board[12], board[7] = "spD", "spT", "spT"
+        disabled = [False] * 25
+        disabled[12] = disabled[7] = True
+        self.assertEqual(
+            choose_harvest_position(board, disabled, paid_clicks=2, initial_covered=25), 9,
+        )
+
+    def test_harvest_dark_waits_only_for_prizes_that_need_every_click(self):
+        board = ["spU"] * 25
+        board[4], board[7], board[18] = "spD", "spW", "spR"
+        # Two clicks, two prizes worth more than a dark: the dark has no room.
+        self.assertIn(choose_harvest_position(board, [False] * 25, paid_clicks=3), (7, 18))
+        self.assertEqual(choose_harvest_position(board, [False] * 25, paid_clicks=2), 4)
 
     def test_board_choice_stops_when_every_button_is_disabled(self):
         disabled = [True] * 25

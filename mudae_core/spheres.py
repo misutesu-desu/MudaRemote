@@ -792,6 +792,14 @@ def choose_harvest_position(
         groups.setdefault(board[index], []).append(index)
     if groups.get("spP"):
         return _closest_to_center(groups["spP"])
+    # A visible dark is clicked at once. Holding it for the last click is
+    # worth under one sphere on average, but a dark left on the board looks
+    # ignored and is lost if the game stops early. It only waits for prizes
+    # worth more than it that already need every click left.
+    if clicks_left > 1 and groups.get("spD") and sum(
+        1 for index in enabled if _HARVEST_VALUES.get(board[index], 0.0) > _HARVEST_DARK_SPHERES
+    ) < clicks_left:
+        return _closest_to_center(groups["spD"])
     covered = groups.get(UNKNOWN_SPHERE, [])
     if covered and clicks_left > _HARVEST_EXACT_CLICKS:
         return _closest_to_center(covered)
