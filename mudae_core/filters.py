@@ -21,8 +21,8 @@ _SERIES_METADATA_RE = re.compile(
     r"^(?:"
     r"<a?:[^:>]+:\d+>\s*\(\*{0,2}[\d,]+\*{0,2}\)"
     r"|claims?\s*:|likes?\s*:"
-    r"|[\d,.]+\s+kakera\b"
-    r"|\*{0,2}[\d,.]+\*{0,2}\s*<a?:kakera:"
+    r"|\+?[\d,.]+\s+kakera\b"
+    r"|\+?\*{0,2}\+?[\d,.]+\*{0,2}\s*<a?:kakera:"
     r")",
     re.IGNORECASE,
 )

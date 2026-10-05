@@ -63,7 +63,7 @@
     {
       "path": "mudae_core/filters.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.0.0/mudae_core/filters.py",
-      "sha256": "12bbb4c08d000e07ddb74b963c3f4d8aa6d2b67f3ba592190fc5ecf4ceb4b59e"
+      "sha256": "d28f40929c6497d4768aa3bbf82816526a66f23840ba941c5d2489d80b098f74"
     },
     {
       "path": "mudae_core/webhooks.py",

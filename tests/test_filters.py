@@ -35,6 +35,21 @@ class CharacterFilterTests(unittest.TestCase):
         )
         self.assertFalse(series_line_has_emoji(description))
 
+    def test_plus_signed_value_line_is_not_a_starwish(self):
+        # Mudae can write the value as "+613"; its kakera icon must not be
+        # folded into the series line and read as a starwish marker.
+        description = (
+            "Berserk\n"
+            "+**613**<:kakera:469835869059153940>\n"
+            "Now your SOULMATE!\n"
+            "<:chaoskey:690110264166842421> (**10**) Kakera button costs are halved"
+        )
+        self.assertEqual(character_series_line(description), "Berserk")
+        self.assertFalse(series_line_has_emoji(description))
+        self.assertTrue(series_line_has_emoji(
+            "Berserk <:sw:1163913219782492220>\n+**613**<:kakera:469835869059153940>"
+        ))
+
     def test_configured_name_and_series_wishes_are_case_insensitive(self):
         self.assertTrue(name_or_series_is_configured_wish("Rem", "", ["rem"], []))
         self.assertTrue(
