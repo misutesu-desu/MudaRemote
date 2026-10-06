@@ -226,7 +226,7 @@ class SnipeStartupProductionTests(unittest.IsolatedAsyncioTestCase):
 
         required, reason = is_tu_still_required(client, proceed_to_rolls=False)
         self.assertTrue(required)
-        self.assertEqual(reason, "required")
+        self.assertIn("no complete $tu yet", reason)
 
         await client._runtime_check_status(
             client,

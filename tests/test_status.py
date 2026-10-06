@@ -696,7 +696,7 @@ class StatusFreshnessTests(unittest.TestCase):
 
         required, reason = is_tu_still_required(client, proceed_to_rolls=True)
         self.assertTrue(required)
-        self.assertEqual(reason, "required")
+        self.assertEqual(reason, "no complete $tu yet; refresh rolls after private-roll-count-sync")
 
     def test_sixty_account_realistic_boundary_avoids_pacer_queue_starvation(self):
         """Test 5: 60 realistic clients at a shared boundary only send physical $tu for genuinely unresolved accounts."""
@@ -882,7 +882,7 @@ class StatusFreshnessTests(unittest.TestCase):
 
         required, reason = is_tu_still_required(client, proceed_to_rolls=False)
         self.assertTrue(required)
-        self.assertEqual(reason, "required")
+        self.assertEqual(reason, "no complete $tu yet")
 
         # Model the one successful, authoritative snipe-only $tu handshake.
         client.last_tu_snapshot_complete = True

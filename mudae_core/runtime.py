@@ -13,6 +13,7 @@ from .status import (
     coalesce_status_request,
     mark_status_dirty,
     status_dirty_fields,
+    status_refresh_reasons,
     tu_cache_seconds_remaining,
     dynamic_claim_round,
 )
@@ -2011,4 +2012,25 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
         if state is not None and state.remaining is not None and not state.count_uncertain:
             return False, "roll-action-already-pending"
 
-    return True, "required"
+    return True, describe_tu_demand(client, dirty, scheduled_due, last_complete, last_query_utc, now_utc)
+
+
+def describe_tu_demand(client, dirty, scheduled_due, last_complete, last_query_utc, now_utc) -> str:
+    """Say in plain words why a $tu has to be sent now."""
+    parts = []
+    if not last_complete:
+        parts.append("no complete $tu yet")
+    if scheduled_due:
+        parts.append("scheduled roll due")
+    if dirty:
+        part = "refresh " + ", ".join(sorted(dirty))
+        triggers = status_refresh_reasons(client)
+        if triggers:
+            part += " after " + ", ".join(triggers)
+        parts.append(part)
+    if not parts:
+        if tu_cache_seconds_remaining(last_query_utc, now_utc) <= 0:
+            parts.append("last $tu older than 30m")
+        else:
+            parts.append("roll, $us or sphere work waiting")
+    return "; ".join(parts)

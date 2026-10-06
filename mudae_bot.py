@@ -1007,6 +1007,10 @@ def get_character_owner(embed):
     m = re.search(REGEX_PATTERNS["OWNER"], embed.footer.text)
     return m.group(1).strip().lower() if m else None
 
+# A failed claim from a roll batch falls back to the next best rolls of that batch.
+CLAIM_FALLBACK_MAX_CANDIDATES = 3
+CLAIM_FALLBACK_WINDOW_SECONDS = 120.0
+
 # Mudae writes the wish line in the server's language ("Souhaité par" in French).
 WISH_LINE_MARKERS = ("wished by", "souhaité par")
 
@@ -4536,7 +4540,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
             if not recovering_claim and client.tu_query_count > 0 and client.delay_seconds > 0:
                 await _interruptible_sleep(client.delay_seconds)
-            reason_text = ", ".join(reasons) if reasons else ("scheduled-roll" if client.scheduled_roll_due else "status-boundary")
+            reason_text = skip_reason
             tu_may_reconcile_pending_power = any(
                 reason == "external-kakera-result-reconcile"
                 for reason in reasons
@@ -6429,6 +6433,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     is_snipe=pending.get("is_snipe_action", False),
                     kakera_value=pending.get("character_kakera", 0),
                 )
+            else:
+                schedule_claim_fallback(message_id, pending['character_name'])
         except Exception as exc:
             BotLogger.log(f"Claim retry check failed: {exc}", preset_name, "WARN")
 
@@ -6481,6 +6487,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     pending_channel,
                     f"Retrying {pending['character_name']} once after $tu confirmed the claim was not consumed.",
                 ))
+            else:
+                schedule_claim_fallback(message_id, pending['character_name'])
             return
         BotLogger.log(
             f"Claim Verification: {pending['character_name']} remains unconfirmed. "
@@ -6612,6 +6620,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             _claim_coordinator.mark_completed(pending.get("message_id"))
             clear_pending_claim(pending)
             clear_status_dirty(client, {"claim"})
+            schedule_claim_fallback(pending.get("message_id"), char_name)
             return ClaimOutcome.FAILURE
 
         if pending.get("consumes_claim") and retry_pending_claim_from_cached_state(pending, channel):
@@ -6629,27 +6638,81 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         else:
             clear_pending_claim(pending)
         return ClaimOutcome.INCONCLUSIVE
+    async def claim_refreshed_candidate(channel, message, value):
+        # A combined normal/$rolls batch can outlive its first buttons.
+        # Refresh only candidates we are about to claim, not every roll.
+        try:
+            current = await channel.fetch_message(message.id)
+        except Exception as exc:
+            BotLogger.log(f"Skipping cached claim: could not refresh roll {message.id}: {exc}", preset_name, "WARN")
+            return False
+        if not current or not current.embeds:
+            return False
+        current_embed = current.embeds[0]
+        if get_character_owner(current_embed) or not has_claim_option(current, current_embed, client.claim_emojis):
+            return False
+        return await claim_character(client, channel, current, kakera_value=value)
+
+    def remember_claim_fallbacks(message_id, channel, candidates):
+        """Keep the next best rolls of a batch in case this claim does not land."""
+        candidates = list(candidates)[:CLAIM_FALLBACK_MAX_CANDIDATES]
+        client._claim_fallback = {
+            "after": message_id,
+            "channel": channel,
+            "candidates": candidates,
+            "expires_monotonic": time.monotonic() + CLAIM_FALLBACK_WINDOW_SECONDS,
+        } if candidates else None
+
+    def schedule_claim_fallback(failed_message_id, failed_name):
+        """Try the next best roll once a claim is known to have failed."""
+        fallback = getattr(client, "_claim_fallback", None)
+        if not fallback or fallback.get("after") != failed_message_id:
+            return False
+        client._claim_fallback = None
+        if (time.monotonic() > fallback["expires_monotonic"] or client.is_paused
+                or not client.claim_right_available or is_key_mode_kakera_only()):
+            return False
+        client.loop.create_task(claim_next_fallback(fallback, failed_name))
+        return True
+
+    async def claim_next_fallback(fallback, failed_name):
+        channel = fallback["channel"]
+        try:
+            for _ in range(30):
+                if not client.is_claiming:
+                    break
+                if not await active_delay(0.1):
+                    return
+            candidates = fallback["candidates"]
+            for index, (message, name, value, _) in enumerate(candidates):
+                if not client.claim_right_available or client.is_paused:
+                    return
+                if message.id in client.processed_claim_messages or _claim_coordinator.is_reserved(message.id):
+                    continue
+                BotLogger.log(f"Claim fallback: {failed_name} did not land, trying the next best roll {name} ({value} ka).", preset_name, "CLAIM")
+                if await claim_refreshed_candidate(channel, message, value):
+                    remember_claim_fallbacks(message.id, channel, candidates[index + 1:])
+                    return
+        except Exception as exc:
+            BotLogger.log(f"Claim fallback check failed: {exc}", preset_name, "WARN")
+
     async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
         char_claims = []
         wl_claims = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
 
-        async def claim_collected_candidate(message, value):
-            # A combined normal/$rolls batch can outlive its first buttons.
-            # Refresh only candidates we are about to claim, not every roll.
-            try:
-                current = await channel.fetch_message(message.id)
-            except Exception as exc:
-                BotLogger.log(f"Skipping cached claim: could not refresh roll {message.id}: {exc}", preset_name, "WARN")
-                return False
-            if not current or not current.embeds:
-                return False
-            current_embed = current.embeds[0]
-            if get_character_owner(current_embed) or not has_claim_option(current, current_embed, client.claim_emojis):
-                return False
-            return await claim_character(client, channel, current, kakera_value=value)
-
         attempted = set()
+
+        async def claim_best_collected(ordered):
+            for index, (m_c, n, v, _) in enumerate(ordered):
+                if await claim_refreshed_candidate(channel, m_c, v):
+                    attempted.add(n)
+                    remember_claim_fallbacks(m_c.id, channel, ordered[index + 1:])
+                    return m_c.id
+                if not client.claim_right_available:
+                    break
+            return -1
+
         for msg in mudae_messages:
             if not msg.embeds: continue
             embed = msg.embeds[0]
@@ -6688,45 +6751,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if key_mode_only_kakera_param or is_key_mode_kakera_only():
             BotLogger.log("Key mode active, no claim/RT. Skipping character claims.", preset_name, "INFO")
         elif is_character_snipe_allowed(is_external_snipe=False):
+            # Wishes first, then value, best first. The rest of the list stays
+            # as a fallback in case the chosen claim does not land.
+            by_value = lambda x: (x[2], x[0].id)
             if client.claim_right_available:
-                if wl_claims:
-                    wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    for m_c, n, v, _ in wl_claims:
-                        if await claim_collected_candidate(m_c, v):
-                            msg_claimed_id = m_c.id
-                            attempted.add(n)
-                            break
-                        if not client.claim_right_available:
-                            break
-                if msg_claimed_id == -1 and client.claim_right_available and char_claims:
-                    char_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    for m_c, n, v, _ in char_claims:
-                        if await claim_collected_candidate(m_c, v):
-                            msg_claimed_id = m_c.id
-                            attempted.add(n)
-                            break
-                        if not client.claim_right_available:
-                            break
+                msg_claimed_id = await claim_best_collected(
+                    sorted(wl_claims, key=by_value, reverse=True)
+                    + sorted(char_claims, key=by_value, reverse=True))
             elif client.key_mode and not client.rt_available:
                 valid_chars = [x for x in char_claims if x[2] >= client.min_kakera]
-                if wl_claims:
-                    wl_claims.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    for m_c, n, v, _ in wl_claims:
-                        if await claim_collected_candidate(m_c, v):
-                            msg_claimed_id = m_c.id
-                            attempted.add(n)
-                            break
-                        if not client.claim_right_available:
-                            break
-                if msg_claimed_id == -1 and client.claim_right_available and valid_chars:
-                    valid_chars.sort(key=lambda x: (x[2], x[0].id), reverse=True)
-                    for m_c, n, v, _ in valid_chars:
-                        if await claim_collected_candidate(m_c, v):
-                            msg_claimed_id = m_c.id
-                            attempted.add(n)
-                            break
-                        if not client.claim_right_available:
-                            break
+                msg_claimed_id = await claim_best_collected(
+                    sorted(wl_claims, key=by_value, reverse=True)
+                    + sorted(valid_chars, key=by_value, reverse=True))
 
         if rt_command_in_flight('manual') and not client.claim_right_available:
             deferred_candidates = sorted(wl_claims + char_claims, key=lambda item: (item[2], item[0].id), reverse=True)
@@ -8400,6 +8436,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     client._runtime_claim_character = claim_character
     client._runtime_record_claim_text_evidence = record_claim_text_evidence
     client._runtime_prepare_pending_claim = prepare_pending_claim
+    client._runtime_remember_claim_fallbacks = remember_claim_fallbacks
+    client._runtime_schedule_claim_fallback = schedule_claim_fallback
 
     # Stop may be requested while this client is being configured but before
     # discord.py owns a running loop. Check again immediately before the
