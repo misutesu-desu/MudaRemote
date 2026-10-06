@@ -6,11 +6,11 @@ on:
       tag:
         description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "v5.0.0"
+        default: "v5.0.1"
       title:
         description: "Release title"
         required: false
-        default: "MudaRemote v5.0.0"
+        default: "MudaRemote v5.0.1"
 
 permissions:
   contents: write
@@ -92,7 +92,7 @@ jobs:
           }
 
       - name: Write release notes
-        run: cp packaging/release-notes-v5.0.0.md release_notes.md
+        run: cp packaging/release-notes-v5.0.1.md release_notes.md
 
       - uses: actions/upload-artifact@v4
         with:
@@ -110,7 +110,7 @@ jobs:
             gh release edit "$TAG" --title "$TITLE" --notes-file release_notes.md
             echo "Updated asset on existing release $TAG"
           else
-            if [ "$TAG" = "v5.0.0" ]; then
+            if [ "$TAG" = "v5.0.1" ]; then
               echo "::error::Publish the Windows stable release before attaching its Android APK."
               exit 1
             fi
@@ -133,7 +133,7 @@ jobs:
           import os
           from pathlib import Path
           release = json.loads(Path("published-release.json").read_text())
-          assert release["isPrerelease"] is (os.environ["TAG"] != "v5.0.0")
+          assert release["isPrerelease"] is (os.environ["TAG"] != "v5.0.1")
           assert release["body"].strip() == Path("release_notes.md").read_text().strip()
           assets = [a for a in release["assets"] if a["name"] == "Mudaremote.apk"]
           assert len(assets) == 1 and assets[0]["size"] == Path("Mudaremote.apk").stat().st_size
