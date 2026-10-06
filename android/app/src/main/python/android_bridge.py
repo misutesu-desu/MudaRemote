@@ -14,6 +14,10 @@ import threading
 import time
 
 _lock = threading.RLock()
+# One update at a time; it never blocks Start/Stop, which only need _lock.
+_update_lock = threading.Lock()
+# A whole update must finish in this time, so a stalled link fails instead of hanging.
+UPDATE_DOWNLOAD_BUDGET_SECONDS = 180.0
 _threads = []
 _profile_threads = {}
 _active_profiles = {}
@@ -546,114 +550,132 @@ def install_specific_version(files_dir, version_or_tag):
         }, ensure_ascii=False)
     with _lock:
         _configure_storage(files_dir)
-        try:
-            from mudae_core.versioning import fetch_manifest_for_version
-            manifest = fetch_manifest_for_version(version_or_tag=tag)
-        except Exception as e:
-            return json.dumps({"status": "error", "error": f"Failed to fetch manifest for {tag}: {e}"}, ensure_ascii=False)
-        return check_and_apply_update(files_dir, force=True, manifest_override=manifest)
+    try:
+        from mudae_core.versioning import fetch_manifest_for_version
+        manifest = fetch_manifest_for_version(version_or_tag=tag)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": f"Failed to fetch manifest for {tag}: {e}"}, ensure_ascii=False)
+    return check_and_apply_update(files_dir, force=True, manifest_override=manifest)
 
 
 def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=None, manifest_override=None):
-    """Check remote version and download/compile updated Python modules into android app storage."""
+    """Check remote version and download/compile updated Python modules into android app storage.
+
+    Network work and staging run without the runtime lock, so Start and Stop
+    stay responsive on a slow connection; only activating the new generation
+    takes the lock.
+    """
     files_dir = str(files_dir)
+    if not _update_lock.acquire(blocking=False):
+        return json.dumps({"status": "error", "error": "An update is already running."}, ensure_ascii=False)
+    try:
+        return _check_and_apply_update_unlocked(files_dir, force, timeout_seconds, channel, manifest_override)
+    finally:
+        _update_lock.release()
+
+
+def _check_and_apply_update_unlocked(files_dir, force, timeout_seconds, channel, manifest_override):
     with _lock:
         _configure_storage(files_dir)
         current_version = get_installed_version(files_dir)
         channel = channel or get_update_channel(files_dir)
 
+    try:
+        from mudae_core.updater import discover_update_manifest, REQUIRED_SOURCE_PATHS, _replace_transactionally
+        from mudae_core.versioning import is_newer_version
+    except Exception:
+        from mudae_core.updater import REQUIRED_SOURCE_PATHS, _replace_transactionally
+        def is_newer_version(latest, current):
+            return str(latest).strip() != str(current).strip()
+
+    try:
+        if manifest_override and isinstance(manifest_override, dict):
+            manifest = manifest_override
+            _log("Applying targeted version manifest (v{})...".format(manifest.get("version")), "UPDATER", "INFO")
+        else:
+            _log("Checking for Python runtime updates (installed: v{}, channel: {})...".format(current_version, channel), "UPDATER", "INFO")
+            manifest = _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel)
+        if not isinstance(manifest, dict):
+            return json.dumps({"status": "error", "error": "Invalid update manifest.", "version": current_version}, ensure_ascii=False)
+        latest_version = str(manifest.get("version") or "").strip()
+        if not latest_version:
+            return json.dumps({"status": "error", "error": "Invalid update manifest.", "version": current_version}, ensure_ascii=False)
+
+        # Parse APK update notice early so it is present in all success responses
+        apk_version = manifest.get("apk_version")
+        apk_url = manifest.get("apk_url") or manifest.get("apk_download_url")
+        apk_update = None
+        if apk_version and apk_url and _apk_download_available(str(apk_url)):
+            apk_update = {
+                "version": str(apk_version),
+                "url": str(apk_url),
+                "version_code": manifest.get("apk_version_code"),
+            }
+
+        if not force and not is_newer_version(latest_version, current_version):
+            _log("Python runtime is up to date (v{}).".format(current_version), "UPDATER", "INFO")
+            return json.dumps({
+                "status": "current",
+                "version": current_version,
+                "apk_update": apk_update,
+            }, ensure_ascii=False)
+        source_files = manifest.get("source_files")
+        if not isinstance(source_files, list) or not source_files:
+            return json.dumps({"status": "error", "error": "No source files listed in update manifest.", "version": current_version}, ensure_ascii=False)
+
+        _log("Downloading Python update v{} ({} files)...".format(latest_version, len(source_files)), "UPDATER", "INFO")
+        os.makedirs(files_dir, exist_ok=True)
+        stage_dir = tempfile.mkdtemp(prefix="android-update-", dir=files_dir)
         try:
-            from mudae_core.updater import discover_update_manifest, REQUIRED_SOURCE_PATHS, _replace_transactionally
-            from mudae_core.versioning import is_newer_version
-        except Exception:
-            from mudae_core.updater import REQUIRED_SOURCE_PATHS, _replace_transactionally
-            def is_newer_version(latest, current):
-                return str(latest).strip() != str(current).strip()
-            def discover_update_manifest(session, current_version=None, channel=None, timeout=None, frozen=False):
-                return {"status": "available", "manifest": _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel), "version": "unknown"}
+            staged_paths = []
+            seen_paths = set()
+            deadline = time.monotonic() + UPDATE_DOWNLOAD_BUDGET_SECONDS
+            for number, entry in enumerate(source_files, 1):
+                if not isinstance(entry, dict):
+                    raise RuntimeError("Invalid entry in source_files manifest.")
+                rel_path = os.path.normpath(str(entry.get("path", "")).replace("/", os.sep))
+                if os.path.isabs(rel_path) or rel_path.startswith(".." + os.sep) or rel_path.casefold() == "presets.json":
+                    raise RuntimeError("Unsafe or protected path in manifest: {!r}".format(rel_path))
+                url = entry.get("url")
+                expected_sha = str(entry.get("sha256") or "").lower()
+                if not url or not expected_sha:
+                    raise RuntimeError("Missing url or sha256 for {!r}".format(rel_path))
+                if rel_path in seen_paths:
+                    raise RuntimeError("Duplicate path in manifest: {!r}".format(rel_path))
+                seen_paths.add(rel_path)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("The download is too slow ({} of {} files after {:.0f}s). Try again on a better connection.".format(
+                        number - 1, len(source_files), UPDATE_DOWNLOAD_BUDGET_SECONDS))
+                content = _download_file(url, timeout_seconds=min(20.0, remaining))
+                actual_sha = hashlib.sha256(content).hexdigest().lower()
+                if actual_sha != expected_sha:
+                    raise RuntimeError("Checksum mismatch for {}: expected {}, got {}".format(rel_path, expected_sha[:8], actual_sha[:8]))
+                target = os.path.join(stage_dir, rel_path)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as handle:
+                    handle.write(content)
+                staged_paths.append(rel_path)
 
-        try:
-            if manifest_override and isinstance(manifest_override, dict):
-                manifest = manifest_override
-                _log("Applying targeted version manifest (v{})...".format(manifest.get("version")), "UPDATER", "INFO")
-            else:
-                _log("Checking for Python runtime updates (installed: v{}, channel: {})...".format(current_version, channel), "UPDATER", "INFO")
-                manifest = _download_manifest(timeout_seconds=float(timeout_seconds), channel=channel)
-            if not isinstance(manifest, dict):
-                return json.dumps({"status": "error", "error": "Invalid update manifest.", "version": current_version}, ensure_ascii=False)
-            latest_version = str(manifest.get("version") or "").strip()
-            if not latest_version:
-                return json.dumps({"status": "error", "error": "Invalid update manifest.", "version": current_version}, ensure_ascii=False)
+            if not REQUIRED_SOURCE_PATHS.issubset({p.replace("\\", "/") for p in staged_paths}):
+                raise RuntimeError("The update manifest is incomplete (missing required source files).")
 
-            # Parse APK update notice early so it is present in all success responses
-            apk_version = manifest.get("apk_version")
-            apk_url = manifest.get("apk_url") or manifest.get("apk_download_url")
-            apk_update = None
-            if apk_version and apk_url and _apk_download_available(str(apk_url)):
-                apk_update = {
-                    "version": str(apk_version),
-                    "url": str(apk_url),
-                    "version_code": manifest.get("apk_version_code"),
-                }
+            for rel_path in staged_paths:
+                if rel_path.endswith(".py"):
+                    py_compile.compile(os.path.join(stage_dir, rel_path), doraise=True)
 
-            if not force and not is_newer_version(latest_version, current_version):
-                _log("Python runtime is up to date (v{}).".format(current_version), "UPDATER", "INFO")
-                return json.dumps({
-                    "status": "current",
-                    "version": current_version,
-                    "apk_update": apk_update,
-                }, ensure_ascii=False)
-            source_files = manifest.get("source_files")
-            if not isinstance(source_files, list) or not source_files:
-                return json.dumps({"status": "error", "error": "No source files listed in update manifest.", "version": current_version}, ensure_ascii=False)
+            version_json_path = os.path.join(stage_dir, "version.json")
+            with open(version_json_path, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            staged_paths.append("version.json")
 
-            _log("Downloading Python update v{} ({} files)...".format(latest_version, len(source_files)), "UPDATER", "INFO")
-            os.makedirs(files_dir, exist_ok=True)
-            stage_dir = tempfile.mkdtemp(prefix="android-update-", dir=files_dir)
-            try:
-                staged_paths = []
-                seen_paths = set()
-                for entry in source_files:
-                    if not isinstance(entry, dict):
-                        raise RuntimeError("Invalid entry in source_files manifest.")
-                    rel_path = os.path.normpath(str(entry.get("path", "")).replace("/", os.sep))
-                    if os.path.isabs(rel_path) or rel_path.startswith(".." + os.sep) or rel_path.casefold() == "presets.json":
-                        raise RuntimeError("Unsafe or protected path in manifest: {!r}".format(rel_path))
-                    url = entry.get("url")
-                    expected_sha = str(entry.get("sha256") or "").lower()
-                    if not url or not expected_sha:
-                        raise RuntimeError("Missing url or sha256 for {!r}".format(rel_path))
-                    if rel_path in seen_paths:
-                        raise RuntimeError("Duplicate path in manifest: {!r}".format(rel_path))
-                    seen_paths.add(rel_path)
-                    content = _download_file(url, timeout_seconds=20.0)
-                    actual_sha = hashlib.sha256(content).hexdigest().lower()
-                    if actual_sha != expected_sha:
-                        raise RuntimeError("Checksum mismatch for {}: expected {}, got {}".format(rel_path, expected_sha[:8], actual_sha[:8]))
-                    target = os.path.join(stage_dir, rel_path)
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                    with open(target, "wb") as handle:
-                        handle.write(content)
-                    staged_paths.append(rel_path)
+            version_marker_path = os.path.join(stage_dir, ".version")
+            with open(version_marker_path, "w", encoding="utf-8") as handle:
+                handle.write(latest_version)
+            staged_paths.append(".version")
 
-                if not REQUIRED_SOURCE_PATHS.issubset({p.replace("\\", "/") for p in staged_paths}):
-                    raise RuntimeError("The update manifest is incomplete (missing required source files).")
-
-                for rel_path in staged_paths:
-                    if rel_path.endswith(".py"):
-                        py_compile.compile(os.path.join(stage_dir, rel_path), doraise=True)
-
-                version_json_path = os.path.join(stage_dir, "version.json")
-                with open(version_json_path, "w", encoding="utf-8") as handle:
-                    json.dump(manifest, handle, ensure_ascii=False, indent=2)
-                    handle.write("\n")
-                staged_paths.append("version.json")
-
-                version_marker_path = os.path.join(stage_dir, ".version")
-                with open(version_marker_path, "w", encoding="utf-8") as handle:
-                    handle.write(latest_version)
-                staged_paths.append(".version")
-
+            with _lock:
                 # Create immutable generation directory
                 gen_id = f"gen-{int(time.time())}-{os.urandom(4).hex()}"
                 gens_dir = _get_generations_dir(files_dir)
@@ -679,24 +701,24 @@ def check_and_apply_update(files_dir, force=False, timeout_seconds=8.0, channel=
                     _log("Python update v{} downloaded and staged. Restart the runtime to apply it.".format(latest_version), "UPDATER", "INFO")
                     status = "staged"
 
-                changelog_text = _format_changelog(manifest)
-                return json.dumps({
-                    "status": status,
-                    "version": latest_version,
-                    "previous": current_version,
-                    "changelog": changelog_text,
-                    "apk_update": apk_update,
-                }, ensure_ascii=False)
-            finally:
-                shutil.rmtree(stage_dir, ignore_errors=True)
-
-        except Exception as exc:
-            _log("Python update check failed: {}".format(exc), "UPDATER", "WARN")
+            changelog_text = _format_changelog(manifest)
             return json.dumps({
-                "status": "error",
-                "error": str(exc),
-                "version": current_version,
+                "status": status,
+                "version": latest_version,
+                "previous": current_version,
+                "changelog": changelog_text,
+                "apk_update": apk_update,
             }, ensure_ascii=False)
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+
+    except Exception as exc:
+        _log("Python update check failed: {}".format(exc), "UPDATER", "WARN")
+        return json.dumps({
+            "status": "error",
+            "error": str(exc),
+            "version": current_version,
+        }, ensure_ascii=False)
 
 def reset_to_bundled_code(files_dir):
     """Delete downloaded update cache and restore the bundled APK Python modules."""

@@ -131,6 +131,62 @@ class AndroidUpdaterTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("Checksum mismatch", result["error"])
 
+    def _required_manifest(self):
+        files = {path: "# {}\n".format(path).encode("utf-8") for path in sorted(REQUIRED_SOURCE_PATHS)}
+        manifest = {
+            "version": "9.9.9",
+            "source_files": [
+                {"path": path, "url": "https://example.com/" + path,
+                 "sha256": hashlib.sha256(files[path]).hexdigest()}
+                for path in sorted(REQUIRED_SOURCE_PATHS)
+            ],
+        }
+        return manifest, files
+
+    def test_slow_download_does_not_block_start(self):
+        # A user pressed Fetch Updates on a slow link, then Start: every Start
+        # waited behind the download because both needed the runtime lock.
+        manifest, files = self._required_manifest()
+        downloading = threading.Event()
+        release = threading.Event()
+
+        def slow_download(url, timeout_seconds=15.0):
+            downloading.set()
+            release.wait(5)
+            return files[url.replace("https://example.com/", "")]
+
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._download_file", side_effect=slow_download):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                update = pool.submit(android_bridge.check_and_apply_update, self.temp_dir, True)
+                self.assertTrue(downloading.wait(5))
+                got_lock = android_bridge._lock.acquire(timeout=1)
+                if got_lock:
+                    android_bridge._lock.release()
+                busy = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
+                release.set()
+                result = json.loads(update.result(10))
+
+        self.assertTrue(got_lock, "the runtime lock was held during the download")
+        self.assertEqual(busy["status"], "error")
+        self.assertIn("already running", busy["error"])
+        self.assertEqual(result["status"], "updated")
+
+    def test_download_over_budget_fails_instead_of_hanging(self):
+        manifest, files = self._required_manifest()
+        download = mock.Mock(side_effect=lambda url, timeout_seconds=15.0: files[url.replace("https://example.com/", "")])
+
+        with mock.patch("android_bridge._download_manifest", return_value=manifest), \
+             mock.patch("android_bridge._download_file", download), \
+             mock.patch.object(android_bridge, "UPDATE_DOWNLOAD_BUDGET_SECONDS", 0.0):
+            result = json.loads(android_bridge.check_and_apply_update(self.temp_dir, force=True))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("too slow", result["error"])
+        download.assert_not_called()
+        self.assertTrue(android_bridge._update_lock.acquire(blocking=False))
+        android_bridge._update_lock.release()
+
     def test_reset_to_bundled_code_removes_updates(self):
         code_dir = os.path.join(self.temp_dir, "python_code")
         os.makedirs(code_dir, exist_ok=True)
