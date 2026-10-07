@@ -75,6 +75,32 @@ class ServerResetCoordinator:
             return self._snapshots.get(server_id)
 
 
+SNAP_RESET_MINUTE_SECONDS = 5 * 60
+
+
+def snap_to_reset_minute(boundary_utc, minute, now_utc=None, max_offset_seconds=SNAP_RESET_MINUTE_SECONDS):
+    """Move a minute-rounded ``$tu`` deadline onto the server's configured reset minute.
+
+    Only a nearby, still-future boundary is moved; anything else is returned as is.
+    """
+    if boundary_utc is None or minute is None:
+        return boundary_utc
+    try:
+        minute = int(minute)
+    except (TypeError, ValueError):
+        return boundary_utc
+    if not 0 <= minute <= 59:
+        return boundary_utc
+    base = boundary_utc.replace(minute=minute, second=0, microsecond=0)
+    hour = datetime.timedelta(hours=1)
+    snapped = min((base - hour, base, base + hour), key=lambda value: abs((value - boundary_utc).total_seconds()))
+    if abs((snapped - boundary_utc).total_seconds()) > max_offset_seconds:
+        return boundary_utc
+    if now_utc is not None and snapped <= now_utc:
+        return boundary_utc
+    return snapped
+
+
 @dataclass
 class ResetAnchor:
     """A locally-predictable periodic reset schedule.
@@ -93,6 +119,9 @@ class ResetAnchor:
     next_boundary_index: int = 0
     confidence: bool = False
     authoritative_minute: Optional[int] = None
+    # The server's reset minute for an interval longer than an hour (claims):
+    # observations are pinned to it instead of the minute-rounded timer.
+    snap_minute: Optional[int] = None
 
     def __post_init__(self):
         if self.authoritative_minute is not None:
@@ -170,6 +199,7 @@ class ResetAnchor:
 
         if proposed_boundary_utc is None:
             return False, False
+        proposed_boundary_utc = snap_to_reset_minute(proposed_boundary_utc, self.snap_minute, observed_at_utc)
         if self.anchor_at_utc is None or self.next_boundary_at_utc is None:
             self.anchor_at_utc = proposed_boundary_utc
             self.next_boundary_at_utc = proposed_boundary_utc

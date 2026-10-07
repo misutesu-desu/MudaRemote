@@ -455,7 +455,9 @@ def configure_client(
     client.roll_reset_anchor = ResetAnchor(
         "roll", client.roll_interval, authoritative_minute=client.server_reset_minute
     )
-    client.claim_reset_anchor = ResetAnchor("claim", client.claim_interval)
+    client.claim_reset_anchor = ResetAnchor(
+        "claim", client.claim_interval, snap_minute=client.server_reset_minute
+    )
     if client.server_reset_minute is not None:
         init_anchor_now = datetime.datetime.now(timezone.utc)
         client.roll_reset_anchor.advance_through(init_anchor_now)
