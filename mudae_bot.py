@@ -221,7 +221,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -258,7 +258,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -5053,15 +5053,21 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 return
 
             is_timing_window = bool(client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60)
-            is_panic_window = is_lurking = False
-            if client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
-                if claim_reset_minutes <= client.panic_roll_minutes:
-                    is_panic_window = True
-                    client.current_min_kakera_for_roll_claim = 0
-                    BotLogger.log(f"Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
-                else:
-                    is_lurking = True
-                    BotLogger.log(f"Lurking Mode: Waiting. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
+            is_panic_window, is_lurking = lurker_window_state(
+                lurker_mode=client.lurker_mode,
+                final_round_only=getattr(client, "lurker_final_round_only", False),
+                claim_available=client.claim_right_available,
+                claim_reset_minutes=claim_reset_minutes,
+                panic_roll_minutes=client.panic_roll_minutes,
+                round_minutes=client.roll_interval,
+            )
+            if is_panic_window:
+                client.current_min_kakera_for_roll_claim = 0
+                BotLogger.log(f"Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
+            elif is_lurking:
+                BotLogger.log(f"Lurking Mode: Waiting. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
+            elif client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
+                BotLogger.log(f"Lurking Mode: Rolling normally until the last round ({claim_reset_minutes - client.roll_interval}m).", preset_name, "INFO")
 
             mk_match = re.search(REGEX_PATTERNS["MK_BONUS"], c_lower)
             client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0

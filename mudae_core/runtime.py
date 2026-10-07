@@ -71,6 +71,30 @@ def normal_roll_behavior_flags(
     return immediate, bool(immediate or pending_rolls or pending_us)
 
 
+def lurker_window_state(
+    *,
+    lurker_mode,
+    final_round_only,
+    claim_available,
+    claim_reset_minutes,
+    panic_roll_minutes,
+    round_minutes,
+):
+    """Return ``(is_panic_window, is_lurking)`` for the Lurker Strategy.
+
+    With ``final_round_only`` the bot rolls normally until the last roll
+    round before the claim reset, then holds its rolls for snipes and dumps
+    them ``panic_roll_minutes`` before the reset.
+    """
+    if not lurker_mode or not claim_available or claim_reset_minutes is None:
+        return False, False
+    if claim_reset_minutes <= panic_roll_minutes:
+        return True, False
+    if final_round_only and claim_reset_minutes > round_minutes:
+        return False, False
+    return False, True
+
+
 def estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls=False, fixed_overhead_seconds=5.0):
     """Conservative duration used to clamp a visible normal-roll start."""
     effective_speed = max(2.0, float(roll_speed or 0.0)) if use_slash_rolls else max(0.0, float(roll_speed or 0.0))

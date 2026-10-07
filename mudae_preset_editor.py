@@ -599,6 +599,7 @@ DEFAULTS = {
     "auto_rolls_only_claim_hour": False,
     "panic_roll_minutes": 5,
     "lurker_mode": False,
+    "lurker_final_round_only": False,
     "auto_rt_after_claim": False,
     "auto_dk_enabled": True,
     "dk_schedule_time": "",
@@ -696,6 +697,7 @@ BOOL_SETTINGS = [
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("auto_mk_full_power_only", "Use $mk Only at Full Power (Wait for power regeneration/reset checks)", False),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
+    ("lurker_final_round_only", "Lurk Only In The Last Round (Roll normally in earlier rounds)", False),
     ("auto_rt_after_claim", "Auto $rt After Claim (Also controls $rt for Kakera farm claims)", False),
     ("enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)", False),
     ("enable_kakera_snipe_chat_reactions", "Kakera Snipe Chat Message (Send after collecting Kakera from another roll)", False),
@@ -2593,7 +2595,10 @@ class PresetEditor:
                               description="Claim/Like rank limits let you claim highly-ranked characters even if they are worth less than your Minimum Kakera value.")
         self.add_number_field(claim_frame.content, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)
 
-        self.add_checkbox(claim_frame.content, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
+        lurker_var = self.add_checkbox(claim_frame.content, "lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)")
+        lurker_sub = self.create_subframe(claim_frame.content, lurker_var, "lurker_mode")
+        self.add_checkbox(lurker_sub, "lurker_final_round_only", "Lurk Only In The Last Round (Roll normally in earlier rounds)",
+                          description="Rolls as usual until the last roll round before your claim resets, then holds rolls for snipes and dumps them at Panic Roll Start. Pair with Dynamic Cooldown Rounds to keep early rounds picky.")
         self.add_number_field(claim_frame.content, "panic_roll_minutes", "Panic Roll When No Claim In Snipe Mode (Minutes before reset)", 5)
         self.add_checkbox(claim_frame.content, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
         self.add_checkbox(
@@ -3491,7 +3496,7 @@ class PresetEditor:
                     "rt_only_self_rolls", "rt_in_command_channel", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
-                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
+                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled",
@@ -3800,7 +3805,7 @@ class PresetEditor:
                     "rt_only_self_rolls", "rt_in_command_channel", "auto_us_enabled", "auto_us_stop_on_claim",
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
-                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode",
+                    "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled",
