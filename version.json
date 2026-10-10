@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.0**\n\n### ✨ New Features\n- **Lurk Only In The Last Round:** A new option under Lurker Strategy. The bot rolls normally in the earlier rounds and only holds its rolls for snipes in the last roll round before your claim resets, then uses them at Panic Roll Start.\n\n### 🐛 Bug Fixes\n- **Panic Claim Stays in the Right Window:** With Server Reset Minute set, the bot could think your claim reset a minute later than it really does, so Panic Claim sometimes used the new window's claim. Claim resets now follow the minute you set.\n- **Android Start No Longer Hangs During Updates:** On a slow connection, pressing Start while an update was downloading could leave the profile waiting forever. Start now works right away and a stalled download stops with a message after 3 minutes.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.0/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.0/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "339d4c26efa6c938fc5983ebdab28d977c78aaa1bb00b9294af29315358f87a4",
   "source_files": [
     {
       "path": "mudae_bot.py",
