@@ -1062,8 +1062,9 @@ def get_character_owner(embed):
 CLAIM_FALLBACK_MAX_CANDIDATES = 3
 CLAIM_FALLBACK_WINDOW_SECONDS = 120.0
 
-# Mudae writes the wish line in the server's language ("Souhaité par" in French).
-WISH_LINE_MARKERS = ("wished by", "souhaité par")
+# Mudae writes the wish line in the server's language ("Souhaité par" in French,
+# "Deseado por" in Spanish).
+WISH_LINE_MARKERS = ("wished by", "souhaité par", "deseado por")
 
 def is_wished_by_self(message, client_user_id: int) -> bool:
     if not (message and message.content): return False

@@ -16,6 +16,13 @@ class WishLanguageTests(unittest.TestCase):
         # Mudae set to French writes "Souhaité par" instead of "Wished by".
         self.assertTrue(mudae_bot.is_wished_by_self(_wish_message("Souhaité par <@7001>", 7001), 7001))
 
+    def test_spanish_wish_is_detected(self):
+        # Mudae set to Spanish writes "Deseado por" instead of "Wished by".
+        self.assertTrue(mudae_bot.is_wished_by_self(_wish_message("Deseado por <@7001>", 7001), 7001))
+
+    def test_spanish_wish_for_someone_else_is_ignored(self):
+        self.assertFalse(mudae_bot.is_wished_by_self(_wish_message("Deseado por <@8002>", 8002), 7001))
+
     def test_wish_for_someone_else_is_ignored(self):
         self.assertFalse(mudae_bot.is_wished_by_self(_wish_message("Souhaité par <@8002>", 8002), 7001))
 
