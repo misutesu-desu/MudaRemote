@@ -286,6 +286,57 @@ if os.name == 'nt':
     import msvcrt
 from discord.utils import time_snowflake
 
+# discord.py-self asks a third-party API for the client properties at login.
+# When that API is down it scrapes discord.com itself, and that scraper no
+# longer matches Discord's pages: login then dies with IndexError. Read the
+# build number from the small sentry asset instead and never fail the login
+# over it.
+DISCORD_FALLBACK_BUILD_NUMBER = 634304
+DISCORD_FALLBACK_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
+
+
+async def _discord_build_number(session):
+    try:
+        login_page = await (await session.get("https://discord.com/login", timeout=7)).text()
+        for asset in re.findall(r"assets/+(sentry\.[0-9a-f]+\.js)", login_page):
+            asset_text = await (await session.get("https://discord.com/assets/" + asset, timeout=7)).text()
+            match = re.search(r"buildNumber\D{1,5}(\d{5,7})", asset_text)
+            if match:
+                return int(match.group(1))
+    except Exception:
+        pass
+    logging.getLogger("discord.utils").warning(
+        "Could not fetch client build number. Using %s.", DISCORD_FALLBACK_BUILD_NUMBER
+    )
+    return DISCORD_FALLBACK_BUILD_NUMBER
+
+
+def _install_discord_login_fallbacks():
+    utils = discord.utils
+    original_user_agent = getattr(utils, "_get_user_agent", None)
+    if hasattr(utils, "_get_build_number"):
+        utils._get_build_number = _discord_build_number
+    if original_user_agent is None or getattr(original_user_agent, "_mudaremote_safe", False):
+        return
+
+    async def _discord_user_agent(session):
+        try:
+            user_agent = await original_user_agent(session)
+            if isinstance(user_agent, str) and "Chrome/" in user_agent:
+                return user_agent
+        except Exception:
+            pass
+        return DISCORD_FALLBACK_USER_AGENT
+
+    _discord_user_agent._mudaremote_safe = True
+    utils._get_user_agent = _discord_user_agent
+
+
+_install_discord_login_fallbacks()
+
 try:
     from discord.http import Route
 except ImportError:
