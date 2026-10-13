@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.1**\n\n### 🐛 Bug Fixes\n- **No More Login Crash With `list index out of range`:** When the Discord info service the bot uses at login was down, the bot could crash on start and keep crashing on every restart. It now logs in normally even when that service is down.\n- **Spanish Wishes Are Recognized:** On servers where Mudae is set to Spanish, characters showing \"Deseado por\" with your name were not treated as your wish. The bot now sees them as your own wishes.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.1/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.1/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "67513e47e925f1922a9f66a1027acb1a017baa4d529497464b2a010508c8729c",
   "source_files": [
     {
       "path": "mudae_bot.py",
