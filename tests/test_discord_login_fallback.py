@@ -36,6 +36,12 @@ LOGIN_PAGE = (
 )
 
 
+# discord.py-self 2.1+ no longer scrapes discord.com at login, so there is
+# nothing to patch there; the crash only exists in the 2.0.x scraper.
+@unittest.skipUnless(
+    hasattr(discord.utils, "_get_build_number") and hasattr(discord.utils, "_get_user_agent"),
+    "this discord.py-self version has no login scraper",
+)
 class DiscordLoginFallbackTests(unittest.TestCase):
     def test_build_number_is_read_from_the_sentry_asset(self):
         session = _Session({
