@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.2**\n\n**Fixed**\n- Lurker Strategy now waits for your Panic Roll minutes. Before, the bot started rolling early when $rt was available or Smart Timing, Auto $us or Auto $rolls was on.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.2/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.2/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "9c45503e2cb935207c76653ff70fb64ae207b4bbf3bbd923beff057f79086ce5",
   "source_files": [
     {
       "path": "mudae_bot.py",
