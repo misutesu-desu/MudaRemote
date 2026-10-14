@@ -60,6 +60,10 @@ def normal_roll_behavior_flags(
     """Return behavior-gated immediate/evaluation decisions for normal rolls."""
     if not rolling_enabled or not proceed_to_rolls:
         return False, False
+    if is_lurking and not scheduled_roll_due:
+        # The Lurker Strategy holds every roll until the panic window the
+        # user set; $rt, Smart Timing, Auto $us and Auto $rolls wait for it.
+        return False, False
     immediate = bool(
         scheduled_roll_due
         or (can_claim and not is_lurking)

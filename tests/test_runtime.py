@@ -1597,6 +1597,34 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertFalse(should_evaluate)
         self.assertEqual(client.normal_roll_action_owner.state, "idle")
 
+    def test_lurking_holds_rolls_until_the_panic_window(self):
+        # $rt, Smart Timing, Auto $us and Auto $rolls used to start the
+        # rolls an hour or more before the panic minutes the user set.
+        for override in (
+            {"rt_available": True},
+            {"key_mode": True},
+            {"is_timing_window": True},
+            {"pending_rolls": True},
+            {"pending_us": True},
+        ):
+            kwargs = dict(
+                rolling_enabled=True,
+                proceed_to_rolls=True,
+                scheduled_roll_due=False,
+                can_claim=True,
+                is_lurking=True,
+                key_mode=False,
+                rt_available=False,
+                is_timing_window=False,
+                is_panic_window=False,
+            )
+            kwargs.update(override)
+            with self.subTest(**override):
+                self.assertEqual(normal_roll_behavior_flags(**kwargs), (False, False))
+
+        kwargs.update(is_lurking=False, is_panic_window=True)
+        self.assertEqual(normal_roll_behavior_flags(**kwargs), (True, True))
+
     def test_proceed_to_rolls_false_updates_state_without_owner(self):
         client = self._authoritative_reconciliation_client()
         reconcile_authoritative_current_roll_count(

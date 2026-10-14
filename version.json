@@ -43,7 +43,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.1/mudae_core/runtime.py",
-      "sha256": "2b39ce2bf00c5109627f0f60528e85039cebfd7991b326d6a95370e8f00bd15d"
+      "sha256": "bff0bd7f57f146009a42474045e4732c9a924c6e0e8f6c79239fb5d3f343ebf8"
     },
     {
       "path": "mudae_core/secrets.py",
