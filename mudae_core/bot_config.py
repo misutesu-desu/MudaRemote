@@ -174,6 +174,8 @@ def configure_client(
     client.dk_power_management = preset_data.get("dk_power_management", False)
     client.dk_schedule_time = preset_data.get("dk_schedule_time", "")
     client._last_scheduled_dk_window = None
+    client._dk_schedule_wake_handle = None
+    client._dk_schedule_wake_at = None
     client.dk_stock_count = 0
     client.max_dk_power = preset_data.get("max_dk_power", 100)
     client.auto_dk_min_power = max(

@@ -159,6 +159,22 @@ class PreRollStatusTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('$dk', channel.sent)
         self.assertEqual(bot.dk_stock_count, 1)
         self.assertIsNone(bot._last_scheduled_dk_window)
+        # The configured minute must wake a status check by itself; waiting
+        # for the next ordinary $tu sent $dk hours after the schedule.
+        handle = bot._dk_schedule_wake_handle
+        self.assertIsNotNone(handle)
+        self.assertEqual(bot._dk_schedule_wake_at, local_now.replace(hour=21, minute=0))
+        clear_status_dirty(bot)
+        handle.fire()
+        self.assertIn('dk', mudae_bot.status_dirty_fields(bot))
+
+    def test_next_dk_schedule_rolls_over_to_tomorrow(self):
+        local_zone = datetime.timezone(datetime.timedelta(hours=3))
+        before = datetime.datetime(2026, 10, 14, 20, 58, 30, tzinfo=local_zone)
+        self.assertEqual(mudae_bot.next_dk_schedule_at("21:00", before), before.replace(hour=21, minute=0, second=0))
+        at = before.replace(hour=21, minute=0, second=0)
+        self.assertEqual(mudae_bot.next_dk_schedule_at("21:00", at), at + datetime.timedelta(days=1))
+        self.assertIsNone(mudae_bot.next_dk_schedule_at("", before))
 
     async def test_forced_status_runs_daily_commands_even_with_executing_owner(self):
         for owner_state in ('pending', 'executing'):

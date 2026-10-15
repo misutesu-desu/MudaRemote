@@ -41,6 +41,17 @@ def scheduled_dk_window_if_due(schedule, local_now, last_window=None):
     return None if window == last_window else window
 
 
+def next_dk_schedule_at(schedule, local_now):
+    """Return the next local datetime at which the daily DK schedule is due."""
+    normalized = parse_dk_schedule_time(schedule)
+    if normalized is None:
+        return None
+    due = local_now.replace(hour=int(normalized[:2]), minute=int(normalized[3:]), second=0, microsecond=0)
+    if due <= local_now:
+        due += datetime.timedelta(days=1)
+    return due
+
+
 def _recover_interrupted_source_update(base_path):
     """Pure-stdlib crash recovery executed before any core packages are imported."""
     journal_path = os.path.join(base_path, "update_journal.json")
@@ -1336,6 +1347,26 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             request_status_refresh,
             {"points"},
             "p-reset",
+        )
+
+    def schedule_dk_schedule_refresh(schedule, local_now):
+        # Without this wake the schedule is only checked on the next ordinary
+        # $tu, which can be an hour or more after the configured minute.
+        due = next_dk_schedule_at(schedule, local_now)
+        if due is None:
+            return
+        existing = getattr(client, "_dk_schedule_wake_handle", None)
+        if existing is not None and not existing.cancelled():
+            if getattr(client, "_dk_schedule_wake_at", None) == due:
+                return
+            existing.cancel()
+        client._dk_schedule_wake_at = due
+        client._dk_schedule_wake_handle = client.loop.call_later(
+            max(5.0, (due - local_now).total_seconds() + 2.0),
+            request_status_refresh,
+            {"dk"},
+            "dk-schedule",
+            True,
         )
 
     def set_claim_cooldown(minutes, source="Mudae", wake=False):
@@ -4799,6 +4830,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                     getattr(client, "_last_scheduled_dk_window", None),
                                 )
                                 eligible = scheduled_window is not None
+                                schedule_dk_schedule_refresh(schedule, local_now)
                         if eligible:
                             BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
                             if not await guarded_send(cmd_channel, f"{client.mudae_prefix}dk"):
