@@ -509,6 +509,17 @@ class AndroidRuntimeLifecycleTests(unittest.TestCase):
             android_bridge.stop(0.5)
         except Exception:
             pass
+        # A supervisor that outlives the test clears the session later and flips
+        # android_bridge._running under whichever test runs next.
+        for worker in list(self.runtime.workers):
+            worker.join(5.0)
+        for thread in threading.enumerate():
+            if thread.name == "MudaRemote-Supervisor":
+                thread.join(5.0)
+        self.assertFalse(
+            [thread for thread in threading.enumerate() if thread.name == "MudaRemote-Supervisor"],
+            "runtime supervisor outlived the test",
+        )
         mudae_bot.reset_mobile_runtime()
         android_bridge._close_log_handle()
         os.chdir(self.original_cwd)
