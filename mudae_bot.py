@@ -4110,6 +4110,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.claim_right_available = True
                 client.claim_cooldown_until_utc = None
                 client.last_successfully_claimed_character = None
+                # A panic-window bypass belonged to the cycle that just ended.
+                client.current_min_kakera_for_roll_claim = client.min_kakera
                 clear_status_dirty(client, {"claim"})
                 BotLogger.log("Reset prediction: claim cycle advanced locally.", preset_name, "DEBUG", client)
         roll_anchor = getattr(client, "roll_reset_anchor", None)
