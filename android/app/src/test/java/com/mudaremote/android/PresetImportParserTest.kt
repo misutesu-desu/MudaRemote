@@ -39,7 +39,7 @@ class PresetImportParserTest {
         val restored = PresetImportParser.parse(saved, schemaFields, "unused")
         assertEquals("all", restored.getValue("Legacy").optString("kakera_filter_match_mode", "all"))
         assertEquals("any", restored.getValue("Any").getString("kakera_filter_match_mode"))
-        for (key in listOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis")) {
+        for (key in listOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis")) {
             assertFalse(restored.getValue("Legacy").has(key))
         }
         val flat = PresetImportParser.parse("""{"kakera_filter_match_mode":"all"}""", schemaFields, "All")

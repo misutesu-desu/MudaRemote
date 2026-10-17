@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
     private val profiles = linkedMapOf<String, JSONObject>()
     private val tokens = linkedMapOf<String, String>()
     private val fieldViews = linkedMapOf<String, View>()
-    private val inheritedKakeraFields = setOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis")
+    private val inheritedKakeraFields = setOf("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis")
     private var inheritedKakeraAtRender = "[]"
     private val sectionContainers = linkedMapOf<String, LinearLayout>()
     private val sectionHeaders = linkedMapOf<String, TextView>()

@@ -106,6 +106,8 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(set(field['choices']), {'all', 'any'})
         self.assertIn('For Perk 8 OR Shop 7', field['description'])
         self.assertEqual(fields['only_chaos']['label'], 'Chaos Key Only')
+        self.assertEqual(fields['op5_kakera_emojis']['type'], 'json')
+        self.assertEqual(fields['op5_kakera_emojis']['section'], 'Spheres and Emoji')
         self.assertEqual(fields['perk_eight_only']['label'], 'Perk 8 Only')
         self.assertFalse(fields['perk_eight_only']['default'])
         for key in ('only_chaos', 'perk_eight_only', 'shop_perk_7_only', 'mk_only', 'op_perk_5_only', 'wish_starwish_kakera_only'):
