@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.4**\n\n### ✨ New Features\n- **Ouroperk 5 Emoji Selection:** New Custom Ouroperk 5 Emoji Override in the emoji settings. Pick which kakera the bot clicks on Ouroperk 5 characters. Leave it unchecked and nothing changes.\n\n### 🐛 Bug Fixes\n- **No More Random Claims After Panic Roll:** With Lurker Strategy, the \"claim anything\" panic mode before your claim reset could stay on into the next claim round, so the bot could grab a low value character, even one you rolled yourself. Your Min Kakera now comes back as soon as the claim resets.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.4/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.4/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "de4b37a660c6910d3a350de07e24b0e2c0880efff3363f66d107070d9142670b",
   "source_files": [
     {
       "path": "mudae_bot.py",
