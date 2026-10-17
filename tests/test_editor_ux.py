@@ -181,6 +181,9 @@ class EditorUxContractTests(unittest.TestCase):
             self.editor,
         )
         self.assertIn('"chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"', self.editor)
+        # Ouroperk 5 characters get their own optional selection too.
+        self.assertIn('("op5_kakera_emojis", DEFAULT_KAKERA_EMOJIS)', self.editor)
+        self.assertIn('"mk_kakera_emojis", "op5_kakera_emojis"]', self.editor)
 
     def test_oh_individual_use_mode_is_configurable(self):
         self.assertIn('"oh_use_individually": False', self.editor)

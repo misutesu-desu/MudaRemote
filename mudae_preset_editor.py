@@ -2792,6 +2792,8 @@ class PresetEditor:
                                      ", ".join(DEFAULT_SPHERE_PERK_EMOJIS))
         self.add_optional_list_field(emoji_frame.content, "mk_kakera_emojis", "$mk Kakera Emojis Override (unchecked inherits Kakera Emojis)",
                                      ", ".join(DEFAULT_KAKERA_EMOJIS))
+        self.add_optional_list_field(emoji_frame.content, "op5_kakera_emojis", "Custom Ouroperk 5 Emoji Override (unchecked follows the roll's normal emojis)",
+                                     ", ".join(DEFAULT_KAKERA_EMOJIS))
 
         # [NEW] Task 5: Randomized claim reaction emojis
         self.add_list_field(emoji_frame.content, "randomized_claim_reactions", "Claim Reaction Emojis (Randomized fallback emojis for claims without buttons)")
@@ -3307,6 +3309,7 @@ class PresetEditor:
             "chaos_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
             "sphere_perk_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
             "mk_kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
+            "op5_kakera_emojis": ["kakeraY", "kakeraO", "kakeraR", "kakeraW", "kakeraL", "kakeraP", "kakeraD", "kakeraC", "kakeraG", "kakeraT", "kakera"],
         }
         if key in option_sets:
             picker = EmojiOptionPicker(container, entry, option_sets[key])
@@ -3535,7 +3538,8 @@ class PresetEditor:
                               ("kakera_emojis", DEFAULT_KAKERA_EMOJIS),
                               ("chaos_emojis", DEFAULT_CHAOS_EMOJIS),
                               ("sphere_perk_emojis", DEFAULT_SPHERE_PERK_EMOJIS),
-                              ("mk_kakera_emojis", DEFAULT_KAKERA_EMOJIS)]:
+                              ("mk_kakera_emojis", DEFAULT_KAKERA_EMOJIS),
+                              ("op5_kakera_emojis", DEFAULT_KAKERA_EMOJIS)]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 var = self.widgets[enabled_key]
@@ -3558,7 +3562,7 @@ class PresetEditor:
                     # selection. Reflect that effective runtime value instead
                     # of displaying a misleading all-colours default.
                     effective_defaults = defaults
-                    if key in ("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"):
+                    if key in ("chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis"):
                         effective_defaults = data.get("kakera_emojis", DEFAULT_KAKERA_EMOJIS)
                     var.set(False)
                     entry.configure(state="normal")
@@ -3834,7 +3838,7 @@ class PresetEditor:
         # - Checkbox unchecked → key NOT in data (use defaults)
         # - Checkbox checked + empty → key = [] (disable)
         # - Checkbox checked + values → key = [values]
-        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis"]:
+        for key in ["claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis"]:
             enabled_key = f"{key}_enabled"
             if enabled_key in self.widgets and key in self.widgets:
                 if self.widgets[enabled_key].get():  # Checkbox is checked
