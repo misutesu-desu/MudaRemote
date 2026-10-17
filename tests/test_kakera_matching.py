@@ -236,6 +236,25 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         loaded, _ = _create_test_client(kakera_filter_match_mode='any')
         self.assertEqual(loaded.kakera_filter_match_mode, 'any')
 
+    async def test_ouroperk_five_override_picks_colors_for_op5_characters(self):
+        self.bot.kakera_emojis = ['kakeraC']
+        self.bot.sphere_perk_emojis = ['kakeraR']
+        self.bot.op5_kakera_emojis = ['kakeraY']
+        details = inspect.getclosurevars(inspect.getclosurevars(self.bot._runtime_claim_character).nonlocals['click_kakera_with_confirmation']).nonlocals['kakera_click_details']
+        for desc, context, selected in (
+            ('Series <:sp:123>', {}, 'kakeraY'),
+            ('Series <:sp:123>', {'is_snipe': True}, 'kakeraY'),
+            ('Series', {}, 'kakeraC'),
+            ('Series <:sp:123> 💎 / 2', {}, 'kakeraR'),
+        ):
+            for name in ('kakeraC', 'kakeraY', 'kakeraR'):
+                msg, btn = self.message(name=name, description=desc)
+                self.assertEqual(details(msg, btn, **context) is not None, name == selected, (desc, context, name))
+        inherited, _ = _create_test_client(kakera_emojis=['kakeraY'])
+        self.assertIsNone(inherited.op5_kakera_emojis)
+        configured, _ = _create_test_client(op5_kakera_emojis=['kakeraL'])
+        self.assertEqual(configured.op5_kakera_emojis, ['kakeraL'])
+
     async def test_mai_screenshot_filters_paid_colors_without_blocking_selected_spheres(self):
         self.bot.snipe_mode = False
         self.bot.key_mode = True

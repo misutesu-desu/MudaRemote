@@ -6971,7 +6971,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             has_perk_eight_discount=has_perk_eight_discount(marker_text),
         )
 
-    def get_active_kakera_emojis(*, is_mk_roll=False, is_external_roll=False, has_chaos_discount=False, has_perk_eight_discount=False):
+    def get_active_kakera_emojis(*, is_mk_roll=False, is_external_roll=False, has_chaos_discount=False, has_perk_eight_discount=False, has_op5=False):
         """Single decision path for which Kakera colour list a roll uses.
 
         Immediate clicks, deferred post-roll clicks and external Kakera
@@ -6987,6 +6987,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             has_perk_eight_discount=has_perk_eight_discount,
             is_mk_roll=is_mk_roll,
             is_external_roll=is_external_roll,
+            op5_emojis=getattr(client, "op5_kakera_emojis", None),
+            has_op5=has_op5,
         )
 
     def get_all_collectible_kakera_emojis():
@@ -6997,6 +6999,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             + list(client.sphere_emojis)
             + list(client.sphere_perk_emojis)
             + list(client.mk_kakera_emojis)
+            + list(getattr(client, "op5_kakera_emojis", None) or ())
         )
 
     def queue_collected_kakera_roll(message):
@@ -7025,6 +7028,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.chaos_emojis,
                 client.sphere_perk_emojis,
                 client.mk_kakera_emojis,
+                getattr(client, "op5_kakera_emojis", None),
             )
         )
 
@@ -7073,6 +7077,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             is_mk_roll=is_mk_roll, is_external_roll=is_snipe,
             has_chaos_discount=chaos_count > 0,
             has_perk_eight_discount=has_sp_perk,
+            has_op5=has_op_perk_five_marker(marker_text),
         )
         if not kakera_button_is_eligible(button, target_list, filter_reason, allow_special_purple):
             return None

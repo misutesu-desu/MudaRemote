@@ -302,6 +302,8 @@ def configure_client(
         if preset_data.get("mk_kakera_emojis") is not None
         else list(client.kakera_emojis)
     )
+    # No inheritance: None keeps OP5 rolls in their Chaos/$mk/regular context.
+    client.op5_kakera_emojis = preset_data.get("op5_kakera_emojis")
     client.sphere_emojis = sphere_emojis
 
     # Sphere games
@@ -668,7 +670,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds",
     "randomized_claim_reactions", "scheduled_roll_times",
     "kakera_priority_order", "claim_emojis", "kakera_emojis",
-    "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis",
+    "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis",
     "sphere_emojis", "sphere_click_targets", "immediate_kakera_click",
     "collect_purple_kakera", "auto_oh_enabled", "auto_oc_enabled",
     "auto_oq_enabled", "auto_ot_enabled",

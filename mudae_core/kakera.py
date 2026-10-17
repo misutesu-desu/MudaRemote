@@ -379,19 +379,25 @@ def get_kakera_emoji_targets(
     has_perk_eight_discount: bool = False,
     is_mk_roll: bool = False,
     is_external_roll: bool = False,
+    op5_emojis: object = None,
+    has_op5: bool = False,
 ):
     """Choose the one authoritative emoji list for a Kakera roll.
 
     Selection precedence, most specific first:
     1. The visible Perk 8 marker (authoritative even on another user's roll).
-    2. ``$mk`` rolls use the dedicated MK selection; when that override is
+    2. The visible Ouroperk 5 marker, only when that override is set; a
+       missing override leaves the roll in its other context.
+    3. ``$mk`` rolls use the dedicated MK selection; when that override is
        missing it inherits the regular selection instead of every colour.
-    3. The 10+ key/Chaos discount remains owner-only because an external roll
+    4. The 10+ key/Chaos discount remains owner-only because an external roll
        does not prove that the reacting account owns the character.
-    4. Regular rolls fall back to the preset's Kakera selection.
+    5. Regular rolls fall back to the preset's Kakera selection.
     """
     if has_perk_eight_discount:
         return tuple(perk_eight_emojis or ())
+    if has_op5 and op5_emojis is not None:
+        return tuple(op5_emojis or ())
     if is_mk_roll:
         if mk_emojis is not None:
             return tuple(mk_emojis or ())

@@ -507,6 +507,25 @@ class KakeraPowerTests(unittest.TestCase):
             ("kakeraW",),
         )
 
+    def test_ouroperk_five_selection_applies_only_to_marked_rolls(self):
+        def targets(op5_emojis, **context):
+            return get_kakera_emoji_targets(
+                ["kakeraR"], ["kakeraO"], ["kakeraW"], ["kakeraY"],
+                op5_emojis=op5_emojis, **context,
+            )
+
+        self.assertEqual(targets(["kakeraL"], has_op5=True), ("kakeraL",))
+        self.assertEqual(targets(["kakeraL"], has_op5=True, is_mk_roll=True), ("kakeraL",))
+        self.assertEqual(targets([], has_op5=True), ())
+        self.assertEqual(targets(["kakeraL"]), ("kakeraR",))
+        # Unchecked override keeps the context the roll had before.
+        self.assertEqual(targets(None, has_op5=True), ("kakeraR",))
+        self.assertEqual(targets(None, has_op5=True, is_mk_roll=True), ("kakeraY",))
+        self.assertEqual(
+            targets(["kakeraL"], has_op5=True, has_perk_eight_discount=True),
+            ("kakeraW",),
+        )
+
     def test_refreshed_repeated_buttons_prefer_position_over_shared_custom_id(self):
         def button(name, custom_id="shared"):
             return SimpleNamespace(
