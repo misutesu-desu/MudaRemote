@@ -961,6 +961,9 @@ TARGET_BOT_ID = 432610292342587392
 CLAIM_EMOJIS = ['💖', '💗', '💘', '❤️', '💓', '💕', '♥️']
 KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
 CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'kakeraP', 'kakeraD', 'kakeraC', 'kakera']
+# Smart Timing ends its batch this long before the claim reset, so the last
+# characters are still claimable when the claim comes back.
+SMART_TIMING_FINISH_LEAD_SECONDS = 5.0
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'sp', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 async def detect_roll_origin(client, message) -> tuple:
@@ -5779,18 +5782,25 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if not is_us_pull and client.time_rolls_to_claim_reset and not client.claim_right_available and reset_soon:
             now_utc = datetime.datetime.now(timezone.utc)
             if client.next_claim_reset_at_utc and client.next_claim_reset_at_utc > now_utc:
-                actual_speed = (max(2.0, client.roll_speed) if client.use_slash_rolls else client.roll_speed) + random.uniform(0.05, 0.25)
-                total_duration = rolls_left * actual_speed
-                target_start = client.next_claim_reset_at_utc + datetime.timedelta(seconds=1) - datetime.timedelta(seconds=total_duration)
+                # Mudae resets rolls in the same minute as the claim, so the
+                # batch ends just before both resets and may cross into the
+                # next cycle; the final admission check allows that once the
+                # timing wait is done.
+                target_start, _ = normal_roll_start_window(
+                    now_utc, client.next_claim_reset_at_utc, rolls_left,
+                    client.roll_speed, client.use_slash_rolls,
+                    pre_roll_seconds=0.0,
+                    safety_margin_seconds=SMART_TIMING_FINISH_LEAD_SECONDS,
+                )
                 wait_s = (target_start - now_utc).total_seconds()
 
                 if client.roll_reset_at_utc:
-                    # Use the final admission check's conservative batch estimate,
-                    # leaving reserve for channel patience and wake-up jitter.
+                    # Still start before the roll reset race window.
                     latest_start, _ = normal_roll_start_window(
-                        now_utc, client.roll_reset_at_utc, rolls_left,
+                        now_utc, client.roll_reset_at_utc, 1,
                         client.roll_speed, client.use_slash_rolls,
-                        pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                        pre_roll_seconds=0.0,
+                        safety_margin_seconds=ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS,
                     )
                     max_wait = (latest_start - now_utc).total_seconds()
                     wait_s = min(wait_s, max_wait)
@@ -5863,7 +5873,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.roll_reset_at_utc,
                 client.roll_speed,
                 client.use_slash_rolls,
-                pre_roll_seconds=NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
+                # A finished Smart Timing wait has no prerequisites left.
+                pre_roll_seconds=0.0 if timing_wait_completed else NORMAL_ROLL_PREROLL_RESERVE_SECONDS,
             )
         )
         if not full_batch_fits and not has_usable_window:

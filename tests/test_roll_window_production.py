@@ -510,6 +510,63 @@ class ProductionRollWindowTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(state.remaining, 0)
                     self.assertNotEqual(owner.state, "deferred_window")
 
+    async def test_smart_timing_batch_ends_just_before_shared_reset(self):
+        # Mudae resets rolls and the claim in the same minute. The batch used
+        # to end over a minute early, so the rolled characters expired
+        # before the claim came back.
+        for slash in (False, True):
+            with self.subTest(slash=slash):
+                self.setUp()
+                clock = self.now
+                real_datetime = datetime.datetime
+
+                class Clock(real_datetime):
+                    @classmethod
+                    def now(cls, tz=None):
+                        return clock if tz is not None else clock.replace(tzinfo=None)
+
+                boundary = clock + datetime.timedelta(minutes=7)
+                state = _install_authoritative_cycle(
+                    self.client, self.cycle_a, boundary, remaining=8,
+                )
+                self.client.time_rolls_to_claim_reset = True
+                self.client.claim_right_available = False
+                self.client.next_claim_reset_at_utc = boundary
+                self.client.roll_speed = 0.4
+                self.client.use_slash_rolls = slash
+                self.client.humanization_enabled = False
+                self.client.command_pacer.minimum_delay = 0
+                self.client.command_pacer.maximum_delay = 0
+                self.client.command_pacer._next_command_at = 0
+                owner = self.client.normal_roll_action_owner
+                owner.schedule(cycle_id=self.cycle_a, now_utc=clock)
+                self.assertTrue(owner.start(self.cycle_a))
+                self.client._normal_roll_transaction_cycle_id = self.cycle_a
+                sent_at = []
+
+                async def fast_pause(_client, seconds, abort_on_pause=False):
+                    nonlocal clock
+                    clock += datetime.timedelta(seconds=seconds + 0.1)
+                    return True
+
+                async def send_roll(content, **_kwargs):
+                    sent_at.append(clock)
+                    self.channel.sent.append(content)
+                    self.client._rolls_received += 1
+                    return SimpleNamespace(id=len(self.channel.sent), created_at=clock)
+
+                self.channel.send = send_roll
+                with mock.patch.object(mudae_bot.datetime, "datetime", Clock),                         mock.patch.object(mudae_bot, "pause_interruptible_sleep", fast_pause),                         mock.patch.object(mudae_bot.random, "uniform", return_value=0.15):
+                    await self.client._runtime_start_roll_commands(
+                        self.client, self.channel, 8, False, False, self.cycle_a,
+                    )
+
+                self.assertEqual(len(sent_at), 8)
+                self.assertEqual(state.remaining, 0)
+                self.assertNotEqual(owner.state, "deferred_window")
+                self.assertLess(sent_at[-1], boundary)
+                self.assertLess((boundary - sent_at[0]).total_seconds(), 40)
+
     async def test_claim_wait_wake_transitions_waiting_to_pending_to_deferred(self):
         boundary = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=10)
         _install_authoritative_cycle(self.client, self.cycle_a, boundary)
