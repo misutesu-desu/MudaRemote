@@ -70,12 +70,10 @@ def normal_roll_behavior_flags(
         is_timing_window
         and roll_reset_minutes is not None
         and claim_reset_minutes is not None
-        and 0 < roll_reset_minutes <= claim_reset_minutes + 1
+        and 0 < roll_reset_minutes < claim_reset_minutes
     ):
-        # A batch must end about a minute before its own roll reset, so when
-        # the rolls reset before the claim or within a minute after it,
-        # Smart Timing cannot land them on the claim reset; wait for the
-        # next batch instead.
+        # These rolls reset before the claim does, so Smart Timing cannot
+        # make them land on the claim reset; wait for the next batch.
         is_timing_window = False
     immediate = bool(
         scheduled_roll_due
