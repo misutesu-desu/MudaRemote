@@ -2212,7 +2212,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         now = datetime.datetime.now(datetime.timezone.utc)
         el = int((now - client.last_dk_power_update_utc).total_seconds() / 180)
         if el > 0:
-            p = min(client.max_dk_power, p + el)
+            # Regeneration stops at the configured maximum but never lowers
+            # a higher power that $tu reported.
+            p = max(p, min(client.max_dk_power, p + el))
             client.current_dk_power = p
             mark_dk_power_changed()
             client.last_dk_power_update_utc += datetime.timedelta(minutes=3 * el)
@@ -8544,6 +8546,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     client._runtime_start_roll_commands = start_roll_commands
     client._runtime_schedule_daily_rolls_claim_wake = schedule_daily_rolls_claim_wake
     client._runtime_check_status = check_status
+    client._runtime_get_current_dk_power = get_current_dk_power
     client._runtime_is_tu_still_required = is_tu_still_required
     client._runtime_send_claim_click = send_claim_click
     client._runtime_verify_snipe_outcome = verify_snipe_outcome

@@ -204,5 +204,28 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bot.dk_stock_count, 1)
 
 
+
+class PowerAboveConfiguredMaximumTests(unittest.TestCase):
+    def test_regeneration_does_not_cut_reported_power_to_the_setting(self):
+        # $tu reported 161% while Maximum DK Power was left at 100: the
+        # estimate fell to 100 after three minutes and paid Kakera was skipped.
+        bot, _channel = _create_test_client()
+        bot.max_dk_power = 100
+        bot.current_dk_power = 161
+        bot.last_dk_power_update_utc = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=10)
+        )
+        self.assertEqual(bot._runtime_get_current_dk_power(), 161)
+
+    def test_regeneration_still_stops_at_the_setting(self):
+        bot, _channel = _create_test_client()
+        bot.max_dk_power = 100
+        bot.current_dk_power = 95
+        bot.last_dk_power_update_utc = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30)
+        )
+        self.assertEqual(bot._runtime_get_current_dk_power(), 100)
+
+
 if __name__ == '__main__':
     unittest.main()
