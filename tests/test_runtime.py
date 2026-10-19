@@ -1647,10 +1647,20 @@ class RuntimeStateTests(unittest.TestCase):
             self._no_claim_flags(is_timing_window=True, claim_reset_minutes=37, roll_reset_minutes=35),
             (False, False),
         )
-        self.assertEqual(
-            self._no_claim_flags(is_timing_window=True, claim_reset_minutes=2, roll_reset_minutes=58),
-            (True, True),
-        )
+        # Same minute in $tu: rolls reset seconds before the claim, so a
+        # batch that must end before its roll reset ends before the claim.
+        for roll_reset in (2, 3):
+            with self.subTest(roll_reset_minutes=roll_reset):
+                self.assertEqual(
+                    self._no_claim_flags(is_timing_window=True, claim_reset_minutes=2, roll_reset_minutes=roll_reset),
+                    (False, False),
+                )
+        for roll_reset in (4, 58):
+            with self.subTest(roll_reset_minutes=roll_reset):
+                self.assertEqual(
+                    self._no_claim_flags(is_timing_window=True, claim_reset_minutes=2, roll_reset_minutes=roll_reset),
+                    (True, True),
+                )
         self.assertEqual(
             self._no_claim_flags(
                 is_timing_window=True, key_mode=True, claim_reset_minutes=37, roll_reset_minutes=35,
