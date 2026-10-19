@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.5**\n\n### 🐛 Bug Fixes\n- **Smart Timing Waits For Your Claim:** If your rolls reset a few minutes before your claim, the bot used to spend them in the last hour while you couldn't claim anything. It now waits for the fresh rolls and times those to your claim reset.\n- **Roll Command Stays Put:** Scrolling the Quick Setup page with the mouse wheel could switch the roll command, for example from `$wa` to `$ha`. Scrolling now only moves the page.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.5/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.5/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "569c824db1385ec69c1fd4a3b022dc4f1c92110de9151e267d6ab080f068f5de",
   "source_files": [
     {
       "path": "mudae_bot.py",
