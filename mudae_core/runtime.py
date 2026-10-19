@@ -56,6 +56,8 @@ def normal_roll_behavior_flags(
     is_panic_window,
     pending_rolls=False,
     pending_us=False,
+    claim_reset_minutes=None,
+    roll_reset_minutes=None,
 ):
     """Return behavior-gated immediate/evaluation decisions for normal rolls."""
     if not rolling_enabled or not proceed_to_rolls:
@@ -64,6 +66,15 @@ def normal_roll_behavior_flags(
         # The Lurker Strategy holds every roll until the panic window the
         # user set; $rt, Smart Timing, Auto $us and Auto $rolls wait for it.
         return False, False
+    if (
+        is_timing_window
+        and roll_reset_minutes is not None
+        and claim_reset_minutes is not None
+        and 0 < roll_reset_minutes < claim_reset_minutes
+    ):
+        # These rolls reset before the claim does, so Smart Timing cannot
+        # make them land on the claim reset; wait for the next batch.
+        is_timing_window = False
     immediate = bool(
         scheduled_roll_due
         or (can_claim and not is_lurking)

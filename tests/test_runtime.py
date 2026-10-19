@@ -1625,6 +1625,39 @@ class RuntimeStateTests(unittest.TestCase):
         kwargs.update(is_lurking=False, is_panic_window=True)
         self.assertEqual(normal_roll_behavior_flags(**kwargs), (True, True))
 
+    def _no_claim_flags(self, **overrides):
+        kwargs = dict(
+            rolling_enabled=True,
+            proceed_to_rolls=True,
+            scheduled_roll_due=False,
+            can_claim=False,
+            is_lurking=False,
+            key_mode=False,
+            rt_available=False,
+            is_timing_window=False,
+            is_panic_window=False,
+        )
+        kwargs.update(overrides)
+        return normal_roll_behavior_flags(**kwargs)
+
+    def test_smart_timing_waits_when_rolls_reset_before_the_claim(self):
+        # Rolls reset at :35 and the claim at :37: rolling now finishes
+        # before the claim exists, so wait for the next batch instead.
+        self.assertEqual(
+            self._no_claim_flags(is_timing_window=True, claim_reset_minutes=37, roll_reset_minutes=35),
+            (False, False),
+        )
+        self.assertEqual(
+            self._no_claim_flags(is_timing_window=True, claim_reset_minutes=2, roll_reset_minutes=58),
+            (True, True),
+        )
+        self.assertEqual(
+            self._no_claim_flags(
+                is_timing_window=True, key_mode=True, claim_reset_minutes=37, roll_reset_minutes=35,
+            ),
+            (True, True),
+        )
+
     def test_proceed_to_rolls_false_updates_state_without_owner(self):
         client = self._authoritative_reconciliation_client()
         reconcile_authoritative_current_roll_count(

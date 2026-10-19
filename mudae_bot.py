@@ -5175,6 +5175,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 is_panic_window=is_panic_window,
                 pending_rolls=pending_rolls,
                 pending_us=pending_us,
+                claim_reset_minutes=claim_reset_minutes,
+                roll_reset_minutes=roll_reset_minutes,
             )
 
             if (
