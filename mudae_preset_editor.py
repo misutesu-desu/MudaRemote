@@ -1991,8 +1991,17 @@ class PresetEditor:
         )
         combo.pack(anchor=tk.W, fill=tk.X, ipady=3, pady=(3, 0))
         combo.bind("<<ComboboxSelected>>", lambda _event: (self.mark_dirty(), self.update_quick_summary()))
+        self._wheel_scrolls_page(combo)
         self.quick_widgets[key] = combo
         return combo
+
+    def _wheel_scrolls_page(self, widget):
+        """Scroll the page over a closed combobox instead of changing its value."""
+        def scroll_page(event):
+            self._on_mousewheel(event)
+            return "break"
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            widget.bind(sequence, scroll_page)
 
     def _quick_list(self, parent, key, label, description):
         container = tk.Frame(parent, bg=parent.cget("bg"))

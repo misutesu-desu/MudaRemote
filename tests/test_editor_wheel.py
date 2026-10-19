@@ -25,6 +25,7 @@ class _EditorStub:
     """Minimal object carrying only the state _on_mousewheel touches."""
 
     _on_mousewheel = PresetEditor._on_mousewheel
+    _wheel_scrolls_page = PresetEditor._wheel_scrolls_page
 
     def __init__(self, root, canvas, quick_canvas=None):
         self.root = root
@@ -109,6 +110,21 @@ class MouseWheelRoutingTests(unittest.TestCase):
         self._wheel_at(listbox)
         self.assertAlmostEqual(self.canvas.yview()[0], before, places=6)
         listbox.destroy()
+
+    def test_wheel_over_quick_combobox_scrolls_page_and_keeps_its_value(self):
+        # A readonly ttk.Combobox changes its value on the wheel, so scrolling
+        # the Quick Setup page used to switch the roll command from wa to ha.
+        from tkinter import ttk
+        combo = ttk.Combobox(self.inner_label.master, values=["wa", "ha", "ma"], state="readonly")
+        combo.set("wa")
+        combo.pack()
+        self.stub._wheel_scrolls_page(combo)
+        self.root.update()
+        self.canvas.yview_moveto(0.5)
+        before = self.canvas.yview()[0]
+        self._wheel_at(combo, delta=-120)
+        self.assertEqual(combo.get(), "wa")
+        self.assertLess(before, self.canvas.yview()[0])
 
     def _install_via_dialog(self, initial_channel, toggle_to=None):
         import unittest.mock as mock
