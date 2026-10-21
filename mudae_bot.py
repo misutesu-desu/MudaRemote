@@ -1062,6 +1062,17 @@ def has_claim_option(message, embed, claim_emojis):
     if not message.components: return not get_character_owner(embed)
     return any(not getattr(btn, "disabled", False) and getattr(getattr(btn, "emoji", None), "name", None) in claim_emojis for comp in message.components for btn in comp.children)
 
+def unlisted_claim_button_emoji(message, embed, claim_emojis):
+    """Return the heart of an unclaimed roll whose claim button is not in Claim Emojis."""
+    if not message.components or get_character_owner(embed) or has_claim_option(message, embed, claim_emojis):
+        return None
+    for comp in message.components:
+        for btn in comp.children:
+            name = str(getattr(getattr(btn, "emoji", None), "name", None) or "")
+            if name and not getattr(btn, "disabled", False) and not name.lower().startswith(("kakera", "sp")):
+                return name
+    return None
+
 def count_chaos_keys(embed):
     if not embed or not embed.description: return 0
     matches = re.findall(REGEX_PATTERNS["KEYS"], embed.description, re.IGNORECASE)
@@ -8374,6 +8385,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 if not await active_delay(client.reactive_snipe_delay + random.uniform(0.05, 0.25)): return
                             if await claim_character(client, message.channel, message, kakera_value=k_val):
                                 process = False
+                    elif (is_wl or is_val) and not is_avoided and not already_in_progress:
+                        unlisted_emoji = unlisted_claim_button_emoji(message, embed, client.claim_emojis)
+                        if unlisted_emoji:
+                            BotLogger.log(
+                                f"Not claiming {c_name}: its claim button {unlisted_emoji} is not in your Claim Emojis.",
+                                preset_name,
+                                "WARN",
+                            )
 
                 all_k = get_all_collectible_kakera_emojis()
                 has_btn = has_collectible_kakera_button(message.components, all_k)
