@@ -8337,6 +8337,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 if not await active_delay(t_to_r + 0.2): return
                                 request_status_refresh({"claim"}, reason="near-claim-reset-boundary", urgent=True)
                                 return
+                            # Say why a matching roll was left alone; a silent
+                            # skip looks like the bot never saw the character.
+                            reset_text = (
+                                f"in {t_to_r / 60.0:.0f}m"
+                                if client.next_claim_reset_at_utc and t_to_r > 0
+                                else "after the next $tu"
+                            )
+                            BotLogger.log(
+                                f"Not claiming {c_name}: claim is already used, it comes back {reset_text}.",
+                                preset_name,
+                                "CLAIM",
+                            )
                 elif not getattr(client, 'enable_reactive_self_snipe', True):
                     client.collected_rolls.append(message)
                 else:
