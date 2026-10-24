@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.9**\n\n### 🐛 Bug Fixes\n- **Kakera Loot Answers the Prompt:** When Mudae asked \"Do you want to spend 6,000,000?\" for `$kl 12000`, the bot did not answer and you had to type y yourself. It now confirms it.\n- **Kakera Loot Clears Pins:** When Mudae said you have too many pins, the bot kept sending `$kl`. It now sends `$arlp` first.\n- **Claim Hearts by Name:** Hearts typed by name in Claim Emojis, like blue_heart, now work. ❤ and ❤️ count as the same heart.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.9/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.9/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "976e3e4973da1422d6fb96e965fd49799489211efbbe7f3f8b62aa1b305d18fd",
   "source_files": [
     {
       "path": "mudae_bot.py",
