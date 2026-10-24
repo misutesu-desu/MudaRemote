@@ -116,7 +116,9 @@ class LootAutomation:
         # prompt replying to someone else's message never qualifies.
         if (self.mode == "kl" and reference is None and not leading_name
                 and any(pattern in text for pattern in CONFIRMATIONS["kl"])):
-            amounts = {int(re.sub(r"[^0-9]", "", raw)) for raw in re.findall(r"[0-9][0-9.,]*[0-9]|[0-9]", text)}
+            # A custom emoji id such as the kakera icon is not an amount.
+            plain = re.sub(r"<a?:\w+:\d+>", " ", text)
+            amounts = {int(re.sub(r"[^0-9]", "", raw)) for raw in re.findall(r"[0-9][0-9.,]*[0-9]|[0-9]", plain)}
             return any(amount and amount % self.kl_amount == 0 for amount in amounts)
         # The pin limit error names nobody either. Releasing duplicates is
         # harmless, so an unaddressed one right after our command is enough.

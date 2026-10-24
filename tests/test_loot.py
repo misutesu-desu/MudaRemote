@@ -148,6 +148,32 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         await loot._cycle(self.channel)
         self.assertEqual(self.sent, ["$kl 6000000", "y"])
 
+    async def test_kakera_emoji_id_is_not_read_as_an_amount(self):
+        # 469835869059153940 is a multiple of 20; the prompt asks for someone else's cost.
+        loot = self.loot(kl_amount=20)
+
+        def on_send(_content, receipt_id):
+            loot.on_message(message(receipt_id + 1, "Do you want to spend **7,777** "
+                                                    "<:kakera:469835869059153940> ? (y/n/yes/no)"))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 20"])
+
+    async def test_bold_cost_with_kakera_emoji_is_confirmed(self):
+        loot = self.loot(kl_amount=12000)
+
+        def on_send(content, receipt_id):
+            if content == "y":
+                loot.on_message(message(receipt_id + 1, "Rolls stacked", reply=receipt_id))
+            else:
+                loot.on_message(message(receipt_id + 1, "Do you want to spend **6,000,000** "
+                                                        "<:kakera:469835869059153940> ? (y/n/yes/no)"))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 12000", "y"])
+
     async def test_unaddressed_prompt_asking_the_kakera_cost_is_confirmed(self):
         # Reported: $kl 12000 asked to spend 6,000,000 and the bot never sent y.
         loot = self.loot(kl_amount=12000)
