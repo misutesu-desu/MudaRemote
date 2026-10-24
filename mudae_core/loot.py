@@ -111,12 +111,13 @@ class LootAutomation:
         if leading_mention or addressed_by_name:
             return True
         # Mudae sometimes posts the $kl prompt with neither a reply reference
-        # nor a mention. Our own exact amount is then the only identity we
-        # have; a prompt replying to someone else's message never qualifies.
+        # nor a mention. Our own amount is then the only identity we have: the
+        # prompt asks for the kakera cost, a multiple of the $kl amount. A
+        # prompt replying to someone else's message never qualifies.
         if (self.mode == "kl" and reference is None and not leading_name
                 and any(pattern in text for pattern in CONFIRMATIONS["kl"])):
             amounts = {int(re.sub(r"[^0-9]", "", raw)) for raw in re.findall(r"[0-9][0-9.,]*[0-9]|[0-9]", text)}
-            return self.kl_amount in amounts
+            return any(amount and amount % self.kl_amount == 0 for amount in amounts)
         return False
 
     def on_message(self, message):

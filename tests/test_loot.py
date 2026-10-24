@@ -133,6 +133,20 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         await loot._cycle(self.channel)
         self.assertEqual(self.sent, ["$kl 6000000", "y"])
 
+    async def test_unaddressed_prompt_asking_the_kakera_cost_is_confirmed(self):
+        # Reported: $kl 12000 asked to spend 6,000,000 and the bot never sent y.
+        loot = self.loot(kl_amount=12000)
+
+        def on_send(content, receipt_id):
+            if content == "y":
+                loot.on_message(message(receipt_id + 1, "Rolls stacked", reply=receipt_id))
+            else:
+                loot.on_message(message(receipt_id + 1, "Do you want to spend 6,000,000 ? (y/n/yes/no)"))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 12000", "y"])
+
     async def test_later_own_recipient_mention_does_not_authorize_y(self):
         loot = self.loot(loot_mode="scrap", scrap_target_id="10")
         original_response = loot._response
