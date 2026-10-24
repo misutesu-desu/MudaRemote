@@ -116,20 +116,21 @@ class KakeraFeedbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await bot.events['on_message'](excluded)
         excluded_button.click.assert_not_awaited()
 
-    async def test_confirmed_sphere_cap_waits_until_refill(self):
+    async def test_sphere_under_confirmed_cap_is_probed_once_then_waits_for_tu(self):
         bot = self.bot
         now = datetime.datetime.now(datetime.timezone.utc)
         bot.sphere_button_budget.observe('20/20 buttons clicked', now)
         bot.sphere_game_refill_at_utc = now + datetime.timedelta(hours=1)
         msg, button = _build_roll_message(self.channel, 9310, bot.user.id, bot.user.name, 'spG2')
+        button.click.return_value = SimpleNamespace(successful=True)
+        button.click.side_effect = None
         await bot.events['on_message'](msg)
-        self.assertNotIn('points', status_dirty_fields(bot))
-        bot.sphere_game_refill_at_utc = now - datetime.timedelta(seconds=1)
+        button.click.assert_awaited_once()
+        self.assertIn('points', status_dirty_fields(bot))
         msg, button = _build_roll_message(self.channel, 9311, bot.user.id, bot.user.name, 'spG2')
         await bot.events['on_message'](msg)
         button.click.assert_not_awaited()
-        self.assertIn('points', status_dirty_fields(bot))
-        await self.status(quota='0/20')
+        await self.status(quota='1/20')
         msg, button = _build_roll_message(self.channel, 9312, bot.user.id, bot.user.name, 'spG2')
         await bot.events['on_message'](msg)
         button.click.assert_awaited_once()

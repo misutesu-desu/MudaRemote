@@ -964,6 +964,9 @@ CHAOS_KAKERA_EMOJIS = ['kakeraY', 'kakeraO', 'kakeraR', 'kakeraW', 'kakeraL', 'k
 # Smart Timing ends its batch this long before the claim reset, so the last
 # characters are still claimable when the claim comes back.
 SMART_TIMING_FINISH_LEAD_SECONDS = 5.0
+# A sphere seen while the sphere button quota looks used up is clicked at most
+# once per this window, in case Mudae shows spheres past the cap after all.
+SPHERE_STALE_CAP_PROBE_SECONDS = 600.0
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'sp', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 async def detect_roll_origin(client, message) -> tuple:
@@ -1906,6 +1909,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def click_character_sphere(msg, button, interaction_key, emoji_name, character_name):
         """Sphere delivery has no Kakera +amount ($k) confirmation contract."""
         budget = client.sphere_button_budget
+        stale_cap_probe = False
         if not budget.available:
             # Pending reservations make the cap provisional, and a confirmed
             # cap whose known refill already elapsed needs the same $tu. Ask
@@ -1914,12 +1918,34 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 budget.pending or _sphere_cap_refill_elapsed()
             ):
                 _request_sphere_quota_recheck()
-            client.kakera_interaction_ledger.release(interaction_key)
-            return False
+            # Mudae stops showing sphere buttons once the quota is used up, so
+            # a sphere under a cap confirmed by an older $tu means the quota
+            # reset on a schedule the bot does not know. Probe it with one
+            # click per window instead of ignoring spheres until a restart.
+            now_mono = time.monotonic()
+            if not budget.pending and now_mono >= getattr(client, "_sphere_stale_cap_probe_after", 0.0):
+                client._sphere_stale_cap_probe_after = now_mono + SPHERE_STALE_CAP_PROBE_SECONDS
+                stale_cap_probe = True
+                BotLogger.log(
+                    f"{emoji_name} on {character_name} while the last $tu said "
+                    f"{budget.clicked}/{budget.limit} sphere buttons; the quota probably reset, clicking it.",
+                    preset_name, "INFO",
+                )
+            else:
+                BotLogger.log(
+                    f"Skipping {emoji_name} on {character_name}: sphere button quota is used up "
+                    f"({budget.clicked}/{budget.limit}, {len(budget.pending)} click(s) waiting for $tu).",
+                    preset_name, "INFO",
+                )
+                client.kakera_interaction_ledger.release(interaction_key)
+                return False
         if client.is_paused or is_maintenance_active():
             client.kakera_interaction_ledger.release(interaction_key)
             return False
         budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
+        if stale_cap_probe:
+            # Let the next $tu replace the stale cap with the real count.
+            _request_sphere_quota_recheck()
         try:
             try:
                 interaction = await guarded_click(button, return_interaction=True)

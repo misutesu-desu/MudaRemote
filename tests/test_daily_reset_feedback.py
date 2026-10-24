@@ -68,12 +68,40 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(bot.sphere_button_budget.clicked, 7)
                 self.assertEqual(len(bot.sphere_button_budget.pending), 1)
 
-    async def test_full_quota_does_not_click(self):
+    async def test_full_quota_with_waiting_clicks_does_not_click_and_logs_the_skip(self):
+        bot, channel = _create_test_client()
+        bot.sphere_button_budget.observe('19/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
+        bot.sphere_button_budget.reserve('earlier', datetime.datetime.now(datetime.timezone.utc))
+        message, button = _build_roll_message(channel, 5201, bot.user.id, bot.user.name, 'spG')
+        with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
+            await bot.events['on_message'](message)
+        button.click.assert_not_awaited()
+        self.assertTrue(any('Skipping spG' in call.args[0] for call in log.call_args_list))
+
+    async def test_sphere_under_an_old_confirmed_cap_is_clicked_once_per_window(self):
+        # Mudae hides spheres once the quota is used up, so a visible one
+        # means the quota reset since the last $tu (reported for spM/perk 9).
         bot, channel = _create_test_client()
         bot.sphere_button_budget.observe('20/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
-        message, button = _build_roll_message(channel, 5201, bot.user.id, bot.user.name, 'spG')
-        await bot.events['on_message'](message)
-        button.click.assert_not_awaited()
+        first, first_button = _build_roll_message(channel, 5202, bot.user.id, bot.user.name, 'spM')
+        first_button.click.return_value = SimpleNamespace(successful=True)
+        first_button.click.side_effect = None
+        with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
+            await bot.events['on_message'](first)
+        first_button.click.assert_awaited_once()
+        self.assertTrue(any('quota probably reset' in call.args[0] for call in log.call_args_list))
+        self.assertTrue(bot._sphere_quota_recheck_requested)
+
+        # Until $tu answers, the probe is waiting and further spheres wait too.
+        second, second_button = _build_roll_message(channel, 5203, bot.user.id, bot.user.name, 'spM')
+        await bot.events['on_message'](second)
+        second_button.click.assert_not_awaited()
+
+        # $tu still says capped: no new probe inside the same window.
+        bot.sphere_button_budget.observe('20/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
+        third, third_button = _build_roll_message(channel, 5204, bot.user.id, bot.user.name, 'spM')
+        await bot.events['on_message'](third)
+        third_button.click.assert_not_awaited()
 
     async def test_ambiguous_delivery_is_not_retried_and_rejection_releases_budget(self):
         for ambiguous in (True, False):
