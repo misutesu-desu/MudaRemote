@@ -678,6 +678,24 @@ class RuntimeStaggerTests(unittest.TestCase):
             owner_id=20, command_name="mk", source_mode="slash",
         ))
 
+    def test_slash_mk_answer_before_the_post_returns_still_matches(self):
+        # Mudae answered /mk before the interaction POST returned, so the
+        # receipt time is later than the response; this used to time out.
+        prearmed = datetime.datetime(2026, 10, 23, 0, 13, 39, tzinfo=datetime.timezone.utc)
+        operation = PendingMkRollOperation(1, 10, 20, prearmed)
+        operation.prearm(command_name="mk", mode="slash", sent_at_utc=prearmed)
+        operation.mark_sent({"mode": "slash", "nonce": "abc",
+                             "sent_at_utc": prearmed + datetime.timedelta(seconds=3)})
+        self.assertEqual(operation.sent_at_utc, prearmed)
+        common = dict(channel_id=10, owner_id=20, command_name="mk", source_mode="slash")
+        self.assertTrue(operation.matches(
+            **common, message_id=200, created_at_utc=prearmed + datetime.timedelta(seconds=1)))
+        # A local clock a few seconds ahead of Discord is tolerated.
+        self.assertTrue(operation.matches(
+            **common, message_id=201, created_at_utc=prearmed - datetime.timedelta(seconds=3)))
+        self.assertFalse(operation.matches(
+            **common, message_id=202, created_at_utc=prearmed - datetime.timedelta(seconds=30)))
+
     def test_roll_action_delay_is_drawn_once_and_reused_for_the_cycle(self):
         timing = RollActionTiming()
         now = datetime.datetime(2026, 8, 26, 10, tzinfo=datetime.timezone.utc)

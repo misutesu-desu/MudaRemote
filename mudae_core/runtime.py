@@ -574,6 +574,10 @@ def normal_roll_window_is_deferred(client, cycle_id, boundary_utc, *, tolerance_
     return False
 
 
+# How far a /mk response's Discord timestamp may sit before the local send time.
+SLASH_MK_CLOCK_SKEW_SECONDS = 5.0
+
+
 @dataclass
 class PendingMkRollOperation:
     """Ownership record for exactly one automated ``$mk`` response."""
@@ -618,7 +622,12 @@ class PendingMkRollOperation:
         if not self.send_mode:
             self.prearm(command_name=self.command_name, mode=mode)
         self.send_mode = mode
+        prearmed_at = self.sent_at_utc
         self.sent_at_utc = receipt.get("sent_at_utc") or self.registered_at_utc
+        if mode == "slash" and prearmed_at is not None and prearmed_at < self.sent_at_utc:
+            # A slash receipt is stamped after the interaction POST returns,
+            # and Mudae often answers before that. Keep the pre-send time.
+            self.sent_at_utc = prearmed_at
         self.source_message_id = receipt.get("message_id")
         self.slash_nonce = receipt.get("nonce")
         self.receipt_finalized = True
@@ -661,7 +670,10 @@ class PendingMkRollOperation:
                 elapsed = (created_at_utc - self.sent_at_utc).total_seconds()
             except (TypeError, ValueError):
                 return False
-            if elapsed < -1.0 or elapsed > max(1.0, float(timeout_seconds or 45.0)):
+            # Slash times come from the local clock while created_at comes
+            # from Discord, so allow a few seconds of clock drift.
+            early_limit = -SLASH_MK_CLOCK_SKEW_SECONDS if self.send_mode == "slash" else -1.0
+            if elapsed < early_limit or elapsed > max(1.0, float(timeout_seconds or 45.0)):
                 return False
         return True
 
