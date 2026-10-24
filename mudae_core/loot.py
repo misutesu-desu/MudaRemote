@@ -101,7 +101,7 @@ class LootAutomation:
         leading_mention = re.match(r"^\s*(?:\*\*)?<@!?(\d+)>(?:\*\*)?", text)
         if leading_mention and int(leading_mention.group(1)) != own:
             return False
-        leading_name = re.match(r"^\s*(?:\*\*([^*]+)\*\*|([\w.-]{2,32})(?:\s*[,!:—-]|'s\b))", text)
+        leading_name = re.match(r"^\s*(?:\*\*([^*]+)\*\*|(?!error\b)([\w.-]{2,32})(?:\s*[,!:—-]|'s\b))", text)
         addressed_by_name = status_message_addresses_identity(text, own_names, user_id=None)
         if leading_name and not leading_mention and not addressed_by_name:
             return False
@@ -118,6 +118,10 @@ class LootAutomation:
                 and any(pattern in text for pattern in CONFIRMATIONS["kl"])):
             amounts = {int(re.sub(r"[^0-9]", "", raw)) for raw in re.findall(r"[0-9][0-9.,]*[0-9]|[0-9]", text)}
             return any(amount and amount % self.kl_amount == 0 for amount in amounts)
+        # The pin limit error names nobody either. Releasing duplicates is
+        # harmless, so an unaddressed one right after our command is enough.
+        if reference is None and not leading_name and any(pattern in text for pattern in PIN_ERRORS):
+            return True
         return False
 
     def on_message(self, message):

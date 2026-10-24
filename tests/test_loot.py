@@ -100,6 +100,21 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, ["$kl 1000", "$arlp"])
         self.assertTrue(any("Pins released" in text for text, _ in self.logs))
 
+    async def test_unaddressed_pin_error_runs_arlp(self):
+        # Reported: the error came without a reply and the bot kept sending $kl.
+        loot = self.loot(kl_amount=12000)
+
+        def on_send(content, receipt_id):
+            if content.startswith("$kl"):
+                loot.on_message(message(receipt_id + 1, "Error: you have too many pins (30000)! "
+                                                        "Release your duplicates with $arlp"))
+            elif content == "$arlp":
+                loot.on_message(message(receipt_id + 1, "Mudapins were released", reply=receipt_id))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 12000", "$arlp"])
+
     async def test_foreign_messages_cannot_trigger_confirmation(self):
         loot = self.loot()
 
