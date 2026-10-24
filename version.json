@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.1.8**\n\n### 🐛 Bug Fixes\n- **Spheres No Longer Ignored After the Quota Resets:** Once your sphere quota was full, the bot kept skipping spheres until you restarted it, even after the quota came back. It now clicks a sphere when one shows up and checks `$tu` to confirm.\n- **Skipped Spheres Show in the Log:** When the bot leaves a sphere alone because your quota is used up, it now says so.\n- **`$mk` Keeps Going After a Fast Reply:** If Mudae answered `/mk` very quickly, the bot could miss the reply, wait 45 seconds and skip the rest of your `$mk` rolls. Fast replies are now matched correctly.\n- **Claim Emoji Warning:** If a wished or valuable roll uses a heart that is not in your Claim Emojis, the bot now writes a warning instead of skipping it silently.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.1.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "c6620c98eb2ad3256d3338293cb02229e181d82ab07bc0884beb8ceb9763bd64",
   "source_files": [
     {
       "path": "mudae_bot.py",
