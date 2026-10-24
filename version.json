@@ -23,7 +23,7 @@
     {
       "path": "mudae_core/claiming.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.8/mudae_core/claiming.py",
-      "sha256": "d733e4b92ed0c767b89f2730839ceac806ad0dd54b8fbd3803590c2996b54f19"
+      "sha256": "82d326ac023ab3399f60269eedfed00f2ec223a9c4e137aa9870b56f8844c12d"
     },
     {
       "path": "mudae_core/config.py",
@@ -83,7 +83,7 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.8/mudae_core/bot_config.py",
-      "sha256": "7d4393eca8d7c57734685fcf5ee166c3090489c9274bb3dc0f3f831e36960cba"
+      "sha256": "d09d0d79627046f78d48be38600fdb35310e93cbba84fa168283122b0592dd20"
     },
     {
       "path": "mudae_core/activity_events.py",

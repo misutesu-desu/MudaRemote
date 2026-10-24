@@ -10,6 +10,7 @@ import datetime
 from datetime import timezone
 from types import SimpleNamespace
 
+from mudae_core.claiming import expand_claim_emojis
 from mudae_core.filters import CharacterNameSet
 from mudae_core.kakera import (
     KakeraInteractionLedger,
@@ -277,7 +278,7 @@ def configure_client(
         "kakera",
     ]
 
-    client.claim_emojis = (
+    client.claim_emojis = expand_claim_emojis(
         preset_data.get("claim_emojis")
         if preset_data.get("claim_emojis") is not None
         else claim_emojis

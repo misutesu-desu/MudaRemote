@@ -71,5 +71,30 @@ class UnlistedClaimEmojiLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any("is not in your Claim Emojis" in line for line in logs), logs)
 
 
+class ClaimEmojiSpellingTests(unittest.TestCase):
+    def _configured(self, claim_emojis):
+        bot, _ = _create_test_client()
+        mudae_bot.configure_client(
+            bot, "spelling", {"claim_emojis": claim_emojis},
+            bot_name="test", claim_emojis=mudae_bot.CLAIM_EMOJIS,
+            kakera_emojis=mudae_bot.KAKERA_EMOJIS, sphere_emojis=mudae_bot.SPHERE_EMOJIS,
+            slash_available=False, register_adaptive=False,
+        )
+        return bot.claim_emojis
+
+    def test_typed_heart_names_match_the_button_characters(self):
+        # Reported: names typed from Discord (blue_heart) never matched.
+        emojis = self._configured(["blue_heart", ":black_heart:", "bride_with_veil", "woman_with_veil"])
+        for heart in ("\U0001f499", "\U0001f5a4", "\U0001f470", "\U0001f470‍♀️"):
+            self.assertIn(heart, emojis)
+
+    def test_variation_selector_spelling_does_not_matter(self):
+        self.assertIn("❤", self._configured(["❤️"]))
+        self.assertIn("❤️", self._configured(["❤"]))
+
+    def test_explicitly_empty_list_stays_empty(self):
+        self.assertEqual(self._configured([]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

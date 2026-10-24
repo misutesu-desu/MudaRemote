@@ -32,6 +32,50 @@ def _is_success_button_style(button: object) -> bool:
     )
 
 
+# Discord names a Unicode button emoji by its character, so a typed name such
+# as blue_heart never matches. Map the hearts people copy from Discord.
+CLAIM_EMOJI_SHORTCODES = {
+    "heart": "❤️", "red_heart": "❤️", "hearts": "♥️",
+    "orange_heart": "🧡", "yellow_heart": "💛", "green_heart": "💚",
+    "blue_heart": "💙", "light_blue_heart": "🩵", "purple_heart": "💜",
+    "black_heart": "🖤", "white_heart": "🤍", "brown_heart": "🤎", "pink_heart": "🩷",
+    "grey_heart": "🩶", "gray_heart": "🩶", "sparkling_heart": "💖", "heartpulse": "💗",
+    "cupid": "💘", "heartbeat": "💓", "two_hearts": "💕", "revolving_hearts": "💞",
+    "gift_heart": "💝", "heart_decoration": "💟", "heart_exclamation": "❣️",
+    "heart_on_fire": "❤️‍🔥", "mending_heart": "❤️‍🩹", "love_letter": "💌",
+    "bride_with_veil": "👰", "person_with_veil": "👰", "woman_with_veil": "👰‍♀️",
+    "man_with_veil": "👰‍♂️",
+}
+
+
+def expand_claim_emojis(claim_emojis: Iterable[object]) -> list:
+    """Return the configured claim emojis plus the forms Discord may report.
+
+    Adds the character for a typed shortcode (blue_heart, :blue_heart:) and
+    the spelling with and without the U+FE0F variation selector, so a heart
+    matches however it was entered.
+    """
+    expanded = []
+
+    def add(value):
+        if value and value not in expanded:
+            expanded.append(value)
+
+    for item in claim_emojis or ():
+        text = str(item or "").strip()
+        if not text:
+            continue
+        add(text)
+        mapped = CLAIM_EMOJI_SHORTCODES.get(text.strip(":").casefold())
+        for value in (text, mapped):
+            if value:
+                add(value)
+                add(value.replace("️", ""))
+                if len(value) == 1:
+                    add(value + "️")
+    return expanded
+
+
 def has_free_claim_button(components: object, claim_emojis: Iterable[object]) -> bool:
     """Detect Mudae's green claim button, which does not consume a claim right."""
     allowed = {str(emoji) for emoji in claim_emojis}
