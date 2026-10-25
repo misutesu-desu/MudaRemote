@@ -967,6 +967,8 @@ SMART_TIMING_FINISH_LEAD_SECONDS = 5.0
 # A sphere seen while the sphere button quota looks used up is clicked at most
 # once per this window, in case Mudae shows spheres past the cap after all.
 SPHERE_STALE_CAP_PROBE_SECONDS = 600.0
+# Spheres outside the daily buttons-clicked quota.
+SPHERE_QUOTA_FREE_EMOJIS = frozenset({"spm"})
 SPHERE_EMOJIS = ['spP', 'spB', 'spT', 'spG', 'spY', 'spO', 'spR', 'sp', 'spW', 'spL', 'spD', 'spM', 'spP2', 'spB2', 'spT2', 'spG2', 'spY2', 'spO2', 'spR2', 'spW2', 'spL2', 'spD2', 'spU']
 
 async def detect_roll_origin(client, message) -> tuple:
@@ -1910,7 +1912,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         """Sphere delivery has no Kakera +amount ($k) confirmation contract."""
         budget = client.sphere_button_budget
         stale_cap_probe = False
-        if not budget.available:
+        quota_free = normalize_character_sphere_emoji(emoji_name).casefold() in SPHERE_QUOTA_FREE_EMOJIS
+        if not quota_free and not budget.available:
             # Pending reservations make the cap provisional, and a confirmed
             # cap whose known refill already elapsed needs the same $tu. Ask
             # once per episode; the next successful budget.observe re-arms it.
@@ -1942,7 +1945,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if client.is_paused or is_maintenance_active():
             client.kakera_interaction_ledger.release(interaction_key)
             return False
-        budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
+        if not quota_free:
+            budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
         if stale_cap_probe:
             # Let the next $tu replace the stale cap with the real count.
             _request_sphere_quota_recheck()

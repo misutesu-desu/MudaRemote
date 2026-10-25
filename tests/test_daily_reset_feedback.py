@@ -80,10 +80,10 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sphere_under_an_old_confirmed_cap_is_clicked_once_per_window(self):
         # Mudae hides spheres once the quota is used up, so a visible one
-        # means the quota reset since the last $tu (reported for spM/perk 9).
+        # means the quota reset since the last $tu.
         bot, channel = _create_test_client()
         bot.sphere_button_budget.observe('20/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
-        first, first_button = _build_roll_message(channel, 5202, bot.user.id, bot.user.name, 'spM')
+        first, first_button = _build_roll_message(channel, 5202, bot.user.id, bot.user.name, 'spG')
         first_button.click.return_value = SimpleNamespace(successful=True)
         first_button.click.side_effect = None
         with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
@@ -93,15 +93,29 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(bot._sphere_quota_recheck_requested)
 
         # Until $tu answers, the probe is waiting and further spheres wait too.
-        second, second_button = _build_roll_message(channel, 5203, bot.user.id, bot.user.name, 'spM')
+        second, second_button = _build_roll_message(channel, 5203, bot.user.id, bot.user.name, 'spG')
         await bot.events['on_message'](second)
         second_button.click.assert_not_awaited()
 
         # $tu still says capped: no new probe inside the same window.
         bot.sphere_button_budget.observe('20/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
-        third, third_button = _build_roll_message(channel, 5204, bot.user.id, bot.user.name, 'spM')
+        third, third_button = _build_roll_message(channel, 5204, bot.user.id, bot.user.name, 'spG')
         await bot.events['on_message'](third)
         third_button.click.assert_not_awaited()
+
+    async def test_spm_does_not_count_toward_the_sphere_quota(self):
+        # Reported: spM was skipped at 20/20, but it is outside that quota.
+        bot, channel = _create_test_client()
+        bot.sphere_click_targets.add('spm')
+        bot.sphere_button_budget.observe('20/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
+        bot._sphere_stale_cap_probe_after = float('inf')
+        for message_id in (5205, 5206):
+            message, button = _build_roll_message(channel, message_id, bot.user.id, bot.user.name, 'spM')
+            button.click.return_value = SimpleNamespace(successful=True)
+            button.click.side_effect = None
+            await bot.events['on_message'](message)
+            button.click.assert_awaited_once()
+        self.assertFalse(bot.sphere_button_budget.pending)
 
     async def test_ambiguous_delivery_is_not_retried_and_rejection_releases_budget(self):
         for ambiguous in (True, False):
