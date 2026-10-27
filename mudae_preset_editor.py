@@ -777,7 +777,7 @@ TEXT_SETTINGS = [
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
     ("auto_divorce_blacklist", "Divorce Blacklist (Characters to NEVER divorce)", [], True),
     ("auto_divorce_blacklist_series", "Divorce Blacklist Series (Series to NEVER divorce)", [], True),
-    ("snipe_channels", "Character Snipe Channels (Comma-separated IDs of external channels to monitor for character sniping)", [], True),
+    ("snipe_channels", "Character Snipe Channels (Comma-separated channel IDs. Rolls in any channel other than the main one are only sniped if that channel is listed here)", [], True),
     ("kakera_snipe_channels", "Kakera Snipe Channels (Comma-separated IDs of channels to monitor for Kakera)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spM, spU, spG)", ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
@@ -2659,7 +2659,7 @@ class PresetEditor:
         self.add_checkbox(char_snipe_frame.content, "snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)")
         snipe_sub = self.create_subframe(char_snipe_frame.content, snipe_mode_var, "snipe_mode")
         self.add_number_field(snipe_sub, "snipe_delay", "Snipe Wait Time (Wait X seconds before stealing a roll)", 2)
-        self.add_list_field(snipe_sub, "snipe_channels", "Character Snipe Channels (Comma-separated IDs of external channels to monitor for character sniping)")
+        self.add_list_field(snipe_sub, "snipe_channels", "Character Snipe Channels (Comma-separated channel IDs. Rolls in any channel other than the main one are only sniped if that channel is listed here)")
 
         reactive_snipe_var = self.add_checkbox(char_snipe_frame.content, "reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)")
         reactive_sub = self.create_subframe(char_snipe_frame.content, reactive_snipe_var, "reactive_snipe_on_own_rolls")
