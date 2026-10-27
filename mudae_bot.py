@@ -3727,6 +3727,36 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         finally:
             client._pre_roll_status_required = False
 
+    def owned_roll_lurker_hold_seconds():
+        """Seconds a scheduled batch must wait for the Lurker panic window.
+
+        The batch may have been scheduled in an earlier round, so the window
+        is read again from the claim reset when the batch wakes.
+        """
+        reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        if reset_at is None:
+            return 0.0
+        seconds_left = max(0.0, (reset_at - datetime.datetime.now(timezone.utc)).total_seconds())
+        # Whole minutes, as $tu shows them: a reset anchor a few seconds past
+        # the round boundary still belongs to the last round.
+        claim_reset_minutes = int(seconds_left // 60)
+        is_panic_window, is_lurking = lurker_window_state(
+            lurker_mode=client.lurker_mode,
+            final_round_only=getattr(client, "lurker_final_round_only", False),
+            claim_available=client.claim_right_available,
+            claim_reset_minutes=claim_reset_minutes,
+            panic_roll_minutes=client.panic_roll_minutes,
+            round_minutes=client.roll_interval,
+        )
+        if is_panic_window:
+            client.current_min_kakera_for_roll_claim = 0
+            return 0.0
+        if not is_lurking:
+            return 0.0
+        hold_seconds = seconds_left - client.panic_roll_minutes * 60.0
+        BotLogger.log(f"Lurking Mode: Holding the rolls. Panic in {int(hold_seconds // 60)}m.", preset_name, "INFO")
+        return max(1.0, hold_seconds)
+
     async def execute_owned_normal_roll_action(logical_roll_cycle_id):
         """The sole executor for every ordinary replenished normal-roll batch."""
         owner = client.normal_roll_action_owner
@@ -3788,6 +3818,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             # A status request may cross a reset or observe manual roll usage.
             state = get_normal_roll_cycle_state(client, logical_roll_cycle_id)
             if owner.cycle_id != logical_roll_cycle_id or state is None or state.count_uncertain:
+                return
+            lurker_hold_seconds = owned_roll_lurker_hold_seconds()
+            if lurker_hold_seconds > 0:
+                _schedule_owned_normal_action_callback(
+                    logical_roll_cycle_id, lurker_hold_seconds, replace_existing=True,
+                )
                 return
         roll_count = max(0, int(state.remaining))
         if reconciling_auto_rolls:
@@ -5165,29 +5201,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     await complete_owned_normal_roll_transaction(old_cycle_id, channel)
             if client.key_limit_hit:
                 return
-            if client._pre_roll_status_required:
-                # The requesting owner resumes only after all status commands
-                # and parsing finish; do not schedule a competing roll callback.
-                mk_match = re.search(REGEX_PATTERNS["MK_BONUS"], c_lower)
-                client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
-                return
-            if (
-                client.predicted_roll_state_valid
-                and client.predicted_roll_cycle_id == client.current_roll_cycle_id
-                and client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id)
-                and not status_dirty_fields(client)
-            ):
-                # The query has paid its timing delay. Wake the same owner
-                # now, replacing any outstanding status-retry callback.
-                scheduled_trigger = bool(client.scheduled_roll_due and client.rolling_enabled and proceed_to_rolls)
-                schedule_owned_normal_roll_action(
-                    client.current_roll_cycle_id, now_utc,
-                    scheduled_trigger=scheduled_trigger, status_refreshed=True,
-                )
-                if scheduled_trigger:
-                    client.scheduled_roll_due = False
-                return
-
+            # Decide the Lurker window before the early returns below, so a
+            # roll batch that is already scheduled cannot skip the hold or the dump.
             is_timing_window = bool(client.time_rolls_to_claim_reset and claim_reset_minutes is not None and claim_reset_minutes <= 60)
             is_panic_window, is_lurking = lurker_window_state(
                 lurker_mode=client.lurker_mode,
@@ -5204,6 +5219,29 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 BotLogger.log(f"Lurking Mode: Waiting. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
             elif client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
                 BotLogger.log(f"Lurking Mode: Rolling normally until the last round ({claim_reset_minutes - client.roll_interval}m).", preset_name, "INFO")
+            if client._pre_roll_status_required:
+                # The requesting owner resumes only after all status commands
+                # and parsing finish; do not schedule a competing roll callback.
+                mk_match = re.search(REGEX_PATTERNS["MK_BONUS"], c_lower)
+                client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
+                return
+            if (
+                client.predicted_roll_state_valid
+                and client.predicted_roll_cycle_id == client.current_roll_cycle_id
+                and client.normal_roll_action_owner.is_pending(client.current_roll_cycle_id)
+                and not status_dirty_fields(client)
+                and not is_lurking
+            ):
+                # The query has paid its timing delay. Wake the same owner
+                # now, replacing any outstanding status-retry callback.
+                scheduled_trigger = bool(client.scheduled_roll_due and client.rolling_enabled and proceed_to_rolls)
+                schedule_owned_normal_roll_action(
+                    client.current_roll_cycle_id, now_utc,
+                    scheduled_trigger=scheduled_trigger, status_refreshed=True,
+                )
+                if scheduled_trigger:
+                    client.scheduled_roll_due = False
+                return
 
             mk_match = re.search(REGEX_PATTERNS["MK_BONUS"], c_lower)
             client.mk_rolls_left = int(re.sub(r"[^\d]", "", mk_match.group(1))) if mk_match else 0
