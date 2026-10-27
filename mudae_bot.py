@@ -4822,7 +4822,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             else:
                 missing_tu_categories.add("rt")
                 if "rt" not in missing_tu_category_warnings:
-                    BotLogger.log("Your $tu response is missing the 'rt' category. Run '$tuarrange' in Discord to include it. RT automation will stay disabled until it appears.", preset_name, "WARN")
+                    BotLogger.log("Your $tu response has no $rt line. If you have $rt unlocked, run '$tuarrange' in Discord to include it. RT automation will stay disabled until it appears.", preset_name, "WARN")
                     missing_tu_category_warnings.add("rt")
                 # Repeating the same $tu query cannot make an unconfigured
                 # optional category authoritative; clear stale RT dirtiness.
