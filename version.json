@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.10/mudae_bot.py",
-      "sha256": "c3b8aa084ba81a10e625be755dca842c8a929deeb94b1b3551e30b8ddd60399b"
+      "sha256": "a635b89dc0551e13e596b25a2c277cd96976a5761547ced5a426115692157215"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.1.10/mudae_preset_editor.py",
-      "sha256": "879020c4394a611a8b5d037061ba5a0af1e5610e752108c6b82665f5d952edad"
+      "sha256": "f7b7df3182ec3c78e4d75166769425b4c96ea5c6683ba134599ebdfe043a5a37"
     },
     {
       "path": "mudae_core/__init__.py",
