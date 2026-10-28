@@ -7863,6 +7863,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return False
 
     edited_wish_attempts = set()
+    # Mudae edits a roll again for every button click on it. One claim check
+    # per message is enough; repeating it halted the rolls on each edit.
+    edited_wish_checked = set()
 
     async def process_edited_wish(message):
         """Recheck delayed wish pings without replaying roll accounting or rewards."""
@@ -7878,23 +7881,33 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if (not is_wished_by_self(message, client.user.id)
                 or name in client.avoid_list or get_character_owner(embed) is not None
                 or not has_claim_option(message, embed, client.claim_emojis)
-                or message.id in edited_wish_attempts or _claim_coordinator.is_reserved(message.id)):
+                or message.id in edited_wish_attempts or message.id in edited_wish_checked
+                or message.id in client.processed_claim_messages
+                or _claim_coordinator.is_reserved(message.id)):
             return
         owner_id, owner_name = await detect_roll_owner(client, message)
-        if client.character_snipe_targets and owner_id != client.user.id:
+        self_names = {
+            str(getattr(client.user, "name", "") or "").casefold(),
+            str(getattr(client.user, "display_name", "") or "").casefold(),
+        }
+        is_external = not (owner_id == client.user.id or bool(owner_name and owner_name in self_names))
+        if client.character_snipe_targets and is_external:
             if str(owner_id) not in client.character_snipe_targets and owner_name not in client.character_snipe_targets:
                 return
-        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True):
+        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external):
             return
         # Both cached and raw updates may arrive while the claim delay is running.
-        if message.id in edited_wish_attempts:
+        if message.id in edited_wish_attempts or message.id in edited_wish_checked:
             return
         edited_wish_attempts.add(message.id)
         try:
             BotLogger.log(f"Wish detected on edited roll: {embed.author.name}. Checking claim.", preset_name, "CLAIM")
             if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)):
                 return
-            if await claim_character(client, message.channel, message, is_snipe=True):
+            if len(edited_wish_checked) > 1000:
+                edited_wish_checked.clear()
+            edited_wish_checked.add(message.id)
+            if await claim_character(client, message.channel, message, is_snipe=is_external):
                 client.snipe_happened = True
         finally:
             edited_wish_attempts.discard(message.id)

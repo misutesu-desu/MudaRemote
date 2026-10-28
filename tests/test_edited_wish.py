@@ -50,6 +50,28 @@ class EditedWishTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(self.handler(self.message), self.handler(self.message))
         self.claim.assert_awaited_once()
 
+    async def test_later_edits_of_the_same_roll_do_not_retry_the_claim(self):
+        # Reported: every button click on a wished roll edited it again and
+        # each edit halted the rolls for another claim check.
+        self.claim.return_value = False
+        for _ in range(3):
+            await self.bot.events["on_message_edit"](self.message, self.message)
+        self.claim.assert_awaited_once()
+
+    async def test_edit_skips_a_roll_the_claim_path_already_took(self):
+        self.bot.processed_claim_messages.add(self.message.id)
+        await self.bot.events["on_message_edit"](self.message, self.message)
+        self.claim.assert_not_awaited()
+
+    async def test_edited_own_roll_is_not_claimed_as_a_snipe(self):
+        own, _ = _build_roll_message(self.channel, 98002, self.bot.user.id, self.bot.user.name)
+        own.content = self.message.content
+        own.mentions = [self.bot.user]
+        own.components = []
+        await self.handler(own)
+        self.claim.assert_awaited_once()
+        self.assertFalse(self.claim.await_args.kwargs["is_snipe"])
+
     async def test_edit_respects_filters_and_pause(self):
         for attribute, value in (("avoid_list", ["rem"]), ("character_snipe_targets", ["999"]),
                                  ("is_paused", True), ("snipe_mode", False)):
