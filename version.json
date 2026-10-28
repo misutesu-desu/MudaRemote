@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.1**\n\n### 🐛 Bug Fixes\n- **Spheres No Longer Skipped Mid-Batch:** On your own rolls, sphere clicks that were still waiting for `$tu` counted as used, so the bot skipped every sphere until the batch ended. It now goes by the real count from `$tu` and keeps clicking.\n- **No More Claim Loop on Edited Wishes:** Mudae edits a roll every time someone clicks a button on it, and the bot rechecked the claim and paused your rolls on each edit. It now checks a wished roll once, and your own rolls are no longer treated as snipes.\n- **Lurker Panic Dump Starts in Time:** With a short Panic Roll time, the dump began too late to finish before the reset and the rolls were pushed to the next cycle. The panic window now opens early enough for all your rolls.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.1/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.1/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "d62b66fe18acf3b9a937e72a2aa0108f8eb15db96b8dead9cfc6683dcc691824",
   "source_files": [
     {
       "path": "mudae_bot.py",
