@@ -8,7 +8,7 @@ from tests.test_private_roll_sync_delay import _attach_status_channel, _create_t
 class LurkerOwnedRollActionTests(unittest.IsolatedAsyncioTestCase):
     """A roll batch woken by its own timer must still obey the Lurker Strategy."""
 
-    async def _fire_owned_roll_with_lurker(self, claim_reset_minutes):
+    async def _fire_owned_roll_with_lurker(self, claim_reset_minutes, panic_roll_minutes=5):
         client = _create_test_client(
             server_reset_minute=None, last_tu_snapshot_complete=False,
             humanization_enabled=False,
@@ -18,7 +18,7 @@ class LurkerOwnedRollActionTests(unittest.IsolatedAsyncioTestCase):
             "Next claim reset in **60** min.",
             f"Next claim reset in **{claim_reset_minutes}** min.",
         )
-        client.panic_roll_minutes = 5
+        client.panic_roll_minutes = panic_roll_minutes
         with mock.patch.object(mudae_bot._tu_interval_coordinator, "reserve", return_value=0), \
                 mock.patch.object(mudae_bot, "pause_interruptible_sleep", new=mock.AsyncMock(return_value=True)):
             # The batch was scheduled in an earlier round, before lurking applied.
@@ -42,6 +42,13 @@ class LurkerOwnedRollActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_panic_window_releases_owned_rolls(self):
         client, channel = await self._fire_owned_roll_with_lurker(4)
+        self.assertIn("$wa", channel.sent)
+        self.assertEqual(client.current_min_kakera_for_roll_claim, 0)
+
+    async def test_too_short_panic_window_opens_early_enough_for_the_dump(self):
+        # Reported: a 1 minute panic window started the dump after the last
+        # safe start, so the rolls were deferred past the reset and lost.
+        client, channel = await self._fire_owned_roll_with_lurker(3, panic_roll_minutes=1)
         self.assertIn("$wa", channel.sent)
         self.assertEqual(client.current_min_kakera_for_roll_claim, 0)
 

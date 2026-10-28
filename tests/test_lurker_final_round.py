@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from mudae_core.runtime import lurker_window_state
+from mudae_core.runtime import lurker_panic_lead_minutes, lurker_window_state
 
 
 class LurkerWindowStateTests(unittest.TestCase):
@@ -34,6 +34,17 @@ class LurkerWindowStateTests(unittest.TestCase):
         self.assertEqual(self.state(30, lurker=False, final_round_only=True), (False, False))
         self.assertEqual(self.state(30, claim_available=False), (False, False))
         self.assertEqual(self.state(None), (False, False))
+
+
+class LurkerPanicLeadTests(unittest.TestCase):
+    def test_configured_minutes_stay_when_the_dump_fits(self):
+        self.assertEqual(lurker_panic_lead_minutes(5, 10, 0.4), 5)
+
+    def test_short_window_grows_to_fit_the_dump(self):
+        # 10 rolls at 0.4s plus the status, pre-roll and safety reserves
+        # need a little over two minutes.
+        self.assertEqual(lurker_panic_lead_minutes(1, 10, 0.4), 3)
+        self.assertGreater(lurker_panic_lead_minutes(5, 300, 2.0), 5)
 
 
 class LurkerFinalRoundConfigTests(unittest.TestCase):

@@ -23,6 +23,8 @@ AUTOMATED_STAGGER_INTERVAL_SECONDS = 20.0
 NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS = 30.0
 NORMAL_ROLL_PREROLL_RESERVE_SECONDS = 30.0
 ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS = 3.0
+# The $tu and channel patience the bot pays before a Lurker panic dump starts.
+LURKER_PANIC_STATUS_LEAD_SECONDS = 60.0
 
 
 def mk_full_power_wait_is_unchanged(
@@ -108,6 +110,21 @@ def lurker_window_state(
     if final_round_only and claim_reset_minutes > round_minutes:
         return False, False
     return False, True
+
+
+def lurker_panic_lead_minutes(panic_roll_minutes, roll_count, roll_speed, use_slash_rolls=False):
+    """Minutes before the claim reset the panic dump has to begin.
+
+    A panic window shorter than the dump itself opened after the last safe
+    start, so the rolls were deferred past the reset and never sent.
+    """
+    needed_seconds = (
+        estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls)
+        + NORMAL_ROLL_PREROLL_RESERVE_SECONDS
+        + NORMAL_ROLL_BATCH_SAFETY_MARGIN_SECONDS
+        + LURKER_PANIC_STATUS_LEAD_SECONDS
+    )
+    return max(int(panic_roll_minutes or 0), -int(-needed_seconds // 60))
 
 
 def estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls=False, fixed_overhead_seconds=5.0):

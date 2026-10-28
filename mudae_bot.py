@@ -232,7 +232,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -269,7 +269,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -3736,6 +3736,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         finally:
             client._pre_roll_status_required = False
 
+    def panic_lead_minutes():
+        """Configured panic minutes, widened until the whole dump still fits."""
+        return lurker_panic_lead_minutes(
+            client.panic_roll_minutes, client.rolls_left,
+            client.roll_speed, client.use_slash_rolls,
+        )
+
     def owned_roll_lurker_hold_seconds():
         """Seconds a scheduled batch must wait for the Lurker panic window.
 
@@ -3754,7 +3761,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             final_round_only=getattr(client, "lurker_final_round_only", False),
             claim_available=client.claim_right_available,
             claim_reset_minutes=claim_reset_minutes,
-            panic_roll_minutes=client.panic_roll_minutes,
+            panic_roll_minutes=panic_lead_minutes(),
             round_minutes=client.roll_interval,
         )
         if is_panic_window:
@@ -3762,7 +3769,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return 0.0
         if not is_lurking:
             return 0.0
-        hold_seconds = seconds_left - client.panic_roll_minutes * 60.0
+        hold_seconds = seconds_left - panic_lead_minutes() * 60.0
         BotLogger.log(f"Lurking Mode: Holding the rolls. Panic in {int(hold_seconds // 60)}m.", preset_name, "INFO")
         return max(1.0, hold_seconds)
 
@@ -5218,14 +5225,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 final_round_only=getattr(client, "lurker_final_round_only", False),
                 claim_available=client.claim_right_available,
                 claim_reset_minutes=claim_reset_minutes,
-                panic_roll_minutes=client.panic_roll_minutes,
+                panic_roll_minutes=panic_lead_minutes(),
                 round_minutes=client.roll_interval,
             )
             if is_panic_window:
                 client.current_min_kakera_for_roll_claim = 0
                 BotLogger.log(f"Panic Roll Mode: Reset soon ({claim_reset_minutes}m). Dumping everything.", preset_name, "CLAIM")
             elif is_lurking:
-                BotLogger.log(f"Lurking Mode: Waiting. Panic in {claim_reset_minutes - client.panic_roll_minutes}m.", preset_name, "INFO")
+                BotLogger.log(f"Lurking Mode: Waiting. Panic in {claim_reset_minutes - panic_lead_minutes()}m.", preset_name, "INFO")
             elif client.lurker_mode and client.claim_right_available and claim_reset_minutes is not None:
                 BotLogger.log(f"Lurking Mode: Rolling normally until the last round ({claim_reset_minutes - client.roll_interval}m).", preset_name, "INFO")
             if client._pre_roll_status_required:
@@ -5303,7 +5310,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 else:
                     if wait_time > 0: sleep_choices.append((float(wait_time), "claim cooldown", True, {"claim"}))
                     if is_lurking and claim_reset_minutes is not None:
-                        sleep_choices.append((float(claim_reset_minutes - client.panic_roll_minutes), "panic roll window arrival", True, {"claim", "rolls"}))
+                        sleep_choices.append((float(claim_reset_minutes - panic_lead_minutes()), "panic roll window arrival", True, {"claim", "rolls"}))
                     if rt_reset_minutes is not None and rt_reset_minutes > 0:
                         sleep_choices.append((float(rt_reset_minutes), "$rt reset", True, {"rt"}))
                     if roll_reset_minutes is not None and roll_reset_minutes > 0:
@@ -5527,8 +5534,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if c_min is not None:
                         if not client.claim_right_available:
                             sleep_candidates.append((max(0.05, float(c_min)), "claim reset verification", True, {"claim"}))
-                        if client.claim_right_available and c_min > client.panic_roll_minutes:
-                            sleep_candidates.append((float(c_min - client.panic_roll_minutes), "panic roll arrival", True, {"claim", "rolls"}))
+                        if client.claim_right_available and c_min > panic_lead_minutes():
+                            sleep_candidates.append((float(c_min - panic_lead_minutes()), "panic roll arrival", True, {"claim", "rolls"}))
                 sleep_candidates.sort(key=lambda x: x[0])
                 await humanized_wait_and_proceed(client, channel, max(0.05, sleep_candidates[0][0]), sleep_candidates[0][1], hard_deadline=sleep_candidates[0][2], boundary_fields=sleep_candidates[0][3])
             else:
