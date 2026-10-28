@@ -68,15 +68,37 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(bot.sphere_button_budget.clicked, 7)
                 self.assertEqual(len(bot.sphere_button_budget.pending), 1)
 
-    async def test_full_quota_with_waiting_clicks_does_not_click_and_logs_the_skip(self):
-        bot, channel = _create_test_client()
+    async def test_full_quota_with_waiting_clicks_skips_a_sphere_on_someone_elses_roll(self):
+        bot, channel = _create_test_client(
+            rolling_enabled=False,
+            kakera_reaction_snipe_mode_preset=True,
+            kakera_reaction_snipe_targets=["5555"],
+        )
         bot.sphere_button_budget.observe('19/20 buttons clicked', datetime.datetime.now(datetime.timezone.utc))
         bot.sphere_button_budget.reserve('earlier', datetime.datetime.now(datetime.timezone.utc))
-        message, button = _build_roll_message(channel, 5201, bot.user.id, bot.user.name, 'spG')
+        message, button = _build_roll_message(channel, 5201, 5555, 'allowed-target', 'spG', client=bot)
         with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
             await bot.events['on_message'](message)
         button.click.assert_not_awaited()
         self.assertTrue(any('Skipping spG' in call.args[0] for call in log.call_args_list))
+
+    async def test_clicks_waiting_for_tu_do_not_hide_spheres_on_own_rolls(self):
+        # Reported: 7/20 confirmed plus 13 unconfirmed clicks skipped every
+        # sphere for 300 rolls, and the next $tu said only 15/20.
+        bot, channel = _create_test_client()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        bot.sphere_button_budget.observe('7/20 buttons clicked', now)
+        for key in range(13):
+            bot.sphere_button_budget.reserve(('earlier', key), now)
+        message, button = _build_roll_message(channel, 5207, bot.user.id, bot.user.name, 'spT')
+        button.click.return_value = SimpleNamespace(successful=True)
+        button.click.side_effect = None
+        with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
+            await bot.events['on_message'](message)
+        button.click.assert_awaited_once()
+        self.assertFalse(any('Skipping spT' in call.args[0] for call in log.call_args_list))
+        self.assertEqual(len(bot.sphere_button_budget.pending), 14)
+        self.assertTrue(bot._sphere_quota_recheck_requested)
 
     async def test_sphere_under_an_old_confirmed_cap_is_clicked_once_per_window(self):
         # Mudae hides spheres once the quota is used up, so a visible one

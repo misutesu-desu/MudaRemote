@@ -103,8 +103,11 @@ class KakeraFeedbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         bot.sphere_button_budget.observe('19/20 buttons clicked', before)
         bot.sphere_button_budget.reserve('ambiguous-click', before)
         msg, button = _build_roll_message(self.channel, 9300, bot.user.id, bot.user.name, 'spG2')
+        button.click.return_value = SimpleNamespace(successful=True)
+        button.click.side_effect = None
         await bot.events['on_message'](msg)
-        button.click.assert_not_awaited()
+        # Unconfirmed clicks do not hide a sphere on an own roll.
+        button.click.assert_awaited_once()
         self.assertIn('points', status_dirty_fields(bot))
         await self.status(quota='18/20')
         self.assertNotIn('points', status_dirty_fields(bot))

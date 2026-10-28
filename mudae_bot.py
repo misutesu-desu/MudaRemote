@@ -1908,12 +1908,17 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             and datetime.datetime.now(timezone.utc) >= refill_at
         )
 
-    async def click_character_sphere(msg, button, interaction_key, emoji_name, character_name):
+    async def click_character_sphere(msg, button, interaction_key, emoji_name, character_name, *, is_snipe=False):
         """Sphere delivery has no Kakera +amount ($k) confirmation contract."""
         budget = client.sphere_button_budget
         stale_cap_probe = False
         quota_free = normalize_character_sphere_emoji(emoji_name).casefold() in SPHERE_QUOTA_FREE_EMOJIS
-        if not quota_free and not budget.available:
+        # Clicks waiting for $tu are only a guess: some never count. On this
+        # account's own roll Mudae shows the sphere only while the quota has
+        # room, so only a cap confirmed by $tu may hold the click back there.
+        own_roll = not is_snipe
+        has_room = budget.confirmed_available if own_roll else budget.available
+        if not quota_free and not has_room:
             # Pending reservations make the cap provisional, and a confirmed
             # cap whose known refill already elapsed needs the same $tu. Ask
             # once per episode; the next successful budget.observe re-arms it.
@@ -1926,7 +1931,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             # reset on a schedule the bot does not know. Probe it with one
             # click per window instead of ignoring spheres until a restart.
             now_mono = time.monotonic()
-            if not budget.pending and now_mono >= getattr(client, "_sphere_stale_cap_probe_after", 0.0):
+            if (own_roll or not budget.pending) and now_mono >= getattr(client, "_sphere_stale_cap_probe_after", 0.0):
                 client._sphere_stale_cap_probe_after = now_mono + SPHERE_STALE_CAP_PROBE_SECONDS
                 stale_cap_probe = True
                 BotLogger.log(
@@ -1947,6 +1952,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return False
         if not quota_free:
             budget.reserve(interaction_key, datetime.datetime.now(timezone.utc))
+            if not budget.available and not getattr(client, "_sphere_quota_recheck_requested", False):
+                _request_sphere_quota_recheck()
         if stale_cap_probe:
             # Let the next $tu replace the stale cap with the real count.
             _request_sphere_quota_recheck()
@@ -2033,7 +2040,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         terminal = False
         if is_character_sphere_emoji(emoji_name):
-            return await click_character_sphere(msg, button, interaction_key, emoji_name, character_name)
+            return await click_character_sphere(
+                msg, button, interaction_key, emoji_name, character_name, is_snipe=is_snipe,
+            )
         power_token = None
         power_cost = 0
         is_purple = str(emoji_name or "").rstrip("2").casefold() == "kakerap"

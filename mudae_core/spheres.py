@@ -51,6 +51,11 @@ class SphereButtonBudget:
     def available(self):
         return self.limit is None or self.clicked + len(self.pending) < self.limit
 
+    @property
+    def confirmed_available(self):
+        """Room left by the last $tu alone, ignoring clicks still waiting for it."""
+        return self.limit is None or self.clicked < self.limit
+
     def reserve(self, key, sent_at):
         self.pending[key] = sent_at
 
