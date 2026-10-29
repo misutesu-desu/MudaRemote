@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.2**\n\n### 🐛 Bug Fixes\n- **Spheres After the Daily Reset:** If the bot was still rolling when the daily sphere reset hit, it kept thinking the sphere buttons were used up and skipped most spheres until its next `$tu`. It now knows when the reset is from your last `$tu` and clicks spheres again as soon as it passes.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.2/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.2/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "d579eafa1f63275cca35778e1937ce1ef0c6aa62ba3ed6072fd0fa1e19727c6a",
   "source_files": [
     {
       "path": "mudae_bot.py",
