@@ -101,7 +101,8 @@ class LootAutomation:
         leading_mention = re.match(r"^\s*(?:\*\*)?<@!?(\d+)>(?:\*\*)?", text)
         if leading_mention and int(leading_mention.group(1)) != own:
             return False
-        leading_name = re.match(r"^\s*(?:\*\*([^*]+)\*\*|(?!error\b)([\w.-]{2,32})(?:\s*[,!:—-]|'s\b))", text)
+        # A count such as "24,396 mudapins were released" is not a name.
+        leading_name = re.match(r"^\s*(?:\*\*([^*]+)\*\*|(?!error\b)(?=[\w.-]*[^\W\d_])([\w.-]{2,32})(?:\s*[,!:—-]|'s\b))", text)
         addressed_by_name = status_message_addresses_identity(text, own_names, user_id=None)
         if leading_name and not leading_mention and not addressed_by_name:
             return False

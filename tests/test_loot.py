@@ -100,6 +100,19 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, ["$kl 1000", "$arlp"])
         self.assertTrue(any("Pins released" in text for text, _ in self.logs))
 
+    async def test_arlp_reply_starting_with_the_released_count_is_confirmed(self):
+        loot = self.loot()
+
+        def on_send(content, receipt_id):
+            if content.startswith("$kl"):
+                loot.on_message(message(receipt_id + 1, "Too many pins", reply=receipt_id))
+            elif content == "$arlp":
+                loot.on_message(message(receipt_id + 1, "24,396 mudapins were released.", reply=receipt_id))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertTrue(any("Pins released" in text for text, _ in self.logs))
+
     async def test_unaddressed_pin_error_runs_arlp(self):
         # Reported: the error came without a reply and the bot kept sending $kl.
         loot = self.loot(kl_amount=12000)
