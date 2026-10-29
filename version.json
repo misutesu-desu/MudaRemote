@@ -133,7 +133,7 @@
     {
       "path": "mudae_core/loot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.2/mudae_core/loot.py",
-      "sha256": "3a6bf1677668fbda46868868698296da907fb3de40b20867b2bd779881ab62a5"
+      "sha256": "75c65e8c0e2877bd8a797a39303a8a2bc99c21440ea60f52ed9066441f33cc5f"
     },
     {
       "path": "mudae_core/roll_mode.py",
