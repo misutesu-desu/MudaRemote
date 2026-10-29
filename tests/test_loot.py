@@ -100,6 +100,21 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, ["$kl 1000", "$arlp"])
         self.assertTrue(any("Pins released" in text for text, _ in self.logs))
 
+    async def test_unaddressed_kl_result_completes_the_cycle(self):
+        # Reported: Mudae posted the $kl result without a reply, the bot
+        # waited 8 seconds and logged that Mudae did not respond.
+        loot = self.loot(kl_amount=12000)
+
+        def on_send(content, receipt_id):
+            loot.on_message(message(receipt_id + 1, "<:rollstack:633217516461883404> +9,659.4 rolls stacked "
+                                                    "(Stock: 1,567,906.8)\n+1,214,013 kakera"))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 12000"])
+        self.assertTrue(any("completed" in text for text, _ in self.logs))
+        self.assertFalse(any("did not respond" in text for text, _ in self.logs))
+
     async def test_stop_sign_on_kl_sends_it_again(self):
         # Requested: another player's $kl at the same moment makes Mudae put
         # a stop sign on ours, so the bot should try again right away.

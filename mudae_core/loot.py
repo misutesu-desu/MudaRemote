@@ -127,6 +127,10 @@ class LootAutomation:
         # harmless, so an unaddressed one right after our command is enough.
         if reference is None and not leading_name and any(pattern in text for pattern in PIN_ERRORS):
             return True
+        # A $kl sent without a prompt gets its result the same way, so an
+        # unaddressed one right after our command ends the cycle.
+        if self.mode == "kl" and reference is None and not leading_name and "rolls stacked" in text:
+            return True
         return False
 
     def on_message(self, message):
