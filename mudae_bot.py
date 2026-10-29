@@ -1913,6 +1913,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         budget = client.sphere_button_budget
         stale_cap_probe = False
         quota_free = normalize_character_sphere_emoji(emoji_name).casefold() in SPHERE_QUOTA_FREE_EMOJIS
+        # The daily refill resets the buttons too, and a long roll batch can
+        # run past it before the next $tu.
+        if budget.expire_at_refill(datetime.datetime.now(timezone.utc)):
+            BotLogger.log(
+                f"Daily sphere refill passed; sphere buttons count from 0/{budget.limit} until the next $tu.",
+                preset_name, "INFO",
+            )
         # Clicks waiting for $tu are only a guess: some never count. On this
         # account's own roll Mudae shows the sphere only while the quota has
         # room, so only a cap confirmed by $tu may hold the click back there.

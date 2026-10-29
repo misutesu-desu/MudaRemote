@@ -125,6 +125,48 @@ class SphereDeliveryTests(unittest.IsolatedAsyncioTestCase):
         await bot.events['on_message'](third)
         third_button.click.assert_not_awaited()
 
+    async def test_cap_from_before_the_daily_refill_does_not_block_spheres_after_it(self):
+        # Reported: $tu at 16:44 said 20/20 with the refill at 17:00, the bot
+        # kept rolling past 17:00 without a new $tu and skipped 24 spheres.
+        bot, channel = _create_test_client()
+        asked_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=20)
+        bot.sphere_button_budget.observe(
+            '0 $oh left for today, 0 $oc, 0 $og and 0 $ot.\n'
+            '16 min before the refill. **20/20** buttons clicked.',
+            asked_at,
+        )
+        bot.sphere_button_budget.reserve('yesterday', asked_at)
+        buttons = []
+        with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
+            for message_id in (5301, 5302, 5303):
+                message, button = _build_roll_message(channel, message_id, bot.user.id, bot.user.name, 'spG')
+                button.click.return_value = SimpleNamespace(successful=True)
+                button.click.side_effect = None
+                buttons.append(button)
+                await bot.events['on_message'](message)
+        for button in buttons:
+            button.click.assert_awaited_once()
+        self.assertFalse(any('Skipping spG' in call.args[0] for call in log.call_args_list))
+        self.assertEqual(bot.sphere_button_budget.clicked, 0)
+        self.assertEqual(len(bot.sphere_button_budget.pending), 3)
+
+    async def test_cap_before_the_refill_still_blocks_spheres(self):
+        bot, channel = _create_test_client(
+            rolling_enabled=False,
+            kakera_reaction_snipe_mode_preset=True,
+            kakera_reaction_snipe_targets=["5555"],
+        )
+        bot.sphere_button_budget.observe(
+            '3h 10 min before the refill. **20/20** buttons clicked.',
+            datetime.datetime.now(datetime.timezone.utc),
+        )
+        bot.sphere_button_budget.reserve('earlier', datetime.datetime.now(datetime.timezone.utc))
+        message, button = _build_roll_message(channel, 5304, 5555, 'allowed-target', 'spG', client=bot)
+        with mock.patch.object(mudae_bot.BotLogger, 'log') as log:
+            await bot.events['on_message'](message)
+        button.click.assert_not_awaited()
+        self.assertTrue(any('Skipping spG' in call.args[0] for call in log.call_args_list))
+
     async def test_spm_does_not_count_toward_the_sphere_quota(self):
         # Reported: spM was skipped at 20/20, but it is outside that quota.
         bot, channel = _create_test_client()

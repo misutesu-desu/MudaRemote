@@ -1,6 +1,7 @@
 """Parsing and deterministic board choices for Mudae sphere mini-games."""
 
 from dataclasses import dataclass, field
+import datetime
 from itertools import combinations
 import re
 import time
@@ -29,6 +30,17 @@ def parse_sphere_button_count(text):
     return int(match.group(1)), int(match.group(2))
 
 
+def parse_sphere_refill_minutes(text):
+    """Minutes until the daily sphere refill, which also resets the buttons."""
+    match = re.search(
+        r"(?:(\d+)\s*h\s*)?(\d+)\s*min(?:ute)?s?\s+before\s+the\s+refill",
+        str(text or "").replace("**", ""), re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return int(match.group(1) or 0) * 60 + int(match.group(2))
+
+
 class SphereButtonBudget:
     """Keep authoritative usage separate from clicks awaiting a status snapshot."""
 
@@ -36,6 +48,7 @@ class SphereButtonBudget:
         self.clicked = None
         self.limit = None
         self.pending = {}
+        self.refill_at = None
 
     def observe(self, text, requested_at):
         count = parse_sphere_button_count(text)
@@ -45,6 +58,22 @@ class SphereButtonBudget:
         # Clicks sent during the query may not appear in its snapshot yet.
         self.pending = {key: sent_at for key, sent_at in self.pending.items()
                         if sent_at >= requested_at}
+        refill_minutes = parse_sphere_refill_minutes(text)
+        self.refill_at = (
+            requested_at + datetime.timedelta(minutes=refill_minutes)
+            if refill_minutes is not None and isinstance(requested_at, datetime.datetime)
+            else None
+        )
+        return True
+
+    def expire_at_refill(self, now):
+        """Drop a count that the daily refill has reset since the last $tu."""
+        if self.refill_at is None or self.clicked is None or now < self.refill_at:
+            return False
+        refill_at, self.refill_at = self.refill_at, None
+        self.clicked = 0
+        self.pending = {key: sent_at for key, sent_at in self.pending.items()
+                        if sent_at >= refill_at}
         return True
 
     @property
@@ -125,14 +154,7 @@ def parse_sphere_game_status(text: str) -> Optional[SphereGameStatus]:
     if not counts:
         return None
 
-    refill_minutes = None
-    refill_match = re.search(
-        r"(?:(\d+)\s*h\s*)?(\d+)\s*min(?:ute)?s?\s+before\s+the\s+refill",
-        normalized,
-        re.IGNORECASE,
-    )
-    if refill_match:
-        refill_minutes = int(refill_match.group(1) or 0) * 60 + int(refill_match.group(2))
+    refill_minutes = parse_sphere_refill_minutes(normalized)
 
     return SphereGameStatus(
         oh=counts.get("oh", 0),
