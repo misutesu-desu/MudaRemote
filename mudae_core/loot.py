@@ -6,7 +6,7 @@ import math
 import random
 import re
 
-from mudae_core.runtime import wait_until_resumed
+from mudae_core.runtime import mudae_command_rejection_matches, wait_until_resumed
 from mudae_core.status import status_message_addresses_identity
 
 
@@ -19,6 +19,8 @@ CONFIRMATIONS = {
 ARLP_SUCCESS = ("mudapins were released", "were released", "fueron liberadas", "han sido liberadas", "fueron liberados")
 KL_SUCCESS = ("rolls stacked", "obtained", "obtenido", "conseguido")
 SCRAP_SUCCESS = ("scraps have been given", "scrap has been given", "se han dado")
+# Mudae puts a stop sign on a command that collides with another player's.
+LOOT_STOP_SIGN_RETRIES = 2
 
 
 def _positive_int(value, name):
@@ -151,6 +153,13 @@ class LootAutomation:
         self._seen.add(message_id)
         self._queue.put_nowait((signal, message, text))
 
+    def on_reaction(self, payload):
+        if self._queue is None:
+            return
+        # The send receipt may not be recorded yet, so it is matched when read.
+        if mudae_command_rejection_matches(payload, getattr(payload, "message_id", None), MUDAE_ID):
+            self._queue.put_nowait(("REFUSED", payload, ""))
+
     async def _response(self, accepted, timeout):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -162,7 +171,13 @@ class LootAutomation:
                 signal, message, text = await asyncio.wait_for(self._queue.get(), min(remaining, 0.5))
             except asyncio.TimeoutError:
                 continue
-            if signal not in accepted or not self._belongs_to_self(message, text):
+            if signal not in accepted:
+                continue
+            if signal == "REFUSED":
+                if getattr(message, "message_id", None) in self._sent_ids:
+                    return signal
+                continue
+            if not self._belongs_to_self(message, text):
                 continue
             if any(message.id <= sent_id for sent_id in self._sent_ids):
                 continue
@@ -187,9 +202,18 @@ class LootAutomation:
         prefix = self.client.mudae_prefix
         command = (f"{prefix}kl {self.kl_amount}" if self.mode == "kl" else
                    f"{prefix}givescrap {self.scrap_target_id} {self.scrap_amount}")
-        if not await self._send_once(channel, command):
-            return
-        signal = await self._response({"CONFIRM", "SUCCESS", "PIN_ERROR"}, 8)
+        for attempt in range(LOOT_STOP_SIGN_RETRIES + 1):
+            if not await self._send_once(channel, command):
+                return
+            signal = await self._response({"CONFIRM", "SUCCESS", "PIN_ERROR", "REFUSED"}, 8)
+            if signal != "REFUSED":
+                break
+            if attempt == LOOT_STOP_SIGN_RETRIES:
+                self.log("Mudae refused the loot command again; waiting for the next cycle", "WARN")
+                return
+            self.log("Mudae refused the loot command; sending it again", "WARN")
+            if not await self.wait(random.uniform(1.2, 2.5)) or self.client.is_paused:
+                return
         if signal == "PIN_ERROR":
             await self._arlp(channel)
         elif signal == "SUCCESS":

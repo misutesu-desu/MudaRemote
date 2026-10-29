@@ -100,6 +100,38 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, ["$kl 1000", "$arlp"])
         self.assertTrue(any("Pins released" in text for text, _ in self.logs))
 
+    async def test_stop_sign_on_kl_sends_it_again(self):
+        # Requested: another player's $kl at the same moment makes Mudae put
+        # a stop sign on ours, so the bot should try again right away.
+        loot = self.loot()
+        refusals = [1]
+
+        def on_send(content, receipt_id):
+            if refusals[0]:
+                refusals[0] -= 1
+                loot.on_reaction(SimpleNamespace(message_id=receipt_id, user_id=MUDAE_ID,
+                                                 emoji=SimpleNamespace(name="\U0001F6D1")))
+            else:
+                loot.on_message(message(receipt_id + 1, "Rolls stacked", reply=receipt_id))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 1000", "$kl 1000"])
+        self.assertTrue(any("completed" in text for text, _ in self.logs))
+
+    async def test_repeated_stop_signs_give_up_until_the_next_cycle(self):
+        loot = self.loot()
+
+        def on_send(content, receipt_id):
+            loot.on_reaction(SimpleNamespace(message_id=receipt_id, user_id=MUDAE_ID,
+                                             emoji=SimpleNamespace(name="\U0001F6D1")))
+            loot.on_reaction(SimpleNamespace(message_id=receipt_id, user_id=11,
+                                             emoji=SimpleNamespace(name="\U0001F6D1")))
+
+        self.on_send = on_send
+        await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 1000"] * 3)
+
     async def test_arlp_reply_starting_with_the_released_count_is_confirmed(self):
         loot = self.loot()
 

@@ -7941,6 +7941,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     @client.event
     async def on_raw_reaction_add(payload):
         if client.loot_automation is not None:
+            client.loot_automation.on_reaction(payload)
             return
         message_id = getattr(payload, 'message_id', None)
         if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
