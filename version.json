@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.3**\n\n### 🐛 Bug Fixes\n- **Event Cards Get Claimed Again:** Free event cards like the Halloween Art Contest ones are clicked whether your claim is up or not, and you no longer need the event emojis in Claim Emojis. This also fixes the crash some desktop users saw when an event card appeared.\n- **No More Stalls on a Character You Just Claimed:** If a character with the same name as your last claim showed up again, the bot kept stopping your rolls for nothing. It now skips it and keeps rolling.\n- **`$kl` Retries a Stop Sign:** When Mudae puts a 🛑 on your `$kl`, the bot sends it again instead of waiting for the next cycle.\n- **Faster `$kl` Cycles:** When Mudae posts the `$kl` result without replying to you, the bot now picks it up right away instead of waiting 8 seconds.\n- **Pin Release Is Recognized:** The bot now confirms `$arlp` when Mudae's reply starts with the number of released pins.\n- **Android Asks for a Restart Less:** Saving a setting no longer asks for a restart because of empty channel or target fields you never touched.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.3/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.3/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "197495418431fb7e2c8e060643bb3f9419792e38df3d0be5a1dc85311838bf36",
   "source_files": [
     {
       "path": "mudae_bot.py",
