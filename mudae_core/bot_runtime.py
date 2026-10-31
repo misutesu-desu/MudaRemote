@@ -410,7 +410,7 @@ class BotInstance:
                 "errors": List[str],  # Validation errors if any
             }
         """
-        from .preset_reload import validate_live_preset, RESTART_ONLY_KEYS, normalize_preset
+        from .preset_reload import validate_live_preset, normalize_preset, restart_keys as changed_restart_keys
 
         errors = validate_live_preset(preset_data)
         if errors:
@@ -466,10 +466,7 @@ class BotInstance:
             # Calculate restart-required keys
             candidate = normalize_preset(preset_data)
             initial = normalize_preset(self.preset_data)
-            restart_keys = sorted(
-                key for key in RESTART_ONLY_KEYS
-                if candidate.get(key) != initial.get(key)
-            )
+            restart_keys = changed_restart_keys(candidate, initial)
 
             with self._state_lock:
                 self._restart_required = restart_keys

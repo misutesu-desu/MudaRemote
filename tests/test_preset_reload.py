@@ -20,6 +20,14 @@ class PresetReloadTests(unittest.IsolatedAsyncioTestCase):
         self.log = mock.Mock()
         return LivePresetReload(self.client, BASE, self.apply, self.log, **kwargs)
 
+    def test_blank_fields_saved_as_empty_text_need_no_restart(self):
+        reload = self.make_reload()
+        saved = {**BASE, "channel_id": 1234, "command_channel_id": "",
+                 "forcedivorce_channel_id": "", "scrap_target_id": " "}
+        self.assertEqual(reload.restart_required(saved), [])
+        self.assertEqual(reload.restart_required({**saved, "command_channel_id": "5678"}),
+                         ["command_channel_id"])
+
     async def test_saved_file_applies_once_and_invalid_save_preserves_state(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "presets.json"

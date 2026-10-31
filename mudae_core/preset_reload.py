@@ -23,6 +23,21 @@ LIFECYCLE_DEFAULTS = {
 }
 
 
+def _restart_value(value):
+    # The app saves an empty field as "" while an older preset stores null or
+    # nothing, and channel ids arrive as text or numbers.
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value.strip() if isinstance(value, str) else value
+
+
+def restart_keys(candidate, initial):
+    return sorted(key for key in RESTART_ONLY_KEYS
+                  if _restart_value(candidate.get(key)) != _restart_value(initial.get(key)))
+
+
 def clean_preset(data):
     if not isinstance(data, dict):
         raise ValueError("Preset must be a JSON object.")
@@ -83,9 +98,7 @@ class LivePresetReload:
         self._deferred_reported = False
 
     def restart_required(self, data):
-        candidate = normalize_preset(data)
-        return sorted(key for key in RESTART_ONLY_KEYS
-                      if candidate.get(key) != self.initial.get(key))
+        return restart_keys(normalize_preset(data), self.initial)
 
     def offer(self, data, request_id=None):
         """Queue a preset update with optional request_id for correlation."""
