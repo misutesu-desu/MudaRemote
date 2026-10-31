@@ -1060,8 +1060,8 @@ def is_character_embed(embed):
 
 def is_free_event(embed):
     if not embed or not embed.description: return False
-    desc = embed.description.lower()
-    return any(k in desc for k in ["it's free!", "é de graça!", "¡es gratis!", "christmas art contest", "new year's contest"])
+    desc = embed.description.lower().replace("’", "'")
+    return any(k in desc for k in ["it's free!", "é de graça!", "¡es gratis!", "art contest", "new year's contest"])
 
 def has_claim_option(message, embed, claim_emojis):
     if not message.components: return not get_character_owner(embed)
@@ -1156,9 +1156,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 log_function(safe, safe_name, log_type)
 
         BotLogger = RuntimeLogger
-
-        def print_log(message, name=preset_name, log_type="INFO"):
-            BotLogger.log(message, name, log_type)
 
     token = preset_data.get("token")
     prefix = preset_data.get("prefix", "/////////////")
@@ -6937,7 +6934,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
             c_name = embed.author.name.lower()
             if is_free_event(embed):
-                print_log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
+                BotLogger.log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
                 await claim_character(client, channel, msg, is_free_claim=True)
                 continue
 
@@ -7630,7 +7627,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         is_claim_button = has_emoji and btn.emoji.name in client.claim_emojis
                         if getattr(btn, "disabled", False):
                             continue
-                        is_verified_free_button = is_claim_button and (is_free_event(embed) or check_is_green(btn))
+                        # An event card's button carries the event's own emoji,
+                        # such as a candy, which is rarely in Claim Emojis.
+                        is_verified_free_button = (has_emoji and is_free_event(embed)) or (is_claim_button and check_is_green(btn))
                         if (is_free_claim and is_verified_free_button) or (not is_free_claim and is_claim_button):
                             if client.debug_mode:
                                 ws_ref = getattr(client, 'ws', None)
@@ -8225,6 +8224,15 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     await claim_character(client, message.channel, message, is_kakera=True, is_snipe=True)
             return
 
+        # Event cards cost no claim, so they are taken whatever the claim,
+        # value or wish rules say.
+        if is_free_event(embed):
+            c_name = embed.author.name.lower()
+            if c_name not in client.avoid_list and not _claim_coordinator.is_reserved(message.id):
+                BotLogger.log(f"Free event card detected: {c_name}", preset_name, "CLAIM")
+                if await claim_character(client, message.channel, message, is_free_claim=True):
+                    return
+
         if client.auto_free_claim_enabled and has_free_claim_button(message.components, client.claim_emojis):
             c_name = embed.author.name.lower()
             if c_name not in client.avoid_list and not _claim_coordinator.is_reserved(message.id):
@@ -8637,10 +8645,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)): return
                             if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
                                 client.snipe_happened = True; process = False
-
-            if process and is_free_event(embed):
-                print_log(f"Sniping free event card: {c_name}", preset_name, "CLAIM")
-                if await claim_character(client, message.channel, message, is_free_claim=True): process = False
 
     async def send_loot_command(channel, content):
         if is_inactive_hour():

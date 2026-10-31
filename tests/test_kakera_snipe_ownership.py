@@ -422,3 +422,38 @@ class KakeraSnipeOwnershipRegressionTests(unittest.IsolatedAsyncioTestCase):
             btn_own.click.called,
             "Own-roll Kakera must NOT be blocked by Target User IDs.",
         )
+
+
+class FreeEventCardTests(unittest.IsolatedAsyncioTestCase):
+    def _event_card(self, channel, message_id):
+        button = SimpleNamespace(
+            emoji=SimpleNamespace(name="🍬"), custom_id=f"{message_id}p0",
+            disabled=False, style=SimpleNamespace(value=2), click=mock.AsyncMock(),
+        )
+        embed = SimpleNamespace(
+            author=SimpleNamespace(name="monster party"),
+            image=SimpleNamespace(url="https://example.invalid/event.png"),
+            thumbnail=None,
+            description=("Halloween Art Contest 2026 - Click\non me, it's free!\n"
+                         "Claims: #1,003\nLikes: #1,003\n**161**<:kakera:469835869059153940>"),
+            footer=SimpleNamespace(text=None),
+        )
+        message = SimpleNamespace(
+            id=message_id, channel=channel, author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+            content="", created_at=datetime.datetime.now(datetime.timezone.utc),
+            embeds=[embed], components=[SimpleNamespace(children=[button])],
+            interaction=SimpleNamespace(user=SimpleNamespace(id=9001, name="someone"), name="wa"),
+            reference=None,
+        )
+        return message, button
+
+    async def test_event_card_is_clicked_without_a_claim_or_its_emoji_in_claim_emojis(self):
+        bot, channel = _create_test_client()
+        bot.claim_right_available = False
+        bot.rt_available = False
+        bot.loop = asyncio.get_running_loop()
+        message, button = self._event_card(channel, 1101)
+        self.assertNotIn("🍬", bot.claim_emojis)
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message"](message)
+        button.click.assert_awaited_once()
