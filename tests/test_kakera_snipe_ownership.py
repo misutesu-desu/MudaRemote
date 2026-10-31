@@ -457,3 +457,23 @@ class FreeEventCardTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
             await bot.events["on_message"](message)
         button.click.assert_awaited_once()
+
+
+class ClaimedNameRepeatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_edited_wish_of_a_name_claimed_this_cycle_is_left_alone(self):
+        bot, channel = _create_test_client()
+        bot.claim_right_available = False
+        bot.rt_available = True
+        bot.last_successfully_claimed_character = "satoru gojo"
+        message, _ = _build_roll_message(channel, 1201, 9001, "someone")
+        message.embeds[0].author.name = "Satoru Gojo"
+        message.components = [SimpleNamespace(children=[SimpleNamespace(
+            emoji=SimpleNamespace(name=bot.claim_emojis[0]), custom_id="1201c",
+            disabled=False, style=SimpleNamespace(value=2), click=mock.AsyncMock())])]
+        message.content = "Wished by <@7001>"
+        message.mentions = [SimpleNamespace(id=bot.user.id)]
+        with mock.patch.object(mudae_bot.BotLogger, "log") as log, \
+                mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message_edit"](message, message)
+        self.assertFalse(any("Wish detected on edited roll" in str(c.args[0]) for c in log.call_args_list))
+        message.components[0].children[0].click.assert_not_awaited()

@@ -7893,6 +7893,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         name = embed.author.name.lower()
         if (not is_wished_by_self(message, client.user.id)
                 or name in client.avoid_list or get_character_owner(embed) is not None
+                or name == getattr(client, 'last_successfully_claimed_character', '')
                 or not has_claim_option(message, embed, client.claim_emojis)
                 or message.id in edited_wish_attempts or message.id in edited_wish_checked
                 or message.id in client.processed_claim_messages
@@ -8490,6 +8491,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             or (not client.claim_right_available and not can_spend_rt)
                         ):
                             pass
+                        elif c_name == getattr(client, 'last_successfully_claimed_character', ''):
+                            # claim_character refuses the name claimed this cycle, so
+                            # halting the rolls for it only stalled them.
+                            BotLogger.log(f"Not claiming {c_name}: a character with this name was already claimed this cycle.", preset_name, "CLAIM")
                         else:
                             client.interrupt_rolling = True
                             client._roll_interrupt_reason = "claim-attempt"
