@@ -93,7 +93,7 @@
     {
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.2/mudae_core/bot_runtime.py",
-      "sha256": "f86106380925b5894c264deceb51d0f3d4a70fd4a6e9ee6eef724109210f40fa"
+      "sha256": "6276cf6498a84309dbc5c1f21093dd791825e785c389520825efab7b8f4df968"
     },
     {
       "path": "mudae_core/worker.py",
@@ -143,7 +143,7 @@
     {
       "path": "mudae_core/preset_reload.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.2/mudae_core/preset_reload.py",
-      "sha256": "6909485f510505ba9783f376fd84b8a64d1b4f4a038e72595bc6679ea801522c"
+      "sha256": "d02a9fb0e928cbbbff49c6cf7058316b9a3d64ce8611ad4843918fcc15ccad93"
     }
   ],
   "apk_version": "1.2.37",
