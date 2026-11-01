@@ -2835,7 +2835,7 @@ class PresetEditor:
         inactive_row.pack(fill=tk.X, pady=5)
         lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 01:30-07:15, 23:45-06:10):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
         lbl_sleep.pack(anchor=tk.W)
-        lbl_sleep_desc = tk.Label(inactive_row, text="The bot will not roll during these hours (uses your local time)",
+        lbl_sleep_desc = tk.Label(inactive_row, text="The bot will not roll, snipe or click Kakera during these hours (uses your local time)",
                  bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
         lbl_sleep_desc.pack(anchor=tk.W)
         inactive_entry = tk.Entry(
