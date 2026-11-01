@@ -3704,7 +3704,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         _prune_normal_action_metadata()
         if getattr(client, "_deferred_independent_known_work", False):
             client._deferred_independent_known_work = False
-            await run_independent_known_work(channel, client.current_roll_cycle_id)
+            # A batch that outlasts the roll reset ends with a successor already
+            # queued, so this gap may be the only one until rolls run out.
+            client._independent_work_between_batches = True
+            try:
+                await run_independent_known_work(channel, client.current_roll_cycle_id)
+            finally:
+                client._independent_work_between_batches = False
         return True
 
     async def refresh_status_before_rolls(channel, logical_roll_cycle_id):
@@ -3777,6 +3783,27 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         BotLogger.log(f"Lurking Mode: Holding the rolls. Panic in {int(hold_seconds // 60)}m.", preset_name, "INFO")
         return max(1.0, hold_seconds)
 
+    async def play_sphere_boards_before_batch(channel, logical_roll_cycle_id):
+        """Give deferred boards one turn per cycle ahead of its normal batch."""
+        if (not getattr(client, "_deferred_independent_known_work", False)
+                or client.lurker_mode
+                or client.time_rolls_to_claim_reset
+                or client._sphere_boards_before_batch_cycle_id == logical_roll_cycle_id
+                or not any_sphere_game_enabled(client)):
+            return False
+        client._sphere_boards_before_batch_cycle_id = logical_roll_cycle_id
+        client._independent_work_between_batches = True
+        try:
+            await client.sphere_runtime.run_available_sphere_games(channel)
+        except Exception as e:
+            BotLogger.log(f"Sphere boards failed before rolls: {e}", preset_name, "ERROR")
+            retry_at = time.monotonic() + 300.0
+            for kind in SPHERE_GAME_KINDS:
+                client._sphere_game_retry_after[kind] = retry_at
+        finally:
+            client._independent_work_between_batches = False
+        return True
+
     async def execute_owned_normal_roll_action(logical_roll_cycle_id):
         """The sole executor for every ordinary replenished normal-roll batch."""
         owner = client.normal_roll_action_owner
@@ -3795,7 +3822,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return
         if client.key_limit_hit:
             return
-        if client.is_paused or is_maintenance_active():
+        if (client.is_paused or is_maintenance_active()
+                or getattr(client, "_independent_work_between_batches", False)):
             _schedule_owned_normal_action_callback(logical_roll_cycle_id, 10.0)
             return
         if not client.rolling_enabled:
@@ -3843,6 +3871,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if lurker_hold_seconds > 0:
                 _schedule_owned_normal_action_callback(
                     logical_roll_cycle_id, lurker_hold_seconds, replace_existing=True,
+                )
+                return
+            if await play_sphere_boards_before_batch(channel, logical_roll_cycle_id):
+                # Boards can take minutes: recheck everything from the top.
+                _schedule_owned_normal_action_callback(
+                    logical_roll_cycle_id, replace_existing=True,
                 )
                 return
         roll_count = max(0, int(state.remaining))
@@ -4400,7 +4434,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             or (client.rolling_enabled and getattr(client, "_local_extra_rolls_pending", 0) > 0)
             or getattr(client, "_pending_mk_roll", None) is not None
             or getattr(client, "_normal_roll_transaction_cycle_id", None) is not None
-            or client.normal_roll_action_owner.state in {"pending", "executing"}
+            or client.normal_roll_action_owner.state == "executing"
+            or (client.normal_roll_action_owner.state == "pending"
+                and not getattr(client, "_independent_work_between_batches", False))
             or getattr(client, "collected_rolls", None)
             or getattr(client, "_claim_reset_rolls_pending", False)
         )

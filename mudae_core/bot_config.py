@@ -516,6 +516,8 @@ def configure_client(
     client._auto_rolls_ack_ambiguous_cycle_id = None
     client._auto_rolls_reconcile_cycle_id = None
     client._deferred_independent_known_work = False
+    client._independent_work_between_batches = False
+    client._sphere_boards_before_batch_cycle_id = None
     client._normal_roll_transaction_cycle_id = None
     client._normal_roll_deferred_until_utc = None
     client._normal_roll_deferred_cycle_id = None

@@ -9,7 +9,7 @@ from unittest import mock
 import mudae_bot
 from mudae_core import clear_status_dirty, status_dirty_fields, status_refresh_reasons
 from mudae_core.spheres import parse_sphere_game_status
-from tests.test_roll_window_production import _build_runtime, _Channel
+from tests.test_roll_window_production import _build_runtime, _Channel, _install_anchored_cycle
 
 
 def closure(function, name):
@@ -96,6 +96,168 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(channel.sent, [], blocker)
             self.assertEqual(bot.sphere_game_counts['oh'], 1, blocker)
             self.assertTrue(bot._deferred_independent_known_work, blocker)
+
+    def _bot_finishing_batch_with_queued_successor(self):
+        bot = _build_runtime()
+        channel = _Channel()
+        bot._main_channel = bot.command_channel = channel
+        bot.auto_oq_enabled = True
+        bot.auto_oh_enabled = bot.auto_oc_enabled = bot.auto_ot_enabled = False
+        bot.auto_p_enabled = bot.auto_dk_enabled = bot.auto_mk_enabled = False
+        bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cycle_a, cycle_b = ('roll', 17, 1), ('roll', 18, 1)
+        owner = bot.normal_roll_action_owner
+        owner.schedule(cycle_id=cycle_a, now_utc=now)
+        self.assertTrue(owner.start(cycle_a))
+        bot.current_roll_cycle_id = cycle_a
+        owner.schedule(cycle_id=cycle_b, now_utc=now)
+        self.assertEqual(owner.queued_cycle_id, cycle_b)
+        bot.sphere_game_counts.update(oq=1)
+        bot._deferred_independent_known_work = True
+
+        async def send(content, **_kwargs):
+            channel.sent.append(content)
+            if content == '$oq 1':
+                bot._sphere_game_response_future.set_result(SimpleNamespace(id=len(channel.sent)))
+            return SimpleNamespace(id=len(channel.sent), created_at=now)
+
+        channel.send = send
+        return bot, channel, cycle_a, cycle_b
+
+    async def test_deferred_boards_play_in_the_gap_before_a_queued_successor_batch(self):
+        # A batch that outlasts the roll reset always ends with a successor
+        # queued, so waiting for an idle roll lane starves the boards forever.
+        bot, channel, cycle_a, cycle_b = self._bot_finishing_batch_with_queued_successor()
+        schedule = bot._runtime_schedule_owned_normal_roll_action
+        callback = closure(schedule, '_schedule_owned_normal_action_callback').cell_contents
+        execute = closure(callback, 'execute_owned_normal_roll_action').cell_contents
+        played = []
+
+        async def play(*_args):
+            # The successor's timer may fire mid-board; it must wait its turn.
+            await execute(cycle_b)
+            self.assertNotEqual(bot._roll_count_sync_cycle_id, cycle_b)
+            played.append(bot.normal_roll_action_owner.state)
+            return True
+
+        with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', side_effect=play):
+            await bot._runtime_complete_owned_normal_roll_transaction(cycle_a, channel)
+
+        self.assertEqual(channel.sent, ['$oq 1'])
+        self.assertEqual(played, ['pending'])
+        self.assertEqual(bot.sphere_game_counts['oq'], 0)
+        self.assertFalse(bot._deferred_independent_known_work)
+        self.assertEqual(bot.normal_roll_action_owner.cycle_id, cycle_b)
+
+    async def test_gap_before_a_queued_batch_still_yields_to_a_pending_claim(self):
+        bot, channel, cycle_a, _cycle_b = self._bot_finishing_batch_with_queued_successor()
+        bot.pending_claim = object()
+
+        await bot._runtime_complete_owned_normal_roll_transaction(cycle_a, channel)
+
+        self.assertEqual(channel.sent, [])
+        self.assertEqual(bot.sphere_game_counts['oq'], 1)
+        self.assertTrue(bot._deferred_independent_known_work)
+
+    async def test_queued_batch_blocks_boards_outside_the_gap(self):
+        bot, channel, cycle_a, _cycle_b = self._bot_finishing_batch_with_queued_successor()
+        await bot._runtime_complete_owned_normal_roll_transaction(cycle_a, channel)
+        channel.sent.clear()
+        bot.sphere_game_counts.update(oq=1)
+        bot._sphere_game_retry_after['oq'] = 0.0
+
+        await bot.sphere_runtime.run_available_sphere_games(channel)
+
+        self.assertEqual(channel.sent, [])
+        self.assertEqual(bot.sphere_game_counts['oq'], 1)
+        self.assertTrue(bot._deferred_independent_known_work)
+
+    def _bot_about_to_start_batch(self):
+        bot = _build_runtime()
+        channel = _Channel()
+        bot._main_channel = bot.command_channel = channel
+        bot.auto_oq_enabled = True
+        bot.auto_oh_enabled = bot.auto_oc_enabled = bot.auto_ot_enabled = False
+        bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        _anchor, cycle, _next_cycle, _state = _install_anchored_cycle(
+            bot, now + datetime.timedelta(minutes=50), now, remaining=5,
+        )
+        bot.normal_roll_action_owner.schedule(cycle_id=cycle, now_utc=now)
+        bot.sphere_game_counts.update(oq=1)
+        bot._deferred_independent_known_work = True
+
+        async def send(content, **_kwargs):
+            channel.sent.append(content)
+            if content == '$oq 1':
+                bot._sphere_game_response_future.set_result(SimpleNamespace(id=len(channel.sent)))
+            return SimpleNamespace(id=len(channel.sent), created_at=now)
+
+        async def refreshed(*_args):
+            return True
+
+        async def start_rolls(_client, _channel, count, *_args):
+            channel.sent.append(f'rolls:{count}')
+
+        channel.send = send
+        schedule = bot._runtime_schedule_owned_normal_roll_action
+        callback = closure(schedule, '_schedule_owned_normal_action_callback').cell_contents
+        execute = closure(callback, 'execute_owned_normal_roll_action').cell_contents
+        closure(execute, 'refresh_status_before_rolls').cell_contents = refreshed
+        closure(execute, 'start_roll_commands').cell_contents = start_rolls
+        return bot, channel, cycle, execute
+
+    async def test_deferred_boards_play_before_a_normal_batch_starts(self):
+        bot, channel, cycle, execute = self._bot_about_to_start_batch()
+
+        async def play(*_args):
+            return True
+
+        with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', side_effect=play):
+            await execute(cycle)
+            self.assertEqual(channel.sent, ['$oq 1'])
+            self.assertEqual(bot.normal_roll_action_owner.state, 'pending')
+            self.assertEqual(bot._predicted_roll_action_cycle_id, cycle)
+            await execute(cycle)
+
+        self.assertEqual(channel.sent, ['$oq 1', 'rolls:5'])
+        self.assertFalse(bot._independent_work_between_batches)
+
+    async def test_failed_boards_do_not_block_the_batch(self):
+        bot, channel, cycle, execute = self._bot_about_to_start_batch()
+
+        with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', side_effect=RuntimeError('board broke')):
+            await execute(cycle)
+            await execute(cycle)
+
+        self.assertEqual(channel.sent, ['$oq 1', 'rolls:5'])
+        self.assertFalse(bot._independent_work_between_batches)
+        self.assertGreater(bot._sphere_game_retry_after['oq'], mudae_bot.time.monotonic())
+
+    async def test_reset_timed_rolls_keep_boards_after_the_batch(self):
+        for setting in ('lurker_mode', 'time_rolls_to_claim_reset'):
+            bot, channel, cycle, execute = self._bot_about_to_start_batch()
+            setattr(bot, setting, True)
+            closure(execute, 'owned_roll_lurker_hold_seconds').cell_contents = lambda: 0
+
+            async def play(*_args):
+                return True
+
+            with mock.patch.object(bot.sphere_runtime, 'play_sphere_game', side_effect=play):
+                await execute(cycle)
+            self.assertEqual(channel.sent, ['rolls:5', '$oq 1'], setting)
+
+    async def test_boards_before_a_batch_still_yield_to_a_pending_claim(self):
+        bot, channel, cycle, execute = self._bot_about_to_start_batch()
+        bot.pending_claim = object()
+
+        await execute(cycle)
+        await execute(cycle)
+
+        self.assertEqual(channel.sent, ['rolls:5'])
+        self.assertEqual(bot.sphere_game_counts['oq'], 1)
+        self.assertTrue(bot._deferred_independent_known_work)
 
     async def test_refill_cost_respects_separate_key_and_perk_filters(self):
         for mode, keys, perk, shop, power, refill in (
