@@ -1843,7 +1843,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         client.rt_available_at_utc = None
         client.claim_right_available = True
         client.claim_cooldown_until_utc = None
-        client.last_successfully_claimed_character = None
         clear_status_dirty(client, {"claim", "rt"})
         clear_rt_command_in_flight()
         wake_status_loop()
@@ -2216,7 +2215,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         ):
             client.claim_right_available = True
             client.claim_cooldown_until_utc = None
-            client.last_successfully_claimed_character = None
             client._claim_reset_refresh_requested = True
             BotLogger.log(
                 "Predicted claim reset reached. Claims are enabled from the local reset anchor.",
@@ -4245,7 +4243,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.next_claim_reset_at_utc = claim_anchor.next_boundary_at_utc
                 client.claim_right_available = True
                 client.claim_cooldown_until_utc = None
-                client.last_successfully_claimed_character = None
                 # A panic-window bypass belonged to the cycle that just ended.
                 client.current_min_kakera_for_roll_claim = client.min_kakera
                 clear_status_dirty(client, {"claim"})
@@ -5068,7 +5065,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
             if claim_ready:
                 client.claim_right_available = True
-                client.last_successfully_claimed_character = None
                 client.claim_cooldown_until_utc = None
                 client._claim_reset_refresh_requested = False
                 BotLogger.log("Claim: Ready", preset_name, "INFO")
@@ -5877,10 +5873,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     BotLogger.log(f"Kakera Farm: Could not confirm forcedivorce for {char_name}.", preset_name, "WARN")
                     return False
                 BotLogger.log(f"Kakera Farm: Confirmed forcedivorce for {char_name}.", preset_name, "INFO")
-                if str(getattr(client, 'last_successfully_claimed_character', '') or '').casefold() == str(char_name or '').casefold():
-                    # The duplicate-claim guard is no longer valid once Mudae confirms
-                    # that the farm character was released.
-                    client.last_successfully_claimed_character = None
                 return await active_delay(1.0 + random.uniform(0.1, 0.4))
             return False
 
@@ -6357,7 +6349,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     await active_delay(remaining_s + 0.5)
             client.claim_right_available = True
             client.claim_cooldown_until_utc = None
-            client.last_successfully_claimed_character = None
             refresh_predicted_claim_and_rt()
             claimed = False
             if client.collected_rolls:
@@ -6523,7 +6514,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 getattr(channel, "id", None), char_name, pending.get("message_id")
             )
             client.claim_right_available = False
-            client.last_successfully_claimed_character = char_name.lower()
             base = client.next_claim_reset_at_utc
             delta = datetime.timedelta(minutes=client.claim_interval)
             if base is None:
@@ -7023,8 +7013,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             for msg, n, v, s in (wl_claims + char_claims):
                 if (msg.id == msg_claimed_id
                         or msg.id in client.processed_claim_messages
-                        or msg.id in failed_rt_messages
-                        or n == getattr(client, 'last_successfully_claimed_character', '')):
+                        or msg.id in failed_rt_messages):
                     continue
                 claims_r, likes_r = parse_mudae_ranks(msg.embeds[0].description or "")
                 is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
@@ -7398,9 +7387,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         embed = msg.embeds[0]
         char_name = (embed.author.name if embed.author else "Unknown").strip()
         BotLogger.log(f"claim_character: '{char_name}' | k={is_kakera} rt={is_rt_claim} s={is_snipe} f={is_free_claim}", preset_name, "DEBUG", client)
-
-        if not is_kakera and not is_free_claim and char_name.lower() == getattr(client, 'last_successfully_claimed_character', ''):
-            return False
 
         kakera_str = ""
         if not is_kakera and not is_free_claim:
@@ -7929,7 +7915,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         name = embed.author.name.lower()
         if (not is_wished_by_self(message, client.user.id)
                 or name in client.avoid_list or get_character_owner(embed) is not None
-                or name == getattr(client, 'last_successfully_claimed_character', '')
                 or not has_claim_option(message, embed, client.claim_emojis)
                 or message.id in edited_wish_attempts or message.id in edited_wish_checked
                 or message.id in client.processed_claim_messages
@@ -8527,10 +8512,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             or (not client.claim_right_available and not can_spend_rt)
                         ):
                             pass
-                        elif c_name == getattr(client, 'last_successfully_claimed_character', ''):
-                            # claim_character refuses the name claimed this cycle, so
-                            # halting the rolls for it only stalled them.
-                            BotLogger.log(f"Not claiming {c_name}: a character with this name was already claimed this cycle.", preset_name, "CLAIM")
                         else:
                             client.interrupt_rolling = True
                             client._roll_interrupt_reason = "claim-attempt"

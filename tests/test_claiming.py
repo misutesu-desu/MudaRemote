@@ -817,7 +817,6 @@ class ClaimInteractionRegressionTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(outcome, ClaimOutcome.INCONCLUSIVE)
                 self.assertFalse(pending["finalized"])
-                self.assertIsNone(self.bot.last_successfully_claimed_character)
 
     async def test_delayed_ack_and_wish_ping_do_not_finalize_or_retry_cached_claim(self):
         self.bot.claim_right_available = True

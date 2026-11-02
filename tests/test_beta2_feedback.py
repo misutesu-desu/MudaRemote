@@ -141,4 +141,4 @@ class FeedbackRegressionTests(unittest.IsolatedAsyncioTestCase):
         stale_button.click.assert_not_awaited()
         fresh_button.click.assert_not_awaited()
         live_button.click.assert_awaited_once()
-        self.assertEqual(client.last_successfully_claimed_character, 'live candidate')
+        self.assertFalse(client.claim_right_available)

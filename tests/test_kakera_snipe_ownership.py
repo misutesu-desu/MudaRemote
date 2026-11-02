@@ -460,20 +460,53 @@ class FreeEventCardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClaimedNameRepeatTests(unittest.IsolatedAsyncioTestCase):
-    async def test_edited_wish_of_a_name_claimed_this_cycle_is_left_alone(self):
+    async def _wish_after_claiming_the_same_name(self, footer=None, rt_available=True):
         bot, channel = _create_test_client()
-        bot.claim_right_available = False
-        bot.rt_available = True
-        bot.last_successfully_claimed_character = "satoru gojo"
+        bot.next_claim_reset_at_utc = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=40)
+        )
+        verify = bot._runtime_verify_snipe_outcome
+        finalize = dict(zip(verify.__code__.co_freevars, verify.__closure__))[
+            "finalize_successful_claim"
+        ].cell_contents
+        await finalize(
+            dict(message_id=1200, character_name="Satoru Gojo", character_kakera=2000,
+                 character_series="Jujutsu Kaisen", consumes_claim=True, is_snipe_action=True),
+            channel,
+            "character-owner",
+        )
+        self.assertFalse(bot.claim_right_available)
+        bot.rt_available = rt_available
+        bot.rt_ignore_min_kakera_for_wishlist = True
+        send_rt = mock.AsyncMock(return_value=False)
+        claim = bot._runtime_claim_character
+        dict(zip(claim.__code__.co_freevars, claim.__closure__))[
+            "send_rt_command"
+        ].cell_contents = send_rt
         message, _ = _build_roll_message(channel, 1201, 9001, "someone")
         message.embeds[0].author.name = "Satoru Gojo"
+        message.embeds[0].footer.text = footer
         message.components = [SimpleNamespace(children=[SimpleNamespace(
             emoji=SimpleNamespace(name=bot.claim_emojis[0]), custom_id="1201c",
             disabled=False, style=SimpleNamespace(value=2), click=mock.AsyncMock())])]
         message.content = "Wished by <@7001>"
         message.mentions = [SimpleNamespace(id=bot.user.id)]
-        with mock.patch.object(mudae_bot.BotLogger, "log") as log, \
-                mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+        async def fetch_message(_message_id):
+            return message
+        channel.fetch_message = fetch_message
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
             await bot.events["on_message_edit"](message, message)
-        self.assertFalse(any("Wish detected on edited roll" in str(c.args[0]) for c in log.call_args_list))
-        message.components[0].children[0].click.assert_not_awaited()
+        return send_rt
+
+    async def test_released_character_rolled_again_spends_the_ready_rt(self):
+        send_rt = await self._wish_after_claiming_the_same_name()
+        send_rt.assert_awaited_once()
+
+    async def test_same_name_still_owned_keeps_the_rt(self):
+        send_rt = await self._wish_after_claiming_the_same_name(footer="Belongs to someone")
+        send_rt.assert_not_awaited()
+
+    async def test_same_name_without_rt_does_nothing(self):
+        send_rt = await self._wish_after_claiming_the_same_name(rt_available=False)
+        send_rt.assert_not_awaited()
+

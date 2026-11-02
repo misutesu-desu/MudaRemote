@@ -550,7 +550,6 @@ def configure_client(
     client.processed_claim_messages = set()
     client._rt_failed_message_ids = set()
     client.claim_retry_counts = {}
-    client.last_successfully_claimed_character = None
     client._has_initialized = False
     client._main_loop_task = None
     client._immediate_check_event = None
