@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.5**\n\n### 🐛 Bug Fixes\n- **`$rt` Works On Repeat Wishes:** If a character you already claimed this hour got released and rolled again, the bot ignored it even with `$rt` ready. It now uses `$rt` and claims it, as long as the roll is still free.\n- **Cleaner Logs On Windows:** Some consoles showed codes like `←[94m` instead of colors. The bot now turns colors on by itself, and if the console can't show them you get plain readable text.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.5/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "29c0b0d52ea25fa0ca65f7d210b7ea39fa0b52afb33fad272d56058ed0d00655",
   "source_files": [
     {
       "path": "mudae_bot.py",
