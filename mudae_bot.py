@@ -467,6 +467,47 @@ def _apply_shared_reset_snapshot(client, snapshot):
             if advance_fn is not None:
                 advance_fn(observed_at)
 
+ANSI_COLOR_CODE = re.compile(r"\x1b\[[0-9;]*m")
+ENABLE_PROCESSED_OUTPUT = 0x0001
+ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+
+def _switch_on_console_colors(get_mode, set_mode):
+    """Return False only for a console that refuses ANSI colors."""
+    mode = get_mode()
+    if mode is None or mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING:
+        return True
+    return bool(set_mode(mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+
+
+def console_supports_colors(stream=None):
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import ctypes.wintypes
+        import msvcrt
+
+        handle = ctypes.wintypes.HANDLE(msvcrt.get_osfhandle((stream or sys.stdout).fileno()))
+        kernel32 = ctypes.windll.kernel32
+        mode = ctypes.wintypes.DWORD()
+
+        def get_mode():
+            # Files and pipes have no console mode.
+            return mode.value if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) else None
+
+        def set_mode(value):
+            return kernel32.SetConsoleMode(handle, ctypes.wintypes.DWORD(value))
+
+        return _switch_on_console_colors(get_mode, set_mode)
+    except Exception:
+        return True
+
+
+def console_text(text):
+    return text if console_supports_colors() else ANSI_COLOR_CODE.sub("", text)
+
+
 class BotLogger:
     _file_lock = threading.Lock()
     _max_log_bytes = 5 * 1024 * 1024
@@ -520,7 +561,7 @@ class BotLogger:
         formatted = f"[{timestamp}] {preset_aligned} {prefix} {msg_clean}"
 
         color_code = cls.COLORS.get(log_type_upper, cls.COLORS["INFO"])
-        console_line = f"{color_code}{formatted}{cls.COLORS['ENDC']}"
+        console_line = console_text(f"{color_code}{formatted}{cls.COLORS['ENDC']}")
         try:
             print(console_line)
         except UnicodeEncodeError:
@@ -8832,7 +8873,7 @@ def main_menu():
  | |  | | |__| | |__| / ____ \| | \ \| |____| |  | | |__| | | |  | |____
  |_|  |_|\____/|_____/_/    \_\_|  \_\______|_|  |_|\____/  |_|  |______|
 """
-    print("\033[1;36m" + banner + "\033[0m\n")
+    print(console_text("\033[1;36m" + banner + "\033[0m\n"))
     _menu_active.set()
     if os.name != 'nt' and not IS_TERMUX:
         import termios
@@ -8877,7 +8918,7 @@ def main_menu():
         sys.stdin = original_stdin
         _menu_active.clear()
     if threads:
-        print(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m")
+        print(console_text(f"\033[1;32m[{BOT_NAME}] Press 'p' at any time to pause/resume all bots.\033[0m"))
 
 def shutdown_mobile_runtime(timeout_seconds=8.0):
     """Cancel retries and close every mobile client with bounded waiting.
@@ -8976,8 +9017,7 @@ def parse_args(argv=None):
 
 def run_cli(argv=None):
     load_desktop_presets()
-    if os.name == 'nt':
-        os.system('')
+    console_supports_colors()
     cleanup_after_update()
     update_result = check_for_updates()
     if update_result == "frozen":
