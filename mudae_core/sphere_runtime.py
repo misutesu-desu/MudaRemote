@@ -518,8 +518,9 @@ class SphereRuntime:
                         completed_all = False
                         break
                 if completed_all:
-                    refill_seconds = max(300.0, float(getattr(status, "refill_minutes", None) or 60) * 60.0)
-                    self._client._sphere_game_retry_after[kind] = time.monotonic() + refill_seconds
+                    # Only guards against a $tu sent before this board. Any later
+                    # $tu is the authority on stock gained before the refill.
+                    self._client._sphere_game_retry_after[kind] = time.monotonic() + 300.0
                 else:
                     for waiting_kind in SPHERE_GAME_KINDS:
                         self._client._sphere_game_retry_after[waiting_kind] = time.monotonic() + 300.0

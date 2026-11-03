@@ -348,6 +348,28 @@ class SphereBoardFlowTests(unittest.IsolatedAsyncioTestCase):
             await runtime.run_available_sphere_games("channel")
         run.assert_awaited_once_with("channel", "oq", 7)
 
+    async def test_stock_gained_later_is_not_locked_until_the_refill(self):
+        # Reported: boards were played at startup, then ignored in later rounds
+        # until a restart even though $tu showed new stock.
+        client = SimpleNamespace(
+            _sphere_games_running=False, sphere_game_counts={},
+            _sphere_game_retry_after={}, oh_use_individually=False, is_processing_cycle=False,
+            auto_oh_enabled=False, auto_oc_enabled=False, auto_oq_enabled=True, auto_ot_enabled=False,
+            _deferred_independent_known_work=False, sphere_game_refill_at_utc=None,
+            loop=mock.Mock(),
+        )
+        runtime = SphereRuntime(
+            client, target_bot_id=1, log=mock.Mock(), send=mock.AsyncMock(), click=mock.AsyncMock(),
+            wait=mock.AsyncMock(return_value=True), maintenance_active=lambda: False,
+            claim_pending=lambda: False, resolve_channel=mock.AsyncMock(),
+            wake_status=lambda: None, ambiguous_error=lambda error: False,
+        )
+        status = SimpleNamespace(available_for=lambda kind: 2 if kind == "oq" else 0, refill_minutes=960)
+        with mock.patch.object(runtime, "run_sphere_game", mock.AsyncMock(return_value=True)), \
+                mock.patch("mudae_core.sphere_runtime.time.monotonic", return_value=1000.0):
+            await runtime.run_available_sphere_games("channel", status)
+        self.assertLessEqual(client._sphere_game_retry_after["oq"], 1300.0)
+
 
 if __name__ == "__main__":
     unittest.main()
