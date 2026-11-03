@@ -49,6 +49,20 @@ class UsLocalConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(bot._us_in_flight)
         self.assertEqual(status_dirty_fields(bot), set(), status_refresh_reasons(bot))
 
+    def test_panic_lead_leaves_room_for_the_saved_rolls(self):
+        bot = self.bot
+        lead = _closure(bot._runtime_check_status)['panic_lead_minutes'].cell_contents
+        bot.roll_speed = 2.0
+        bot.panic_roll_minutes = 1
+        bot.claim_right_available = True
+        bot.auto_us_enabled = False
+        without_saved_rolls = lead()
+        bot.auto_us_enabled = True
+        bot.auto_us_limit = 100
+        self.assertGreater(lead(), without_saved_rolls + 2)
+        bot.us_pulled_this_cycle = 100
+        self.assertEqual(lead(), without_saved_rolls)
+
     async def test_unacknowledged_us_still_asks_tu(self):
         send_auto_us, _ = _send_auto_us(self.bot, [False])
         self.assertTrue(await send_auto_us(10, self.channel))

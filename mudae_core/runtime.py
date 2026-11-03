@@ -25,6 +25,7 @@ NORMAL_ROLL_PREROLL_RESERVE_SECONDS = 30.0
 ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS = 3.0
 # The $tu and channel patience the bot pays before a Lurker panic dump starts.
 LURKER_PANIC_STATUS_LEAD_SECONDS = 60.0
+SAVED_ROLL_COMMAND_OVERHEAD_SECONDS = 5.0
 
 
 def mk_full_power_wait_is_unchanged(
@@ -131,6 +132,22 @@ def estimate_roll_batch_seconds(roll_count, roll_speed, use_slash_rolls=False, f
     """Conservative duration used to clamp a visible normal-roll start."""
     effective_speed = max(2.0, float(roll_speed or 0.0)) if use_slash_rolls else max(0.0, float(roll_speed or 0.0))
     return max(0, int(roll_count or 0)) * (effective_speed + 0.25) + max(0.0, float(fixed_overhead_seconds or 0.0))
+
+
+def saved_rolls_that_fit(now_utc, next_reset_at_utc, amount, roll_speed, use_slash_rolls=False):
+    """How many of ``amount`` saved rolls can finish before the roll reset.
+
+    Rolls pulled with $us that are still unused at the reset are lost.
+    """
+    if next_reset_at_utc is None:
+        return amount
+    usable_seconds = (
+        (next_reset_at_utc - now_utc).total_seconds()
+        - SAVED_ROLL_COMMAND_OVERHEAD_SECONDS
+        - ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS
+    )
+    seconds_per_roll = estimate_roll_batch_seconds(1, roll_speed, use_slash_rolls, fixed_overhead_seconds=0.0)
+    return max(0, min(int(amount), int(usable_seconds // seconds_per_roll)))
 
 
 def normal_roll_start_window(now_utc, next_reset_at_utc, roll_count, roll_speed,

@@ -1,7 +1,8 @@
+import datetime
 import os
 import unittest
 
-from mudae_core.runtime import lurker_panic_lead_minutes, lurker_window_state
+from mudae_core.runtime import lurker_panic_lead_minutes, lurker_window_state, saved_rolls_that_fit
 
 
 class LurkerWindowStateTests(unittest.TestCase):
@@ -45,6 +46,25 @@ class LurkerPanicLeadTests(unittest.TestCase):
         # need a little over two minutes.
         self.assertEqual(lurker_panic_lead_minutes(1, 10, 0.4), 3)
         self.assertGreater(lurker_panic_lead_minutes(5, 300, 2.0), 5)
+
+
+class SavedRollsThatFitTests(unittest.TestCase):
+    NOW = datetime.datetime(2026, 11, 1, 12, 0, tzinfo=datetime.timezone.utc)
+
+    def fit(self, seconds, amount=20, speed=2.0):
+        reset = self.NOW + datetime.timedelta(seconds=seconds)
+        return saved_rolls_that_fit(self.NOW, reset, amount, speed)
+
+    def test_only_rolls_that_finish_before_the_reset_are_pulled(self):
+        # Reported: $us 20 a minute before the reset, and the rest were lost.
+        self.assertEqual(self.fit(60), 20)
+        self.assertEqual(self.fit(30), 9)
+
+    def test_nothing_is_pulled_when_no_roll_fits(self):
+        self.assertEqual(self.fit(5), 0)
+
+    def test_unknown_reset_keeps_the_requested_amount(self):
+        self.assertEqual(saved_rolls_that_fit(self.NOW, None, 20, 2.0), 20)
 
 
 class LurkerFinalRoundConfigTests(unittest.TestCase):
