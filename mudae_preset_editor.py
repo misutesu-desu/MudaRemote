@@ -3475,7 +3475,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "server_reset_minute", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
-                    "main_account_id", "webhook_url", "auto_divorce_max_kakera",
+                    "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
                     "scrap_target_id", "slash_claim_target", "kl_amount", "scrap_amount",
