@@ -3792,6 +3792,23 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             client.roll_speed, client.use_slash_rolls,
         )
 
+    def lurker_panic_window_open(now_utc):
+        """Whether a status check now belongs to the Lurker panic dump."""
+        reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        if reset_at is None:
+            return False
+        seconds_left = max(0.0, (reset_at - now_utc).total_seconds())
+        # $tu reports whole minutes, so the panic wake can land a minute early.
+        is_panic_window, _ = lurker_window_state(
+            lurker_mode=client.lurker_mode,
+            final_round_only=getattr(client, "lurker_final_round_only", False),
+            claim_available=client.claim_right_available,
+            claim_reset_minutes=int(max(0.0, seconds_left - 60.0) // 60),
+            panic_roll_minutes=panic_lead_minutes(),
+            round_minutes=client.roll_interval,
+        )
+        return is_panic_window
+
     def owned_roll_lurker_hold_seconds():
         """Seconds a scheduled batch must wait for the Lurker panic window.
 
@@ -4775,7 +4792,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 )
             )
             timing_deadline = getattr(client, "_tu_timing_deadline_utc", None)
-            if recovering_claim:
+            if recovering_claim or lurker_panic_window_open(now_utc):
                 timing_deadline = now_utc
                 client._tu_timing_deadline_utc = timing_deadline
             if timing_deadline is None:
