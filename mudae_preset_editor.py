@@ -672,7 +672,7 @@ BOOL_SETTINGS = [
     ("kakera_snipe_mode", "Value Sniping (Snipe expensive characters rolled by others)", False),
     ("kakera_reaction_snipe_mode", "Auto-Collect Kakera (Click crystals on other people's rolls)", False),
     ("reactive_snipe_on_own_rolls", "Instant Self-Claim (Immediately claim your own good rolls)", True),
-    ("auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)", True),
+    ("auto_free_claim", "Auto-Claim Free Claims and Event Cards (Turn off to stop this account clicking Perk 6 claims and free event cards like the Halloween candy)", True),
     ("key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)", False),
     ("only_chaos", "Chaos Key Only", False),
     ("perk_eight_only", "Perk 8 Only", False),
@@ -2599,7 +2599,7 @@ class PresetEditor:
 
         self.add_number_field(claim_frame.content, "min_kakera", "Minimum Value to Claim (Claim if character is worth this much)", 100)
         claim_interval_entry = self.add_number_field(claim_frame.content, "claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180)
-        self.add_checkbox(claim_frame.content, "auto_free_claim", "Auto-Claim Perk 6 Free Claims (Turn off to prevent this account from clicking green claim buttons)")
+        self.add_checkbox(claim_frame.content, "auto_free_claim", "Auto-Claim Free Claims and Event Cards (Turn off to stop this account clicking Perk 6 claims and free event cards like the Halloween candy)")
         self.add_number_field(claim_frame.content, "max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0,
                               description="Claim/Like rank limits let you claim highly-ranked characters even if they are worth less than your Minimum Kakera value.")
         self.add_number_field(claim_frame.content, "max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0)

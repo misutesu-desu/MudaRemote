@@ -7033,8 +7033,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
             c_name = embed.author.name.lower()
             if is_free_event(embed):
-                BotLogger.log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
-                await claim_character(client, channel, msg, is_free_claim=True)
+                if client.auto_free_claim_enabled:
+                    BotLogger.log(f"Detected free event card: {c_name}", preset_name, "CLAIM")
+                    await claim_character(client, channel, msg, is_free_claim=True)
                 continue
 
             k_v = 0
@@ -8321,7 +8322,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         # Event cards cost no claim, so they are taken whatever the claim,
         # value or wish rules say.
-        if is_free_event(embed):
+        if client.auto_free_claim_enabled and is_free_event(embed):
             c_name = embed.author.name.lower()
             if c_name not in client.avoid_list and not _claim_coordinator.is_reserved(message.id):
                 BotLogger.log(f"Free event card detected: {c_name}", preset_name, "CLAIM")

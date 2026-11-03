@@ -459,6 +459,21 @@ class FreeEventCardTests(unittest.IsolatedAsyncioTestCase):
         button.click.assert_awaited_once()
 
 
+class FreeEventCardSettingTests(FreeEventCardTests):
+    async def test_event_card_is_left_alone_when_free_claims_are_off(self):
+        # Reported: a snipe-only account clicked the candy, and the card then
+        # showed that account while it was away.
+        bot, channel = _create_test_client()
+        bot.auto_free_claim_enabled = False
+        bot.claim_right_available = False
+        bot.rt_available = False
+        bot.loop = asyncio.get_running_loop()
+        message, button = self._event_card(channel, 1102)
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message"](message)
+        button.click.assert_not_awaited()
+
+
 class ClaimedNameRepeatTests(unittest.IsolatedAsyncioTestCase):
     async def _wish_after_claiming_the_same_name(self, footer=None, rt_available=True):
         bot, channel = _create_test_client()
