@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.6**\n\n### ✨ New Features\n- **Turn Off Event Cards:** Auto-Claim Free Claims and Event Cards now also stops the bot clicking free cards like the Halloween candy. Handy for snipe-only accounts.\n- **`$arlp` On A Schedule:** Send $arlp After Every N $kl releases your pins after a set number of `$kl`, so you don't lose a command to the pin error. The bot still sends `$arlp` if the error shows up earlier.\n\n### 🐛 Bug Fixes\n- **Auto `$dk` Time Stays Saved:** The time no longer disappears from the field when you reopen a preset, so saving again won't erase it.\n- **Panic Rolls Start On Time:** The Timing Variation wait can no longer use up the Lurker panic window and push your rolls past the reset.\n- **Fewer Wasted `$us` Rolls:** Panic now starts early enough to fit your saved rolls, and the bot only pulls what it can finish before the roll reset.\n- **Sphere Games In Later Rounds:** New `$oh`, `$oc`, `$oq` and `$ot` stock gets played without restarting the bot.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.6/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.6/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "a556605f1dbcbc309a56e04aa6fe4d807e144d5ca5c0dc9f327ea4b6d2320315",
   "source_files": [
     {
       "path": "mudae_bot.py",
