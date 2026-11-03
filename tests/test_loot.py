@@ -158,6 +158,23 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         kl = "$kl 12000"
         self.assertEqual(self.sent, [kl, "$arlp", kl, kl, "$arlp"])
 
+    async def test_arlp_interval_counts_kl_that_needed_a_confirmation(self):
+        loot = self.loot(kl_amount=12000, kl_arlp_every=2)
+
+        def on_send(content, receipt_id):
+            if content.startswith("$kl"):
+                text = "Do you want to spend 12000? y/n"
+            elif content == "y":
+                text = "+10,169.4 rolls stacked"
+            else:
+                text = "24,284 mudapins were released."
+            loot.on_message(message(receipt_id + 1, text, author_id=MUDAE_ID, reply=receipt_id))
+
+        self.on_send = on_send
+        for _ in range(2):
+            await loot._cycle(self.channel)
+        self.assertEqual(self.sent, ["$kl 12000", "y", "$kl 12000", "y", "$arlp"])
+
     async def test_stop_sign_on_kl_sends_it_again(self):
         # Requested: another player's $kl at the same moment makes Mudae put
         # a stop sign on ours, so the bot should try again right away.
