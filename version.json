@@ -8,17 +8,17 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_bot.py",
-      "sha256": "bab5b8f68730202dddcf28d26783b4ca9764f050503bf6e777d7a15207dd4af0"
+      "sha256": "b7658f700d76a4b7dbade25500c9a68945c237f2649d3a6ccc3d64ea61253efb"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_preset_editor.py",
-      "sha256": "316e7f95b0db1a97942e5e6fe7263123a6699e336e53ae9cd09b7a8f494d2a89"
+      "sha256": "b3c708c4573c0ee506c1d7751b064709ca90450fbeb4df046b9e255bf9d76882"
     },
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/__init__.py",
-      "sha256": "d9803f7e676ac59d7036c617a1e74af40503f46d86c17be5cc9616155c3ef2c5"
+      "sha256": "683ccd68eb61759d506a3d349616a99fcea8d1fe96ef24fb4e3fe80a0f1ce12a"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -28,7 +28,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/config.py",
-      "sha256": "fec46b52be8f3feac8c6156fac598a509abfe687a2599ea613ab078f0c7b4970"
+      "sha256": "6ad5b74cd198ab0942acbd8a32e888fcc8d78574a44ca6aeca86ae08f66f6dce"
     },
     {
       "path": "mudae_core/kakera.py",
@@ -43,7 +43,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/runtime.py",
-      "sha256": "ad182ee164367b844bd1e657ef55e78e3a36b8799d4ae008ba5474dd5c00aaf3"
+      "sha256": "052cef820fc48b0c3b9dbf4272cd729b90b4e37196cc752a97982bb310c2aae4"
     },
     {
       "path": "mudae_core/secrets.py",
@@ -123,7 +123,7 @@
     {
       "path": "mudae_core/sphere_runtime.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/sphere_runtime.py",
-      "sha256": "57530da0f9b183841340254646d0810e7bec8e8a95618a7ca0645016d0e754f8"
+      "sha256": "8d0e4929b2ad950a2297f3b0156d85f2025b3bedfb59f09e1c90bd629d6d5ef9"
     },
     {
       "path": "requirements.txt",
@@ -133,7 +133,7 @@
     {
       "path": "mudae_core/loot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/loot.py",
-      "sha256": "75c65e8c0e2877bd8a797a39303a8a2bc99c21440ea60f52ed9066441f33cc5f"
+      "sha256": "e2dc06cc362f3eec7cf5f2004df22e0f6de94f5519f869050885696ebd64e3b5"
     },
     {
       "path": "mudae_core/roll_mode.py",
@@ -143,7 +143,7 @@
     {
       "path": "mudae_core/preset_reload.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.5/mudae_core/preset_reload.py",
-      "sha256": "d02a9fb0e928cbbbff49c6cf7058316b9a3d64ce8611ad4843918fcc15ccad93"
+      "sha256": "e4f3e1723c2014ecd70b791f030ca8baf26ceb0384bf1c044e411fd2de5fc749"
     }
   ],
   "apk_version": "1.2.37",
