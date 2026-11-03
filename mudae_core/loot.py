@@ -47,6 +47,8 @@ class LootAutomation:
         if self.mode not in {"off", "kl", "scrap"}:
             raise ValueError("loot_mode must be off, kl, or scrap")
         self.kl_amount = _positive_int(preset_data.get("kl_amount", 1000), "kl_amount") if self.mode == "kl" else 1000
+        self.arlp_every = self._arlp_every(preset_data) if self.mode == "kl" else 0
+        self._kl_since_arlp = 0
         self.scrap_amount = _positive_int(preset_data.get("scrap_amount", 500000000), "scrap_amount") if self.mode == "scrap" else 500000000
         target = str(preset_data.get("scrap_target_id", "") or "").strip()
         if self.mode == "scrap":
@@ -68,6 +70,13 @@ class LootAutomation:
         self._sent_at = None
         self._sent_ids = set()
         self._seen = set()
+
+    @staticmethod
+    def _arlp_every(preset_data):
+        value = preset_data.get("kl_arlp_every", 0)
+        if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value).strip()):
+            raise ValueError("kl_arlp_every must be 0 or a positive integer")
+        return int(value)
 
     def _arm(self, channel):
         self._queue = asyncio.Queue()
@@ -188,8 +197,9 @@ class LootAutomation:
             return signal
         return None
 
-    async def _arlp(self, channel):
-        self.log("Pin limit detected; sending arlp", "WARN")
+    async def _arlp(self, channel, reason="Pin limit detected", level="WARN"):
+        self.log(f"{reason}; sending arlp", level)
+        self._kl_since_arlp = 0
         self._arm(channel)
         if not await self.wait(random.uniform(1.2, 2.5)) or self.client.is_paused:
             return
@@ -200,6 +210,14 @@ class LootAutomation:
             await self.wait(random.uniform(2, 4))
         else:
             self.log("Timed out waiting for arlp confirmation", "WARN")
+
+    async def _loot_completed(self, channel):
+        self.log("Loot action completed", "SUCCESS")
+        if not self.arlp_every:
+            return
+        self._kl_since_arlp += 1
+        if self._kl_since_arlp >= self.arlp_every:
+            await self._arlp(channel, f"{self.arlp_every} $kl done", "INFO")
 
     async def _cycle(self, channel):
         self._arm(channel)
@@ -221,7 +239,7 @@ class LootAutomation:
         if signal == "PIN_ERROR":
             await self._arlp(channel)
         elif signal == "SUCCESS":
-            self.log("Loot action completed", "SUCCESS")
+            await self._loot_completed(channel)
         elif signal == "CONFIRM":
             if not await self.wait(random.uniform(1.1, 2.8)) or self.client.is_paused:
                 return
@@ -229,7 +247,7 @@ class LootAutomation:
                 return
             signal = await self._response({"SUCCESS", "PIN_ERROR"}, 7)
             if signal == "SUCCESS":
-                self.log("Loot action completed", "SUCCESS")
+                await self._loot_completed(channel)
             elif signal == "PIN_ERROR":
                 await self._arlp(channel)
             else:

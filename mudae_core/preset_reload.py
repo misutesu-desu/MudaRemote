@@ -12,7 +12,7 @@ from .config import validate_preset
 RESTART_ONLY_KEYS = frozenset({
     "channel_id", "command_channel_id", "forcedivorce_channel_id",
     "claim_interval", "roll_interval", "server_reset_minute", "rolling",
-    "loot_mode", "kl_amount", "scrap_target_id", "scrap_amount",
+    "loot_mode", "kl_amount", "kl_arlp_every", "scrap_target_id", "scrap_amount",
     "loot_min_cooldown", "loot_max_cooldown", "start_delay", "skip_initial_commands",
 })
 PRIVATE_KEYS = frozenset({"token", "tokens", "additional_tokens", "persistent_stagger_seconds"})

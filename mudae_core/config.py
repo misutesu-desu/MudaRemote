@@ -168,6 +168,7 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
     if loot_mode in ("kl", "scrap"):
         if loot_mode == "kl":
             setting_int("kl_amount", 1000, 1)
+            setting_int("kl_arlp_every", 0, 0)
         else:
             setting_int("scrap_amount", 500000000, 1)
             target = data.get("scrap_target_id", "")

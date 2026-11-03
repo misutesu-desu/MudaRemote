@@ -115,6 +115,49 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("completed" in text for text, _ in self.logs))
         self.assertFalse(any("did not respond" in text for text, _ in self.logs))
 
+    def _answer_every_command(self, loot):
+        def on_send(content, receipt_id):
+            text = "24,284 mudapins were released." if content == "$arlp" else "+10,169.4 rolls stacked"
+            loot.on_message(message(receipt_id + 1, text, reply=receipt_id))
+        self.on_send = on_send
+
+    async def test_arlp_follows_every_nth_kl_without_a_pin_error(self):
+        # Requested: the fifth $kl was always refused, so release the pins
+        # after four instead of spending a command on the error.
+        loot = self.loot(kl_amount=12000, kl_arlp_every=4)
+        self._answer_every_command(loot)
+        for _ in range(9):
+            await loot._cycle(self.channel)
+        kl = "$kl 12000"
+        self.assertEqual(self.sent, [kl] * 4 + ["$arlp"] + [kl] * 4 + ["$arlp"] + [kl])
+
+    async def test_arlp_stays_error_only_by_default(self):
+        loot = self.loot(kl_amount=12000)
+        self._answer_every_command(loot)
+        for _ in range(6):
+            await loot._cycle(self.channel)
+        self.assertNotIn("$arlp", self.sent)
+
+    async def test_pin_error_restarts_the_arlp_count(self):
+        loot = self.loot(kl_amount=12000, kl_arlp_every=2)
+        errors = [1]
+
+        def on_send(content, receipt_id):
+            if content == "$arlp":
+                text = "24,284 mudapins were released."
+            elif errors[0]:
+                errors[0] -= 1
+                text = "Error: you have too many pins (30000)! Release your duplicates with $arlp"
+            else:
+                text = "+10,169.4 rolls stacked"
+            loot.on_message(message(receipt_id + 1, text, reply=receipt_id))
+
+        self.on_send = on_send
+        for _ in range(3):
+            await loot._cycle(self.channel)
+        kl = "$kl 12000"
+        self.assertEqual(self.sent, [kl, "$arlp", kl, kl, "$arlp"])
+
     async def test_stop_sign_on_kl_sends_it_again(self):
         # Requested: another player's $kl at the same moment makes Mudae put
         # a stop sign on ours, so the bot should try again right away.
@@ -334,7 +377,7 @@ class LootTests(unittest.IsolatedAsyncioTestCase):
 
     def test_invalid_settings(self):
         for settings in (
-            {"loot_mode": "scrap"}, {"kl_amount": 0},
+            {"loot_mode": "scrap"}, {"kl_amount": 0}, {"kl_arlp_every": -1}, {"kl_arlp_every": "x"},
             {"loot_mode": "scrap", "scrap_target_id": "999", "scrap_amount": "NaN"},
             {"loot_min_cooldown": 0}, {"loot_max_cooldown": float("inf")},
             {"loot_min_cooldown": True}, {"loot_max_cooldown": True},

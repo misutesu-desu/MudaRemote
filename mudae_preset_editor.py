@@ -651,6 +651,7 @@ DEFAULTS = {
     "auto_free_claim": True,
     "loot_mode": "off",
     "kl_amount": 1000,
+    "kl_arlp_every": 0,
     "scrap_target_id": "",
     "scrap_amount": 500000000,
     "loot_min_cooldown": 30.0,
@@ -747,6 +748,7 @@ NUMERIC_SETTINGS = [
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
     ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (only with a custom $oh priority)", 3, int),
     ("kl_amount", "$kl Spend Amount", 1000, int),
+    ("kl_arlp_every", "Send $arlp After Every N $kl (0 = only after a too many pins error)", 0, int),
     ("scrap_amount", "$givescrap Amount", 500000000, int),
     ("loot_min_cooldown", "Minimum Loot Cooldown (seconds)", 30.0, float),
     ("loot_max_cooldown", "Maximum Loot Cooldown (seconds)", 40.0, float),
@@ -2572,6 +2574,7 @@ class PresetEditor:
             }, description="When enabled, this profile performs loot operations instead of normal rolling and sniping."
         )
         self.add_number_field(loot_frame.content, "kl_amount", "$kl Spend Amount", 1000)
+        self.add_number_field(loot_frame.content, "kl_arlp_every", "Send $arlp After Every N $kl (0 = only after a too many pins error)", 0)
         self.add_text_field(loot_frame.content, "scrap_target_id", "$givescrap Recipient Discord User ID")
         self.add_number_field(loot_frame.content, "scrap_amount", "$givescrap Amount", 500000000)
         self.add_number_field(loot_frame.content, "loot_min_cooldown", "Minimum Loot Cooldown (seconds)", 30.0)
@@ -3478,7 +3481,7 @@ class PresetEditor:
                     "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
-                    "scrap_target_id", "slash_claim_target", "kl_amount", "scrap_amount",
+                    "scrap_target_id", "slash_claim_target", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]:
             if key in self.widgets:
                 widget = self.widgets[key]
@@ -3738,14 +3741,14 @@ class PresetEditor:
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
-                    "oh_unknown_explore_clicks", "kl_amount", "scrap_amount",
+                    "oh_unknown_explore_clicks", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]
         for key in numeric_keys:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     try:
-                        if key in {"kl_amount", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes"}:
+                        if key in {"kl_amount", "kl_arlp_every", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes"}:
                             data[key] = int(value) if re.fullmatch(r"[0-9]+", value) else value
                             continue
                         # Determine type
