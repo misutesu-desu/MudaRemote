@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.7**\n\n### 🐛 Bug Fixes\n- **Correct Power With Spaced Numbers:** When Mudae writes numbers with spaces, like 7 210 keys, the bot missed the 10+ key discount and counted double the power for each kakera click. It now reads those numbers, kakera values and ranks correctly.\n- **`$oh` No Longer Waits An Hour After The Refill:** If the daily refill showed up while the bot was playing `$oc` or `$oq`, it skipped `$oh` until the next hour. It now plays it in the same round.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.7/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.7/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "581f2d9398d85b9c916b8d8d0cef981161e0bc3daca60491236fdee52315affb",
   "source_files": [
     {
       "path": "mudae_bot.py",
