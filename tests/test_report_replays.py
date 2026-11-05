@@ -142,5 +142,25 @@ class SphereStockReplay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(played, [("oc", 10), ("oc", 10), ("oq", 2), ("oh", 4)])
 
 
+class SpacedNumberReplay(unittest.TestCase):
+    # Mudae writes 7 210 instead of 7,210 for some users, with a normal,
+    # no-break or narrow no-break space.
+    def test_spaced_key_counts_still_give_the_ten_key_discount(self):
+        for space in (" ", " ", " "):
+            embed = SimpleNamespace(description=f"Fate/stay night\n<:chaoskey:1> (**7{space}210**) +5% kakera value")
+            self.assertEqual(mudae_bot.count_chaos_keys(embed), 1, repr(space))
+
+    def test_spaced_kakera_value_and_ranks_are_read_whole(self):
+        desc = "Fate/stay night\n**13 380**<:kakera:1>\nClaims: #1 234\nLikes: #10 922"
+        value = mudae_bot.re.search(mudae_bot.REGEX_PATTERNS["KAKERA_VALUE"], desc).group(1)
+        self.assertEqual(int(mudae_bot.re.sub(r"[^\d]", "", value)), 13380)
+        self.assertEqual(mudae_bot.parse_mudae_ranks(desc), (1234, 10922))
+
+    def test_separate_numbers_are_not_joined(self):
+        self.assertEqual(mudae_bot.parse_mudae_ranks("Claims: #18\nLikes: #24"), (18, 24))
+        embed = SimpleNamespace(description="<:chaoskey:1> (**9**) 100 kakera")
+        self.assertEqual(mudae_bot.count_chaos_keys(embed), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -587,11 +587,15 @@ class BotLogger:
         ):
             WebhookDispatcher.enqueue(client.webhook_url, formatted)
 
+# Mudae groups thousands with commas or dots, and for some users with a normal,
+# no-break or narrow no-break space (7 210). Spaces only join full 3-digit groups.
+MUDAE_NUMBER = r"\d[\d,.]*(?:[ \u00a0\u202f\u2009]\d{3}(?![\d,.]))*"
+
 REGEX_PATTERNS = {
-    "KEYS": r'(?:🔑|<:(?:chaos)?key:\d+>)\s*\(\*?\*?([\d,.]+)\*?\*?\)',
+    "KEYS": r'(?:🔑|<:(?:chaos)?key:\d+>)\s*\(\*?\*?(' + MUDAE_NUMBER + r')\*?\*?\)',
     "OWNER": r'(?:[Bb]elongs to|[Pp]ertence a|[Pp]ertenece a|[Aa]ppartient [àa])\s+(.+?)$',
-    "CLAIMS_RANK": r"Claims:\s*#\s*([\d,.]+)",
-    "LIKES_RANK": r"Likes:\s*#\s*([\d,.]+)",
+    "CLAIMS_RANK": r"Claims:\s*#\s*(" + MUDAE_NUMBER + ")",
+    "LIKES_RANK": r"Likes:\s*#\s*(" + MUDAE_NUMBER + ")",
     "DK_STOCK": r"\**(\d+)\**\s*\$dk\s*(?:available|dispon[ií]ve(?:l|is)|no estoque|disponible|en stock|disponibles?)",
     "DK_READY": r"\$dk.*?(?:ready|available|pronto|disponible|prêt|dispon[ií]vel|listo)",
     "DK_COOLDOWN": r"(?:next \$dk|próximo \$dk|siguiente \$dk|prochain \$dk).*?\*{0,2}(\d+h)?\s*(\d+)\*{0,2}\s*min",
@@ -614,7 +618,7 @@ REGEX_PATTERNS = {
     "ROLL_RESET_TU": r"(?:reset|reinicialização|reinicio).*?(?:in|em|en|dans)\s+(?:.*?)\*{0,2}(\d+h)?\*{0,2}\s*\*{0,2}(\d+)\*{0,2}\s*min",
     "KAKERA_EARNED": r"\+(\d+)\s*<:kakera:",
     "BOLD_TEXT": r"\*\*(.+?)\*\*",
-    "KAKERA_VALUE": r"\**([\d,.]+)\**<:kakera:",
+    "KAKERA_VALUE": r"\**(" + MUDAE_NUMBER + r")\**<:kakera:",
     "MAINTENANCE": r"For\s+(?:some|(\d+))\s+minutes",
     "EXTRA_ROLLS": r"\+\**(\d+)\**\s*rolls?",
     "CHAOS_POWER_DISCOUNT": r"\b50\s*%\s*(?:kakera power discount when you clicked on this chaos kakera|discount on the react power used for this chaos kakera)\b",
@@ -1146,7 +1150,7 @@ def parse_mudae_ranks(embed_description: str) -> Tuple[int, int]:
     if not embed_description: return 0, 0
     def get_rank(pattern_name):
         m = re.search(REGEX_PATTERNS[pattern_name], embed_description, re.IGNORECASE)
-        return int(m.group(1).replace(",", "").replace(".", "")) if m else 0
+        return int(re.sub(r"\D", "", m.group(1))) if m else 0
     return get_rank("CLAIMS_RANK"), get_rank("LIKES_RANK")
 
 def apply_runtime_preset(preset_name, preset_data):
