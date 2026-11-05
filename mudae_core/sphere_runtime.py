@@ -469,6 +469,10 @@ class SphereRuntime:
 
     async def run_available_sphere_games(self, channel, status=None):
         if getattr(self._client, "_sphere_games_running", False):
+            # A $tu that lands mid-round can report new stock, such as the
+            # daily refill. Keep it for the games this round has not touched.
+            if status is not None:
+                self._client._sphere_status_during_round = status
             self._client._deferred_independent_known_work = True
             return
         if status is not None:
@@ -489,6 +493,10 @@ class SphereRuntime:
             self._client._deferred_independent_known_work = True
             return
 
+        touched = set()
+        round_finished = False
+        late_status = None
+        self._client._sphere_status_during_round = None
         self._client._sphere_games_running = True
         try:
             enabled_games = tuple(
@@ -513,6 +521,7 @@ class SphereRuntime:
                         f"OH: Individual-use mode will play {available} separate board(s).",
                         "INFO",
                     )
+                touched.add(kind)
                 for batch_size in batch_sizes:
                     if not await self.run_sphere_game(channel, kind, batch_size):
                         completed_all = False
@@ -526,5 +535,21 @@ class SphereRuntime:
                         self._client._sphere_game_retry_after[waiting_kind] = time.monotonic() + 300.0
                     self._client.loop.call_later(302.0, self._wake_status)
                     return  # An unfinished board must settle before another minigame starts.
+            round_finished = True
         finally:
             self._client._sphere_games_running = False
+            late_status = getattr(self._client, "_sphere_status_during_round", None)
+            self._client._sphere_status_during_round = None
+            if late_status is not None:
+                # Games played this round keep their local count: the late
+                # $tu may predate the boards that spent that stock.
+                for kind in SPHERE_GAME_KINDS:
+                    if kind not in touched:
+                        self._client.sphere_game_counts[kind] = late_status.available_for(kind)
+        if round_finished and late_status is not None and any(
+            kind not in touched
+            and getattr(self._client, f"auto_{kind}_enabled", False)
+            and self._client.sphere_game_counts.get(kind, 0) > 0
+            for kind in SPHERE_GAME_KINDS
+        ):
+            await self.run_available_sphere_games(channel)

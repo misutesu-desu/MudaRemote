@@ -110,6 +110,37 @@ class SphereStockReplay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.args for call in run.await_args_list],
                          [("channel", "oh", 10), ("channel", "oh", 4)])
 
+    async def test_stock_reported_while_boards_run_is_played_in_the_same_round(self):
+        # The daily refill gave $oh 4, but the $tu reporting it arrived while
+        # the $oc boards were running, so $oh waited for the next hour.
+        client = SimpleNamespace(
+            _sphere_games_running=False, sphere_game_counts={}, _sphere_game_retry_after={},
+            oh_use_individually=False, is_processing_cycle=False, auto_oh_enabled=True,
+            auto_oc_enabled=True, auto_oq_enabled=True, auto_ot_enabled=False,
+            _deferred_independent_known_work=False, sphere_game_refill_at_utc=None, loop=mock.Mock(),
+        )
+        runtime = SphereRuntime(
+            client, target_bot_id=1, log=mock.Mock(), send=mock.AsyncMock(), click=mock.AsyncMock(),
+            wait=mock.AsyncMock(return_value=True), maintenance_active=lambda: False,
+            claim_pending=lambda: False, resolve_channel=mock.AsyncMock(),
+            wake_status=lambda: None, ambiguous_error=lambda error: False,
+        )
+        status = lambda **stock: SimpleNamespace(
+            available_for=lambda kind: stock.get(kind, 0), refill_minutes=1410,
+        )
+        played = []
+
+        async def play(channel, kind, uses):
+            played.append((kind, uses))
+            if len(played) == 1:
+                await runtime.run_available_sphere_games(channel, status(oh=4, oc=11, oq=2))
+            return True
+
+        with mock.patch.object(runtime, "run_sphere_game", side_effect=play):
+            await runtime.run_available_sphere_games("channel", status(oc=20, oq=2))
+
+        self.assertEqual(played, [("oc", 10), ("oc", 10), ("oq", 2), ("oh", 4)])
+
 
 if __name__ == "__main__":
     unittest.main()
