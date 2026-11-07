@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.9**\n\n### ✨ New Features\n- **Turn Off the Update Prompt:** You can stop MudaRemote from asking about updates every time it starts. Untick Check for Updates at Startup in the editor, or type `off` when the console asks. The Check for Updates button still works whenever you want to update.\n\n### 🐛 Bug Fixes\n- **Never Snipe From These Users Now Works:** The list was not saved to your preset, so the bot still sniped those players. It is now saved per preset, and switching presets no longer carries the names over to the others. Open your presets once and check the list after updating.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.9/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.9/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "655544c07eba917826680a1adff38600369c27edf8d51a06a3dfee2ef4713f37",
   "source_files": [
     {
       "path": "mudae_bot.py",
