@@ -7,8 +7,10 @@ from mudae_core.versioning import (
     get_update_manifest_urls,
     is_newer_version,
     is_prerelease,
+    load_startup_update_check_setting,
     load_update_channel_setting,
     resolve_update_channel,
+    save_startup_update_check_setting,
     save_update_channel_setting,
     ReleaseDiscoveryError,
     fetch_available_releases,
@@ -93,6 +95,17 @@ class VersioningTests(unittest.TestCase):
             self.assertEqual(load_update_channel_setting(td), "beta")
             self.assertEqual(resolve_update_channel(current_version="4.9.1", base_path=td), "beta")
 
+
+    def test_startup_update_check_can_be_turned_off_without_losing_the_channel(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            self.assertTrue(load_startup_update_check_setting(td))
+            save_update_channel_setting("beta", base_path=td)
+            save_startup_update_check_setting(False, base_path=td)
+            self.assertFalse(load_startup_update_check_setting(td))
+            self.assertEqual(load_update_channel_setting(td), "beta")
+            save_startup_update_check_setting(True, base_path=td)
+            self.assertTrue(load_startup_update_check_setting(td))
 
 def _release(tag, prerelease=False, assets=()):
     return {

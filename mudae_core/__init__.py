@@ -185,8 +185,10 @@ from .versioning import (
     get_update_manifest_urls,
     is_newer_version,
     is_prerelease,
+    load_startup_update_check_setting,
     load_update_channel_setting,
     resolve_update_channel,
+    save_startup_update_check_setting,
     save_update_channel_setting,
 )
 from .webhooks import WebhookDispatcher
@@ -365,6 +367,8 @@ __all__ = [
     "validate_preset",
     "load_update_channel_setting",
     "save_update_channel_setting",
+    "load_startup_update_check_setting",
+    "save_startup_update_check_setting",
     "fetch_available_releases",
     "fetch_manifest_for_version",
     "install_specific_version",

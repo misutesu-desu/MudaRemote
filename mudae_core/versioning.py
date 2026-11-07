@@ -92,9 +92,7 @@ def load_update_channel_setting(base_path=None):
     return None
 
 
-def save_update_channel_setting(channel, base_path=None):
-    """Save update channel ('beta' or 'main') to settings.json atomically."""
-    resolved = "beta" if str(channel).strip().lower() in {"beta", "preview", "pre", "alpha", "rc", "true", "1"} else "main"
+def _write_settings(updates, base_path=None):
     path = get_settings_path(base_path)
     data = {}
     if os.path.isfile(path):
@@ -105,13 +103,37 @@ def save_update_channel_setting(channel, base_path=None):
                     data = loaded
         except Exception:
             data = {}
-    data["update_channel"] = resolved
-    data["beta_channel"] = (resolved == "beta")
+    data.update(updates)
     tmp_path = path + f".tmp.{os.getpid()}"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, path)
+
+
+def save_update_channel_setting(channel, base_path=None):
+    """Save update channel ('beta' or 'main') to settings.json atomically."""
+    resolved = "beta" if str(channel).strip().lower() in {"beta", "preview", "pre", "alpha", "rc", "true", "1"} else "main"
+    _write_settings({"update_channel": resolved, "beta_channel": resolved == "beta"}, base_path)
     return resolved
+
+
+def load_startup_update_check_setting(base_path=None):
+    """Return False only when the user turned off the update check at startup."""
+    try:
+        path = get_settings_path(base_path)
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("check_updates_on_start") is False:
+                return False
+    except Exception:
+        pass
+    return True
+
+
+def save_startup_update_check_setting(enabled, base_path=None):
+    _write_settings({"check_updates_on_start": bool(enabled)}, base_path)
+    return bool(enabled)
 
 
 def resolve_update_channel(channel=None, current_version=None, base_path=None):
