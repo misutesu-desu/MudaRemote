@@ -120,6 +120,7 @@
     "oh_use_individually": false,
     "oh_priority_order": [],
     "oh_unknown_explore_clicks": 3,
+    "sphere_collect_any_last": 0,
     "auto_oc_enabled": false,
     "oc_reward_priority_order": [],
     "oc_collect_after_red": true,

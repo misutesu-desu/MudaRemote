@@ -7275,7 +7275,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
         clean = name.rstrip("2")
         if is_character_sphere_emoji(name):
-            return sphere_target_matches(name, client.sphere_click_targets)
+            if sphere_target_matches(name, client.sphere_click_targets):
+                return True
+            # Quota-free spheres would not use up the last buttons, so they
+            # keep following the colour list.
+            return (
+                normalize_character_sphere_emoji(name).casefold() not in SPHERE_QUOTA_FREE_EMOJIS
+                and client.sphere_button_budget.nearly_used(client.sphere_collect_any_last)
+            )
         if clean == "kakeraP":
             # Ordinary purple follows the roll context's selected colours.
             # Only the post-claim special collection may exceed that list,

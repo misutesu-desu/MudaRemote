@@ -281,6 +281,7 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
         "auto_us_limit", "auto_rolls_limit", "panic_roll_minutes", "auto_divorce_max_kakera",
         "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
         "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "auto_dk_min_power",
+        "sphere_collect_any_last",
     ]
     for key in non_negative:
         if key in data and data[key] is not None:

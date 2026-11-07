@@ -317,6 +317,9 @@ def configure_client(
     client.sphere_click_targets = resolve_sphere_click_targets(
         preset_data.get("sphere_click_targets")
     )
+    client.sphere_collect_any_last = max(
+        0, int(preset_data.get("sphere_collect_any_last", 0) or 0)
+    )
     client.immediate_kakera_click = preset_data.get("immediate_kakera_click", True)
     client.collect_purple_kakera = bool(
         preset_data.get("collect_purple_kakera", True)
@@ -680,7 +683,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "randomized_claim_reactions", "scheduled_roll_times",
     "kakera_priority_order", "claim_emojis", "kakera_emojis",
     "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis",
-    "sphere_emojis", "sphere_click_targets", "immediate_kakera_click",
+    "sphere_emojis", "sphere_click_targets", "sphere_collect_any_last", "immediate_kakera_click",
     "collect_purple_kakera", "auto_oh_enabled", "auto_oc_enabled",
     "auto_oq_enabled", "auto_ot_enabled",
     "oh_use_individually", "oh_priority_order", "oh_unknown_explore_clicks",

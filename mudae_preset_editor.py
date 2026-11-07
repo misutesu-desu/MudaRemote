@@ -643,6 +643,7 @@ DEFAULTS = {
     "wish_starwish_kakera_only": False,
     "oh_priority_order": [],
     "oh_unknown_explore_clicks": 3,
+    "sphere_collect_any_last": 0,
     "oc_reward_priority_order": [],
     "oc_collect_after_red": True,
     "webhook_url": "",
@@ -750,6 +751,7 @@ NUMERIC_SETTINGS = [
     ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
     ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (only with a custom $oh priority)", 3, int),
+    ("sphere_collect_any_last", "Collect Any Sphere Near the Daily Limit (Last N sphere buttons, 0 = off)", 0, int),
     ("kl_amount", "$kl Spend Amount", 1000, int),
     ("kl_arlp_every", "Send $arlp After Every N $kl (0 = only after a too many pins error)", 0, int),
     ("scrap_amount", "$givescrap Amount", 500000000, int),
@@ -2827,6 +2829,8 @@ class PresetEditor:
 
         # [NEW] Sphere click targets setting
         self.add_list_field(emoji_frame.content, "sphere_click_targets", "Target Sphere Emojis")
+        self.add_number_field(emoji_frame.content, "sphere_collect_any_last", "Collect Any Sphere Near the Daily Limit (Last N sphere buttons, 0 = off)", 0,
+                              description="When only this many sphere buttons are left today, any sphere colour is clicked. Needs a $tu that shows the sphere count.")
         self.add_list_field(emoji_frame.content, "oh_priority_order", "$oh Reward Priority (Highest first; e.g. spD, spP, spU)")
         self.add_number_field(emoji_frame.content, "oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (custom priority only)", 3)
         self.add_list_field(emoji_frame.content, "oc_reward_priority_order", "$oc Reward Priority After Red (Highest first)")
@@ -3491,7 +3495,7 @@ class PresetEditor:
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
-                    "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks",
+                    "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "sphere_collect_any_last",
                     "scrap_target_id", "slash_claim_target", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]:
             if key in self.widgets:
@@ -3752,7 +3756,7 @@ class PresetEditor:
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                     "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
-                    "oh_unknown_explore_clicks", "kl_amount", "kl_arlp_every", "scrap_amount",
+                    "oh_unknown_explore_clicks", "sphere_collect_any_last", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]
         for key in numeric_keys:
             if key in self.widgets:
@@ -3769,7 +3773,7 @@ class PresetEditor:
                                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
                                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
                                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
-                                   "oh_unknown_explore_clicks"]:
+                                   "oh_unknown_explore_clicks", "sphere_collect_any_last"]:
                             data[key] = int(float(value))
                         else:
                             data[key] = float(value)

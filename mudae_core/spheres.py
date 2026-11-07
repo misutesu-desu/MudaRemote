@@ -85,6 +85,13 @@ class SphereButtonBudget:
         """Room left by the last $tu alone, ignoring clicks still waiting for it."""
         return self.limit is None or self.clicked < self.limit
 
+    def nearly_used(self, last_clicks):
+        """Whether only the last few buttons of the confirmed daily limit are left."""
+        if not last_clicks or self.limit is None or self.clicked is None:
+            return False
+        remaining = self.limit - self.clicked - len(self.pending)
+        return 0 < remaining <= last_clicks
+
     def reserve(self, key, sent_at):
         self.pending[key] = sent_at
 
