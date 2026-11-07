@@ -3545,7 +3545,8 @@ class PresetEditor:
                     "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
                     "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
                     "snipe_channels", "kakera_snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
-                    "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
+                    "webhook_log_types", "debug_log_categories", "character_snipe_targets",
+                    "snipe_ignore_users"]:
             if key in self.widgets:
                 widget = self.widgets[key]
                 if isinstance(widget, (ttk.Entry, tk.Entry, ChipListWidget)):
@@ -3851,7 +3852,8 @@ class PresetEditor:
                     "snipe_chat_messages", "kakera_snipe_chat_messages", "farm_characters",
                     "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series",
                     "snipe_channels", "kakera_snipe_channels", "sphere_click_targets", "oh_priority_order", "oc_reward_priority_order",
-                    "webhook_log_types", "debug_log_categories", "character_snipe_targets"]:
+                    "webhook_log_types", "debug_log_categories", "character_snipe_targets",
+                    "snipe_ignore_users"]:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:

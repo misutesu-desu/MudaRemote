@@ -24,6 +24,27 @@ class EditorFieldRoundTripTests(unittest.TestCase):
         loaded = next(keys for keys in _string_lists(functions["_select_preset_impl"]) if "webhook_url" in keys)
         self.assertEqual(saved - loaded, set())
 
+    def test_every_list_field_is_saved_and_loaded(self):
+        # Reported: Never Snipe From These Users was never written to the
+        # preset, and the text typed for one preset stayed in the form when
+        # another preset was opened.
+        with open(EDITOR, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+        shown = {
+            node.args[1].value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "attr", None) == "add_list_field"
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Constant)
+        }
+        saved = next(keys for keys in _string_lists(functions["save_current_preset"]) if "wishlist" in keys)
+        loaded = next(keys for keys in _string_lists(functions["_select_preset_impl"]) if "wishlist" in keys)
+        self.assertIn("snipe_ignore_users", shown)
+        self.assertEqual(shown - saved, set())
+        self.assertEqual(shown - loaded, set())
+
 
 if __name__ == "__main__":
     unittest.main()
