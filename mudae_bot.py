@@ -357,8 +357,10 @@ except ImportError:
 BOT_NAME = "MudaRemote"
 from mudae_core.versioning import (
     CURRENT_VERSION,
+    load_startup_update_check_setting,
     load_update_channel_setting,
     resolve_update_channel,
+    save_startup_update_check_setting,
     save_update_channel_setting,
 )
 
@@ -853,8 +855,16 @@ def _confirm_update_in_console(latest_version, changelog):
         print_system_log("Update confirmation is unavailable in this session. Update skipped.", "WARN")
         return False
     try:
-        answer = input("Install this update now? [y/N]: ").strip().lower()
+        answer = input("Install this update now? [y/N/off]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
+        return False
+    if answer == "off":
+        save_startup_update_check_setting(False)
+        print_system_log(
+            "Update check at startup is off. Turn on Check for Updates at Startup in the editor, "
+            "or set check_updates_on_start to true in settings.json, to get it back.",
+            "INFO",
+        )
         return False
     return answer in {"y", "yes"}
 
@@ -9052,7 +9062,11 @@ def run_cli(argv=None):
     load_desktop_presets()
     console_supports_colors()
     cleanup_after_update()
-    update_result = check_for_updates()
+    if load_startup_update_check_setting():
+        update_result = check_for_updates()
+    else:
+        update_result = None
+        print_system_log("Update check at startup is off.", "INFO")
     if update_result == "frozen":
         print_system_log("Exiting so the updater helper can replace MudaRemote and relaunch it.", "RESET")
         sys.exit(0)
