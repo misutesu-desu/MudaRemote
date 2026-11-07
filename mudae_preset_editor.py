@@ -600,6 +600,7 @@ DEFAULTS = {
     "panic_roll_minutes": 5,
     "lurker_mode": False,
     "lurker_final_round_only": False,
+    "auto_rt_enabled": True,
     "auto_rt_after_claim": False,
     "auto_dk_enabled": True,
     "dk_schedule_time": "",
@@ -685,6 +686,7 @@ BOOL_SETTINGS = [
     ("skip_initial_commands", "Fast Start (Skip initial setup commands on startup)", False),
     ("time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)", False),
     ("rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)", False),
+    ("auto_rt_enabled", "Use $rt Automatically (Turn off to send $rt yourself)", True),
     ("rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)", False),
     ("rt_in_command_channel", "Send $rt in the Command Channel (Instead of the channel the character was sniped in)", False),
     ("auto_us_enabled", "Automatically Use Saved Rolls ($us)", False),
@@ -2615,6 +2617,12 @@ class PresetEditor:
         self.add_checkbox(claim_frame.content, "key_mode", "Key Farming Mode (Keep rolling to earn keys even if you can't claim)")
         self.add_checkbox(
             claim_frame.content,
+            "auto_rt_enabled",
+            "Use $rt Automatically (Turn off to send $rt yourself)",
+            description="When off, the bot never sends $rt, Auto $rt After Claim included. It still claims a roll after you send $rt yourself.",
+        )
+        self.add_checkbox(
+            claim_frame.content,
             "auto_rt_after_claim",
             "Auto $rt After Claim (Also controls $rt for Kakera farm claims)",
             description="When disabled, forcedivorce farming will never use $rt by itself.",
@@ -3512,7 +3520,7 @@ class PresetEditor:
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
-                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
+                    "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
@@ -3822,7 +3830,7 @@ class PresetEditor:
                     "bulk_us_enabled",
                     "auto_rolls_enabled", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour",
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
-                    "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
+                    "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
                     "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:

@@ -221,6 +221,7 @@ def configure_client(
     client.lurker_final_round_only = bool(
         preset_data.get("lurker_final_round_only", False)
     )
+    client.auto_rt_enabled = bool(preset_data.get("auto_rt_enabled", True))
     client.auto_rt_after_claim = preset_data.get("auto_rt_after_claim", False)
 
     # Claim thresholds and round overrides
@@ -665,7 +666,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode",
     "auto_rolls_only_claim_hour", "panic_roll_minutes", "lurker_mode",
     "lurker_final_round_only",
-    "auto_rt_after_claim", "time_rolls_to_claim_reset",
+    "auto_rt_enabled", "auto_rt_after_claim", "time_rolls_to_claim_reset",
     "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel",
     "reactive_kakera_delay_range", "auto_p_enabled",
     "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera",

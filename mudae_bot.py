@@ -2243,10 +2243,15 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         }
         return owner_id == client.user.id or bool(owner_name and owner_name in client_names)
 
+    def bot_may_use_rt() -> bool:
+        # With auto $rt off the player sends $rt by hand; the claim after it
+        # still goes through the manual $rt acknowledgement path.
+        return client.rt_available and client.auto_rt_enabled
+
     def is_character_snipe_allowed(is_external_snipe: bool = False) -> bool:
         refresh_predicted_claim_and_rt()
 
-        rt_usable = client.rt_available and not (is_external_snipe and client.rt_only_self_rolls)
+        rt_usable = bot_may_use_rt() and not (is_external_snipe and client.rt_only_self_rolls)
         return client.claim_right_available or rt_usable or rt_command_in_flight('manual')
 
     def refresh_predicted_claim_and_rt():
@@ -6659,7 +6664,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     BotLogger.log(f"Auto-Divorce: {char_name} qualifies ({reason}).", preset_name, "INFO")
                     await execute_auto_divorce(client, channel, char_name)
 
-        if (consumes_claim and client.auto_rt_after_claim and client.rt_available
+        if (consumes_claim and client.auto_rt_after_claim and bot_may_use_rt()
                 and not client.is_paused and not farm_character_claimed):
             mins_to_reset = ((client.next_claim_reset_at_utc - now).total_seconds() / 60.0) if client.next_claim_reset_at_utc else None
             # Preserve the default cycle's final-third saving window without
@@ -6676,7 +6681,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 except Exception as e:
                     BotLogger.log(f"Auto $rt failed: {e}", preset_name, "ERROR")
 
-        if farm_character_claimed and consumes_claim and client.auto_rt_after_claim and client.rt_available:
+        if farm_character_claimed and consumes_claim and client.auto_rt_after_claim and bot_may_use_rt():
             if post_claim_farm_mode:
                 if farm_release_sent and await send_rt_command(channel):
                     BotLogger.log(f"Kakera Farm: $rt restored after releasing {char_name}.", preset_name, "CLAIM")
@@ -7085,7 +7090,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 defer_claim_until_manual_rt_ack(msg_pending, False, value_pending)
             return bool(msg_claimed_id != -1)
 
-        if client.rt_available and not is_key_mode_kakera_only() and not rt_command_in_flight():
+        if bot_may_use_rt() and not is_key_mode_kakera_only() and not rt_command_in_flight():
             rt_targets = []
             failed_rt_messages = getattr(client, "_rt_failed_message_ids", set())
             for msg, n, v, s in (wl_claims + char_claims):
@@ -7513,7 +7518,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 and not is_free_claim
                 and not is_rt_claim
                 and not client.claim_right_available
-                and client.rt_available
+                and bot_may_use_rt()
                 and not (is_snipe and client.rt_only_self_rolls)
             )
             if needs_rt and rt_command_in_flight():
@@ -8579,7 +8584,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     is_val = k_val >= client.current_min_kakera_for_roll_claim
                     already_in_progress = _claim_coordinator.is_reserved(message.id)
                     if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                        can_spend_rt = can_spend_restore_on_character(
+                        can_spend_rt = client.auto_rt_enabled and can_spend_restore_on_character(
                             k_val,
                             client.min_kakera,
                             is_wl,
@@ -8644,7 +8649,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 is_avoided = c_name in client.avoid_list
                 already_in_progress = _claim_coordinator.is_reserved(message.id)
                 if is_wanted and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                    can_spend_rt = can_spend_restore_on_character(
+                    can_spend_rt = client.auto_rt_enabled and can_spend_restore_on_character(
                         k_val,
                         client.min_kakera,
                         c_name in client.wishlist or is_series_wl or is_wished_by_self(message, client.user.id) or is_ranked,
