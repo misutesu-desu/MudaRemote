@@ -32,8 +32,10 @@ try:
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
+        load_startup_update_check_setting,
         load_update_channel_setting,
         resolve_update_channel,
+        save_startup_update_check_setting,
         save_update_channel_setting,
     )
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -48,8 +50,10 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
+        load_startup_update_check_setting,
         load_update_channel_setting,
         resolve_update_channel,
+        save_startup_update_check_setting,
         save_update_channel_setting,
     )
     from mudae_core.secrets import SecretStoreError
@@ -1761,6 +1765,15 @@ class PresetEditor:
             command=on_toggle_channel,
         )
         self.beta_check.pack(anchor=tk.W, pady=(0, 4))
+
+        self.startup_update_check_var = tk.BooleanVar(value=load_startup_update_check_setting())
+        self.startup_update_check = ttk.Checkbutton(
+            update_frame,
+            text="Check for Updates at Startup",
+            variable=self.startup_update_check_var,
+            command=lambda: save_startup_update_check_setting(self.startup_update_check_var.get()),
+        )
+        self.startup_update_check.pack(anchor=tk.W, pady=(0, 4))
 
         self.channel_status_lbl = tk.Label(
             update_frame,
@@ -4500,6 +4513,8 @@ def launch_gui(extensions=None, check_updates=True):
         import mudae_bot
 
         mudae_bot.cleanup_after_update()
+        if not load_startup_update_check_setting():
+            raise _UpdatesDisabled()
 
         def confirm_update(latest_version, changelog):
             return messagebox.askyesno(

@@ -96,6 +96,20 @@ class EditorExtensionTests(unittest.TestCase):
         editor_class.assert_called_once()
         self.assertEqual(editor_class.call_args.kwargs["extensions"], extensions)
 
+    def test_launch_gui_skips_the_update_check_when_turned_off_at_startup(self):
+        with mock.patch("mudae_bot.check_for_updates") as check,                 mock.patch("mudae_bot.cleanup_after_update") as cleanup,                 mock.patch.object(mudae_preset_editor, "load_startup_update_check_setting", return_value=False),                 mock.patch.object(mudae_preset_editor.tk.Tk, "mainloop"),                 mock.patch.object(mudae_preset_editor, "PresetEditor") as editor_class,                 mock.patch.object(mudae_preset_editor.tk.Tk, "deiconify"):
+            mudae_preset_editor.launch_gui()
+        check.assert_not_called()
+        cleanup.assert_called_once()
+        editor_class.assert_called_once()
+
+    def test_startup_update_switch_saves_the_choice(self):
+        with mock.patch.object(mudae_preset_editor, "load_startup_update_check_setting", return_value=True),                 mock.patch.object(mudae_preset_editor, "save_startup_update_check_setting") as save:
+            editor = PresetEditor(self.root)
+            self.assertTrue(editor.startup_update_check_var.get())
+            editor.startup_update_check.invoke()
+        save.assert_called_once_with(False)
+
 
 if __name__ == "__main__":
     unittest.main()
