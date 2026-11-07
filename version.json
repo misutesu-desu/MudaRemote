@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.2.8**\n\n### ✨ New Features\n- **Turn Off Automatic `$rt`:** New \"Use $rt Automatically\" switch. Turn it off and the bot never sends `$rt` on its own, so you can use it by hand when you want. After you send `$rt` yourself, the bot still claims the roll for you.\n- **Players Not to Snipe:** New \"Never Snipe From These Users\" list. Add the IDs or usernames of players whose rolls the bot should leave alone, for characters and Kakera alike. On busy public servers this is easier than listing everyone you do want to snipe.\n- **Fill the Daily Sphere Limit:** New \"Collect Any Sphere Near the Daily Limit\" setting. Set it to 5 and once only 5 sphere buttons are left for the day, the bot clicks any sphere colour instead of only your chosen ones. Leave it at 0 to keep the old behaviour.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.2.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "1023b9c64dc5a0a9b40524409402e3b3895a7d514e6eb1b10191a0d8d2774d8d",
   "source_files": [
     {
       "path": "mudae_bot.py",
