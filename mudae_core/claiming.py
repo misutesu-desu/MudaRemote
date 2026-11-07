@@ -265,3 +265,17 @@ def can_spend_restore_on_character(
     if is_wishlist_target and restore_for_wishlist:
         return True
     return int(kakera_value or 0) >= max(0, int(minimum_kakera or 0))
+
+
+def snipe_owner_allowed(owner_id, owner_name, only_from, never_from) -> bool:
+    """Check a roll owner against the snipe target list and the ignore list."""
+    owner = set()
+    if owner_id is not None:
+        owner.add(str(owner_id))
+    if owner_name:
+        owner.add(str(owner_name).strip().casefold())
+    if never_from and owner & set(never_from):
+        return False
+    if only_from and not owner & set(only_from):
+        return False
+    return True

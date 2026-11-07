@@ -649,6 +649,7 @@ DEFAULTS = {
     "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
     "debug_log_categories": ["all"],
     "character_snipe_targets": [],
+    "snipe_ignore_users": [],
     "auto_free_claim": True,
     "loot_mode": "off",
     "kl_amount": 1000,
@@ -785,6 +786,7 @@ TEXT_SETTINGS = [
     ("kakera_snipe_channels", "Kakera Snipe Channels (Comma-separated IDs of channels to monitor for Kakera)", [], True),
     ("sphere_click_targets", "Target Sphere Emojis (Comma-separated list of sphere emojis to click, e.g., spM, spU, spG)", ["spP", "spB", "spT", "spG", "spY", "spO", "spR", "spW", "spL", "spD", "spM", "spU"], True),
     ("character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).", [], True),
+    ("snipe_ignore_users", "Never Snipe From These Users (Comma-separated IDs or usernames. Covers character and Kakera snipes)", [], True),
     ("scrap_target_id", "$givescrap Recipient Discord User ID", "", False),
     ("slash_claim_target", "Slash Claim Target", "", False),
 ]
@@ -2690,6 +2692,7 @@ class PresetEditor:
                               description="Note: Applies to the calculated Kakera value of characters rolled by other players.")
 
         self.add_list_field(char_snipe_frame.content, "character_snipe_targets", "Target Character Snipe Users (Comma-separated IDs or usernames. Only snipe from these players. Leave empty to snipe everyone).")
+        self.add_list_field(char_snipe_frame.content, "snipe_ignore_users", "Never Snipe From These Users (Comma-separated IDs or usernames. Covers character and Kakera snipes).")
 
         # $rt settings
         self.add_checkbox(char_snipe_frame.content, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")

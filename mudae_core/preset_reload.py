@@ -57,7 +57,7 @@ def validate_live_preset(data):
         errors = validate_preset(normalized, resolved_token="active-session")
         for key in (
             "wishlist", "series_wishlist", "avoid_list", "character_snipe_targets",
-            "kakera_reaction_snipe_targets", "auto_divorce_series",
+            "kakera_reaction_snipe_targets", "snipe_ignore_users", "auto_divorce_series",
             "auto_divorce_blacklist", "auto_divorce_blacklist_series",
         ):
             value = normalized.get(key, [])

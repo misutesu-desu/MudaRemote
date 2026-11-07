@@ -232,7 +232,7 @@ def _bootstrap_modular_core():
 try:
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, snipe_owner_allowed, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -269,7 +269,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
             sys.modules.pop(loaded_module, None)
     from mudae_core import (
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
-        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
+        active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, snipe_owner_allowed, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
         cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
@@ -8009,9 +8009,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             str(getattr(client.user, "display_name", "") or "").casefold(),
         }
         is_external = not (owner_id == client.user.id or bool(owner_name and owner_name in self_names))
-        if client.character_snipe_targets and is_external:
-            if str(owner_id) not in client.character_snipe_targets and owner_name not in client.character_snipe_targets:
-                return
+        if is_external and not snipe_owner_allowed(
+                owner_id, owner_name, client.character_snipe_targets, client.snipe_ignore_users):
+            return
         if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external):
             return
         # Both cached and raw updates may arrive while the claim delay is running.
@@ -8315,14 +8315,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 all_k = get_all_collectible_kakera_emojis()
                 has_btn = has_collectible_kakera_button(message.components, all_k)
                 if has_btn:
-                    if client.kakera_reaction_snipe_targets:
+                    if client.kakera_reaction_snipe_targets or client.snipe_ignore_users:
                         owner_id, owner_name = await detect_roll_owner(client, message)
-                        is_target = False
-                        if owner_id and str(owner_id) in client.kakera_reaction_snipe_targets:
-                            is_target = True
-                        if owner_name and owner_name in client.kakera_reaction_snipe_targets:
-                            is_target = True
-                        if not is_target:
+                        if not snipe_owner_allowed(
+                                owner_id, owner_name,
+                                client.kakera_reaction_snipe_targets, client.snipe_ignore_users):
                             return
                     remember_kakera_snipe_event(message.id)
                     if not await active_delay(client.kakera_reaction_snipe_delay_value + random.uniform(0.05, 0.25)): return
@@ -8674,15 +8671,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                  if has_btn:
                     # Purple Kakera obeys the target list exactly like every
                     # other colour; only the roll owner's own rolls bypass it.
-                    target_ok = True
-                    if client.kakera_reaction_snipe_targets and not is_manual_self_roll:
-                        is_target = False
-                        if owner_id and str(owner_id) in client.kakera_reaction_snipe_targets:
-                            is_target = True
-                        if owner_name and owner_name in client.kakera_reaction_snipe_targets:
-                            is_target = True
-                        if not is_target:
-                            target_ok = False
+                    target_ok = is_manual_self_roll or snipe_owner_allowed(
+                        owner_id, owner_name,
+                        client.kakera_reaction_snipe_targets, client.snipe_ignore_users)
                     if target_ok:
                         remember_kakera_snipe_event(message.id)
                         reaction_delay = 0 if is_manual_self_roll else client.kakera_reaction_snipe_delay_value
@@ -8696,15 +8687,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         )
 
             # Target validation for character sniping
-            is_snipe_target_ok = True
-            if client.character_snipe_targets and owner_id != client.user.id:
-                is_target = False
-                if owner_id is not None and str(owner_id) in client.character_snipe_targets:
-                    is_target = True
-                if owner_name is not None and owner_name in client.character_snipe_targets:
-                    is_target = True
-                if not is_target:
-                    is_snipe_target_ok = False
+            is_snipe_target_ok = owner_id == client.user.id or snipe_owner_allowed(
+                owner_id, owner_name, client.character_snipe_targets, client.snipe_ignore_users)
 
             if is_snipe_target_ok:
                 if process and client.series_snipe_mode and client.series_wishlist:

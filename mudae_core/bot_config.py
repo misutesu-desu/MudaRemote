@@ -154,6 +154,11 @@ def configure_client(
         for t in (preset_data.get("character_snipe_targets") or [])
         if t.strip()
     )
+    client.snipe_ignore_users = set(
+        str(t).strip().casefold()
+        for t in (preset_data.get("snipe_ignore_users") or [])
+        if str(t).strip()
+    )
     client.kakera_reaction_sniped_messages = set()
     client.kakera_react_available = None
     client.kakera_react_cooldown_until_utc = None
@@ -656,6 +661,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "enable_reactive_self_snipe", "reactive_snipe_delay",
     "kakera_reaction_snipe_mode_active", "kakera_reaction_snipe_delay_value",
     "kakera_reaction_snipe_targets", "character_snipe_targets",
+    "snipe_ignore_users",
     "auto_free_claim_enabled", "humanization_enabled",
     "humanization_window_minutes", "humanization_inactivity_seconds",
     "inactive_hours", "auto_dk_enabled", "dk_power_management",
