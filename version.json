@@ -8,7 +8,7 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.9/mudae_bot.py",
-      "sha256": "5d09ef028eb55d4aa481d5369635e29e192831c0959b4e7561dda719ef927cef"
+      "sha256": "1135b4accd9b1526c276e22ad3c61faf21b8079ef12dc62bd04d3d5d7dc13c03"
     },
     {
       "path": "mudae_preset_editor.py",
@@ -18,7 +18,7 @@
     {
       "path": "mudae_core/__init__.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.9/mudae_core/__init__.py",
-      "sha256": "e0ec33197a43787dd59e2083f047101a82bce91c44a35c644ab5b8b7f0097fb4"
+      "sha256": "146ab8e28fda3ed3e3c17763e14aad396011bb7fb8be12ac50b01363d57cf855"
     },
     {
       "path": "mudae_core/claiming.py",
@@ -53,7 +53,7 @@
     {
       "path": "mudae_core/status.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.2.9/mudae_core/status.py",
-      "sha256": "6b67320e305418520dde15729602a9d1ab52ae3a33342f177cb79858f12f8db5"
+      "sha256": "0d5a353a56ce08b38ea101d0cfe654308c267dad42e0f6732fe87b43b3b08cd3"
     },
     {
       "path": "mudae_core/spheres.py",
