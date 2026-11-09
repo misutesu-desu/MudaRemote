@@ -502,6 +502,9 @@ def reconcile_shared_roll_deadline(previous_deadline, observed_at, proposed_dead
     return reconcile_roll_reset_deadline(previous_deadline, observed_at, proposed_deadline)
 
 
+CLAIM_TIMER_REFINEMENT_SECONDS = 120.0
+
+
 def reconcile_private_claim_deadline(previous_deadline, observed_at, proposed_deadline):
     """Refine one account's rounded claim timer without changing its cycle.
 
@@ -517,9 +520,16 @@ def reconcile_private_claim_deadline(previous_deadline, observed_at, proposed_de
     if proposed_deadline >= previous_deadline:
         return previous_deadline, False
     # A one-minute timer display plus transport latency is a normal refinement.
-    if (previous_deadline - proposed_deadline).total_seconds() <= 120.0:
+    if (previous_deadline - proposed_deadline).total_seconds() <= CLAIM_TIMER_REFINEMENT_SECONDS:
         return proposed_deadline, True
     return previous_deadline, False
+
+
+def same_claim_cycle_deadline(previous_deadline, deadline):
+    """Whether two deadlines name one boundary, allowing for a rounded timer."""
+    if previous_deadline is None or deadline is None:
+        return False
+    return abs((deadline - previous_deadline).total_seconds()) <= CLAIM_TIMER_REFINEMENT_SECONDS
 
 
 def dynamic_claim_round(claim_interval_minutes, deadline, now_utc=None):

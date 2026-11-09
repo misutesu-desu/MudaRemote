@@ -148,6 +148,7 @@ from .status import (
     consume_current_tu_urgency_for_backoff,
     defer_tu_queries,
     dynamic_claim_round,
+    same_claim_cycle_deadline,
     initialize_status_tracking,
     looks_like_tu_status_snapshot,
     mark_status_dirty,
@@ -196,6 +197,7 @@ from .webhooks import WebhookDispatcher
 __all__ = [
     "ClaimCoordinator",
     "dynamic_claim_round",
+    "same_claim_cycle_deadline",
     "KakeraPowerLedger",
     "KakeraInteractionKey",
     "KakeraInteractionLedger",

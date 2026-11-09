@@ -53,6 +53,43 @@ class FeedbackRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(evaluate(now + datetime.timedelta(minutes=11)), 'execute')
         self.assertEqual(evaluate(now + datetime.timedelta(minutes=36)), 'outside-claim-hour')
 
+    def _dynamic_round_client(self):
+        client = _build_runtime()
+        client.claim_interval = 180
+        client.claim_rounds_thresholds = [
+            {"round": 1, "min_kakera": 350},
+            {"round": 2, "min_kakera": 350},
+            {"round": 3, "min_kakera": 150},
+        ]
+        return client, closure(client._runtime_check_status, 'update_dynamic_thresholds')
+
+    def test_new_claim_cycle_drops_last_round_threshold_before_old_deadline_passes(self):
+        client, update = self._dynamic_round_client()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        client.next_claim_reset_at_utc = now + datetime.timedelta(seconds=40)
+        update()
+        self.assertEqual(client.min_kakera, 150)
+
+        # $tu reports the new cycle while the old rounded deadline is still ahead.
+        client.next_claim_reset_at_utc = now + datetime.timedelta(minutes=180)
+        update()
+        self.assertEqual(client._dynamic_claim_round, 1)
+        self.assertEqual(client.min_kakera, 350)
+        update()
+        self.assertEqual(client.min_kakera, 350)
+
+    def test_rounded_timer_refinement_does_not_revisit_an_earlier_round(self):
+        client, update = self._dynamic_round_client()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        client.next_claim_reset_at_utc = now + datetime.timedelta(minutes=59)
+        update()
+        self.assertEqual(client._dynamic_claim_round, 3)
+
+        client.next_claim_reset_at_utc = now + datetime.timedelta(minutes=61)
+        update()
+        self.assertEqual(client._dynamic_claim_round, 3)
+        self.assertEqual(client.min_kakera, 150)
+
     async def test_claim_recovery_bypasses_existing_randomized_status_delay(self):
         client = _create_test_client(server_reset_minute=None, rolling_enabled=False,
                                      last_tu_snapshot_complete=False)

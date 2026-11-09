@@ -234,7 +234,7 @@ try:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, snipe_owner_allowed, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
-        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, same_claim_cycle_deadline, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
@@ -271,7 +271,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         ClaimCoordinator, ClaimOutcome, CommandPacer, GlobalIntervalCoordinator, SecretStore, ServerResetCoordinator, UpdateError, apply_update, discover_update_manifest, get_update_manifest_url, recover_interrupted_update,
         active_stagger_seconds, normal_roll_behavior_flags, lurker_window_state, basic_panic_claim_fallback_is_active, can_resume_claim_interrupted_rolls, can_spend_restore_on_character, snipe_owner_allowed, calculate_kakera_power_cost, classify_claim_owner, classify_claim_text, clear_status_dirty, daily_rolls_decision, ResetAnchor, snap_to_reset_minute, bounded_sanity_deadline, ensure_sanity_deadline_safe, normal_action_status_policy, normal_roll_action_state_is_dirty, defer_normal_roll_window, normal_roll_window_is_deferred, normal_roll_batch_fits_window, normal_roll_start_window, normal_roll_has_usable_window, saved_rolls_that_fit, lurker_panic_lead_minutes, mk_full_power_wait_is_unchanged, NORMAL_ROLL_PREROLL_RESERVE_SECONDS, ROLL_BOUNDARY_ATTRIBUTION_GUARD_SECONDS, is_roll_result_cross_boundary_ambiguous,
         consume_tu_urgent_bypass, consume_current_tu_urgency_for_backoff,
-        cooldown_deadline, defer_tu_queries, dynamic_claim_round, format_update_changelog, has_free_claim_button, initialize_status_tracking,
+        cooldown_deadline, defer_tu_queries, dynamic_claim_round, same_claim_cycle_deadline, format_update_changelog, has_free_claim_button, initialize_status_tracking,
         is_claim_announcement_for_character,
         is_newer_version, looks_like_tu_status_snapshot,
         mark_status_dirty, pause_interruptible_sleep, prepare_active_presets, record_tu_failure,
@@ -2489,15 +2489,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         previous_deadline = getattr(client, "_dynamic_claim_cycle_deadline_utc", None)
         verified_new_cycle = bool(getattr(client, "_dynamic_claim_cycle_reset_verified", False))
         if previous_round is not None:
-            same_cycle = previous_deadline == getattr(client, "next_claim_reset_at_utc", None)
-            prior_cycle_still_active = (
-                previous_deadline is not None
-                and now_utc < previous_deadline
+            same_cycle = same_claim_cycle_deadline(
+                previous_deadline,
+                getattr(client, "next_claim_reset_at_utc", None),
             )
             # Rounded self-$tu timers can refine a boundary by a minute. They
             # must not make a cooldown revisit an earlier dynamic round. A
-            # verified successful claim is the authoritative new-cycle signal.
-            if (same_cycle or prior_cycle_still_active) and not verified_new_cycle:
+            # deadline further away is a new cycle, even if the old rounded
+            # deadline is still a few seconds ahead. A verified successful
+            # claim is the authoritative new-cycle signal.
+            if same_cycle and not verified_new_cycle:
                 round_num = max(previous_round, round_num)
         client._dynamic_claim_round = round_num
         client._dynamic_claim_cycle_deadline_utc = getattr(client, "next_claim_reset_at_utc", None)
