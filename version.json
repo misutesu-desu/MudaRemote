@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.0**\n\n### 🐛 Bug Fixes\n- **`$dk` Confirmation Is Answered:** When Mudae asked whether you really wanted to use `$dk`, the bot stayed silent and believed the refill had worked. It now answers, and keeps the `$dk` when Mudae says you still have enough power.\n- **`$dk` Lost To Another Command:** If Mudae was still waiting for an answer to a different command, the `$dk` was dropped. The bot now tries again.\n- **Auto `$dk` Daily Schedule With Smart Power Refill:** The scheduled time was ignored while Smart Power Refill was on. Both now work together.\n- **Event Card Rolls:** After the bot clicks an event card, it now uses the extra rolls the card gives.\n\n### ⚡ Improvements\n- **Kakera Cost Warning:** If your `$tu` does not show how much power a kakera reaction consumes, the bot now tells you what it assumes and how to fix it with `$tuarrange`.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.0/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.0/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "3e5c371146c08256f48ad2fbe8f433c45e8ac3701882e2f9f0c8ac39d0d731dd",
   "source_files": [
     {
       "path": "mudae_bot.py",
