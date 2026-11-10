@@ -255,6 +255,55 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.command_channel.sent.count('$dk'), 2)
         self.assertEqual(bot.dk_stock_count, 1, 'only the accepted $dk uses up stock')
 
+    # ---- Auto $dk Daily Schedule -------------------------------------------------------------
+    async def scheduled_status(self, answers, smart_refill, schedule='00:00'):
+        """One $tu with plenty of power while the schedule is due and unused today."""
+        bot = self.bot
+        bot.rolling_enabled = True
+        bot.auto_dk_enabled = True
+        bot.dk_power_management = smart_refill
+        bot.auto_dk_min_power = 0
+        bot.auto_p_enabled = False
+        bot.dk_schedule_time = schedule
+        bot._last_scheduled_dk_window = None
+        snapshot = (
+            'You can claim now!\nNext claim reset in **60** min.\n'
+            'You have **10** rolls left. Next rolls reset in **60** min.\n'
+            '$rt is available!\nPower: **90%**\n'
+            'Each kakera reaction consumes 40%\n'
+            '1 $dk available\n$daily is on cooldown.\n$p is unavailable.\n18/20 buttons clicked.\nYou can react'
+        )
+        self.command_channel_answering(answers, snapshot)
+        bot.last_tu_snapshot_complete = False
+        bot.last_tu_query_utc = None
+        bot._tu_next_allowed_monotonic = 0
+        await bot._runtime_check_status(bot, self.channel, '$', proceed_to_rolls=False)
+        return bot
+
+    async def test_the_schedule_also_runs_with_smart_power_refill_on(self):
+        # Reported: with both settings on the scheduled time was ignored and $dk only went out
+        # when power ran low during rolls.
+        bot = await self.scheduled_status([], smart_refill=True)
+        self.assertEqual(self.command_channel.sent.count('$dk'), 1)
+        self.assertEqual(bot.dk_stock_count, 0)
+        self.assertIsNotNone(bot._last_scheduled_dk_window)
+
+    async def test_smart_power_refill_without_a_schedule_keeps_dk_while_power_is_high(self):
+        bot = await self.scheduled_status([], smart_refill=True, schedule='')
+        self.assertNotIn('$dk', self.command_channel.sent)
+        self.assertEqual(bot.dk_stock_count, 1)
+
+    async def test_a_scheduled_dk_answers_mudaes_question(self):
+        bot = await self.scheduled_status([self.PROMPT % 90], smart_refill=False)
+        self.assertEqual([c for c in self.command_channel.sent if c != '$tu'], ['$dk', 'y'])
+        self.assertEqual(bot.dk_stock_count, 0)
+        self.assertIsNotNone(bot._last_scheduled_dk_window)
+
+    async def test_a_refused_scheduled_dk_stays_due(self):
+        bot = await self.scheduled_status([self.BUSY], smart_refill=False)
+        self.assertEqual(bot.dk_stock_count, 1)
+        self.assertIsNone(bot._last_scheduled_dk_window)
+
 
 class PowerAboveConfiguredMaximumTests(unittest.TestCase):
     def test_regeneration_does_not_cut_reported_power_to_the_setting(self):

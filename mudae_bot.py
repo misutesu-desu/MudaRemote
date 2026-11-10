@@ -5093,11 +5093,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
                         return
 
-                if client.auto_dk_enabled and not client.dk_power_management:
+                if client.auto_dk_enabled:
                     if client.dk_stock_count > 0:
                         schedule_value = getattr(client, "dk_schedule_time", "")
                         scheduled_window = None
-                        eligible = True
+                        # Smart Power Refill spends $dk on low power; a
+                        # schedule still uses whatever is left at its minute.
+                        eligible = not client.dk_power_management
                         if schedule_value:
                             schedule = parse_dk_schedule_time(schedule_value)
                             if schedule is None:
@@ -5113,11 +5115,27 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 schedule_dk_schedule_refresh(schedule, local_now)
                         if eligible:
                             BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
-                            if not await guarded_send(cmd_channel, f"{client.mudae_prefix}dk"):
+                            dk_message = await guarded_send(cmd_channel, f"{client.mudae_prefix}dk")
+                            if not dk_message:
                                 return
-                            client.dk_stock_count = max(0, client.dk_stock_count - 1)
-                            if scheduled_window is not None:
-                                client._last_scheduled_dk_window = scheduled_window
+                            dk_answer, _reported_power = await dk_reply(dk_message, cmd_channel)
+                            if dk_answer == "prompt":
+                                # This $dk is wanted now whatever the power is.
+                                if not await guarded_send(cmd_channel, "y"):
+                                    return
+                                dk_answer = "accepted"
+                            if dk_answer == "accepted":
+                                client.dk_stock_count = max(0, client.dk_stock_count - 1)
+                                client.current_dk_power = client.max_dk_power
+                                client.kakera_power_ledger.clear()
+                                mark_dk_power_changed()
+                                client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                                client.kakera_react_available = True
+                                client.kakera_react_cooldown_until_utc = None
+                                if scheduled_window is not None:
+                                    client._last_scheduled_dk_window = scheduled_window
+                            else:
+                                BotLogger.log("Mudae refused $dk; it is tried again on the next status check.", preset_name, "WARN")
                             if not await active_delay(2.0 + random.uniform(0.1, 0.5)):
                                 return
 
