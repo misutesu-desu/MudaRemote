@@ -256,7 +256,7 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bot.dk_stock_count, 1, 'only the accepted $dk uses up stock')
 
     # ---- Auto $dk Daily Schedule -------------------------------------------------------------
-    async def scheduled_status(self, answers, smart_refill, schedule='00:00'):
+    async def scheduled_status(self, answers, smart_refill, schedule='00:00', cost_line=True):
         """One $tu with plenty of power while the schedule is due and unused today."""
         bot = self.bot
         bot.rolling_enabled = True
@@ -270,8 +270,8 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
             'You can claim now!\nNext claim reset in **60** min.\n'
             'You have **10** rolls left. Next rolls reset in **60** min.\n'
             '$rt is available!\nPower: **90%**\n'
-            'Each kakera reaction consumes 40%\n'
-            '1 $dk available\n$daily is on cooldown.\n$p is unavailable.\n18/20 buttons clicked.\nYou can react'
+            + ('Each kakera reaction consumes 40%\n' if cost_line else '')
+            + '1 $dk available\n$daily is on cooldown.\n$p is unavailable.\n18/20 buttons clicked.\nYou can react'
         )
         self.command_channel_answering(answers, snapshot)
         bot.last_tu_snapshot_complete = False
@@ -303,6 +303,14 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         bot = await self.scheduled_status([self.BUSY], smart_refill=False)
         self.assertEqual(bot.dk_stock_count, 1)
         self.assertIsNone(bot._last_scheduled_dk_window)
+
+    async def test_a_tu_without_the_reaction_cost_line_says_what_is_assumed(self):
+        self.bot.dk_consumption = 35
+        await self.scheduled_status([], smart_refill=True, schedule='', cost_line=False)
+        warnings = [call.args[0] for call in mudae_bot.BotLogger.log.call_args_list
+                    if 'kakerainfo' in call.args[0] and '35%' in call.args[0]]
+        self.assertEqual(len(warnings), 1, warnings)
+
 
 
 class PowerAboveConfiguredMaximumTests(unittest.TestCase):

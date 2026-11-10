@@ -5066,6 +5066,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 consumption_match = re.search(REGEX_PATTERNS["DK_CONSUMPTION"], c_lower)
                 if consumption_match:
                     client.dk_consumption = int(consumption_match.group(1))
+                    missing_tu_category_warnings.discard("kakerainfo")
+                elif power_match and "kakerainfo" not in missing_tu_category_warnings:
+                    missing_tu_category_warnings.add("kakerainfo")
+                    BotLogger.log(
+                        f"Your $tu response does not say how much power a kakera reaction consumes, so "
+                        f"{client.dk_consumption}% is assumed. Run '$tuarrange' in Discord to include 'kakerainfo'.",
+                        preset_name, "WARN",
+                    )
                 dk_stock_match = re.search(REGEX_PATTERNS["DK_STOCK"], c_lower)
                 if dk_stock_match: client.dk_stock_count = int(dk_stock_match.group(1))
                 elif re.search(REGEX_PATTERNS["DK_READY"], c_lower): client.dk_stock_count = 1
