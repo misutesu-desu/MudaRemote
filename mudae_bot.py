@@ -2397,10 +2397,33 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     f"DK: Activating. ({current_power}% < {trigger}%)" + (f" Retry {attempt}." if attempt else ""),
                     preset_name, "KAKERA",
                 )
-                sent = await guarded_send(_get_command_channel() or channel, f"{client.mudae_prefix}dk")
+                command_channel = _get_command_channel() or channel
+                sent = await guarded_send(command_channel, f"{client.mudae_prefix}dk")
                 if not sent:
                     return False
-                if not await dk_refused(getattr(sent, "id", None)):
+                reply, reported_power = await dk_reply(sent, command_channel)
+                if reply == "prompt":
+                    # Mudae only asks when the real power still covers a reaction.
+                    still_wanted = reported_power is None or should_refill_kakera_power(
+                        reported_power, required_power,
+                        power_is_confirmed=True, configured_trigger=client.auto_dk_min_power,
+                    )
+                    if not await guarded_send(command_channel, "y" if still_wanted else "n"):
+                        return False
+                    if still_wanted:
+                        break
+                    client.current_dk_power = reported_power
+                    client.kakera_power_ledger.clear()
+                    mark_dk_power_changed()
+                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
+                    client.kakera_react_available = True
+                    client.kakera_react_cooldown_until_utc = None
+                    BotLogger.log(
+                        f"DK: Mudae reports {reported_power}% power, enough to react. Keeping $dk.",
+                        preset_name, "KAKERA",
+                    )
+                    return False
+                if reply == "accepted":
                     break
                 if attempt == len(DK_RETRY_DELAYS):
                     client._dk_refused_until = time.monotonic() + DK_REFUSED_PAUSE_SECONDS
@@ -2426,25 +2449,58 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"DK refill failed: {error}", preset_name, "ERROR")
             return False
 
-    async def dk_refused(message_id):
-        """Wait briefly for Mudae's stop-sign reaction on our $dk; False when it was accepted (or unknowable)."""
+    async def dk_reply(sent, channel):
+        """Wait briefly for Mudae's answer to our $dk.
+
+        Returns ("refused", None) for a stop sign or a busy command slot,
+        ("prompt", power) when Mudae asks for confirmation, and
+        ("accepted", None) when nothing objects in time.
+        """
+        message_id = getattr(sent, "id", None)
         if message_id is None:
-            return False
+            return "accepted", None
         if message_id in client._recent_mudae_command_rejections:
             client._recent_mudae_command_rejections.pop(message_id, None)
-            return True
-        waiter = asyncio.get_running_loop().create_future()
-        client._mudae_command_reject_waiters[message_id] = waiter
+            return "refused", None
+        loop = asyncio.get_running_loop()
+        rejected = loop.create_future()
+        answered = loop.create_future()
+        client._mudae_command_reject_waiters[message_id] = rejected
+        client._dk_reply_waiter = (getattr(channel, "id", None), answered)
         try:
-            await asyncio.wait_for(asyncio.shield(waiter), timeout=DK_REJECT_WINDOW_SECONDS)
-            return True
-        except asyncio.TimeoutError:
-            return False
+            done, _pending = await asyncio.wait(
+                {rejected, answered}, timeout=DK_REJECT_WINDOW_SECONDS,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if answered in done:
+                return answered.result()
+            if rejected in done:
+                return "refused", None
+            return "accepted", None
         finally:
             client._mudae_command_reject_waiters.pop(message_id, None)
             client._recent_mudae_command_rejections.pop(message_id, None)
-            if not waiter.done():
-                waiter.cancel()
+            client._dk_reply_waiter = None
+            for waiter in (rejected, answered):
+                if not waiter.done():
+                    waiter.cancel()
+
+    def observe_dk_reply(message):
+        """Resolve a pending $dk with Mudae's confirmation prompt or busy notice."""
+        pending = getattr(client, "_dk_reply_waiter", None)
+        if pending is None:
+            return
+        channel_id, waiter = pending
+        if waiter.done() or getattr(getattr(message, "author", None), "id", None) != TARGET_BOT_ID:
+            return
+        if getattr(getattr(message, "channel", None), "id", None) != channel_id:
+            return
+        text = str(getattr(message, "content", "") or "").casefold()
+        if "dky" in text:
+            power = re.search(r"\((\d+)\s*%\)", text)
+            waiter.set_result(("prompt", int(power.group(1)) if power else None))
+        elif "$exit" in text:
+            waiter.set_result(("refused", None))
 
     def chaos_kakera_discount_reported(content):
         text = str(content or "").replace("*", "").replace("_", "")
@@ -8131,6 +8187,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         observe_manual_rt_command(message)
         observe_shared_tu_resets(message)
         capture_tu_response(message)
+        observe_dk_reply(message)
         client.sphere_runtime.capture_sphere_game_response(message)
         client.sphere_runtime.capture_sphere_game_bonus(message)
         is_roll = (message.channel.id == client.target_channel_id)

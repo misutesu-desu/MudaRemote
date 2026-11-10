@@ -203,6 +203,57 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(bot.kakera_react_available, True, '$dk lifts the refusal')
         self.assertEqual(bot.dk_stock_count, 1)
 
+    # ---- Mudae answers $dk with a question ---------------------------------------------------
+    PROMPT = ('You have enough power to react to kakera right now (%d%%). '
+              'Do you really want to use $dk? (y/n/yes/no)\nSkip confirmation with $dky')
+    BUSY = 'A command is already awaiting an answer! Type $exit to decline the other command.'
+
+    def command_channel_answering(self, answers, snapshot=None):
+        """Mudae posts answers[n] in the command channel after the n-th $dk."""
+        bot, sent = self.bot, self.command_channel.sent
+
+        async def send(content, **kwargs):
+            sent.append(content)
+            message = SimpleNamespace(id=8000 + len(sent), created_at=datetime.datetime.now(datetime.timezone.utc))
+            if content == '$tu' and snapshot:
+                bot._tu_response_future.set_result(snapshot)
+            elif content == '$dk' and sent.count('$dk') <= len(answers):
+                answer = SimpleNamespace(
+                    id=9500 + len(sent), channel=self.command_channel,
+                    author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+                    content=answers[sent.count('$dk') - 1],
+                    created_at=message.created_at, embeds=[], components=[], interaction=None,
+                )
+                asyncio.get_running_loop().call_later(
+                    0.01, lambda: asyncio.ensure_future(bot.events['on_message'](answer)))
+            return message
+
+        self.command_channel.send = send
+
+    async def test_a_dk_mudae_questions_is_kept_when_the_real_power_is_enough(self):
+        # Reported: the estimate was too low, Mudae asked for confirmation, nobody answered and
+        # the bot believed the $dk was used.
+        self.command_channel_answering([self.PROMPT % 60])
+        bot = self.refill_setup(power=10)                      # trigger is 30, the click costs 15
+        await self.refill(power=10)
+        self.assertEqual(self.command_channel.sent, ['$dk', 'n'])
+        self.assertEqual(bot.dk_stock_count, 2, 'a declined $dk must not use up stock')
+        self.assertEqual(bot.current_dk_power, 45, "Mudae's number replaces the estimate")
+
+    async def test_a_dk_mudae_questions_is_confirmed_when_power_is_under_the_trigger(self):
+        self.command_channel_answering([self.PROMPT % 20])
+        bot = self.refill_setup(power=20)                      # trigger is 30
+        await self.refill(power=20)
+        self.assertEqual(self.command_channel.sent, ['$dk', 'y'])
+        self.assertEqual(bot.dk_stock_count, 1)
+        self.assertEqual(bot.current_dk_power, bot.max_dk_power - 15)
+
+    async def test_a_dk_lost_to_another_pending_command_is_retried(self):
+        self.command_channel_answering([self.BUSY])
+        bot = self.refill_setup(power=20)
+        await self.refill(power=20)
+        self.assertEqual(self.command_channel.sent.count('$dk'), 2)
+        self.assertEqual(bot.dk_stock_count, 1, 'only the accepted $dk uses up stock')
 
 
 class PowerAboveConfiguredMaximumTests(unittest.TestCase):
