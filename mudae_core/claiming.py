@@ -66,6 +66,11 @@ def expand_claim_emojis(claim_emojis: Iterable[object]) -> list:
         if not text:
             continue
         add(text)
+        name_match = re.fullmatch(r"<a?:([^:\s]+):\d+>", text)
+        if name_match is None:
+            name_match = re.fullmatch(r":([^:\s]+):", text)
+        if name_match:
+            add(name_match.group(1))
         mapped = CLAIM_EMOJI_SHORTCODES.get(text.strip(":").casefold())
         for value in (text, mapped):
             if value:
