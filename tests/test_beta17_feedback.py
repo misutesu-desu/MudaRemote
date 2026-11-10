@@ -279,6 +279,24 @@ class Beta17RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 await manage(bot, channel, '1 $dk available\nPower: **{}%**\nEach kakera button consumes 30%'.format(power))
             self.assertEqual(channel.sent, ['$dk'] if refill else [], (mode, keys, perk, shop))
 
+    async def test_dk_refill_waits_for_roll_reset_regeneration(self):
+        for rolls, minutes, refill in ((0, 30, False), (0, 5, True), (5, 30, True), (None, None, True)):
+            with self.subTest(rolls=rolls, minutes=minutes):
+                bot = _build_runtime()
+                bot.auto_dk_enabled = bot.dk_power_management = True
+                bot.auto_dk_min_power = 15
+                bot.current_dk_power = 9
+                channel = _Channel()
+                bot._main_channel = channel
+                bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
+                manage = closure(bot._runtime_check_status, 'handle_dk_power_management').cell_contents
+                content = '1 $dk available\nPower: **9%**\nEach kakera button consumes 30%'
+                if rolls is not None:
+                    content += '\nYou have **{}** rolls left. Next rolls reset in **{}** min.'.format(rolls, minutes)
+                with mock.patch.object(mudae_bot, 'pause_interruptible_sleep', mock.AsyncMock(return_value=True)):
+                    await manage(bot, channel, content)
+                self.assertEqual(channel.sent, ['$dk'] if refill else [])
+
     async def test_cached_minigames_obey_batch_size_and_finish_before_next(self):
         for individual, expected in ((True, ['$oh 1'] * 13), (False, ['$oh 10', '$oh 3'])):
             bot = _build_runtime()

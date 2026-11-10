@@ -3415,6 +3415,27 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             )):
                 cost = calculate_kakera_power_cost(cost, has_perk_eight_discount=True)
 
+            rolls_left = None
+            reset_minutes = None
+            rolls_match = re.search(REGEX_PATTERNS["ROLLS_COUNT"], c_low, re.DOTALL)
+            if rolls_match:
+                try:
+                    rolls_left = int(re.sub(r"[^\d]", "", rolls_match.group(1)))
+                except ValueError:
+                    pass
+                reset_minutes = parse_timer_minutes("ROLL_RESET_TU", c_low[rolls_match.end():])
+            if reset_minutes is None:
+                reset_minutes = parse_timer_minutes("ROLL_RESET", c_low)
+            power = int(power_match.group(1))
+            trigger = client.auto_dk_min_power or cost
+            if (rolls_left == 0 and reset_minutes is not None
+                    and min(client.max_dk_power, power + reset_minutes / 3) >= trigger):
+                BotLogger.log(
+                    f"DK: Skipping $dk, no rolls left and power regenerates to {trigger}% before the roll reset.",
+                    preset_name, "DEBUG", client,
+                )
+                return
+
             async with get_kakera_action_lock():
                 await refill_dk_if_needed(channel, cost)
         except Exception as e:
