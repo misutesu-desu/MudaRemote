@@ -458,6 +458,37 @@ class FreeEventCardTests(unittest.IsolatedAsyncioTestCase):
             await bot.events["on_message"](message)
         button.click.assert_awaited_once()
 
+    def _bonus_message(self, channel, message_id):
+        return SimpleNamespace(
+            id=message_id, channel=channel, author=SimpleNamespace(id=mudae_bot.TARGET_BOT_ID),
+            content="**+7** rolls for this interval!",
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            embeds=[], components=[], interaction=None, reference=None,
+        )
+
+    async def test_rolls_granted_by_a_clicked_event_card_are_counted(self):
+        # Reported: the candy was clicked but the extra rolls it gave stayed unused.
+        bot, channel = _create_test_client(rolling_enabled=True)
+        bot.loop = asyncio.get_running_loop()
+        bot.rolls_left = 0
+        message, button = self._event_card(channel, 1103)
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message"](message)
+            button.click.assert_awaited_once()
+            await bot.events["on_message"](self._bonus_message(channel, 1104))
+            self.assertEqual(bot.rolls_left, 7)
+            self.assertEqual(bot._local_extra_rolls_pending, 7)
+            await bot.events["on_message"](self._bonus_message(channel, 1105))
+        self.assertEqual(bot.rolls_left, 7, "one click grants one bonus")
+
+    async def test_roll_bonus_text_without_an_event_click_is_ignored(self):
+        bot, channel = _create_test_client(rolling_enabled=True)
+        bot.loop = asyncio.get_running_loop()
+        bot.rolls_left = 0
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", mock.AsyncMock(return_value=True)):
+            await bot.events["on_message"](self._bonus_message(channel, 1106))
+        self.assertEqual(bot.rolls_left, 0)
+
 
 class FreeEventCardSettingTests(FreeEventCardTests):
     async def test_event_card_is_left_alone_when_free_claims_are_off(self):

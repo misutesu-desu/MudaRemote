@@ -513,6 +513,7 @@ def configure_client(
     client._recent_mudae_command_acks = {}
     client._mudae_command_reject_waiters = {}
     client._dk_reply_waiter = None
+    client._free_event_bonus_until = 0.0
     client._recent_mudae_command_rejections = {}
     client._rt_command_in_flight = None
     client._manual_rt_pending_claims = []

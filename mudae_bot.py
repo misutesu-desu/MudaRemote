@@ -650,6 +650,7 @@ DK_SETTLE_SECONDS = 0.6
 DK_REJECT_WINDOW_SECONDS = 1.2
 DK_RETRY_DELAYS = (0.7, 1.5)
 DK_REFUSED_PAUSE_SECONDS = 30.0
+FREE_EVENT_BONUS_WINDOW_SECONDS = 15.0
 
 def kakera_cooldown_deadline(now_utc, minutes):
     """When a "can't react to kakera" block ends: the reported wait, or a short bounded guess."""
@@ -7855,6 +7856,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                     if not click_sent:
                                         break
                                     claim_success = True
+                                    if is_free_claim:
+                                        client._free_event_bonus_until = time.monotonic() + FREE_EVENT_BONUS_WINDOW_SECONDS
                                     if not response_observed:
                                         BotLogger.log(
                                             f"Claim click sent for {char_name}; Discord ACK is delayed, verifying without a duplicate click.",
@@ -8387,6 +8390,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             bonus_from_confirmed_kakera_c = (
                 time.monotonic() <= client._confirmed_kakera_c_bonus_until
             )
+            bonus_from_event_card = (
+                time.monotonic() <= getattr(client, "_free_event_bonus_until", 0.0)
+            )
             if (m_bonus and bonus_from_confirmed_kakera_c
                     and (time.time() - getattr(client, '_last_kakera_click_ts', 0)) <= 10):
                 bonus_amt = int(m_bonus.group(1))
@@ -8394,6 +8400,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.rolls_left += bonus_amt
                 client._local_extra_rolls_pending += bonus_amt
                 BotLogger.log(f"Gained +{bonus_amt} extra rolls from Kakera! rolls_left is now {client.rolls_left}.", preset_name, "KAKERA")
+                wake_status_loop()
+            elif m_bonus and bonus_from_event_card:
+                bonus_amt = int(m_bonus.group(1))
+                client._free_event_bonus_until = 0.0
+                client.rolls_left += bonus_amt
+                client._local_extra_rolls_pending += bonus_amt
+                BotLogger.log(f"Gained +{bonus_amt} extra rolls from an event card! rolls_left is now {client.rolls_left}.", preset_name, "INFO")
                 wake_status_loop()
 
         if not message.embeds: return
