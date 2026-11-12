@@ -5068,6 +5068,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     re.search(REGEX_PATTERNS["DK_COOLDOWN"], c_lower)):
                 BotLogger.log("Your $tu response is missing the 'dk' category. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
 
+            # Auto $p reads its timer from $tu, so without the line it never fires.
+            if client.auto_p_enabled and "$p" not in c_lower:
+                if "p" not in missing_tu_category_warnings:
+                    BotLogger.log("Your $tu response has no $p line, so Auto $p cannot tell when $p is ready. Run '$tuarrange' in Discord to include it.", preset_name, "WARN")
+                    missing_tu_category_warnings.add("p")
+            else:
+                missing_tu_category_warnings.discard("p")
+
             power_snapshot_is_authoritative = False
             try:
                 power_match = re.search(REGEX_PATTERNS["DK_POWER"], c_lower)
