@@ -3220,6 +3220,44 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 BotLogger.log(f"Main loop error: {e}. Retrying in 60s.", preset_name, "ERROR")
                 await asyncio.sleep(60)
 
+    def recover_after_reconnect():
+        """Bring the loops back after Discord reconnects or resumes the session."""
+        if client.loot_automation is not None:
+            task = client._main_loop_task
+            if task is None or task.done():
+                client._main_loop_task = client.loop.create_task(client.loot_automation.run(client._main_channel))
+            return
+        clear_pending_mk_roll(reason="discord-reconnect")
+        release_roll_count_reconciliation(client)
+        BotLogger.log(f"Reconnected: {client.user}. Checking health...", preset_name, "INFO")
+        # A resume may happen while the old loop is waiting for a reset.
+        # Do not let that pre-disconnect monotonic suppression postpone the
+        # reconciliation that makes reset-bound state authoritative again.
+        client._status_cycle_not_before_monotonic = 0.0
+        anchors_valid = bool(
+            getattr(client.roll_reset_anchor, "confidence", False)
+            and getattr(client.claim_reset_anchor, "confidence", False)
+        )
+        if not anchors_valid or status_dirty_fields(client):
+            request_status_refresh(reason="discord-reconnect", urgent=True)
+        else:
+            BotLogger.log("Gateway resume retained trustworthy reset anchors; no status sync needed.", preset_name, "DEBUG", client)
+        task = client._main_loop_task
+        if task is None or task.done():
+            c = getattr(client, '_main_channel', None)
+            if c:
+                client._main_loop_task = client.loop.create_task(main_status_loop(client, c) if client.rolling_enabled else snipe_only_status_loop(client, c))
+        else:
+            if client._immediate_check_event: client._immediate_check_event.set()
+
+    @client.event
+    async def on_resumed():
+        # discord.py fires on_resumed, not on_ready, when it resumes the old
+        # session. on_disconnect already dropped the pending roll state, so the
+        # loops need the same recovery as after a full reconnect.
+        if client._has_initialized:
+            recover_after_reconnect()
+
     @client.event
     async def on_ready():
         client._mobile_owned_loop = asyncio.get_running_loop()
@@ -3227,33 +3265,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if ws and getattr(ws, "session_id", None): client.mudae_session_id = ws.session_id
 
         if client._has_initialized:
-            if client.loot_automation is not None:
-                task = client._main_loop_task
-                if task is None or task.done():
-                    client._main_loop_task = client.loop.create_task(client.loot_automation.run(client._main_channel))
-                return
-            clear_pending_mk_roll(reason="discord-reconnect")
-            release_roll_count_reconciliation(client)
-            BotLogger.log(f"Reconnected: {client.user}. Checking health...", preset_name, "INFO")
-            # A resume may happen while the old loop is waiting for a reset.
-            # Do not let that pre-disconnect monotonic suppression postpone the
-            # reconciliation that makes reset-bound state authoritative again.
-            client._status_cycle_not_before_monotonic = 0.0
-            anchors_valid = bool(
-                getattr(client.roll_reset_anchor, "confidence", False)
-                and getattr(client.claim_reset_anchor, "confidence", False)
-            )
-            if not anchors_valid or status_dirty_fields(client):
-                request_status_refresh(reason="discord-reconnect", urgent=True)
-            else:
-                BotLogger.log("Gateway resume retained trustworthy reset anchors; no status sync needed.", preset_name, "DEBUG", client)
-            task = client._main_loop_task
-            if task is None or task.done():
-                c = getattr(client, '_main_channel', None)
-                if c:
-                    client._main_loop_task = client.loop.create_task(main_status_loop(client, c) if client.rolling_enabled else snipe_only_status_loop(client, c))
-            else:
-                if client._immediate_check_event: client._immediate_check_event.set()
+            recover_after_reconnect()
             return
 
         client._has_initialized = True
