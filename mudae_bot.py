@@ -2664,6 +2664,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         http = getattr(client, "http", None)
         if not http or Route is None: return None
         commands_map = {}
+        denied_status = None
         try:
             route = Route("GET", "/channels/{channel_id}/application-commands/search", channel_id=channel.id)
             resp = await http.request(route, params={"type": 1, "application_id": str(TARGET_BOT_ID), "limit": 25})
@@ -2675,9 +2676,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.mudae_slash_cache[ckey] = commands_map
                 return commands_map
         except discord.HTTPException as e:
+            # The channel search can be refused while the server's command
+            # index still works, so try the index before giving up.
             if getattr(e, 'status', 0) in (401, 403):
-                BotLogger.log(f"Slash: Cannot access commands in #{channel.name} (HTTP {e.status}). Check 'Use Application Commands' permission.", preset_name, "ERROR")
-                return None
+                denied_status = e.status
         except Exception: pass
         try:
             route = Route("GET", "/guilds/{guild_id}/application-command-index", guild_id=guild.id)
@@ -2691,6 +2693,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.mudae_slash_cache[ckey] = commands_map
                 return commands_map
         except Exception: pass
+        if denied_status is not None:
+            BotLogger.log(f"Slash: Cannot access commands in #{channel.name} (HTTP {denied_status}). Check 'Use Application Commands' permission.", preset_name, "ERROR")
         return None
 
     def _check_slash_permissions(channel) -> tuple:
