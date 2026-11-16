@@ -671,7 +671,7 @@ DEFAULTS = {
 # Boolean settings with their display names and defaults
 BOOL_SETTINGS = [
     ("rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)", True),
-    ("use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)", False),
+    ("use_slash_rolls", "Use /slash commands for rolls and $tu (Earn 10% more Kakera)", False),
     ("pause_on_key_limit", "Pause on Key Limit", True),
     ("snipe_mode", "Snipe Characters (Claim characters rolled by other people)", False),
     ("snipe_ignore_min_kakera_reset", "Panic Claim (Claim ANY character right before your timer resets)", False),
@@ -2122,7 +2122,7 @@ class PresetEditor:
         self.quick_goal_vars["claim"] = self._quick_check(
             inner, "reactive_snipe_on_own_rolls", "Claim matching characters", "Claim wishlist and value-based matches from your own rolls, including free green claim buttons.")
         self.quick_goal_vars["slash"] = self._quick_check(
-            inner, "use_slash_rolls", "Use slash roll commands (+10% Kakera)", "Recommended. Text commands are used automatically if slash commands are unavailable.")
+            inner, "use_slash_rolls", "Use slash commands for rolls and $tu (+10% Kakera)", "Recommended. Turn off to send rolls and $tu as $ text commands. Text commands are used automatically if slash commands are unavailable.")
         self._quick_label(inner, "Kakera on your own automated rolls is collected automatically.", muted=True)
         self.quick_goal_vars["kakera"] = self._quick_check(
             inner, "kakera_reaction_snipe_mode", "Collect Kakera from other players", "Optional. Click Kakera on other players' rolls in monitored channels.")
@@ -2547,7 +2547,7 @@ class PresetEditor:
         rolling_var = self.add_checkbox(roll_frame.content, "rolling", "Rolling Enabled (Turn off to only snipe without rolling yourself)")
         roll_sub = self.create_subframe(roll_frame.content, rolling_var, "rolling")
 
-        self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands (Earn 10% more Kakera)")
+        self.add_checkbox(roll_sub, "use_slash_rolls", "Use /slash commands for rolls and $tu (Earn 10% more Kakera)", description="Turn off to send rolls and $tu as $ text commands. Text commands are used automatically if slash commands are unavailable.")
         self.add_checkbox(
             roll_sub, "pause_on_key_limit", "Pause on Key Limit",
             description="Pause for 60-70 minutes at the key limit.\nTurn off to keep rolling and collecting Kakera; Mudae's key cap still applies."
