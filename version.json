@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.4**\n\n### ⚡ Improvements\n- **Paste Multiple Wishlist Entries:** In the desktop preset editor and quick setup, paste names separated by `$` into either wishlist. For example, `Ram$Rem$` adds Ram and Rem as separate entries.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.4/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.4/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "ecdd01dac6491c5491dcbe70880bd7e575054fd24a82d859f5be9b4f5071c45c",
   "source_files": [
     {
       "path": "mudae_bot.py",
