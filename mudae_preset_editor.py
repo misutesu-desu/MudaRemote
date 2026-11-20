@@ -198,7 +198,7 @@ class CollapsibleLabelFrame(ttk.Frame):
 
 class ChipListWidget(tk.Frame):
     """An interactive chip/tag list editor widget that transforms comma-separated text into tag chips."""
-    def __init__(self, parent, bg_input, text_main, border_color, accent, bg_panel, text_muted, state_callback=None, *args, **kwargs):
+    def __init__(self, parent, bg_input, text_main, border_color, accent, bg_panel, text_muted, state_callback=None, *args, split_dollars=False, **kwargs):
         super().__init__(parent, bg=parent.cget("bg") if hasattr(parent, "cget") else BG_DARK, *args, **kwargs)
         self.bg_input = bg_input
         self.text_main = text_main
@@ -208,6 +208,7 @@ class ChipListWidget(tk.Frame):
         self.text_muted = text_muted
         self.state_callback = state_callback
         self.change_callback = None
+        self.split_dollars = split_dollars
 
         self.chips = []
 
@@ -248,12 +249,17 @@ class ChipListWidget(tk.Frame):
     def _on_focus_out(self, event):
         self._add_from_entry()
 
+    def _split_entry(self, value):
+        if self.split_dollars:
+            value = value.replace("$", ",")
+        return [part.strip() for part in value.split(",") if part.strip()]
+
     def _add_from_entry(self):
         val = self.entry.get().strip()
         if val.endswith(","):
             val = val[:-1].strip()
         if val:
-            parts = [p.strip() for p in val.split(",") if p.strip()]
+            parts = self._split_entry(val)
             added = False
             for part in parts:
                 if part not in self.chips:
@@ -325,7 +331,11 @@ class ChipListWidget(tk.Frame):
     def get(self):
         current_entry = self.entry.get().strip()
         all_chips = list(self.chips)
-        if current_entry:
+        if self.split_dollars:
+            for part in self._split_entry(current_entry):
+                if part not in all_chips:
+                    all_chips.append(part)
+        elif current_entry:
             if current_entry.endswith(","):
                 current_entry = current_entry[:-1].strip()
             if current_entry and current_entry not in all_chips:
@@ -2042,6 +2052,7 @@ class PresetEditor:
             bg_panel=BG_PANEL,
             text_muted=TEXT_MUTED,
             state_callback=on_list_change,
+            split_dollars=key in {"wishlist", "series_wishlist"},
         )
         widget.pack(fill=tk.X, pady=(3, 0))
         self.quick_widgets[key] = widget
@@ -3302,7 +3313,8 @@ class PresetEditor:
             accent=ACCENT,
             bg_panel=BG_PANEL,
             text_muted=TEXT_MUTED,
-            state_callback=self.mark_dirty
+            state_callback=self.mark_dirty,
+            split_dollars=key in {"wishlist", "series_wishlist"},
         )
         entry.pack(fill=tk.X)
         self.widgets[key] = entry

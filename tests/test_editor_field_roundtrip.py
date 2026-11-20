@@ -1,6 +1,9 @@
 import ast
 import os
 import unittest
+from unittest.mock import Mock
+
+from mudae_preset_editor import ChipListWidget
 
 EDITOR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mudae_preset_editor.py")
 
@@ -14,6 +17,38 @@ def _string_lists(function):
 
 
 class EditorFieldRoundTripTests(unittest.TestCase):
+    def test_wishlist_paste_is_split_before_and_after_commit(self):
+        widget = ChipListWidget.__new__(ChipListWidget)
+        widget.entry = Mock()
+        widget.entry.get.return_value = " Ram $ Rem , Ram $$ Emilia $ "
+        widget.chips = ["Ram"]
+        widget.split_dollars = True
+        widget.state_callback = None
+        widget._redraw_chips = Mock()
+
+        self.assertEqual(widget.get(), "Ram, Rem, Emilia")
+        widget._add_from_entry()
+        self.assertEqual(widget.chips, ["Ram", "Rem", "Emilia"])
+        widget.entry.delete.assert_called_once()
+
+    def test_saved_entries_and_other_lists_keep_literal_dollars(self):
+        widget = ChipListWidget.__new__(ChipListWidget)
+        widget.entry = Mock()
+        widget.entry.get.return_value = ""
+        widget.chips = []
+        widget.split_dollars = True
+        widget.state_callback = None
+        widget._redraw_chips = Mock()
+
+        widget.replace("A$B, C")
+        self.assertEqual(widget.chips, ["A$B", "C"])
+
+        widget.split_dollars = False
+        widget.entry.get.return_value = "D$E"
+        self.assertEqual(widget.get(), "A$B, C, D$E")
+        widget._add_from_entry()
+        self.assertEqual(widget.chips, ["A$B", "C", "D$E"])
+
     def test_every_saved_text_field_is_loaded_back_into_the_form(self):
         # Reported: the $dk time was written to the preset, but the field came
         # back empty when the preset was opened and the next save erased it.
