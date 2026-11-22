@@ -11,7 +11,7 @@ from datetime import timezone
 from types import SimpleNamespace
 
 from mudae_core.claiming import expand_claim_emojis
-from mudae_core.filters import CharacterNameSet
+from mudae_core.filters import CharacterNameSet, split_dollar_names
 from mudae_core.kakera import (
     KakeraInteractionLedger,
     KakeraPowerLedger,
@@ -99,14 +99,14 @@ def configure_client(
     client.snipe_ignore_min_kakera_reset = preset_data.get(
         "snipe_ignore_min_kakera_reset", False
     )
-    client.wishlist = CharacterNameSet(preset_data.get("wishlist") or [])
+    client.wishlist = CharacterNameSet(split_dollar_names(preset_data.get("wishlist")))
     client.series_snipe_mode = preset_data.get("series_snipe_mode", False)
     client.series_snipe_only_self_rolls = bool(
         preset_data.get("series_snipe_only_self_rolls", False)
     )
     client.series_snipe_delay = preset_data.get("series_snipe_delay", 3)
     client.series_wishlist = set(
-        sw.lower() for sw in preset_data.get("series_wishlist", [])
+        sw.lower() for sw in split_dollar_names(preset_data.get("series_wishlist"))
     )
     client.avoid_list = CharacterNameSet(preset_data.get("avoid_list") or [])
 

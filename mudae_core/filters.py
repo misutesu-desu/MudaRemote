@@ -64,6 +64,22 @@ def character_name_key(name):
     return "".join(text.split())
 
 
+def split_dollar_names(values):
+    """Split "A$B$C" entries the way Mudae's $wish lists are pasted.
+
+    A JSON list keeps commas inside an item; a plain string splits on commas too.
+    """
+    if isinstance(values, str):
+        values = values.replace(",", "$").split("$")
+    result = []
+    for value in values or ():
+        for part in str(value or "").split("$"):
+            part = part.strip()
+            if part and part not in result:
+                result.append(part)
+    return result
+
+
 class CharacterNameSet(frozenset):
     """Wishlist/blacklist names that match "EiaiNano" against "Eiai Nano"."""
 
