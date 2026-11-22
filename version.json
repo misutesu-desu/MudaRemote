@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.6**\n\n### ✨ New Features\n- **`$` Splitting in Preset Files:** Wishlist and Series Wishlist entries written like `Rem$Ram$Emilia` in your preset JSON are now read as separate names, same as when you paste them into the editor. Opening that preset in the editor shows them as separate entries too.\n\n### ⚡ Improvements\n- **Complete Example Preset:** The example preset now lists every setting, including Never Snipe From These Users and Send $arlp After Every N $kl, and its wishlist shows the `$` format.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.6/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.6/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "11b303ab21a20b752db9f298a2d4f6c9316bfcabb56ecfb82b3990dfee0b5837",
   "source_files": [
     {
       "path": "mudae_bot.py",
