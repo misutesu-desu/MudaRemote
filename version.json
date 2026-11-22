@@ -13,7 +13,7 @@
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.5/mudae_preset_editor.py",
-      "sha256": "fa9695249ebd14b9d2ec385824978fe79ebfae7f7f4467c6bc3d0e1e20354dbd"
+      "sha256": "b8fd47a7e1398bb6cdc84594fa5f80ae39964c06371db2963245cec74f6f206b"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -63,7 +63,7 @@
     {
       "path": "mudae_core/filters.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.5/mudae_core/filters.py",
-      "sha256": "d28f40929c6497d4768aa3bbf82816526a66f23840ba941c5d2489d80b098f74"
+      "sha256": "95d5a15407496e5373a9324caea378a8ff7af52efd5496069eb07eaa304606cd"
     },
     {
       "path": "mudae_core/webhooks.py",
@@ -83,7 +83,7 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.5/mudae_core/bot_config.py",
-      "sha256": "8aab0d04410ab9175503282e5fe1fc62a9db142e131ab442c75ea922b15b78a3"
+      "sha256": "72e9700f6ec86799de28ace965c33b5bf6f06ec71f1dbc4f0a515fd22818f86a"
     },
     {
       "path": "mudae_core/activity_events.py",
