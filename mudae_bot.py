@@ -4597,7 +4597,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                       and not (client.auto_us_stop_on_claim and not client.claim_right_available)
                       and not (client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit)
                       and not client.us_failed_this_cycle)
-        pending_mk = (client.auto_mk_enabled and client.mk_rolls_left > 0 and power is not None and
+        # process_mk_rolls stops at a claim interrupt; counting $mk as ready
+        # then made check_status return at once and resend $tu every cycle.
+        pending_mk = (client.auto_mk_enabled and not client.interrupt_rolling
+                      and client.mk_rolls_left > 0 and power is not None and
                       (client.mk_bypass_power_check or (power >= client.max_dk_power if client.auto_mk_full_power_only else power >= client.dk_consumption)))
         return pending_rolls, pending_us, pending_mk
 
