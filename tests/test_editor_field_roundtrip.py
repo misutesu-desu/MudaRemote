@@ -31,7 +31,7 @@ class EditorFieldRoundTripTests(unittest.TestCase):
         self.assertEqual(widget.chips, ["Ram", "Rem", "Emilia"])
         widget.entry.delete.assert_called_once()
 
-    def test_saved_entries_and_other_lists_keep_literal_dollars(self):
+    def test_loaded_wishlist_splits_dollars_and_other_lists_keep_them(self):
         widget = ChipListWidget.__new__(ChipListWidget)
         widget.entry = Mock()
         widget.entry.get.return_value = ""
@@ -40,10 +40,15 @@ class EditorFieldRoundTripTests(unittest.TestCase):
         widget.state_callback = None
         widget._redraw_chips = Mock()
 
+        # A wishlist written as "A$B" in the preset JSON opens as two chips.
         widget.replace("A$B, C")
-        self.assertEqual(widget.chips, ["A$B", "C"])
+        self.assertEqual(widget.chips, ["A", "B", "C"])
+        widget.insert(0, "D$E")
+        self.assertEqual(widget.chips, ["D", "E"])
 
         widget.split_dollars = False
+        widget.replace("A$B, C")
+        self.assertEqual(widget.chips, ["A$B", "C"])
         widget.entry.get.return_value = "D$E"
         self.assertEqual(widget.get(), "A$B, C, D$E")
         widget._add_from_entry()

@@ -29,6 +29,7 @@ try:
         parse_scheduled_times,
         validate_preset,
     )
+    from mudae_core.filters import split_dollar_names
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -47,6 +48,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     import mudae_bot  # noqa: F401
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import atomic_write_json, load_json, parse_inactive_hours, parse_scheduled_times, validate_preset
+    from mudae_core.filters import split_dollar_names
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -254,6 +256,12 @@ class ChipListWidget(tk.Frame):
             value = value.replace("$", ",")
         return [part.strip() for part in value.split(",") if part.strip()]
 
+    def _split_loaded(self, value):
+        parts = [item.strip() for item in str(value or "").split(",") if item.strip()]
+        if self.split_dollars:
+            parts = split_dollar_names(parts)
+        return parts
+
     def _add_from_entry(self):
         val = self.entry.get().strip()
         if val.endswith(","):
@@ -349,14 +357,14 @@ class ChipListWidget(tk.Frame):
 
     def insert(self, index, value):
         if value:
-            self.chips = [item.strip() for item in value.split(",") if item.strip()]
+            self.chips = self._split_loaded(value)
         else:
             self.chips = []
         self._redraw_chips()
 
     def replace(self, value):
         """Replace all values with a single redraw during preset loading."""
-        new_chips = [item.strip() for item in str(value or "").split(",") if item.strip()]
+        new_chips = self._split_loaded(value)
         entry_has_text = bool(self.entry.get())
         if new_chips == self.chips and not entry_has_text:
             return
