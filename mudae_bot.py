@@ -252,7 +252,7 @@ try:
     )
     from mudae_core.bot_config import configure_client, apply_live_config
     from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
-    from mudae_core.config import atomic_write_json, load_json, validate_preset
+    from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.loot import LootAutomation
     from mudae_core.roll_mode import adaptive_slash_ledger
 except (ModuleNotFoundError, ImportError) as core_error:
@@ -289,7 +289,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     )
     from mudae_core.bot_config import configure_client, apply_live_config
     from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
-    from mudae_core.config import atomic_write_json, load_json, validate_preset
+    from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.loot import LootAutomation
 
@@ -1301,50 +1301,23 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         preset_name, "INFO"
     )
 
-    def inactive_minute(value) -> int:
-        if isinstance(value, int):
-            return (value % 24) * 60
-        match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*", str(value or ""))
-        if not match:
-            return 0
-        return (int(match.group(1)) % 24) * 60 + min(59, int(match.group(2) or 0))
-
     def is_inactive_hour() -> bool:
         if not client.inactive_hours: return False
         now = datetime.datetime.now()
-        now_minute = now.hour * 60 + now.minute
-        for start_value, end_value in client.inactive_hours:
-            start_minute = inactive_minute(start_value)
-            end_minute = inactive_minute(end_value)
-            if start_minute <= end_minute:
-                if start_minute <= now_minute < end_minute: return True
-            else:
-                if now_minute >= start_minute or now_minute < end_minute: return True
-        return False
+        return any(
+            seconds_until_window_end(start_value, end_value, now) is not None
+            for start_value, end_value in client.inactive_hours
+        )
 
     def seconds_until_active() -> float:
-        if not is_inactive_hour(): return 0
+        if not client.inactive_hours: return 0
         now = datetime.datetime.now()
-        now_minute = now.hour * 60 + now.minute
-        best = float('inf')
-        for start_value, end_value in client.inactive_hours:
-            start_minute = inactive_minute(start_value)
-            end_minute = inactive_minute(end_value)
-            in_this = (
-                start_minute <= now_minute < end_minute
-                if start_minute <= end_minute
-                else now_minute >= start_minute or now_minute < end_minute
-            )
-            if in_this:
-                wake = now.replace(
-                    hour=end_minute // 60,
-                    minute=end_minute % 60,
-                    second=0,
-                    microsecond=0,
-                )
-                if wake <= now: wake += datetime.timedelta(days=1)
-                best = min(best, (wake - now).total_seconds())
-        return best if best != float('inf') else 0
+        waits = [
+            seconds_until_window_end(start_value, end_value, now)
+            for start_value, end_value in client.inactive_hours
+        ]
+        waits = [wait for wait in waits if wait is not None]
+        return min(waits) if waits else 0
 
     def wake_status_loop():
         event = getattr(client, '_immediate_check_event', None)
@@ -2618,7 +2591,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 for t_str in client.scheduled_roll_times:
                     try:
                         pts = t_str.strip().split(':')
-                        target = now.replace(hour=int(pts[0]), minute=int(pts[1]) if len(pts)>1 else 0, second=0, microsecond=0)
+                        target = now.replace(hour=int(pts[0]), minute=int(pts[1]) if len(pts)>1 else 0, second=int(pts[2]) if len(pts)>2 else 0, microsecond=0)
                         if target <= now: target += datetime.timedelta(days=1)
                         wait = (target - now).total_seconds()
                         if wait < min_wait:
@@ -2627,7 +2600,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if next_time is None:
                     await pause_interruptible_sleep(client, 60)
                     continue
-                BotLogger.log(f"Next scheduled roll at {next_time.strftime('%H:%M')} (in {min_wait/60:.1f}m)", preset_name, "RESET")
+                BotLogger.log(f"Next scheduled roll at {next_time.strftime('%H:%M:%S' if next_time.second else '%H:%M')} (in {min_wait/60:.1f}m)", preset_name, "RESET")
                 if not await active_delay(min_wait):
                     continue
 

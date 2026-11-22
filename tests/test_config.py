@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from mudae_core.config import atomic_write_json, parse_dk_schedule_time, parse_inactive_hours, parse_scheduled_times, validate_preset
+from mudae_core.config import atomic_write_json, parse_dk_schedule_time, seconds_until_window_end, parse_inactive_hours, parse_scheduled_times, validate_preset
 
 
 class ConfigTests(unittest.TestCase):
@@ -42,6 +42,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(errors, [])
         _, errors = parse_inactive_hours("7-7")
         self.assertTrue(errors)
+
+    def test_schedule_and_sleep_times_accept_seconds(self):
+        values, errors = parse_scheduled_times("12:00:30, 18:30")
+        self.assertEqual(values, ["12:00:30", "18:30"])
+        self.assertEqual(errors, [])
+        _, errors = parse_scheduled_times("12:00:60")
+        self.assertTrue(errors)
+        values, errors = parse_inactive_hours("12:00:00-15:00:45")
+        self.assertEqual(values, [["12:00:00", "15:00:45"]])
+        self.assertEqual(errors, [])
+
+    def test_sleep_window_ends_on_the_exact_second(self):
+        import datetime
+        day = datetime.datetime(2026, 11, 22)
+        self.assertIsNone(seconds_until_window_end("12:00:30", "15:00:00", day.replace(hour=12, second=29)))
+        self.assertEqual(seconds_until_window_end("12:00:30", "15:00:00", day.replace(hour=12, second=30)), 3 * 3600 - 30)
+        self.assertEqual(seconds_until_window_end("23:00", "01:00:15", day.replace(hour=23, minute=59, second=59)), 3616)
+        self.assertEqual(seconds_until_window_end(1, 7, day.replace(hour=6, minute=59)), 60)
+        self.assertIsNone(seconds_until_window_end("23:00", "01:00:15", day.replace(hour=1, second=15)))
 
     def test_preset_validation_reports_actionable_errors(self):
         preset = {

@@ -4,14 +4,15 @@ import json
 import math
 import os
 import re
+import datetime
 import uuid
 
 
-_TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+_TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$")
 
 
 def _normalize_clock(value):
-    """Return HH:MM for legacy integer hours or minute-precise clock text."""
+    """Return HH:MM for legacy integer hours, or the HH:MM / HH:MM:SS clock text."""
     if isinstance(value, bool):
         raise ValueError
     if isinstance(value, int):
@@ -27,6 +28,36 @@ def _normalize_clock(value):
     if not _TIME_RE.match(text):
         raise ValueError
     return text
+
+
+def clock_seconds(value):
+    """Seconds after midnight for a legacy hour or HH:MM / HH:MM:SS text."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return (value % 24) * 3600
+    match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*", str(value or ""))
+    if not match:
+        return 0
+    return (
+        (int(match.group(1)) % 24) * 3600
+        + min(59, int(match.group(2) or 0)) * 60
+        + min(59, int(match.group(3) or 0))
+    )
+
+
+def seconds_until_window_end(start_value, end_value, now):
+    """Seconds until a daily window ends, or None when ``now`` is outside it."""
+    start = clock_seconds(start_value)
+    end = clock_seconds(end_value)
+    current = now.hour * 3600 + now.minute * 60 + now.second
+    inside = start <= current < end if start <= end else current >= start or current < end
+    if not inside:
+        return None
+    wake = now.replace(hour=end // 3600, minute=(end % 3600) // 60, second=end % 60, microsecond=0)
+    if wake <= now:
+        wake += datetime.timedelta(days=1)
+    return (wake - now).total_seconds()
 
 
 def load_json(path, default=None):
@@ -80,7 +111,7 @@ def parse_scheduled_times(values):
     for value in values or []:
         value = str(value).strip()
         if not _TIME_RE.match(value):
-            errors.append("Invalid scheduled time {!r}; use HH:MM (00:00-23:59).".format(value))
+            errors.append("Invalid scheduled time {!r}; use HH:MM or HH:MM:SS (00:00-23:59:59).".format(value))
         elif value not in result:
             result.append(value)
     return result, errors

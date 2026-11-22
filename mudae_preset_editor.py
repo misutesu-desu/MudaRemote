@@ -2875,7 +2875,7 @@ class PresetEditor:
         # Inactive hours
         inactive_row = tk.Frame(human_sub, bg=BG_DARK)
         inactive_row.pack(fill=tk.X, pady=5)
-        lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 01:30-07:15, 23:45-06:10):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_sleep = tk.Label(inactive_row, text="Bot Sleep Schedule (e.g. 01:30-07:15, 23:45:30-06:10):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
         lbl_sleep.pack(anchor=tk.W)
         lbl_sleep_desc = tk.Label(inactive_row, text="The bot will not roll, snipe or click Kakera during these hours (uses your local time)",
                  bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
@@ -2894,7 +2894,7 @@ class PresetEditor:
         )
         inactive_entry.pack(fill=tk.X, ipady=4)
         self.widgets["inactive_hours"] = inactive_entry
-        self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (minute precision):", "inactive_hours")
+        self._register_settings_widget(human_frame.content, inactive_row, "Bot Sleep Schedule (HH:MM or HH:MM:SS):", "inactive_hours")
         self._bind_focus_highlight(inactive_entry)
         inactive_entry.bind("<Key>", lambda e: self.mark_dirty())
 
@@ -2992,7 +2992,7 @@ class PresetEditor:
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
         sched_row.pack(fill=tk.X, pady=5)
-        lbl_sched = tk.Label(sched_row, text="Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
+        lbl_sched = tk.Label(sched_row, text="Scheduled Roll Times (e.g. 14:00, 18:30:15, comma-separated, 24h format):", bg=BG_DARK, fg=TEXT_MAIN, font=("Segoe UI", 10))
         lbl_sched.pack(anchor=tk.W)
         lbl_sched_desc = tk.Label(sched_row, text="These times force an available-roll check in addition to normal reset tracking. Respects humanization.",
                  bg=BG_DARK, fg=TEXT_MUTED, font=("Segoe UI", 9))
@@ -3011,7 +3011,7 @@ class PresetEditor:
         )
         sched_entry.pack(fill=tk.X, ipady=4)
         self.widgets["scheduled_roll_times"] = sched_entry
-        self._register_settings_widget(power_frame.content, sched_row, "Scheduled Roll Times (e.g. 14:00, 18:30 — comma-separated, 24h format):", "scheduled_roll_times")
+        self._register_settings_widget(power_frame.content, sched_row, "Scheduled Roll Times (e.g. 14:00, 18:30:15, comma-separated, 24h format):", "scheduled_roll_times")
         self._bind_focus_highlight(sched_entry)
         sched_entry.bind("<Key>", lambda e: self.mark_dirty())
 
