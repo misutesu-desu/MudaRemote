@@ -74,6 +74,7 @@
     "snipe_delay": 2,
     "snipe_channels": [],
     "character_snipe_targets": [],
+    "snipe_ignore_users": [],
     "series_snipe_mode": false,
     "series_snipe_delay": 3,
     "series_snipe_only_self_rolls": true,
@@ -130,6 +131,7 @@
 
     "loot_mode": "off",
     "kl_amount": 1000,
+    "kl_arlp_every": 0,
     "scrap_target_id": "",
     "scrap_amount": 500000000,
     "loot_min_cooldown": 30.0,
