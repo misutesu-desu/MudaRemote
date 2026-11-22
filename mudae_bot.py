@@ -5167,17 +5167,33 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 )
                                 eligible = scheduled_window is not None
                                 schedule_dk_schedule_refresh(schedule, local_now)
+                        elif eligible:
+                            # Without a schedule, keep the $dk while the power
+                            # still pays for a reaction; Mudae itself only asks
+                            # for confirmation in that case.
+                            current_power = get_current_dk_power()
+                            eligible = current_power is None or current_power < client.dk_consumption
                         if eligible:
                             BotLogger.log("$dk is ready! Sending command...", preset_name, "INFO")
                             dk_message = await guarded_send(cmd_channel, f"{client.mudae_prefix}dk")
                             if not dk_message:
                                 return
-                            dk_answer, _reported_power = await dk_reply(dk_message, cmd_channel)
-                            if dk_answer == "prompt":
-                                # This $dk is wanted now whatever the power is.
+                            dk_answer, reported_power = await dk_reply(dk_message, cmd_channel)
+                            if dk_answer == "prompt" and scheduled_window is not None:
+                                # A scheduled $dk is wanted now whatever the power is.
                                 if not await guarded_send(cmd_channel, "y"):
                                     return
                                 dk_answer = "accepted"
+                            elif dk_answer == "prompt":
+                                # The power still covers a reaction: keep the $dk.
+                                if not await guarded_send(cmd_channel, "n"):
+                                    return
+                                BotLogger.log("Mudae says the power still covers a reaction; keeping the $dk.", preset_name, "INFO")
+                                if reported_power is not None:
+                                    client.current_dk_power = reported_power
+                                    client.kakera_power_ledger.clear()
+                                    mark_dk_power_changed()
+                                    client.last_dk_power_update_utc = datetime.datetime.now(timezone.utc)
                             if dk_answer == "accepted":
                                 client.dk_stock_count = max(0, client.dk_stock_count - 1)
                                 client.current_dk_power = client.max_dk_power

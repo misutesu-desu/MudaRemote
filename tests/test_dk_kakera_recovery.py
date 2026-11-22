@@ -256,7 +256,7 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bot.dk_stock_count, 1, 'only the accepted $dk uses up stock')
 
     # ---- Auto $dk Daily Schedule -------------------------------------------------------------
-    async def scheduled_status(self, answers, smart_refill, schedule='00:00', cost_line=True):
+    async def scheduled_status(self, answers, smart_refill, schedule='00:00', cost_line=True, power=90):
         """One $tu with plenty of power while the schedule is due and unused today."""
         bot = self.bot
         bot.rolling_enabled = True
@@ -269,7 +269,7 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         snapshot = (
             'You can claim now!\nNext claim reset in **60** min.\n'
             'You have **10** rolls left. Next rolls reset in **60** min.\n'
-            '$rt is available!\nPower: **90%**\n'
+            '$rt is available!\nPower: **%d%%**\n' % power
             + ('Each kakera reaction consumes 40%\n' if cost_line else '')
             + '1 $dk available\n$daily is on cooldown.\n$p is unavailable.\n18/20 buttons clicked.\nYou can react'
         )
@@ -303,6 +303,24 @@ class DkKakeraRecoveryTests(unittest.IsolatedAsyncioTestCase):
         bot = await self.scheduled_status([self.BUSY], smart_refill=False)
         self.assertEqual(bot.dk_stock_count, 1)
         self.assertIsNone(bot._last_scheduled_dk_window)
+
+    # ---- Auto $dk without a schedule or Smart Power Refill ----------------------------------
+    async def test_plain_auto_dk_keeps_the_dk_while_power_can_still_react(self):
+        # Reported: on startup the bot used $dk at 110% power and confirmed Mudae's question.
+        bot = await self.scheduled_status([], smart_refill=False, schedule='', power=110)
+        self.assertNotIn('$dk', self.command_channel.sent)
+        self.assertEqual(bot.dk_stock_count, 1)
+
+    async def test_plain_auto_dk_is_used_once_power_cannot_pay_for_a_reaction(self):
+        bot = await self.scheduled_status([], smart_refill=False, schedule='', power=20)
+        self.assertEqual([c for c in self.command_channel.sent if c != '$tu'], ['$dk'])
+        self.assertEqual(bot.dk_stock_count, 0)
+
+    async def test_plain_auto_dk_declines_mudaes_question(self):
+        bot = await self.scheduled_status([self.PROMPT % 60], smart_refill=False, schedule='', power=20)
+        self.assertEqual([c for c in self.command_channel.sent if c != '$tu'], ['$dk', 'n'])
+        self.assertEqual(bot.dk_stock_count, 1, 'a declined $dk must not use up stock')
+        self.assertEqual(bot.current_dk_power, 60, "Mudae's number replaces the estimate")
 
     async def test_a_tu_without_the_reaction_cost_line_says_what_is_assumed(self):
         self.bot.dk_consumption = 35

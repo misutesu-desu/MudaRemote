@@ -697,7 +697,7 @@ BOOL_SETTINGS = [
     ("shop_perk_7_only", "Shop 7 Double Rewards Only (Blue Chaos Kakera buttons)", False),
     ("mk_only", "MK Only (Your $mk rolls)", False),
     ("humanization_enabled", "Timing Variation (Randomizes timing; does not prevent detection or bans)", False),
-    ("auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)", True),
+    ("auto_dk_enabled", "Auto $dk (Use $dk when power runs low)", True),
     ("dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)", False),
     ("skip_initial_commands", "Fast Start (Skip initial setup commands on startup)", False),
     ("time_rolls_to_claim_reset", "Smart Timing (Finish rolling exactly when your claim resets)", False),
@@ -2947,7 +2947,7 @@ class PresetEditor:
         power_frame = CollapsibleLabelFrame(frame, text="Power & Expert Settings", start_open=False)
         power_frame.pack(fill=tk.X, pady=(0, 15))
 
-        self.add_checkbox(power_frame.content, "auto_dk_enabled", "Auto $dk (Automatically use $dk when ready or low on power)")
+        self.add_checkbox(power_frame.content, "auto_dk_enabled", "Auto $dk (Use $dk when power runs low)")
         self.add_checkbox(power_frame.content, "auto_p_enabled", "Auto $p (Automatically claim pokemon when available)")
         self.add_checkbox(power_frame.content, "auto_oh_enabled", "Auto $oh (Automatically play Sphere Harvest when available)")
         self.add_checkbox(

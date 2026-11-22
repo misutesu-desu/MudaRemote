@@ -301,7 +301,7 @@ class PreRollStatusTests(unittest.IsolatedAsyncioTestCase):
                     bot.command_pacer.minimum_delay = bot.command_pacer.maximum_delay = 0
                     snapshot = ('You can claim now!\nNext claim reset in **60** min.\n'
                                 'You have **10** rolls left. Next rolls reset in **60** min.\n'
-                                '$rt is available!\nPower: **100%**\n' + dk_status + '\n'
+                                '$rt is available!\nPower: **10%**\n' + dk_status + '\n'
                                 '$daily is available!\n$p is available!\n7/20 buttons clicked.\n'
                                 '(Perk 8) Clicked today: 0/40.')
 
