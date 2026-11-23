@@ -98,6 +98,38 @@ class SnipeLatencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(waits_before_click), 1)
         self.assertGreaterEqual(waits_before_click[0], 1.5)
 
+    async def test_kakera_collection_on_other_rolls_does_not_hold_back_the_character_snipe(self):
+        bot, channel = _create_test_client(
+            kakera_reaction_snipe_mode_preset=True,
+            kakera_reaction_snipe_delay=0.75,
+        )
+        _prepare(bot)
+        self._run_claim_clicks_for_real(bot)
+        message, kakera_button = _build_roll_message(channel, 3003, 9001, "someone", client=bot)
+        claim_clicked = asyncio.Event()
+
+        async def mark_claim():
+            claim_clicked.set()
+
+        claim_button = _add_claim_button(message, bot, mark_claim)
+        observed = {}
+
+        async def fake_sleep(_client, seconds, abort_on_pause=False):
+            if seconds >= 0.75 and "claim_during_kakera_delay" not in observed:
+                try:
+                    await asyncio.wait_for(claim_clicked.wait(), 1.0)
+                    observed["claim_during_kakera_delay"] = True
+                except asyncio.TimeoutError:
+                    observed["claim_during_kakera_delay"] = False
+            return True
+
+        with mock.patch.object(mudae_bot, "pause_interruptible_sleep", side_effect=fake_sleep):
+            await bot.events["on_message"](message)
+
+        claim_button.click.assert_awaited_once()
+        kakera_button.click.assert_awaited_once()
+        self.assertTrue(observed.get("claim_during_kakera_delay"))
+
 
 if __name__ == "__main__":
     unittest.main()

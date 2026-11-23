@@ -8821,6 +8821,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             process = False
 
             # Own rolls collect Kakera independently of other-user snipe toggle.
+            kakera_task = None
             allow_kakera = is_manual_self_roll or client.kakera_reaction_snipe_mode_active
             if allow_kakera and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = get_all_collectible_kakera_emojis()
@@ -8834,63 +8835,74 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if target_ok:
                         remember_kakera_snipe_event(message.id)
                         reaction_delay = 0 if is_manual_self_roll else client.kakera_reaction_snipe_delay_value
-                        if reaction_delay > 0 and not await active_delay(reaction_delay): return
-                        await claim_character(
-                            client,
-                            message.channel,
+
+                        async def collect_roll_kakera():
+                            if reaction_delay > 0 and not await active_delay(reaction_delay): return
+                            await claim_character(
+                                client,
+                                message.channel,
+                                message,
+                                is_kakera=True,
+                                is_snipe=not is_manual_self_roll,
+                            )
+
+                        # The Kakera delay and its click confirmation run beside
+                        # the character snipe, so a contested claim never waits
+                        # for them.
+                        kakera_task = asyncio.ensure_future(collect_roll_kakera())
+
+            try:
+                # Target validation for character sniping
+                is_snipe_target_ok = owner_id == client.user.id or snipe_owner_allowed(
+                    owner_id, owner_name, client.character_snipe_targets, client.snipe_ignore_users)
+
+                if is_snipe_target_ok:
+                    if process and client.series_snipe_mode and client.series_wishlist:
+                        desc = embed.description or ""
+                        series = desc.splitlines()[0].lower() if desc else ""
+                        is_avoided = c_name in client.avoid_list
+                        already_in_progress = _claim_coordinator.is_reserved(message.id)
+                        is_series_wl = await series_wishlist_matches(
                             message,
-                            is_kakera=True,
-                            is_snipe=not is_manual_self_roll,
+                            series,
+                            known_self_roll=is_manual_self_roll,
                         )
+                        if is_series_wl and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                            is_external_series_roll = not is_manual_self_roll
+                            if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external_series_roll): pass
+                            else:
+                                if not await snipe_delay_wait(client.series_snipe_delay): return
+                                if await claim_character(client, message.channel, message, is_snipe=is_external_series_roll):
+                                     client.series_snipe_happened = True; process = False
 
-            # Target validation for character sniping
-            is_snipe_target_ok = owner_id == client.user.id or snipe_owner_allowed(
-                owner_id, owner_name, client.character_snipe_targets, client.snipe_ignore_users)
-
-            if is_snipe_target_ok:
-                if process and client.series_snipe_mode and client.series_wishlist:
-                    desc = embed.description or ""
-                    series = desc.splitlines()[0].lower() if desc else ""
+                    claims_r, likes_r = parse_mudae_ranks(embed.description or "")
+                    is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
+                    is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_ranked
                     is_avoided = c_name in client.avoid_list
                     already_in_progress = _claim_coordinator.is_reserved(message.id)
-                    is_series_wl = await series_wishlist_matches(
-                        message,
-                        series,
-                        known_self_roll=is_manual_self_roll,
-                    )
-                    if is_series_wl and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                        is_external_series_roll = not is_manual_self_roll
-                        if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external_series_roll): pass
-                        else:
-                            if not await snipe_delay_wait(client.series_snipe_delay): return
-                            if await claim_character(client, message.channel, message, is_snipe=is_external_series_roll):
-                                 client.series_snipe_happened = True; process = False
-
-                claims_r, likes_r = parse_mudae_ranks(embed.description or "")
-                is_ranked = (client.max_claim_rank > 0 and 0 < claims_r <= client.max_claim_rank) or (client.max_like_rank > 0 and 0 < likes_r <= client.max_like_rank)
-                is_on_wishlist = c_name in client.wishlist or is_wished_by_self(message, client.user.id) or is_ranked
-                is_avoided = c_name in client.avoid_list
-                already_in_progress = _claim_coordinator.is_reserved(message.id)
-                if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
-                    if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
-                    else:
-                        if not await snipe_delay_wait(client.snipe_delay): return
-                        if await claim_character(client, message.channel, message, is_snipe=True):
-                            client.snipe_happened = True; process = False
-
-                if process and client.kakera_snipe_mode_active:
-                    desc = embed.description or ""
-                    k_val = 0
-                    m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
-                    if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
-                    is_avoided = c_name in client.avoid_list
-                    already_in_progress = _claim_coordinator.is_reserved(message.id)
-                    if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                    if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                         if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                         else:
                             if not await snipe_delay_wait(client.snipe_delay): return
-                            if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
+                            if await claim_character(client, message.channel, message, is_snipe=True):
                                 client.snipe_happened = True; process = False
+
+                    if process and client.kakera_snipe_mode_active:
+                        desc = embed.description or ""
+                        k_val = 0
+                        m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
+                        if m_k: k_val = int(re.sub(r"[^\d]", "", m_k.group(1)))
+                        is_avoided = c_name in client.avoid_list
+                        already_in_progress = _claim_coordinator.is_reserved(message.id)
+                        if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
+                            if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
+                            else:
+                                if not await snipe_delay_wait(client.snipe_delay): return
+                                if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
+                                    client.snipe_happened = True; process = False
+            finally:
+                if kakera_task is not None:
+                    await kakera_task
 
     async def send_loot_command(channel, content):
         if is_inactive_hour():
