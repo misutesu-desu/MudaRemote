@@ -2210,6 +2210,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def active_delay(seconds):
         return await pause_interruptible_sleep(client, seconds, abort_on_pause=True)
 
+    async def snipe_delay_wait(seconds):
+        """Wait a configured snipe delay; 0 claims at once, without the humanizing jitter."""
+        if seconds <= 0:
+            return await active_delay(0)
+        return await active_delay(seconds + random.uniform(0.05, 0.25))
+
     async def series_wishlist_matches(message, series, known_self_roll=None):
         if not client.series_snipe_mode or not client.series_wishlist:
             return False
@@ -8160,7 +8166,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         edited_wish_attempts.add(message.id)
         try:
             BotLogger.log(f"Wish detected on edited roll: {embed.author.name}. Checking claim.", preset_name, "CLAIM")
-            if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)):
+            if not await snipe_delay_wait(client.snipe_delay):
                 return
             if len(edited_wish_checked) > 1000:
                 edited_wish_checked.clear()
@@ -8856,7 +8862,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         is_external_series_roll = not is_manual_self_roll
                         if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=is_external_series_roll): pass
                         else:
-                            if not await active_delay(client.series_snipe_delay + random.uniform(0.05, 0.25)): return
+                            if not await snipe_delay_wait(client.series_snipe_delay): return
                             if await claim_character(client, message.channel, message, is_snipe=is_external_series_roll):
                                  client.series_snipe_happened = True; process = False
 
@@ -8868,7 +8874,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if process and client.snipe_mode and is_on_wishlist and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                     else:
-                        if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)): return
+                        if not await snipe_delay_wait(client.snipe_delay): return
                         if await claim_character(client, message.channel, message, is_snipe=True):
                             client.snipe_happened = True; process = False
 
@@ -8882,7 +8888,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if k_val >= client.kakera_snipe_threshold and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                         if is_key_mode_kakera_only() or not is_character_snipe_allowed(is_external_snipe=True): pass
                         else:
-                            if not await active_delay(client.snipe_delay + random.uniform(0.05, 0.25)): return
+                            if not await snipe_delay_wait(client.snipe_delay): return
                             if await claim_character(client, message.channel, message, is_snipe=True, kakera_value=k_val):
                                 client.snipe_happened = True; process = False
 
