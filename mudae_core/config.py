@@ -118,13 +118,15 @@ def parse_scheduled_times(values):
 
 
 def parse_dk_schedule_time(value):
-    """Normalize an optional local daily Auto $dk time."""
+    """Normalize optional local daily Auto $dk times, comma-separated ("06:00, 18:30")."""
     if not isinstance(value, str):
         return None, ["dk_schedule_time must be text in HH:MM format."]
-    normalized = value.strip()
-    if normalized and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized):
-        return None, ["dk_schedule_time must be empty or a valid 24-hour HH:MM time."]
-    return normalized, []
+    if not value.strip():
+        return "", []
+    parts = [part.strip() for part in value.split(",")]
+    if not all(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", part) for part in parts):
+        return None, ["dk_schedule_time must be empty or valid 24-hour HH:MM times separated by commas."]
+    return ", ".join(sorted(set(parts))), []
 
 
 def parse_inactive_hours(value):

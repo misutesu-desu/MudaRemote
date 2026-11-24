@@ -800,7 +800,7 @@ TEXT_SETTINGS = [
     ("oh_priority_order", "$oh Reward Priority (highest first)", [], True),
     ("oc_reward_priority_order", "$oc Reward Priority After Red (highest first)", [], True),
     ("webhook_url", "Remote Log Discord Webhook URL", "", False),
-    ("dk_schedule_time", "Auto $dk Schedule (HH:MM local time; empty = immediate)", "", False),
+    ("dk_schedule_time", "Auto $dk Schedule (HH:MM local time, several separated by commas; empty = immediate)", "", False),
     ("webhook_log_types", "Webhook Log Types", ["ERROR", "WARN", "CLAIM", "KAKERA"], True),
     ("debug_log_categories", "Expert Log Categories", ["all"], True),
     ("auto_divorce_series", "Auto-Divorce Series (Divorce if character is from these series)", [], True),
@@ -2971,7 +2971,8 @@ class PresetEditor:
         self.add_text_field(
             power_frame.content, "dk_schedule_time",
             "Auto $dk Daily Schedule (HH:MM local time; empty = immediate)",
-            description="Use local 24-hour time, for example 21:00. Empty keeps immediate Auto $dk behavior.",
+            description="Use local 24-hour time, for example 21:00. Separate several times with commas, "
+                        "for example 06:00, 18:30. Empty keeps immediate Auto $dk behavior.",
         )
         self.add_number_field(
             power_frame.content,

@@ -21,35 +21,48 @@ import shutil
 from typing import Tuple
 
 
+_DK_SCHEDULE_TIME = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+
+
 def parse_dk_schedule_time(value):
-    """Return a normalized valid daily DK schedule, or None if malformed."""
+    """Return the normalized daily DK times ("06:00, 18:30"), or None if malformed."""
     if not isinstance(value, str):
         return None
-    value = value.strip()
-    return value if re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) else None
+    parts = [part.strip() for part in value.split(",")]
+    if not value.strip() or not all(_DK_SCHEDULE_TIME.fullmatch(part) for part in parts):
+        return None
+    return ", ".join(sorted(set(parts)))
+
+
+def _dk_schedule_minutes(normalized):
+    return [(int(part[:2]) * 60 + int(part[3:]), part) for part in normalized.split(", ")]
 
 
 def scheduled_dk_window_if_due(schedule, local_now, last_window=None):
-    """Return this local-date schedule window when due and not already used."""
+    """Return the window of the latest schedule time passed today when not already used."""
     normalized = parse_dk_schedule_time(schedule)
     if normalized is None:
         return None
-    due_minute = int(normalized[:2]) * 60 + int(normalized[3:])
-    if local_now.hour * 60 + local_now.minute < due_minute:
+    now_minute = local_now.hour * 60 + local_now.minute
+    passed = [part for minute, part in _dk_schedule_minutes(normalized) if minute <= now_minute]
+    if not passed:
         return None
-    window = (local_now.date(), normalized)
+    window = (local_now.date(), passed[-1])
     return None if window == last_window else window
 
 
 def next_dk_schedule_at(schedule, local_now):
-    """Return the next local datetime at which the daily DK schedule is due."""
+    """Return the next local datetime at which one of the daily DK times is due."""
     normalized = parse_dk_schedule_time(schedule)
     if normalized is None:
         return None
-    due = local_now.replace(hour=int(normalized[:2]), minute=int(normalized[3:]), second=0, microsecond=0)
-    if due <= local_now:
-        due += datetime.timedelta(days=1)
-    return due
+    upcoming = []
+    for minute, _part in _dk_schedule_minutes(normalized):
+        due = local_now.replace(hour=minute // 60, minute=minute % 60, second=0, microsecond=0)
+        if due <= local_now:
+            due += datetime.timedelta(days=1)
+        upcoming.append(due)
+    return min(upcoming)
 
 
 def _recover_interrupted_source_update(base_path):
@@ -5139,7 +5152,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         if schedule_value:
                             schedule = parse_dk_schedule_time(schedule_value)
                             if schedule is None:
-                                BotLogger.log("Invalid Auto $dk schedule; expected HH:MM local time.", preset_name, "WARN")
+                                BotLogger.log("Invalid Auto $dk schedule; expected HH:MM local times separated by commas.", preset_name, "WARN")
                                 eligible = False
                             else:
                                 local_now = datetime.datetime.now().astimezone()
