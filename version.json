@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.7**\n\n### ✨ New Features\n- **Several Auto `$dk` Times:** Auto $dk Daily Schedule now takes more than one time, for example 06:00, 18:30, and uses a `$dk` at each.\n\n### 🐛 Bug Fixes\n- **Faster Snipes:** With Snipe Delay at 0 the bot now claims right away instead of waiting a short random moment first.\n- **Kakera No Longer Slows Down Snipes:** On other players' rolls the bot now claims and collects kakera at the same time, so the claim doesn't wait.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.7/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.7/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "704c8e6d3bd1bb386727c6d411eefe53dd9a49a31a48fb9d22cbfa4d7c235f6a",
   "source_files": [
     {
       "path": "mudae_bot.py",
