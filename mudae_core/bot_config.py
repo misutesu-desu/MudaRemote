@@ -328,6 +328,7 @@ def configure_client(
     client.auto_oc_enabled = bool(preset_data.get("auto_oc_enabled", False))
     client.auto_oq_enabled = bool(preset_data.get("auto_oq_enabled", False))
     client.auto_ot_enabled = bool(preset_data.get("auto_ot_enabled", False))
+    client.sphere_games_daily_only = bool(preset_data.get("sphere_games_daily_only", False))
     client.oh_use_individually = bool(preset_data.get("oh_use_individually", False))
     client.oh_priority_order = [
         str(item).strip()
@@ -687,7 +688,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis",
     "sphere_emojis", "sphere_click_targets", "sphere_collect_any_last", "immediate_kakera_click",
     "collect_purple_kakera", "auto_oh_enabled", "auto_oc_enabled",
-    "auto_oq_enabled", "auto_ot_enabled",
+    "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only",
     "oh_use_individually", "oh_priority_order", "oh_unknown_explore_clicks",
     "oc_reward_priority_order", "oc_collect_after_red",
     "enable_snipe_chat_reactions", "snipe_chat_messages",

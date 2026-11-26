@@ -127,6 +127,7 @@
     "oc_collect_after_red": true,
     "auto_oq_enabled": false,
     "auto_ot_enabled": false,
+    "sphere_games_daily_only": false,
     "auto_p_enabled": true,
 
     "loot_mode": "off",

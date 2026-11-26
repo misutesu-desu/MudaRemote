@@ -467,6 +467,12 @@ class SphereRuntime:
                 if not response_future.done():
                     response_future.cancel()
 
+    def _playable_uses(self, status, kind):
+        # With Daily Uses Only the stored uses stay in the inventory for the user.
+        if getattr(self._client, "sphere_games_daily_only", False):
+            return status.count_for(kind)
+        return status.available_for(kind)
+
     async def run_available_sphere_games(self, channel, status=None):
         if getattr(self._client, "_sphere_games_running", False):
             # A $tu that lands mid-round can report new stock, such as the
@@ -477,7 +483,7 @@ class SphereRuntime:
             return
         if status is not None:
             self._client.sphere_game_counts = {
-                kind: status.available_for(kind) for kind in ("oh", "oc", "oq", "ot")
+                kind: self._playable_uses(status, kind) for kind in ("oh", "oc", "oq", "ot")
             }
         if status is not None and status.refill_minutes is not None:
             previous_refill = self._client.sphere_game_refill_at_utc
@@ -545,7 +551,7 @@ class SphereRuntime:
                 # $tu may predate the boards that spent that stock.
                 for kind in SPHERE_GAME_KINDS:
                     if kind not in touched:
-                        self._client.sphere_game_counts[kind] = late_status.available_for(kind)
+                        self._client.sphere_game_counts[kind] = self._playable_uses(late_status, kind)
         if round_finished and late_status is not None and any(
             kind not in touched
             and getattr(self._client, f"auto_{kind}_enabled", False)

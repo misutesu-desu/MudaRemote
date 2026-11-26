@@ -7,6 +7,7 @@ from mudae_core.sphere_runtime import SphereRuntime, sphere_game_kind, sphere_re
 from mudae_core.spheres import (
     choose_quest_position,
     choose_trace_position,
+    parse_sphere_game_status,
     parse_trace_rules,
     quest_purple_layouts,
 )
@@ -369,6 +370,38 @@ class SphereBoardFlowTests(unittest.IsolatedAsyncioTestCase):
                 mock.patch("mudae_core.sphere_runtime.time.monotonic", return_value=1000.0):
             await runtime.run_available_sphere_games("channel", status)
         self.assertLessEqual(client._sphere_game_retry_after["oq"], 1300.0)
+
+    async def stock_round(self, daily_only):
+        client = SimpleNamespace(
+            _sphere_games_running=False, sphere_game_counts={},
+            _sphere_game_retry_after={}, oh_use_individually=False, is_processing_cycle=False,
+            auto_oh_enabled=False, auto_oc_enabled=True, auto_oq_enabled=False, auto_ot_enabled=False,
+            sphere_games_daily_only=daily_only,
+            _deferred_independent_known_work=False, sphere_game_refill_at_utc=None,
+            loop=mock.Mock(),
+        )
+        runtime = SphereRuntime(
+            client, target_bot_id=1, log=mock.Mock(), send=mock.AsyncMock(), click=mock.AsyncMock(),
+            wait=mock.AsyncMock(return_value=True), maintenance_active=lambda: False,
+            claim_pending=lambda: False, resolve_channel=mock.AsyncMock(),
+            wake_status=lambda: None, ambiguous_error=lambda error: False,
+        )
+        status = parse_sphere_game_status(
+            "**0** $oh left for today, **2** $oc (+**3** stored), **0** $oq and **0** $ot.\n"
+            "8h 11 min before the refill."
+        )
+        with mock.patch.object(runtime, "run_sphere_game", mock.AsyncMock(return_value=True)) as run:
+            await runtime.run_available_sphere_games("channel", status)
+        return run
+
+    async def test_stored_uses_are_played_by_default(self):
+        run = await self.stock_round(daily_only=False)
+        run.assert_awaited_once_with("channel", "oc", 5)
+
+    async def test_daily_uses_only_leaves_the_stored_uses(self):
+        # Reported: Auto $oc spent the stored $oc too once the daily uses ran out.
+        run = await self.stock_round(daily_only=True)
+        run.assert_awaited_once_with("channel", "oc", 2)
 
 
 if __name__ == "__main__":
