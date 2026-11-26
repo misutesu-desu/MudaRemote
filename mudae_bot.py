@@ -1427,6 +1427,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             True,
         )
 
+    def restore_min_kakera():
+        # $rt has its own threshold; 0 keeps Minimum Value to Claim.
+        return getattr(client, "rt_min_kakera", 0) or client.min_kakera
+
     def scheduled_dk_wake_due():
         # A due Auto $dk time needs its own $tu even while a counted roll
         # action waits for its reset; only the wake's "dk" demand counts, so a
@@ -7273,7 +7277,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 is_series_wl_rt = await series_wishlist_matches(msg, s)
                 is_wl_rt = n in client.wishlist or is_series_wl_rt or is_wished_by_self(msg, client.user.id) or is_ranked
 
-                if (is_wl_rt and client.rt_ignore_min_kakera_for_wishlist) or v >= client.min_kakera:
+                if (is_wl_rt and client.rt_ignore_min_kakera_for_wishlist) or v >= restore_min_kakera():
                     rt_targets.append((msg, n, v))
 
             rt_targets = _claim_coordinator.filter_available(rt_targets)
@@ -7684,7 +7688,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 )
                 if not can_spend_restore_on_character(
                     rt_value,
-                    client.min_kakera,
+                    restore_min_kakera(),
                     is_wishlist_rt,
                     client.rt_ignore_min_kakera_for_wishlist,
                 ):
@@ -8773,7 +8777,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     if (is_wl or is_val) and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                         can_spend_rt = client.auto_rt_enabled and can_spend_restore_on_character(
                             k_val,
-                            client.min_kakera,
+                            restore_min_kakera(),
                             is_wl,
                             client.rt_ignore_min_kakera_for_wishlist,
                         )
@@ -8838,7 +8842,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if is_wanted and not is_avoided and has_claim_option(message, embed, client.claim_emojis) and not already_in_progress:
                     can_spend_rt = client.auto_rt_enabled and can_spend_restore_on_character(
                         k_val,
-                        client.min_kakera,
+                        restore_min_kakera(),
                         c_name in client.wishlist or is_series_wl or is_wished_by_self(message, client.user.id) or is_ranked,
                         client.rt_ignore_min_kakera_for_wishlist,
                     )

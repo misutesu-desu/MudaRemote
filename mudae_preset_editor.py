@@ -656,6 +656,7 @@ DEFAULTS = {
     "kakera_snipe_channels": [],
     "max_claim_rank": 0,
     "max_like_rank": 0,
+    "rt_min_kakera": 0,
     "enable_hybrid_panic_claim": False,
     "hybrid_panic_instant_claim_min_kakera": 300,
     "hybrid_panic_instant_claim_max_rank": 200,
@@ -770,6 +771,7 @@ NUMERIC_SETTINGS = [
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
     ("panic_roll_minutes", "Panic Roll Start (Minutes before claim reset)", 5, int),
     ("auto_divorce_max_kakera", "Auto-Divorce Kakera Threshold (Divorce if value <= this)", 50, int),
+    ("rt_min_kakera", "Minimum Value for $rt (Only use $rt on characters worth this much, 0 = same as Minimum Value to Claim)", 0, int),
     ("max_claim_rank", "Maximum Claims Rank Limit (e.g. 500 to claim any character ranked #1-#500. 0 = disabled)", 0, int),
     ("max_like_rank", "Maximum Likes Rank Limit (e.g. 300 to claim any character ranked #1-#300. 0 = disabled)", 0, int),
     ("hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300, int),
@@ -2734,6 +2736,7 @@ class PresetEditor:
         self.add_checkbox(char_snipe_frame.content, "rt_only_self_rolls", "Private Restore (Only use $rt on characters YOU rolled)")
         self.add_checkbox(char_snipe_frame.content, "rt_in_command_channel", "Send $rt in the Command Channel (Instead of the channel the character was sniped in)")
         self.add_checkbox(char_snipe_frame.content, "rt_ignore_min_kakera_for_wishlist", "Restore for Wishlist (Use $rt for wishlisted characters regardless of value)")
+        self.add_number_field(char_snipe_frame.content, "rt_min_kakera", "Minimum Value for $rt (Only use $rt on characters worth this much, 0 = same as Minimum Value to Claim)", 0)
 
         # Snipe Chat Reactions
         enable_chat_var = self.add_checkbox(char_snipe_frame.content, "enable_snipe_chat_reactions", "Snipe Chat Reactions (Send a random message after a successful external snipe)")
@@ -3530,7 +3533,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "server_reset_minute", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
-                    "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera",
+                    "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera", "rt_min_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "sphere_collect_any_last",
                     "scrap_target_id", "slash_claim_target", "kl_amount", "kl_arlp_every", "scrap_amount",
@@ -3792,7 +3795,7 @@ class PresetEditor:
                     "humanization_inactivity_seconds", "reactive_snipe_delay",
                     "claim_interval", "roll_interval", "auto_us_limit",
                     "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
-                    "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
+                    "auto_divorce_max_kakera", "rt_min_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                     "oh_unknown_explore_clicks", "sphere_collect_any_last", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]
@@ -3809,7 +3812,7 @@ class PresetEditor:
                                    "humanization_window_minutes", "humanization_inactivity_seconds",
                                    "claim_interval", "roll_interval", "auto_us_limit",
                                    "auto_rolls_limit", "panic_roll_minutes", "max_dk_power", "auto_dk_min_power",
-                                   "auto_divorce_max_kakera", "max_claim_rank", "max_like_rank",
+                                   "auto_divorce_max_kakera", "rt_min_kakera", "max_claim_rank", "max_like_rank",
                                    "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                                    "oh_unknown_explore_clicks", "sphere_collect_any_last"]:
                             data[key] = int(float(value))
