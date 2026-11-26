@@ -1980,6 +1980,11 @@ def is_tu_still_required(client, proceed_to_rolls: bool = True, is_maintenance_f
         },
     )
 
+    if policy == "suppress-routine":
+        # A due Auto $dk time is not routine work: it needs this $tu now.
+        scheduled_dk_due = getattr(client, "_scheduled_dk_wake_due", None)
+        if callable(scheduled_dk_due) and scheduled_dk_due():
+            policy = "none"
     if policy in {"suppress-routine", "defer-executing"}:
         if policy == "suppress-routine" and action_owner is not None and (action_owner.is_pending(target_cid) or (action_owner.state == "pending" and target_cid is not None)):
             schedule_fn = getattr(client, "_schedule_owned_normal_roll_action", None)

@@ -1427,6 +1427,23 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             True,
         )
 
+    def scheduled_dk_wake_due():
+        # A due Auto $dk time needs its own $tu even while a counted roll
+        # action waits for its reset; only the wake's "dk" demand counts, so a
+        # refused $dk is not retried in a loop.
+        if not (client.auto_dk_enabled and client.rolling_enabled and client.dk_stock_count > 0):
+            return False
+        if "dk" not in status_dirty_fields(client):
+            return False
+        schedule = parse_dk_schedule_time(getattr(client, "dk_schedule_time", ""))
+        if schedule is None:
+            return False
+        return scheduled_dk_window_if_due(
+            schedule,
+            datetime.datetime.now().astimezone(),
+            getattr(client, "_last_scheduled_dk_window", None),
+        ) is not None
+
     def set_claim_cooldown(minutes, source="Mudae", wake=False):
         cooldown_minutes = max(0, int(minutes or 0))
         now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -4525,6 +4542,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return advanced
 
     client._advance_predicted_reset_cycles = advance_predicted_reset_cycles
+    client._scheduled_dk_wake_due = scheduled_dk_wake_due
 
     def reconcile_authoritative_current_roll_count(
         remaining,
@@ -4710,6 +4728,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 },
             )
             suppress_physical_tu = action_status_policy in {"suppress-routine", "defer-executing"}
+            if action_status_policy == "suppress-routine" and scheduled_dk_wake_due():
+                suppress_physical_tu = False
             private_count_sync_pending = bool(
                 getattr(client, "last_tu_snapshot_complete", False)
                 and getattr(client, "_roll_count_sync_cycle_id", None) == client.current_roll_cycle_id
