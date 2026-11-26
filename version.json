@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.8**\n\n### ✨ New Features\n- **Daily Sphere Games Only:** Turn on Sphere Games: Daily Uses Only and the bot plays only your daily `$oh`, `$oc`, `$oq` and `$ot` uses. Stored uses stay in your inventory for you to play.\n- **Minimum Value for `$rt`:** You can now set a separate value for `$rt`, for example 200 so `$rt` is only spent on characters worth 200 or more. Leave it at 0 to keep using Minimum Value to Claim.\n\n### 🐛 Bug Fixes\n- **Scheduled `$dk` Fires On Time:** If the bot was waiting for its next roll reset, a scheduled `$dk` could wait until that reset. It now goes out at the time you set.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.8/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.8/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "0fba3ebd6f483c0545d0ed8b304bc5d150f77ec423ac3f1650e7383ec678d1fa",
   "source_files": [
     {
       "path": "mudae_bot.py",
