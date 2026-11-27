@@ -5241,11 +5241,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             client.p_available = False
                             client.next_p_claim_at_utc = (now_utc + datetime.timedelta(minutes=p_cooldown_mins)).replace(second=0, microsecond=0)
                             schedule_points_refresh(client.next_p_claim_at_utc)
-                            BotLogger.log(f"Points ($p): Cooldown ({int(p_cooldown_mins/60)}h {p_cooldown_mins%60}m)", preset_name, "INFO")
+                            BotLogger.log(f"Pokemon ($p): Cooldown ({int(p_cooldown_mins/60)}h {p_cooldown_mins%60}m)", preset_name, "INFO")
                         elif p_ready:
                             client.p_available = True
                             client.next_p_claim_at_utc = None
-                            BotLogger.log("Points ($p): Ready", preset_name, "INFO")
+                            BotLogger.log("Pokemon ($p): Ready", preset_name, "INFO")
 
                         if client.p_available:
                             BotLogger.log("$p is available! Sending command...", preset_name, "INFO")
