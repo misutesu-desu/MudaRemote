@@ -6770,6 +6770,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 getattr(channel, "id", None), char_name, pending.get("message_id")
             )
             client.claim_right_available = False
+            # Smart Timing only keeps rolls going until the fresh claim is
+            # used. Once it is, an interrupted batch must stop like any other.
+            client.is_timing_mode_active = False
             base = client.next_claim_reset_at_utc
             delta = datetime.timedelta(minutes=client.claim_interval)
             if base is None:
