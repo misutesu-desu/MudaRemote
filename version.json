@@ -3,7 +3,7 @@
   "changelog": "**🆕 MudaRemote v5.3.9**\n\n### 🐛 Bug Fixes\n- **Smart Timing Stops After a Claim:** With Smart Timing on, the bot could keep rolling after it had already claimed on the fresh reset. It now stops once that claim is used, so you can leave Smart Timing on.\n- **Clearer `$p` Log Line:** The log now shows `$p` as Pokemon instead of Points.\n\nRestart the bot after updating.",
   "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_bot.py",
   "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v5.3.9/MudaRemote.exe",
-  "exe_sha256": "pending-github-actions",
+  "exe_sha256": "44c63b6a9cc75a1b36c4ec72b9058ec08a158af6e8d14aeb8635127a3ef11a28",
   "source_files": [
     {
       "path": "mudae_bot.py",
