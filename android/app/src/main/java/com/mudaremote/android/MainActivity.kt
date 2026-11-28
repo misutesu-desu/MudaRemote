@@ -1697,6 +1697,8 @@ class MainActivity : ComponentActivity() {
                 val topLine = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.TOP
+                    // Baseline alignment with the switch shifts a wrapped title up and clips its last line.
+                    isBaselineAligned = false
                 }
                 // The title takes the width left of the switch and grows downward as far as it needs:
                 // no line limit, no ellipsis, no fixed height, no top margin.

@@ -89,7 +89,7 @@ class SchemaAndUiTests(unittest.TestCase):
         self.assertIn('walk_expanded fs130-open', script)
         self.assertIn('walk_expanded fs150-open', script)
         self.assertIn('font_scale 1.5', script)
-        self.assertIn('tap_text "Main & alts"', script)
+        self.assertIn('tap_text "The first token is the main*"', script)
 
     def test_desktop_editor_wording(self):
         editor = read("mudae_preset_editor.py")
