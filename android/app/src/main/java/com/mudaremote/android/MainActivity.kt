@@ -340,6 +340,20 @@ class MainActivity : ComponentActivity() {
         val bottomBarView = buildStickyBottomBar()
         root.addView(bottomBarView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
+        // The scroll content ends above the dock: bottom padding = the dock's measured height
+        // (it already includes the system-bar inset) + a gap, kept in step with every layout change.
+        var keyboardExtra = 0
+        fun syncContentBottomPadding() {
+            val dockHeight = if (bottomBarView.height > 0) bottomBarView.height else UiTheme.dp(this, 96)
+            val wanted = dockHeight + keyboardExtra + UiTheme.dp(this, 16)
+            if (scrollContent.paddingBottom != wanted) {
+                scrollContent.setPadding(scrollContent.paddingLeft, scrollContent.paddingTop, scrollContent.paddingRight, wanted)
+            }
+        }
+        bottomBarView.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) syncContentBottomPadding()
+        }
+
         // Window Insets listener to safely avoid status bar, notch, and navigation buttons
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val sysInsets = insets.getInsets(
@@ -348,19 +362,23 @@ class MainActivity : ComponentActivity() {
 
             // The keyboard (adjustResize) is in the ime inset; the dock stays above the system bars.
             val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            keyboardExtra = maxOf(0, imeBottom - sysInsets.bottom)
             scrollContent.setPadding(
                 UiTheme.dp(this@MainActivity, 16) + sysInsets.left,
                 sysInsets.top + UiTheme.dp(this@MainActivity, 12),
                 UiTheme.dp(this@MainActivity, 16) + sysInsets.right,
-                maxOf(sysInsets.bottom, imeBottom) + UiTheme.dp(this@MainActivity, 120)
+                scrollContent.paddingBottom
             )
 
             bottomBarView.setPadding(
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.left,
-                0,
+                UiTheme.dp(this@MainActivity, 8),
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.right,
                 sysInsets.bottom + UiTheme.dp(this@MainActivity, 10)
             )
+            // The dock's padding just changed; its height follows on the next layout pass, which
+            // re-syncs through the layout listener. Sync now too for the keyboard part.
+            syncContentBottomPadding()
 
             insets
         }
@@ -418,18 +436,16 @@ class MainActivity : ComponentActivity() {
         }
         card.addView(desc)
 
-        // Three equal-width actions.
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Three actions at their natural width on a wrapping row: short one-line labels, so nothing
+        // is cut at a large font size; a button that does not fit moves to the next line whole.
+        val actionsRow = FlowLayout(this)
+        fun oneLine(button: TextView): TextView = button.apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-
-        val btnBattery = createGitHubButton("Keep running") { scrollToKeepRunning() }
-        val btnCheckUpdates = createGitHubButton("Fetch updates") { checkPythonUpdates(force = true) }
-        val btnImportPresets = createGitHubButton("Import presets") { presetsPicker.launch(arrayOf("application/json", "text/plain")) }
-
-        actionsRow.addView(btnBattery, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        actionsRow.addView(btnCheckUpdates, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        actionsRow.addView(btnImportPresets, LinearLayout.LayoutParams(0, -2, 1f))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Keep running", UiTheme.ButtonStyle.TONAL) { _ -> scrollToKeepRunning() }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Check updates", UiTheme.ButtonStyle.TONAL) { _ -> checkPythonUpdates(force = true) }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Import", UiTheme.ButtonStyle.TONAL) { _ -> presetsPicker.launch(arrayOf("application/json", "text/plain")) }))
         card.addView(actionsRow)
 
         return card.apply {
@@ -467,7 +483,7 @@ class MainActivity : ComponentActivity() {
         card.addView(headerRow)
 
         card.addView(TextView(this).apply {
-            text = "Pick a profile to edit it. Run starts the open profile; hold Run to pick several."
+            text = "Pick a profile to edit it. Run (at the bottom) starts the open profile; hold Run to pick several."
             UiTheme.styleSupporting(this)
             setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, 0)
         })
@@ -484,38 +500,27 @@ class MainActivity : ComponentActivity() {
 
         // The open profile: role (Main/Side) and the runtime state
         val summaryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = UiTheme.rowSurface(this@MainActivity)
             minimumHeight = UiTheme.dp(this@MainActivity, 56)
             setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
         }
         profileSummaryTitle = TextView(this).apply {
             UiTheme.styleLabel(this)
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         profileRoleChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.SECONDARY) }
         profileRunChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.TEXT_MUTED) }
-        summaryRow.addView(profileSummaryTitle, LinearLayout.LayoutParams(0, -2, 1f))
-        summaryRow.addView(profileRoleChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
-        summaryRow.addView(profileRunChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
-        card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
-
-        // Quick actions: equal widths, never touching
-        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val runBtn = createGitHubButton("Run", UiTheme.ButtonStyle.FILLED, HapticFeedbackConstants.CONFIRM) { startRuntime(listOf(currentProfile)) }.apply {
-            contentDescription = "Start the open profile. Hold to pick several profiles."
-            setOnLongClickListener {
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                showStartOptionsDialog()
-                true
-            }
+        // Name on the whole first line; role and runtime chips wrap on the line under it.
+        summaryRow.addView(profileSummaryTitle, LinearLayout.LayoutParams(-1, -2))
+        val summaryChips = FlowLayout(this).apply {
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
         }
-        val stopBtn = createGitHubButton("Stop all", UiTheme.ButtonStyle.DANGER, HapticFeedbackConstants.REJECT) { doStopAll() }
-        quickRow.addView(runBtn, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        quickRow.addView(stopBtn, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(quickRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 12) })
+        summaryChips.addView(profileRoleChip)
+        summaryChips.addView(profileRunChip)
+        summaryRow.addView(summaryChips, LinearLayout.LayoutParams(-1, -2))
+        card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
 
         giveKakeraQuickBtn = createGitHubButton("Give all kakera", UiTheme.ButtonStyle.TONAL) { requestGiveAllKakera() }
         card.addView(giveKakeraQuickBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
@@ -542,10 +547,15 @@ class MainActivity : ComponentActivity() {
     private fun refreshProfileSummary() {
         if (!::profileSummaryTitle.isInitialized) return
         val data = profiles[currentProfile]
-        val isSide = data?.optString("account_role", "main") == "side"
+        val isLegacySide = data != null && isLegacySideProfile(data)
+        val alts = if (currentProfile.isBlank()) 0 else altCount(currentProfile)
         val hasToken = currentProfile.isNotBlank() && allTokensForProfile(currentProfile).isNotEmpty()
         setTextIfChanged(profileSummaryTitle, if (hasToken) currentProfile else "$currentProfile · no token")
-        setTextIfChanged(profileRoleChip, if (isSide) "Side" else "Main")
+        setTextIfChanged(profileRoleChip, when {
+            isLegacySide -> "Side"
+            alts > 0 -> "Main + $alts alt" + (if (alts == 1) "" else "s")
+            else -> "Main"
+        })
         val (runText, runColor) = when (MudaRemoteService.runtimeState) {
             MudaRemoteService.RuntimeState.RUNNING -> "Bot running" to UiTheme.PRIMARY
             MudaRemoteService.RuntimeState.STARTING -> "Starting" to UiTheme.TERTIARY
@@ -556,7 +566,7 @@ class MainActivity : ComponentActivity() {
             profileRunChip.text = runText
             UiTheme.styleStatusChip(profileRunChip, runColor)
         }
-        val kakeraVisibility = if (isSide) View.VISIBLE else View.GONE
+        val kakeraVisibility = if (isLegacySide || alts > 0) View.VISIBLE else View.GONE
         if (giveKakeraQuickBtn.visibility != kakeraVisibility) giveKakeraQuickBtn.visibility = kakeraVisibility
     }
 
@@ -616,7 +626,7 @@ class MainActivity : ComponentActivity() {
         }
 
         tokenInput = EditText(this).apply {
-            hint = "Paste your Discord token here"
+            hint = "Paste token"
             textSize = UiTheme.TYPE_BODY
             typeface = Typeface.MONOSPACE
             setTextColor(UiTheme.TEXT_PRIMARY)
@@ -638,7 +648,12 @@ class MainActivity : ComponentActivity() {
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { toggleTokenVisibility() }
         }
-        inputContainer.addView(tokenShowHideBtn)
+        // Show / Paste / ✕ sit on their own row under the field so they never take its width.
+        val tokenActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        tokenActions.addView(tokenShowHideBtn)
 
         val pasteBtn = TextView(this).apply {
             text = "Paste"
@@ -650,7 +665,7 @@ class MainActivity : ComponentActivity() {
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { pasteTokenFromClipboard() }
         }
-        inputContainer.addView(pasteBtn)
+        tokenActions.addView(pasteBtn)
 
         val clearBtn = TextView(this).apply {
             text = "✕"
@@ -675,8 +690,9 @@ class MainActivity : ComponentActivity() {
                     .show()
             }
         }
-        inputContainer.addView(clearBtn)
+        tokenActions.addView(clearBtn)
         card.addView(inputContainer)
+        card.addView(tokenActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 4) })
 
         val importSecretsBtn = createGitHubButton("Import secrets file (.mudae-secrets.json)", UiTheme.ButtonStyle.TEXT) {
             secretsPicker.launch(arrayOf("application/json", "text/plain"))
@@ -707,7 +723,7 @@ class MainActivity : ComponentActivity() {
         }
 
         searchInput = EditText(this).apply {
-            hint = "Search settings (snipe, kakera, speed...)"
+            hint = "Search settings"
             textSize = UiTheme.TYPE_BODY
             maxLines = 1
             setSingleLine(true)
@@ -936,7 +952,7 @@ class MainActivity : ComponentActivity() {
             text = "Newest first · the last 200 entries of this launch"
             UiTheme.styleSupporting(this)
             setTextColor(UiTheme.TEXT_MUTED)
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPaddingRelative(UiTheme.dp(this@MainActivity, 4), 0, 0, UiTheme.dp(this@MainActivity, 8))
         }
@@ -991,9 +1007,10 @@ class MainActivity : ComponentActivity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            // Fully opaque: nothing of the scrolled content shows through behind the dock.
             background = UiTheme.cardDrawable(
                 this@MainActivity,
-                UiTheme.withAlpha(UiTheme.SURFACE_CONTAINER_HIGH, 0xF5),
+                UiTheme.SURFACE_CONTAINER_HIGH,
                 Color.TRANSPARENT,
                 radiusDp = UiTheme.SHAPE_XL,
                 strokeWidthDp = 0f
@@ -1020,7 +1037,9 @@ class MainActivity : ComponentActivity() {
         dock.addView(btnStop, LinearLayout.LayoutParams(0, -2, 1f))
 
         return FrameLayout(this).apply {
-            setPadding(UiTheme.dp(this@MainActivity, 12), 0, UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+            // Opaque strip behind the dock (and the system navigation area under it).
+            setBackgroundColor(UiTheme.BG_APP)
+            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
             addView(dock)
         }
     }
@@ -1039,7 +1058,7 @@ class MainActivity : ComponentActivity() {
         profiles.forEach { (name, data) ->
             val isSelected = (name == currentProfile)
             val hasToken = allTokensForProfile(name).isNotEmpty()
-            val isSide = data.optString("account_role", "main") == "side"
+            val isSide = isLegacySideProfile(data)
             val pill = TextView(this).apply {
                 text = name + (if (isSide) " · Side" else "") + (if (hasToken) "" else " · no token")
                 UiTheme.styleChip(this, isSelected)
@@ -1305,7 +1324,7 @@ class MainActivity : ComponentActivity() {
                 headerText.addView(TextView(this).apply {
                     text = getSectionDescription(section)
                     UiTheme.styleSupporting(this)
-                    maxLines = 1
+                    maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
                 headerLayout.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
@@ -1420,6 +1439,18 @@ class MainActivity : ComponentActivity() {
         return container
     }
 
+    /** The 6.0.0 way: a separate profile saved as a side of another profile. */
+    private fun isLegacySideProfile(data: JSONObject): Boolean =
+        data.optString("account_role", "main") == "side" && data.optString("main_profile_id", "").isNotBlank()
+
+    /** Extra tokens of a profile: its alts (the first token is the main). */
+    private fun altCount(name: String): Int = (allTokensForProfile(name).size - 1).coerceAtLeast(0)
+
+    private fun profileUsesAlts(name: String): Boolean {
+        val data = profiles[name] ?: return false
+        return altCount(name) > 0 || isLegacySideProfile(data)
+    }
+
     private fun sideRoleWarning(data: JSONObject): String? {
         if (data.optString("account_role", "main") != "side") return null
         val mainId = data.optString("main_profile_id", "")
@@ -1446,20 +1477,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         val view = buildFieldViewInner(key, shown, meta)
-        if (meta?.optBoolean("side_only", false) == true) {
-            val role = profiles[currentProfile]?.optString("account_role", "main") ?: "main"
-            if (role != "side") {
-                setViewTreeEnabled(view, false)
-                view.alpha = 0.55f
-                note = "Side accounts only: this profile is a Main account, so this setting is disabled."
-            }
+        if (meta?.optBoolean("side_only", false) == true && !profileUsesAlts(currentProfile)) {
+            // Still editable: the alts added later under Account Tokens pick it up.
+            note = NO_ALTS_HINT
         }
         note?.let { text ->
-            (view as? LinearLayout)?.addView(TextView(this).apply {
+            // A switch row keeps its note inside the row surface; other fields put it underneath.
+            val target = (view.findViewWithTag<View>("switch_row") as? LinearLayout) ?: (view as? LinearLayout)
+            target?.addView(TextView(this).apply {
                 this.text = text
-                UiTheme.styleSupporting(this)
-                setTextColor(UiTheme.TEXT_MUTED)
-                setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, 0)
+                UiTheme.styleRowDescription(this)
+                setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
             })
         }
         return view
@@ -1556,9 +1584,9 @@ class MainActivity : ComponentActivity() {
 
     /** Raise the profile's «Give all kakera now» counter and save; the running side gives its whole total once. */
     private fun requestGiveAllKakera() {
-        val data = profiles[currentProfile] ?: return
-        if (data.optString("account_role", "main") != "side") {
-            toast("Give all kakera now: only a side account gives kakera to its main.")
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give all kakera now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_kakera_now_round"] as? EditText
@@ -1574,9 +1602,9 @@ class MainActivity : ComponentActivity() {
 
     /** Raise the profile's «Give all spheres now» counter and save; the running side gives its spheres once. */
     private fun requestGiveAllSpheres() {
-        val data = profiles[currentProfile] ?: return
-        if (data.optString("account_role", "main") != "side") {
-            toast("Give all spheres now: only a side account gives spheres to its main.")
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give all spheres now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_spheres_now_round"] as? EditText
@@ -1626,42 +1654,39 @@ class MainActivity : ComponentActivity() {
             }
             fieldViews[key] = group
             container.addView(group)
-            container.addView(TextView(this).apply {
-                text = descriptionText
-                UiTheme.styleSupporting(this)
-            })
+            if (descriptionText.isNotBlank()) {
+                container.addView(TextView(this).apply {
+                    text = descriptionText
+                    UiTheme.styleSupporting(this)
+                })
+            }
             return container
         }
 
         when (value) {
             is Boolean -> {
-                // Switch Card
+                // Switch row: title and switch on the first line (switch at the top end), the
+                // description full width under them, notes inside the same row surface.
                 val switchCard = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH)
+                    orientation = LinearLayout.VERTICAL
+                    background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH, UiTheme.SHAPE_LG)
                     minimumHeight = UiTheme.dp(this@MainActivity, 56)
-                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12))
+                    tag = "switch_row"
                 }
 
-                val textCol = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
+                val topLine = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.TOP
                 }
                 val label = TextView(this).apply {
                     text = labelText
                     UiTheme.styleLabel(this)
                 }
-                textCol.addView(label)
-
-                if (descriptionText.isNotBlank()) {
-                    val desc = TextView(this).apply {
-                        text = descriptionText
-                        UiTheme.styleSupporting(this)
-                        setPaddingRelative(0, UiTheme.dp(this@MainActivity, 2), 0, 0)
-                    }
-                    textCol.addView(desc)
-                }
-                switchCard.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+                topLine.addView(label, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    // Centre the title on the 48dp switch for the common one-line case.
+                    topMargin = UiTheme.dp(this@MainActivity, 10)
+                })
 
                 val switchView = Switch(this).apply {
                     UiTheme.styleSwitch(this)
@@ -1669,7 +1694,16 @@ class MainActivity : ComponentActivity() {
                     tag = key
                     contentDescription = labelText
                 }
-                switchCard.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+                topLine.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+                switchCard.addView(topLine, LinearLayout.LayoutParams(-1, -2))
+
+                if (descriptionText.isNotBlank()) {
+                    val desc = TextView(this).apply {
+                        text = descriptionText
+                        UiTheme.styleRowDescription(this)
+                    }
+                    switchCard.addView(desc, LinearLayout.LayoutParams(-1, -2))
+                }
 
                 switchCard.setOnClickListener {
                     switchView.isChecked = !switchView.isChecked
@@ -1760,7 +1794,7 @@ class MainActivity : ComponentActivity() {
         categoryTabs.removeAllViews()
 
         val categories = listOf(
-            "All", "Connection", "Main & Side Accounts", "Rolling", "Claiming", "Character Sniping",
+            "All", "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping",
             "Kakera Reactions", "Kakera Loot", "Wishlist and Farming", "Spheres and Emoji",
             "Timing and Humanization", "Advanced"
         )
@@ -1849,7 +1883,7 @@ class MainActivity : ComponentActivity() {
     /** One line under each settings card's title. */
     private fun getSectionDescription(section: String): String = when (section) {
         "Connection" -> "Channel, commands and how the bot connects."
-        "Main & Side Accounts" -> "Whether this profile is a main or a side account."
+        "Main & alts" -> "The first token is the main; extra tokens are its alts. Set once here, the alts act on it."
         "Rolling" -> "When and how the bot rolls."
         "Claiming" -> "Which characters to claim and when."
         "Character Sniping" -> "Catching wished characters from other rolls."
@@ -1863,7 +1897,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sectionRank(section: String): Int = listOf(
-        "Connection", "Main & Side Accounts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
+        "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
         "Wishlist and Farming", "Spheres and Emoji", "Timing and Humanization", "Advanced"
     ).indexOf(section).let { if (it < 0) 99 else it }
 
@@ -2385,16 +2419,26 @@ class MainActivity : ComponentActivity() {
                     .callAttr("get_runtime_info", filesDir.absolutePath)
                     .toString()
                 val info = JSONObject(infoJson)
-                val installed = info.optString("installed_version", info.optString("current_version", "4.9.1-beta.2"))
-                val live = info.optString("live_version", "")
+                // A JSON null must read as "unknown": optString turns it into the text "null".
+                fun versionOf(key: String): String {
+                    if (info.isNull(key)) return ""
+                    val text = info.optString(key, "").trim()
+                    return if (text.equals("null", ignoreCase = true)) "" else text
+                }
+                val installed = versionOf("installed_version").ifBlank { versionOf("current_version") }
+                val live = versionOf("live_version")
                 val isUpdated = info.optBoolean("is_updated", false)
                 val isStaged = info.optBoolean("is_staged", false)
-                val displayVer = if (live.isNotBlank()) live else installed
-                val statusTag = if (isStaged) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
+                val displayVer = live.ifBlank { installed }
+                val statusTag = if (isStaged && installed.isNotBlank()) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
                 val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
                 val isBeta = prefs.getBoolean("pref_beta_channel", true)
                 val channelBadge = if (isBeta) "[Beta]" else "[Stable]"
-                val label = "Python engine v$displayVer $statusTag $channelBadge"
+                val label = if (displayVer.isBlank()) {
+                    "Python engine (bundled) $channelBadge"
+                } else {
+                    "Python engine v$displayVer $statusTag $channelBadge"
+                }
                 lastEngineLabel = label
                 runOnUiThread {
                     if (::engineVersionText.isInitialized) {
@@ -2748,19 +2792,17 @@ class MainActivity : ComponentActivity() {
             })
         }
 
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // The two buttons wrap onto a second line instead of squeezing their labels.
+        val actions = FlowLayout(this).apply {
             setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, 0)
         }
-        actions.addView(
-            createGitHubButton("Open auto-start page") { openAutoStartSettings() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) }
-        )
-        actions.addView(
-            createGitHubButton("App info", UiTheme.ButtonStyle.OUTLINED) { openAppDetails() },
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-        card.addView(actions)
+        actions.addView(createGitHubButton("Auto-start settings") { openAutoStartSettings() }.apply {
+            maxLines = 1
+        })
+        actions.addView(createGitHubButton("App info", UiTheme.ButtonStyle.OUTLINED) { openAppDetails() }.apply {
+            maxLines = 1
+        })
+        card.addView(actions, LinearLayout.LayoutParams(-1, -2))
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
@@ -3134,5 +3176,7 @@ class MainActivity : ComponentActivity() {
         val LOG_ENTRY_START = Regex("^(?:\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} \\||\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG))")
         val LOG_LINE_SHAPE = Regex("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) \\| (.*?) \\| ([A-Z]+) \\| (.*)$")
         val LOG_KINDS = listOf("ROLL", "CLAIM", "KAKERA", "GIVE", "PERK", "SIDE", "SETUP", "SPHERE", "STATUS", "SYSTEM", "WARN", "ERROR")
+        // Same text as mudae_core.account_roles.NO_ALTS_HINT.
+        const val NO_ALTS_HINT = "Add alt tokens under Account Tokens to use this"
     }
 }

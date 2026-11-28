@@ -55,7 +55,7 @@ def main(project_root, output_dir):
         entry = settings.setdefault(key, {})
         entry.setdefault("default", value)
         entry.setdefault("label", key.replace("_", " ").title())
-        entry.setdefault("description", "This setting is also available in the desktop preset editor.")
+        entry.setdefault("description", "")  # no filler text: the app shows nothing without a real description
 
     # The desktop editor derives emoji-list defaults from module constants
     # rather than the DEFAULTS mapping, so the AST scan above never sees them.
@@ -86,12 +86,13 @@ def main(project_root, output_dir):
         "description": "Keep this secret. Android stores it separately with the device Keystore."
     })
     # Multi-account support: desktop presets expand every entry of "tokens"
-    # into its own running account ("Name", "Name #2", ...).
+    # into its own running account ("Name", "Name #2", ...). The first token
+    # is the main; the extra entries are its alts (mudae_core.account_roles).
     tokens_entry = settings.setdefault("tokens", {
         "default": [],
         "label": "Account Tokens (multi-account)",
-        "description": "One Discord token per entry. Each entry runs as an additional account of this preset."
     })
+    tokens_entry["description"] = "Extra tokens here are your alts. The first token (above) is the main."
     if not isinstance(tokens_entry.get("default"), list):
         tokens_entry["default"] = []
     # Desktop-only UI convenience (splits primary vs extra tokens); the editor
@@ -100,8 +101,8 @@ def main(project_root, output_dir):
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
-        "Main & Side Accounts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
-        "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
+        "Main & alts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
+        "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "key_limit_pause_scope", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
         "Character Sniping": {"snipe_mode", "snipe_delay", "snipe_channels", "character_snipe_targets", "snipe_ignore_users", "reactive_snipe_on_own_rolls", "reactive_snipe_delay", "series_snipe_mode", "series_snipe_delay", "series_snipe_only_self_rolls", "series_wishlist", "kakera_snipe_mode", "kakera_snipe_threshold", "enable_snipe_chat_reactions", "snipe_chat_messages"},
@@ -115,15 +116,17 @@ def main(project_root, output_dir):
     # The Android app fills this field with a picker of the other profiles and
     # stores the picked profile's stable id (see MainActivity.buildFieldView).
     settings.setdefault("main_profile_id", {})["picker"] = "profile"
-    role_order = ["account_role", "main_profile_id", "side_order", "side_rolls_for_main",
-                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id",
+    # The old separate-profile fields come last («Advanced: separate profiles»).
+    role_order = ["side_rolls_for_main",
+                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls",
+                  "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id",
                   "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
                   "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
                   "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
                   "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages",
                   "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text",
-                  "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres",
-                  "perk10_max_characters", "perk10_daily_cap"]
+                  "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres",
+                  "perk10_max_characters", "perk10_daily_cap", "account_role", "main_profile_id", "side_order"]
     for order, key in enumerate(role_order):
         settings.setdefault(key, {})["order"] = order
     # «Send again» for Fast setup: the app shows a button that raises this
@@ -133,7 +136,8 @@ def main(project_root, output_dir):
         "label": "Fast setup: Send again",
         "description": "Fast setup is sent once and then stays off. Press to send it once more (save to apply).",
     })
-    # Shown disabled, with the reason, on a Main account.
+    # Give settings («side_only») stay editable; a profile without alt tokens
+    # shows one hint line under them (MainActivity.buildFieldView).
     # «Give all kakera now»: a button that raises this request counter and saves
     # (the running side then gives its whole total once).
     settings.setdefault("give_kakera_now_round", {}).update({
@@ -148,13 +152,18 @@ def main(project_root, output_dir):
     })
     settings.setdefault("auto_perk10", {}).update({
         "label": "Upgrade perk 10 automatically",
-        "description": "On a side account: lets it upgrade its own characters. Turns off automatic sphere giving "
-                       "(the saved «Give spheres to my main automatically» value is kept but has no effect). "
-                       "On a main account it only upgrades. Off by default.",
+        "description": "Upgrades the main's characters. Alts upgrade too only with «Let side accounts upgrade too». "
+                       "Off by default.",
     })
     settings.setdefault("auto_give_spheres", {})["description"] = (
-        "Sends the side's spheres to its main automatically. Off while «Upgrade perk 10 automatically» is on "
-        "for this account (your choice here is kept). Waits for the sphere games first. Off by default.")
+        "Each alt sends its spheres to the main automatically. Off on the alts while «Let side accounts upgrade too» "
+        "is on (your choice here is kept). Waits for the sphere games first. Off by default.")
+    # The 6.0.0 separate side profiles: kept for old profiles, not offered for new ones.
+    for key in ("account_role", "main_profile_id", "side_order"):
+        entry = settings.setdefault(key, {})
+        entry["label"] = "Advanced: separate profiles — " + str(entry.get("label", key))
+        entry["description"] = ("Only for profiles set up before alts lived under Account Tokens; leave as is. "
+                                + str(entry.get("description", "")).strip())
     for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap",
                 "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres",
                 "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round",
@@ -169,7 +178,7 @@ def main(project_root, output_dir):
         if "default" not in entry:
             entry["default"] = ""
         entry.setdefault("label", key.replace("_", " ").title())
-        entry.setdefault("description", "This setting is also available in the desktop preset editor.")
+        entry.setdefault("description", "")  # no filler text: the app shows nothing without a real description
         entry["section"] = sections.get(key, "Advanced")
         value = entry["default"]
         if isinstance(value, bool):

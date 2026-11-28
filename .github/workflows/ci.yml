@@ -97,3 +97,42 @@ jobs:
           name: MudaFork-debug-apk
           path: MudaFork-debug.apk
           if-no-files-found: error
+
+  android-screens:
+    # Runs the debug APK in an emulator and saves what the app looks like, so the screen can be
+    # reviewed without a phone. Best effort per tap; fails only when no screenshot was produced.
+    needs: android-debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MudaFork-debug-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Walk the app in an emulator and take screenshots
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash android/scripts/screens.sh apk/MudaFork-debug.apk com.mudafork.android
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MudaFork-screens
+          path: screens/
+          if-no-files-found: error

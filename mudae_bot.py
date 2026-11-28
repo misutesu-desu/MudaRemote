@@ -405,10 +405,43 @@ _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
 from mudae_core.coordinator import SideRollCoordinator  # noqa: E402
+# «Pause on Key Limit»: scope, line and status text (mudae_core.key_limit).
+from mudae_core.key_limit import (  # noqa: E402
+    AREA_OTHER, end_key_limit_pause, key_limit_blocks, key_limit_pause_text, start_key_limit_pause,
+)
+# Main = the profile's primary token, alts = its extra tokens (mudae_core.account_roles).
+from mudae_core.account_roles import (  # noqa: E402
+    IdleNote, account_label_for, account_role_for, labelled_message, perk10_enabled_for,
+    roll_batch_blocker, side_kind_for,
+)
 # Main/Side accounts running in this process (Android, Run All, multi-token).
 _side_roll_coordinator = SideRollCoordinator()
 SIDE_HANDOFF_TIMEOUT_SECONDS = 600.0
 SIDE_LEFTOVER_DECISION_WAIT_SECONDS = 8.0
+# «Main claims good rolls made by its alts» (pure logic in mudae_core.alt_roll_claim).
+from mudae_core import alt_roll_claim as _alt_claim  # noqa: E402
+_alt_roll_board = _alt_claim.AltRollBoard()
+
+
+def _cached_own_message(client, message_id):
+    """This account's own copy of a message it already received (no request)."""
+    connection = getattr(client, "_connection", None)
+    getter = getattr(connection, "_get_message", None)
+    if callable(getter):
+        try:
+            found = getter(message_id)
+        except Exception:
+            found = None
+        if found is not None:
+            return found
+    try:
+        cached = list(getattr(client, "cached_messages", None) or ())
+    except Exception:
+        cached = []
+    for message in reversed(cached):
+        if getattr(message, "id", None) == message_id:
+            return message
+    return None
 
 # Running kakera/sphere totals, «Fast setup» and auto-give kakera (pure logic
 # in mudae_core.totals / fast_setup / kakera_give; this file only wires it).
@@ -455,6 +488,7 @@ class _AccountLink:
         self._fallback_profile_id = "name:" + source_name
         self.key = "{}#{}".format(source_name, id(client))
         self.roll_for_main = None
+        self.judge_alt_roll = None
 
     @property
     def profile_id(self):
@@ -466,7 +500,11 @@ class _AccountLink:
 
     @property
     def role(self):
-        return getattr(self.client, "account_role", "main")
+        return account_role_for(self.client)
+
+    @property
+    def side_kind(self):
+        return side_kind_for(self.client)
 
     @property
     def main_profile_id(self):
@@ -562,6 +600,51 @@ class _AccountLink:
         except asyncio.CancelledError:
             future.cancel()
             raise
+
+    # «Main claims good rolls made by its alts»: cheap reads by the alt, then
+    # the judge runs on this (main) account's own loop.
+    def alt_roll_precheck(self):
+        """Why this main cannot take an alt's roll now (quick look), or None."""
+        client = self.client
+        if self.judge_alt_roll is None or not self.is_ready():
+            return "is not connected"
+        if getattr(client, "is_paused", False):
+            return "is paused"
+        if key_limit_blocks(client, AREA_OTHER):
+            return "is paused at the key limit"
+        if not getattr(client, "claim_right_available", False):
+            return "has no claim now"
+        if getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None:
+            return "is busy claiming"
+        if getattr(client, "is_actively_rolling", False):
+            return "is rolling its own batch"
+        return None
+
+    def start_alt_roll_judge(self, message_id, channel_id, alt_label, card, trusted_why=None):
+        """Schedule the judge on this account's loop; the board carries the answer.
+
+        Used both ways: an alt asks its main, or the main asks one of its alts
+        (``trusted_why`` = the main's own verdict on its roll)."""
+        judge = self.judge_alt_roll
+        if judge is None:
+            return False
+        try:
+            main_loop = self.client.loop
+        except Exception:
+            main_loop = None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        coroutine = judge(message_id, channel_id, alt_label, card, trusted_why)
+        if main_loop is None or main_loop is current_loop or not main_loop.is_running():
+            if current_loop is None:
+                coroutine.close()
+                return False
+            current_loop.create_task(coroutine)
+            return True
+        asyncio.run_coroutine_threadsafe(coroutine, main_loop)
+        return True
 
     # Side side of the hand-off: run the rolls on this account's own loop.
     async def run_handoff_rolls(self, handoff):
@@ -1444,6 +1527,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         BotLogger = RuntimeLogger
 
+    # A profile with several tokens: every line says which account it is
+    # («main» / «alt 1» …), never the token.
+    _account_log_label = account_label_for(preset_data)
+    if _account_log_label:
+        _unlabelled_logger = BotLogger
+
+        class LabelledLogger:
+            @staticmethod
+            def log(message, *args, **kwargs):
+                return _unlabelled_logger.log(labelled_message(_account_log_label, message), *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(_unlabelled_logger, name)
+
+        BotLogger = LabelledLogger()
+
     token = preset_data.get("token")
     prefix = preset_data.get("prefix", "/////////////")
     target_channel_id = preset_data.get("channel_id")
@@ -1517,6 +1616,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         wait=lambda seconds: active_delay(seconds),
         log=lambda message, level: BotLogger.log(message, preset_name, level),
     )
+    client._idle_note = IdleNote()
     client._perk10_task = None
     client._perk10_last_skip = None
     client._perk10_sphere_status_seen = False
@@ -1545,20 +1645,28 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         preset_data.update(data)
         if changed:
             update_dynamic_thresholds()
+            if "pause_on_key_limit" in changed and not client.pause_on_key_limit and client.key_limit_hit:
+                finish_key_limit_pause("«Pause on Key Limit» was turned off")
+            if "key_limit_pause_scope" in changed and client.key_limit_hit:
+                client.key_limit_status = key_limit_pause_text(client.key_limit_resume_at, client.key_limit_pause_scope)
             if changed & {"fast_setup", "fast_setup_round"} and client._live_preset_ready:
                 client.loop.create_task(run_fast_setup())
             if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
                 schedule_auto_give("settings changed")
-            if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
+            # One profile holds the main and its alts: a «Give all … now» press
+            # reaches every account of it, and only the alts act on it.
+            if ("give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round
+                    and account_role_for(client) == "side"):
                 client.loop.create_task(run_give_all_kakera_now())
-            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10"}:
+            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10", "side_perk10"}:
                 schedule_sphere_give("settings changed")
-            if "give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round:
+            if ("give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round
+                    and account_role_for(client) == "side"):
                 client.loop.create_task(run_give_all_spheres_now())
             if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
                           "harem_give_value", "account_role"}:
                 schedule_harem_give("settings changed")
-            if changed & {"auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
+            if changed & {"auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
                 schedule_perk10("settings changed")
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
@@ -1614,6 +1722,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         event = getattr(client, '_immediate_check_event', None)
         if event is not None:
             event.set()
+
+    def finish_key_limit_pause(why):
+        """End this account's key-limit pause and look at the status again."""
+        BotLogger.log(f"{end_key_limit_pause(client)} ({why})", preset_name, "INFO", client)
+        request_status_refresh({"claim", "rolls"}, reason="key-limit-recovery", urgent=True)
+        wake_status_loop()
 
     def request_status_refresh(fields=None, reason="state-change", urgent=False):
         _is_new, is_coalesced = coalesce_status_request(
@@ -3573,7 +3687,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
         _totals_book.note_user_id(client._totals_key, getattr(client.user, "id", None))
         client.loop.create_task(health_monitor_task())
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(report_account_role())
 
         try: target_ch_id = int(target_channel_id)
@@ -3655,10 +3769,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             await run_fast_setup()
         except Exception as e:
             BotLogger.log(f"Fast setup error: {e}", preset_name, "ERROR")
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(harem_give_schedule_task())
         client.loop.create_task(perk10_schedule_task())
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(sphere_give_schedule_task())
 
         if client.rolling_enabled:
@@ -4965,7 +5079,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, scheduler_cycle_id=None):
         request_hourly_status_refresh()
-        if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
+        # «rolls only»: the $tu pass (claims, $daily, $dk, sphere games) goes on; rolls stay gated further down.
+        if client.is_paused or key_limit_blocks(client, AREA_OTHER) or is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         if (
@@ -6432,6 +6547,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
+        # Say once per change why this account does not roll now (never silent).
+        idle_line = client._idle_note.update(roll_batch_blocker(
+            paused=client.is_paused, key_limit_hit=client.key_limit_hit, maintenance=is_maintenance_active(),
+            rolling_for_main=_side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None,
+            giving_kakera=client.kakera_giver.active, giving_harem=client.harem_giver.active,
+            main_receiving_harem=main_receiving(client._account_link.key),
+            giving_spheres=client.sphere_giver.active, upgrading_perk10=client.perk_upgrader.active,
+        ))
+        if idle_line:
+            BotLogger.log(idle_line, preset_name, "INFO")
         if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
         if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
             # This account is rolling for its main right now; its own batch
@@ -7519,7 +7644,19 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         except Exception as exc:
             BotLogger.log(f"Claim fallback check failed: {exc}", preset_name, "WARN")
 
-    async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
+    async def handle_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param,
+                                    own_rolls=True):
+        claimed = await handle_collected_mudae_messages(
+            client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param)
+        if own_rolls and getattr(client, "alts_claim_main_rolls", False):
+            # «Alts claim good rolls made by the main»: what the main passed on.
+            try:
+                await offer_leftover_rolls_to_alts(mudae_messages)
+            except Exception as e:
+                BotLogger.log(f"Alt hand-off error: {e}", preset_name, "ERROR")
+        return claimed
+
+    async def handle_collected_mudae_messages(client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param):
         char_claims = []
         wl_claims = []
         min_kak_post = 0 if ignore_limit_param else client.min_kakera
@@ -7570,6 +7707,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         # Filter claims to exclude messages already claimed/in progress globally
         wl_claims = _claim_coordinator.filter_available(wl_claims)
         char_claims = _claim_coordinator.filter_available(char_claims)
+        own_key = _account_link_key(client)
+        wl_claims = [item for item in wl_claims if not _alt_roll_board.blocks_claim(item[0].id, own_key)]
+        char_claims = [item for item in char_claims if not _alt_roll_board.blocks_claim(item[0].id, own_key)]
 
         msg_claimed_id = -1
         if key_mode_only_kakera_param or is_key_mode_kakera_only():
@@ -7689,15 +7829,40 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         user_id = getattr(main_link, "user_id", None) if main_link is not None else None
         return str(user_id) if user_id else ""
 
+    def give_receiver_id():
+        """Who the gives go to: an alt gives to its profile's running main (its own
+        user id); «Main Account ID» is the fallback when that main is not running
+        here. A legacy side profile keeps the 6.0.0 order (pasted id first)."""
+        if side_kind_for(client) != "alt":
+            return effective_main_account_id()
+        link = getattr(client, "_account_link", None)
+        main_link = _side_roll_coordinator.resolve_main(link) if link is not None else None
+        user_id = getattr(main_link, "user_id", None) if main_link is not None else None
+        if user_id:
+            pasted = str(client.main_account_id or "").strip()
+            if pasted and pasted != str(user_id) and not getattr(client, "_main_id_mismatch_logged", False):
+                client._main_id_mismatch_logged = True
+                BotLogger.log("Main Account ID differs from this profile's running main; gives go to the running main "
+                              "(the first token).", preset_name, "WARN")
+            return str(user_id)
+        return str(client.main_account_id or "").strip()
+
     async def report_account_role():
         """Say once, after the accounts had time to connect, how this account's role resolved."""
-        if getattr(client, "account_role", "main") != "side":
+        if account_role_for(client) != "side":
             return
         if not await active_delay(45.0):
             return
         main_link = _side_roll_coordinator.resolve_main(client._account_link)
+        is_alt = side_kind_for(client) == "alt"
         if main_link is not None:
-            BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+            if is_alt:
+                BotLogger.log("Alt of this profile's main: gives and side rolls go to it.", preset_name, "INFO")
+            else:
+                BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+        elif is_alt:
+            BotLogger.log("Alt: the main (this profile's first token) is not running yet; gives use Main Account ID "
+                          "if it is set, and side rolls and harem gives wait for the main.", preset_name, "INFO")
         elif client.main_account_id:
             BotLogger.log("Side account: its main (Main Account ID) is not running in this app; wish sync still works, roll hand-offs need both accounts running together.", preset_name, "INFO")
         else:
@@ -7758,15 +7923,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def ask_sides_to_roll_for_main():
         """Main: rolls ended with the claim unused and nothing claimable."""
-        if (getattr(client, "account_role", "main") != "main"
+        if (account_role_for(client) != "main"
                 or getattr(client, "account_index", 1) != 1
                 or not getattr(client, "side_rolls_for_main", False)):
             return
-        if (not client.claim_right_available or client.is_paused or client.key_limit_hit
+        if (not client.claim_right_available or client.is_paused or key_limit_blocks(client, AREA_OTHER)
                 or getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None
                 or is_key_mode_kakera_only() or is_maintenance_active()):
             return
         if getattr(client, "_account_link", None) is None:
+            return
+        if not _side_roll_coordinator.sides_for(client._account_link):
+            # No alt tokens (and no legacy side profile) running: nothing to ask, nothing to report.
             return
         try:
             await _side_roll_coordinator.run_for_main(
@@ -7787,7 +7955,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         claimed = False
         try:
             if client.claim_right_available and not handoff.should_stop():
-                claimed = await handle_mudae_messages(client, message.channel, [message], False, False)
+                claimed = await handle_mudae_messages(client, message.channel, [message], False, False, own_rolls=False)
         except Exception as e:
             BotLogger.log(f"Side roll processing error: {e}", preset_name, "ERROR")
         handoff.record_main_decision(message.id, claimed, card if claimed else None)
@@ -7808,7 +7976,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 waited += 0.1
             if handoff.main_decision(message.id) is False:
                 try:
-                    if await handle_mudae_messages(client, message.channel, [message], False, False):
+                    if await handle_mudae_messages(client, message.channel, [message], False, False, own_rolls=False):
                         card = (message.embeds[0].author.name if message.embeds[0].author else "Unknown").strip()
                         BotLogger.log(f"Side kept leftover \u2068{card}\u2069 the main passed on.", preset_name, "CLAIM")
                 except Exception as e:
@@ -7819,6 +7987,344 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)):
                 return
             await claim_character(client, message.channel, message, is_kakera=True)
+
+    # ------------------------------------------------------------------
+    # «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim)
+    # ------------------------------------------------------------------
+    def roll_card_facts(message):
+        """``(name, series, kakera, claim_rank, like_rank)`` of a character roll."""
+        embed = message.embeds[0]
+        desc = embed.description or ""
+        series = desc.splitlines()[0].lower() if desc else ""
+        k_val = 0
+        m_k = re.search(REGEX_PATTERNS["KAKERA_VALUE"], desc)
+        if m_k:
+            k_val = int(re.sub(r"[^\d]", "", m_k.group(1)) or 0)
+        claims_r, likes_r = parse_mudae_ranks(desc)
+        return embed.author.name.strip(), series, k_val, claims_r, likes_r
+
+    async def roll_interest_for_this_account(message):
+        """``(wanted, why, kakera)`` with THIS account's own roll rules, as if it rolled it."""
+        name, series, k_val, claims_r, likes_r = roll_card_facts(message)
+        series_hit = await series_wishlist_matches(message, series, known_self_roll=True)
+        wanted, why = _alt_claim.card_interest(
+            name=name, wishlist=client.wishlist, avoid_list=client.avoid_list, series_hit=series_hit,
+            wished=is_wished_by_self(message, client.user.id),
+            claim_rank=claims_r, like_rank=likes_r,
+            max_claim_rank=client.max_claim_rank, max_like_rank=client.max_like_rank,
+            kakera=k_val, min_kakera=client.current_min_kakera_for_roll_claim,
+        )
+        return wanted, why, k_val
+
+    def main_is_lurking():
+        reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        if reset_at is None or not getattr(client, "lurker_mode", False):
+            return False
+        seconds_left = max(0.0, (reset_at - datetime.datetime.now(timezone.utc)).total_seconds())
+        _, is_lurking = lurker_window_state(
+            lurker_mode=client.lurker_mode,
+            final_round_only=getattr(client, "lurker_final_round_only", False),
+            claim_available=client.claim_right_available,
+            claim_reset_minutes=int(seconds_left // 60),
+            panic_roll_minutes=panic_lead_minutes(),
+            round_minutes=client.roll_interval,
+        )
+        return bool(is_lurking)
+
+    async def judge_alt_roll_for_main(message_id, channel_id, alt_label, card, trusted_why=None):
+        """Taker: judge a roll another account of this profile offered; claim it if good.
+
+        Alt → main: the main judges an alt's own roll with the main's rules.
+        Main → alt (``trusted_why`` set): the roll is good by the main's own
+        judgement; this alt only checks its own claim and state. Runs on this
+        account's loop; only here may it claim an offered roll.
+        """
+        board = _alt_roll_board
+        my_key = _account_link_key(client)
+        committed = False
+        claimed = False
+        reason = ""
+        try:
+            message = None
+            waited = 0.0
+            while True:
+                message = _cached_own_message(client, message_id)
+                if message is not None or waited >= _alt_claim.MESSAGE_LOOKUP_SECONDS:
+                    break
+                await asyncio.sleep(0.1)
+                waited += 0.1
+            if message is None or not getattr(message, "embeds", None):
+                board.main_pass(message_id, my_key, "this account did not see the roll")
+                BotLogger.log(_alt_claim.not_taken_line(card, alt_label, "this account did not see the roll"), preset_name, "DEBUG", client)
+                return
+            if getattr(getattr(message, "channel", None), "id", None) != client.target_channel_id:
+                board.main_pass(message_id, my_key, "not this account's roll channel")
+                return
+            embed = message.embeds[0]
+            if not is_character_embed(embed) or is_free_event(embed) or not has_claim_option(message, embed, client.claim_emojis):
+                board.main_pass(message_id, my_key, "no claim button for this account")
+                return
+            if trusted_why:
+                wanted, why, k_val = True, trusted_why, roll_card_facts(message)[2]
+            else:
+                wanted, why, k_val = await roll_interest_for_this_account(message)
+            if not wanted:
+                board.main_pass(message_id, my_key, why)
+                BotLogger.log(_alt_claim.not_taken_line(card, alt_label, why), preset_name, "DEBUG", client)
+                return
+            refresh_predicted_claim_and_rt()
+            blocker = _alt_claim.claim_blocker(
+                ready=True,
+                paused=client.is_paused,
+                key_limited=key_limit_blocks(client, AREA_OTHER),
+                maintenance=is_maintenance_active(),
+                inactive_hour=is_inactive_hour(),
+                claim_available=client.claim_right_available,
+                key_mode_kakera_only=is_key_mode_kakera_only(),
+                claiming=bool(getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None),
+                rolling=bool(getattr(client, "is_actively_rolling", False) or getattr(client, "collected_rolls", None)
+                             or getattr(client, "_claim_reset_rolls_pending", False)),
+                judging_sides=_side_roll_coordinator.handoff_for_main(my_key) is not None,
+                lurking=main_is_lurking(),
+                why=why,
+            )
+            if blocker is None and (_claim_coordinator.is_reserved(message_id) or message_id in client.processed_claim_messages):
+                blocker = "someone is already claiming it"
+            if blocker is not None:
+                board.main_pass(message_id, my_key, blocker)
+                BotLogger.log(_alt_claim.not_taken_line(card, alt_label, blocker), preset_name, "INFO", client)
+                return
+            if not board.main_commit(message_id, my_key):
+                return  # the roller stopped waiting; it follows its own rules
+            committed = True
+            BotLogger.log(_alt_claim.taken_line(card, alt_label, why), preset_name, "CLAIM", client)
+            if not await snipe_delay_wait(client.snipe_delay):
+                reason = "paused before claiming"
+                return
+            if not client.claim_right_available:
+                reason = "the claim is gone"
+                return
+            # Never $rt here: it would send a command the player did not ask for.
+            claimed = bool(await claim_character(
+                client, message.channel, message, is_snipe=True, kakera_value=k_val, allow_rt=False,
+            ))
+            if not claimed:
+                reason = "the claim could not be sent"
+        except asyncio.CancelledError:
+            reason = reason or "stopped"
+            raise
+        except Exception as e:
+            reason = reason or "error: {}".format(e)
+            BotLogger.log(f"Alt roll claim error: {e}", preset_name, "ERROR", client)
+        finally:
+            if committed:
+                if claimed:
+                    # The click is out: no other account of this app may click it again.
+                    _claim_coordinator.mark_completed(message_id)
+                board.main_finish(message_id, my_key, claimed, reason)
+                if not claimed and reason:
+                    BotLogger.log(_alt_claim.not_taken_line(card, alt_label, reason), preset_name, "INFO", client)
+            else:
+                board.main_pass(message_id, my_key, reason or "not judged")
+
+    client._account_link.judge_alt_roll = judge_alt_roll_for_main
+
+    def main_keeps_for_reset():
+        """The main saves a missed card for its coming claim reset (Smart Timing / last seconds)."""
+        if getattr(client, "is_timing_mode_active", False):
+            return True
+        reset_at = getattr(client, "next_claim_reset_at_utc", None)
+        if reset_at is None:
+            return False
+        left = (reset_at - datetime.datetime.now(timezone.utc)).total_seconds()
+        return 0 < left <= _alt_claim.KEEP_FOR_RESET_SECONDS
+
+    def alt_takers_for_this_main(channel_id):
+        """Running alts of this main that may be asked now, in Account Tokens order."""
+        link = getattr(client, "_account_link", None)
+        if link is None:
+            return []
+        takers = []
+        for side in _side_roll_coordinator.sides_for(link):
+            if getattr(side, "side_kind", None) != "alt" or side.channel_id != channel_id:
+                continue
+            reason = side.alt_roll_precheck()
+            if reason:
+                BotLogger.log(f"{account_label_for(side.client) or 'alt'} cannot take this roll: {reason}.", preset_name, "DEBUG", client)
+                continue
+            takers.append(side)
+        return takers
+
+    async def offer_main_rolls_to_alts(items):
+        """Main: hand good rolls it will not claim to one alt each, in turn.
+
+        ``items`` = [(message, card, why)]. One roll at a time; a roll is
+        offered once (a timeout or a failed claim ends its round)."""
+        link = getattr(client, "_account_link", None)
+        if link is None:
+            return
+        for message, card, why in items:
+            if _claim_coordinator.is_reserved(message.id) or _alt_roll_board.get(message.id) is not None:
+                continue
+            takers = alt_takers_for_this_main(message.channel.id)
+            if not takers:
+                BotLogger.log(_alt_claim.not_taken_line(card, "the main", "no alt can take it now"), preset_name, "DEBUG", client)
+                continue
+            by_key = {side.key: side for side in takers}
+            state, taker_key = await _alt_roll_board.offer_in_turn(
+                message.id, offerer_key=link.key, offerer_label="the main", card=card,
+                takers=[side.key for side in takers],
+                start=lambda key, m=message, c=card, w=why: by_key[key].start_alt_roll_judge(
+                    m.id, m.channel.id, "the main", c, trusted_why=w),
+                sleep=active_delay,
+            )
+            taker = by_key.get(taker_key)
+            taker_label = (account_label_for(taker.client) if taker is not None else "") or "an alt"
+            if state in (_alt_claim.CLAIMED, _alt_claim.TAKING):
+                client.processed_claim_messages.add(message.id)
+                BotLogger.log(_alt_claim.left_line(card, taker_label), preset_name, "CLAIM", client)
+            elif state == _alt_claim.GAVE_UP:
+                BotLogger.log(f"{taker_label} did not answer in time about \u2068{card}\u2069; nobody else tries.", preset_name, "INFO", client)
+            elif state == _alt_claim.PASSED:
+                BotLogger.log(_alt_claim.not_taken_line(card, "the main", "no alt could take it"), preset_name, "DEBUG", client)
+
+    async def main_roll_verdict_for_alts(message):
+        """Main: ``(card, why)`` when its own good roll goes to the alts, else None."""
+        if not getattr(client, "alts_claim_main_rolls", False) or side_kind_for(client) is not None:
+            return None
+        if getattr(client, "account_index", 1) != 1:
+            return None
+        embed = message.embeds[0] if message.embeds else None
+        if embed is None or not is_character_embed(embed) or is_free_event(embed):
+            return None
+        if not has_claim_option(message, embed, client.claim_emojis) or _claim_coordinator.is_reserved(message.id):
+            return None
+        if message.id in client.processed_claim_messages or _alt_roll_board.get(message.id) is not None:
+            return None
+        wanted, why, k_val = await roll_interest_for_this_account(message)
+        if not wanted:
+            return None
+        refresh_predicted_claim_and_rt()
+        reason = _alt_claim.main_will_not_claim(
+            key_limited=key_limit_blocks(client, AREA_OTHER),
+            key_mode_kakera_only=is_key_mode_kakera_only(),
+            claim_available=client.claim_right_available,
+            restore_usable=bool(bot_may_use_rt() and can_spend_restore_on_character(
+                k_val, restore_min_kakera(), not _alt_claim.is_value_reason(why),
+                client.rt_ignore_min_kakera_for_wishlist)),
+            keeping_for_reset=main_keeps_for_reset(),
+        )
+        if reason is None:
+            return None
+        return embed.author.name.strip(), why
+
+    async def offer_own_roll_to_alts(message, roll_origin):
+        """Main: its own good roll that it will not or cannot claim goes to an alt."""
+        if not getattr(client, "alts_claim_main_rolls", False):
+            return
+        owner_id, owner_name = roll_origin[0], roll_origin[1]
+        own_names = {
+            str(getattr(client.user, "name", "") or "").casefold(),
+            str(getattr(client.user, "display_name", "") or "").casefold(),
+        }
+        if not (owner_id == client.user.id or bool(owner_name and owner_name in own_names)):
+            return
+        verdict = await main_roll_verdict_for_alts(message)
+        if verdict is None:
+            return
+        card, why = verdict
+        # Runs beside this message's handling: the main does not wait for it.
+        client.loop.create_task(offer_main_rolls_to_alts([(message, card, why)]))
+
+    async def offer_leftover_rolls_to_alts(messages):
+        """Main: after its own batch, good rolls it passed on (its claim is spent) go to the alts."""
+        if not getattr(client, "alts_claim_main_rolls", False) or side_kind_for(client) is not None:
+            return
+        items = []
+        for message in list(messages or ()):
+            try:
+                verdict = await main_roll_verdict_for_alts(message)
+            except Exception:
+                verdict = None
+            if verdict is not None:
+                items.append((message, verdict[0], verdict[1]))
+        if items:
+            client.loop.create_task(offer_main_rolls_to_alts(items))
+
+    async def alt_would_claim_own_roll(message):
+        """Alt: would this account claim its own roll under its own rules right now?"""
+        wanted, why, k_val = await roll_interest_for_this_account(message)
+        if not wanted:
+            return False
+        if client.is_paused or key_limit_blocks(client, AREA_OTHER) or is_key_mode_kakera_only():
+            return False
+        if client.claim_right_available:
+            return True
+        return bool(bot_may_use_rt() and can_spend_restore_on_character(
+            k_val, restore_min_kakera(), not _alt_claim.is_value_reason(why),
+            client.rt_ignore_min_kakera_for_wishlist,
+        ))
+
+    async def offer_own_roll_to_main(message, roll_origin):
+        """Alt: offer its own roll to the main; True when the alt must leave it.
+
+        Returns None when nothing was offered (the alt goes on exactly as before).
+        """
+        if not getattr(client, "main_claims_alt_rolls", False) or side_kind_for(client) != "alt":
+            return None
+        link = getattr(client, "_account_link", None)
+        if link is None or _side_roll_coordinator.handoff_for_side(link.key) is not None:
+            return None
+        owner_id, owner_name = roll_origin[0], roll_origin[1]
+        own_names = {
+            str(getattr(client.user, "name", "") or "").casefold(),
+            str(getattr(client.user, "display_name", "") or "").casefold(),
+        }
+        if not (owner_id == client.user.id or bool(owner_name and owner_name in own_names)):
+            return None
+        embed = message.embeds[0]
+        if is_free_event(embed) or not has_claim_option(message, embed, client.claim_emojis):
+            return None
+        if _claim_coordinator.is_reserved(message.id):
+            return None
+        main_link = _side_roll_coordinator.resolve_main(link)
+        if main_link is None:
+            return None
+        card = embed.author.name.strip()
+        if main_link.channel_id != message.channel.id:
+            BotLogger.log(f"Main does not roll in this channel; keeping \u2068{card}\u2069 to the alt's own rules.", preset_name, "DEBUG", client)
+            return None
+        alt_wants = await alt_would_claim_own_roll(message)
+        if not _alt_claim.main_should_be_asked(client.main_claims_alt_rolls_mode, alt_wants):
+            return None
+        precheck = main_link.alt_roll_precheck()
+        if precheck:
+            BotLogger.log(f"Main {precheck}; \u2068{card}\u2069 follows the alt's own rules.", preset_name, "DEBUG", client)
+            return None
+        alt_label = _alt_claim.roller_label_for(account_label_for(client) or "alt")
+        offer = _alt_roll_board.open(message.id, main_key=main_link.key, alt_key=link.key, alt_label=alt_label, card=card)
+        if offer is None:
+            return None
+        try:
+            started = main_link.start_alt_roll_judge(message.id, message.channel.id, alt_label, card)
+        except Exception:
+            started = False
+        if not started:
+            _alt_roll_board.alt_give_up(message.id, link.key)
+            return None
+        state = await _alt_roll_board.wait_for_main(message.id, link.key, sleep=active_delay)
+        if state in (_alt_claim.CLAIMED, _alt_claim.TAKING):
+            client.processed_claim_messages.add(message.id)
+            if state == _alt_claim.CLAIMED:
+                BotLogger.log(_alt_claim.left_line(card), preset_name, "CLAIM", client)
+            else:
+                BotLogger.log(f"left \u2068{card}\u2069 for the main (the main is still claiming it)", preset_name, "WARN", client)
+            return True
+        if state == _alt_claim.GAVE_UP:
+            BotLogger.log(f"the main did not answer in time about \u2068{card}\u2069; following the alt's own rules.", preset_name, "INFO", client)
+        elif state == _alt_claim.FAILED:
+            BotLogger.log(f"the main could not claim \u2068{card}\u2069; following the alt's own rules.", preset_name, "INFO", client)
+        return False
 
     # ------------------------------------------------------------------
     # Totals ($tu / game results), Fast setup, auto-give kakera to the main
@@ -7867,7 +8373,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             schedule_sphere_give("sphere game result")
 
     def auto_give_busy_reason():
-        if client.is_paused or client.key_limit_hit:
+        if client.is_paused or key_limit_blocks(client, AREA_OTHER):
             return "paused"
         if is_maintenance_active():
             return "maintenance"
@@ -7886,7 +8392,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return None
 
     def schedule_auto_give(reason):
-        if not (client.auto_give_kakera and getattr(client, "account_role", "main") == "side"):
+        if not (client.auto_give_kakera and account_role_for(client) == "side"):
             return
         if client.kakera_giver.active or getattr(client, "_auto_give_task", None) is not None:
             return
@@ -7905,7 +8411,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             channel = await _resolve_administrative_command_channel()
             if channel is None:
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             user = client.user
             outcome = await client.kakera_giver.maybe_give(
                 channel, GiveSettings.from_preset({
@@ -7914,7 +8420,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     "give_kakera_extra": client.give_kakera_extra,
                     "give_kakera_daily_cap": client.give_kakera_daily_cap,
                 }),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(user, "id", "") or ""),
                 own_names=[getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)],
                 main_id=main_id,
@@ -7946,11 +8452,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if channel is None:
                 BotLogger.log("Give all kakera: not given — no command channel.", preset_name, "WARN")
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.kakera_giver.give_all_now(
                 channel,
                 minimum=client.give_kakera_button_minimum,
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8025,7 +8531,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return [name for name in dict.fromkeys(names) if name]
 
     def schedule_harem_give(reason):
-        if not (getattr(client, "auto_give_harem", False) and getattr(client, "account_role", "main") == "side"):
+        if not (getattr(client, "auto_give_harem", False) and account_role_for(client) == "side"):
             return
         if client.harem_giver.active or getattr(client, "_harem_give_task", None) is not None:
             return
@@ -8050,10 +8556,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 partner = None
             outcome = await client.harem_giver.maybe_give(
                 channel, harem_give_settings(),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
-                main_id=effective_main_account_id(),
+                main_id=give_receiver_id(),
                 partner=partner,
                 prefix=client.mudae_prefix,
                 busy=lambda: (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
@@ -8078,7 +8584,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             "auto_give_spheres": client.auto_give_spheres,
             "sphere_give_interval_min": client.sphere_give_interval_min,
             "spheres_keep": client.spheres_keep,
-            "auto_perk10": getattr(client, "auto_perk10", False),
+            # Off only while perk 10 really runs on THIS account (main: auto_perk10;
+            # alt: auto_perk10 + «Let side accounts upgrade too»).
+            "auto_perk10": perk10_enabled_for(client),
         })
 
     def sphere_give_busy_reason():
@@ -8087,7 +8595,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 or ("upgrading perk 10" if client.perk_upgrader.active else None))
 
     def schedule_sphere_give(reason):
-        if not (getattr(client, "auto_give_spheres", False) and getattr(client, "account_role", "main") == "side"):
+        if not (getattr(client, "auto_give_spheres", False) and account_role_for(client) == "side"):
             return
         if client.sphere_giver.active or getattr(client, "_sphere_give_task", None) is not None:
             return
@@ -8105,10 +8613,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             channel = await _resolve_administrative_command_channel()
             if channel is None:
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.sphere_giver.maybe_give(
                 channel, sphere_give_settings(),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8144,11 +8652,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if channel is None:
                 BotLogger.log("Give all spheres: not given \u2014 no command channel.", preset_name, "WARN")
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.sphere_giver.give_all_now(
                 channel,
                 keep=client.spheres_keep,
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8181,7 +8689,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     def perk10_settings():
         return Perk10Settings.from_preset({
-            "auto_perk10": client.auto_perk10,
+            "auto_perk10": perk10_enabled_for(client),
             "perk10_min_spheres": client.perk10_min_spheres,
             "perk10_max_characters": client.perk10_max_characters,
             "perk10_daily_cap": client.perk10_daily_cap,
@@ -8208,7 +8716,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return None
 
     def schedule_perk10(reason):
-        if not getattr(client, "auto_perk10", False):
+        if not perk10_enabled_for(client):
             return
         if client.perk_upgrader.active or getattr(client, "_perk10_task", None) is not None:
             return
@@ -8587,6 +9095,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         rt_registered = False
         claim_registered = False
         if not is_kakera and msg.id in client.processed_claim_messages: return False
+        if not is_kakera and _alt_roll_board.blocks_claim(msg.id, _account_link_key(client)):
+            # An alt offered this roll to this main: only the hand-off may claim it.
+            return False
 
         embed = msg.embeds[0]
         char_name = (embed.author.name if embed.author else "Unknown").strip()
@@ -9435,6 +9946,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         schedule_farm_release_after_other_claim(message)
 
+        if character_roll_origin is not None and getattr(client, "main_claims_alt_rolls", False):
+            # Kakera on the roll is still collected below; a card left to the
+            # main is marked processed/completed so no claim path takes it.
+            await offer_own_roll_to_main(message, character_roll_origin)
+        if character_roll_origin is not None and getattr(client, "alts_claim_main_rolls", False):
+            await offer_own_roll_to_alts(message, character_roll_origin)
+
         sync_main_id = (
             effective_main_account_id()
             if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is None
@@ -9652,13 +10170,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if client.pause_on_key_limit and not client.key_limit_hit and re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
                 client.interrupt_rolling = True
                 client._roll_interrupt_reason = "key-limit"
-                client.key_limit_hit = True
-                BotLogger.log("Key Limit Hit. Pausing 1h.", preset_name, "ERROR")
+                pause_seconds = 3600 + random.randint(0, 600)
+                client._key_limit_generation = getattr(client, "_key_limit_generation", 0) + 1
+                generation = client._key_limit_generation
+                # Per account: the flag, the resume time and this task belong to this client only.
+                BotLogger.log(start_key_limit_pause(client, pause_seconds), preset_name, "ERROR", client)
                 async def _key_limit_recovery():
-                    await asyncio.sleep(3600 + random.randint(0, 600))
-                    client.key_limit_hit = False
-                    request_status_refresh({"claim", "rolls"}, reason="key-limit-recovery", urgent=True)
-                    if client._immediate_check_event: client._immediate_check_event.set()
+                    await asyncio.sleep(pause_seconds)
+                    if getattr(client, "_key_limit_generation", 0) != generation or not client.key_limit_hit:
+                        return  # already ended (e.g. «Pause on Key Limit» was turned off)
+                    finish_key_limit_pause("the hour is over")
                 client.loop.create_task(_key_limit_recovery())
                 # The notice roll itself still carries collectible Kakera and
                 # spheres, so processing continues instead of returning early.
@@ -10229,6 +10750,7 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
 def reset_mobile_runtime():
     """Reset process-wide mobile state after the previous workers have exited."""
     global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator, _totals_book
+    global _alt_roll_board
     with _active_clients_lock:
         _active_clients.clear()
         _mobile_client_close_futures.clear()
@@ -10238,6 +10760,7 @@ def reset_mobile_runtime():
     _server_reset_coordinator = ServerResetCoordinator()
     _tu_interval_coordinator = GlobalIntervalCoordinator()
     _side_roll_coordinator = SideRollCoordinator()
+    _alt_roll_board = _alt_claim.AltRollBoard()
     _totals_book = TotalsBook()
 
 def parse_args(argv=None):

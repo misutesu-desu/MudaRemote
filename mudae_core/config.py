@@ -271,6 +271,10 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
     errors.extend(validate_perk10_settings(data))
     from .logs import validate_log_settings
     errors.extend(validate_log_settings(data))
+    from .key_limit import validate_key_limit_settings
+    errors.extend(validate_key_limit_settings(data))
+    from .alt_roll_claim import validate_alt_roll_claim_settings
+    errors.extend(validate_alt_roll_claim_settings(data))
     webhook_url = str(data.get("webhook_url", "") or "").strip()
     if webhook_url and not re.match(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/", webhook_url):
         errors.append("Remote Log Webhook URL must be a Discord HTTPS webhook URL.")

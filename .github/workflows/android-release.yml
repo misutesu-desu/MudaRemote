@@ -9,11 +9,11 @@ on:
       tag:
         description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "v6.0.0"
+        default: "v6.0.1"
       title:
         description: "Release title"
         required: false
-        default: "MudaFork v6.0.0"
+        default: "MudaFork v6.0.1"
 
 permissions:
   contents: write
@@ -65,7 +65,7 @@ jobs:
 
       - name: Build ux APK
         working-directory: android
-        run: gradle :app:testUxUnitTest :app:assembleUx --no-daemon --stacktrace
+        run: gradle :app:testUxUnitTest :app:assembleUx -PmudaAbis=arm64-v8a --no-daemon --stacktrace
 
       - name: Stage release APK
         env:

@@ -10,6 +10,9 @@ import datetime
 from datetime import timezone
 from types import SimpleNamespace
 
+from mudae_core.account_roles import SIDE_KIND_ALT, account_role_for, alt_number, side_kind_for
+from mudae_core.key_limit import normalize_scope as normalize_key_limit_scope
+from mudae_core.alt_roll_claim import normalize_mode as normalize_alt_roll_claim_mode
 from mudae_core.claiming import expand_claim_emojis
 from mudae_core.filters import CharacterNameSet, split_dollar_names
 from mudae_core.kakera import (
@@ -82,6 +85,8 @@ def configure_client(
     client.mudae_prefix = preset_data.get("mudae_prefix", "$")
     client.key_mode = preset_data.get("key_mode", False)
     client.pause_on_key_limit = bool(preset_data.get("pause_on_key_limit", True))
+    # What the key-limit pause stops: "everything" (default) or "rolls only".
+    client.key_limit_pause_scope = normalize_key_limit_scope(preset_data.get("key_limit_pause_scope"))
     client.delay_seconds = preset_data.get("delay_seconds", 0)
     client.rolling_enabled = preset_data.get("rolling", True)
     client.skip_initial_commands = preset_data.get("skip_initial_commands", False)
@@ -283,16 +288,30 @@ def configure_client(
     # Main / Side accounts (see coordinator.SideRollCoordinator).
     client.profile_id = str(preset_data.get("profile_id") or "").strip()
     client.account_index = _bounded_int(preset_data.get("_account_index", 1), 1, 1, 1000)
-    client.account_role = (
+    client.account_count = _bounded_int(preset_data.get("_account_count", 1), 1, 1, 1000)
+    # The saved role only matters for the legacy «separate side profile» path;
+    # otherwise the primary token is the main and extra tokens are its alts.
+    client.stored_account_role = (
         "side" if preset_data.get("account_role") == "side" else "main"
     )
     client.main_profile_id = str(preset_data.get("main_profile_id") or "").strip()
-    client.side_order = _bounded_int(preset_data.get("side_order", 1), 1, 1, 999)
+    client.account_role = account_role_for(client)
+    if side_kind_for(client) == SIDE_KIND_ALT:
+        # Alts are asked in the order they are listed under Account Tokens.
+        client.side_order = alt_number(client.account_index)
+    else:
+        client.side_order = _bounded_int(preset_data.get("side_order", 1), 1, 1, 999)
+    client.side_perk10 = bool(preset_data.get("side_perk10", False))
     client.side_rolls_for_main = bool(preset_data.get("side_rolls_for_main", False))
     client.side_rolls_max_per_reset = _bounded_int(
         preset_data.get("side_rolls_max_per_reset", 1), 1, 1, 10
     )
     client.side_claim_leftovers = bool(preset_data.get("side_claim_leftovers", False))
+    # «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim), off by default.
+    client.main_claims_alt_rolls = bool(preset_data.get("main_claims_alt_rolls", False))
+    client.main_claims_alt_rolls_mode = normalize_alt_roll_claim_mode(preset_data.get("main_claims_alt_rolls_mode"))
+    # The mirror: «Alts claim good rolls made by the main», off by default.
+    client.alts_claim_main_rolls = bool(preset_data.get("alts_claim_main_rolls", False))
     # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
     client.fast_setup = bool(preset_data.get("fast_setup", False))
     client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
@@ -673,6 +692,8 @@ def configure_client(
     client.p_available = False
     client.next_p_claim_at_utc = None
     client.key_limit_hit = False
+    client.key_limit_resume_at = None
+    client.key_limit_status = None
     client.is_timing_mode_active = False
     client.kakera_power_thresholds = preset_data.get("kakera_power_thresholds") or {}
     client.debug_mode = preset_data.get("debug_mode", False)
@@ -721,20 +742,21 @@ def configure_client(
 # events, none of which may be replaced while the client is running.
 LIVE_CONFIG_ATTRIBUTES = frozenset({
     "roll_command", "base_min_kakera", "roll_speed", "mudae_prefix",
-    "key_mode", "pause_on_key_limit", "delay_seconds", "use_slash_rolls",
+    "key_mode", "pause_on_key_limit", "key_limit_pause_scope", "delay_seconds", "use_slash_rolls",
     "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes",
     "slash_min_interval", "snipe_mode", "snipe_delay",
     "snipe_ignore_min_kakera_reset", "wishlist", "series_snipe_mode",
     "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
-    "account_role", "main_profile_id", "side_order", "side_rolls_for_main",
-    "side_rolls_max_per_reset", "side_claim_leftovers",
+    "account_role", "stored_account_role", "main_profile_id", "side_order", "side_rolls_for_main",
+    "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode",
+    "alts_claim_main_rolls",
     "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
     "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
     "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
     "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
     "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages",
-    "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
+    "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",
@@ -793,6 +815,11 @@ def apply_live_config(
     handles validation and recalculation of current threshold overrides.
     """
     projected = SimpleNamespace()
+    # A saved profile has no position: keep this account's own place among
+    # the profile's tokens so an alt stays an alt after a live reload.
+    preset_data = dict(preset_data)
+    preset_data["_account_index"] = getattr(client, "account_index", preset_data.get("_account_index", 1))
+    preset_data["_account_count"] = getattr(client, "account_count", preset_data.get("_account_count", 1))
     configure_client(
         projected,
         client.preset_name,
