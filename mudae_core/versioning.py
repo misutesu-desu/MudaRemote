@@ -6,7 +6,7 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "6.0.2"
+CURRENT_VERSION = "6.0.3"
 UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/{branch}/version.json"
 STABLE_RELEASE_MANIFEST_URL = "https://github.com/YoRu72/MudaPersonalFork/releases/latest/download/version.json"
 MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/{ref}/version.json"
