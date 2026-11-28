@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_bot.py",
-      "sha256": "4e46299827a3e98acb913e6bda151740727ba2b306629cd8fec55d8995ffe5ed"
+      "sha256": "efa65f3139be29f543817ef8b9785d2dbc4f2e4c1c9b419e6357c3e96813fef1"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_preset_editor.py",
-      "sha256": "a37fff8afef0e03f9b5182d74757106de1cda2e546beba577c2dd02b4991bc87"
+      "sha256": "0a49256596de851f3f5af535bc4415b719ea836e121fb5ad95f25f3f1e35c622"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -83,7 +83,7 @@
     {
       "path": "mudae_core/alt_roll_claim.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_core/alt_roll_claim.py",
-      "sha256": "ffe4e3603e57dd7d544d1572062444501e5967a52b2d724d0fc82e2ec51f5355"
+      "sha256": "e75b6c67aeed9da57e89fc65ce769ff63406b4120c002da72bd1ee96e9264db2"
     },
     {
       "path": "mudae_core/key_limit.py",

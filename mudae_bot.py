@@ -505,6 +505,7 @@ class _AccountLink:
         self.judge_alt_roll = None
         self.judge_kakera_share = None
         self.claim_best_roll = None
+        self.roll_interest = None
 
     @property
     def profile_id(self):
@@ -681,6 +682,31 @@ class _AccountLink:
         except asyncio.CancelledError:
             future.cancel()
             raise
+
+    async def ask_roll_interest(self, message_id, channel_id, timeout=3.0):
+        """Smart mode: ``(wanted, why)`` for a roll of the profile under THIS
+        account's own rules, judged on its own loop; None when unknown."""
+        interest = self.roll_interest
+        if interest is None or not self.is_ready() or self.channel_id != channel_id:
+            return None
+        try:
+            own_loop = self.client.loop
+        except Exception:
+            own_loop = None
+        current_loop = asyncio.get_running_loop()
+        try:
+            if own_loop is None or own_loop is current_loop or not own_loop.is_running():
+                return await asyncio.wait_for(interest(message_id), timeout=timeout)
+            future = asyncio.run_coroutine_threadsafe(interest(message_id), own_loop)
+            try:
+                return await asyncio.wait_for(asyncio.wrap_future(future), timeout=timeout)
+            except asyncio.TimeoutError:
+                future.cancel()
+                return None
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
 
     def handoff_capacity(self, channel_id=None):
         """«claim», «rt» or None: can this alt take a roll of its main now?
@@ -8196,8 +8222,17 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     client._alt_capacity_note = _coop.ChangeNote(initial=None)
     client._key_mode_note = _coop.ChangeNote(initial=False)
 
+    def smart_mode_on():
+        """«Smart» mode with either direction switch on: whoever can claim takes it, whoever rolled it."""
+        return _alt_claim.smart_on(getattr(client, _alt_claim.MODE_SETTING, None),
+                                   getattr(client, _alt_claim.SETTING, False),
+                                   getattr(client, _alt_claim.MIRROR_SETTING, False))
+
     def alt_handoff_on():
-        """«Alts claim good rolls made by the main», also implied by «Main keeps rolling while an alt can claim»."""
+        """«Alts claim good rolls made by the main», also implied by «Main keeps rolling while an alt can claim»
+        (and by smart mode, which treats both direction switches as on)."""
+        if smart_mode_on():
+            return True
         return _coop.handoff_enabled(getattr(client, "alts_claim_main_rolls", False),
                                      getattr(client, "main_rolls_while_alt_can_claim", False))
 
@@ -8378,10 +8413,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 key_mode_kakera_only=is_key_mode_kakera_only(),
                 claiming=bool(getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None),
                 # Key mode: both accounts always roll, so a running batch does not stop a hand-off.
-                rolling=bool((getattr(client, "is_actively_rolling", False)
+                # Smart mode, its own roll offered to itself: only after its batch, so the batch does not count.
+                rolling=bool(getattr(board.get(message_id), "offerer_key", None) != my_key and (
+                             (getattr(client, "is_actively_rolling", False)
                               and _coop.rolling_blocks_taking(client.key_mode))
                              or getattr(client, "collected_rolls", None)
-                             or getattr(client, "_claim_reset_rolls_pending", False)),
+                             or getattr(client, "_claim_reset_rolls_pending", False))),
                 judging_sides=_side_roll_coordinator.handoff_for_main(my_key) is not None,
                 lurking=main_is_lurking(),
                 why=why,
@@ -8435,6 +8472,28 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 board.main_pass(message_id, my_key, reason or "not judged")
 
     client._account_link.judge_alt_roll = judge_alt_roll_for_main
+
+    async def roll_interest_here(message_id):
+        """Smart mode: ``(wanted, why)`` for a roll of the profile under this account's own rules, or None."""
+        message = None
+        waited = 0.0
+        while True:
+            message = _cached_own_message(client, message_id)
+            if message is not None or waited >= _alt_claim.MESSAGE_LOOKUP_SECONDS:
+                break
+            await asyncio.sleep(0.1)
+            waited += 0.1
+        if message is None or not getattr(message, "embeds", None):
+            return None
+        if getattr(getattr(message, "channel", None), "id", None) != client.target_channel_id:
+            return None
+        embed = message.embeds[0]
+        if not is_character_embed(embed) or is_free_event(embed) or not has_claim_option(message, embed, client.claim_emojis):
+            return None
+        wanted, why, _ = await roll_interest_for_this_account(message)
+        return bool(wanted), why
+
+    client._account_link.roll_interest = roll_interest_here
 
     # ------------------------------------------------------------------
     # «Claim the best roll when nothing meets the minimum» (mudae_core.best_roll_claim)
@@ -8751,6 +8810,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         }
         if not (owner_id == client.user.id or bool(owner_name and owner_name in own_names)):
             return
+        if smart_mode_on():
+            if side_kind_for(client) is None:
+                # Runs beside this message's handling: the main does not wait for it.
+                client.loop.create_task(smart_share_own_roll(message))
+            return
         verdict = await main_roll_verdict_for_alts(message)
         if verdict is None:
             return
@@ -8759,7 +8823,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         client.loop.create_task(offer_main_rolls_to_alts([(message, card, why)]))
 
     async def offer_leftover_rolls_to_alts(messages):
-        """Main: after its own batch, good rolls it passed on (its claim is spent) go to the alts."""
+        """Main: after its own batch, good rolls it passed on (its claim is spent) go to the alts.
+
+        Smart mode: after its batch, any account's rolls it did not claim are decided for the profile."""
+        if smart_mode_on():
+            client.loop.create_task(smart_share_leftovers(list(messages or ())))
+            return
         if not alt_handoff_on() or side_kind_for(client) is not None:
             return
         items = []
@@ -8772,6 +8841,157 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 items.append((message, verdict[0], verdict[1]))
         if items:
             client.loop.create_task(offer_main_rolls_to_alts(items))
+
+    async def smart_share_leftovers(messages):
+        for message in messages:
+            try:
+                await smart_share_own_roll(message, after_batch=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                BotLogger.log(f"Smart hand-off error: {e}", preset_name, "ERROR", client)
+
+    async def smart_share_own_roll(message, *, after_batch=False, background=False):
+        """Smart mode: exactly one account of the profile claims this account's own roll.
+
+        Each account judges with its OWN rules (``roll_interest``) and live claim
+        state; ``_alt_claim.smart_ranking`` orders who is asked on the board
+        (one click, the existing judge). Returns True when this account must
+        leave the card, None when it follows its own rules.
+        ``after_batch``: called with the leftovers of its finished batch.
+        ``background`` (key mode): the wait runs beside this account's handling.
+        """
+        link = getattr(client, "_account_link", None)
+        if link is None or _side_roll_coordinator.handoff_for_side(link.key) is not None:
+            return None
+        embed = message.embeds[0] if getattr(message, "embeds", None) else None
+        if embed is None or not is_character_embed(embed) or is_free_event(embed):
+            return None
+        if get_character_owner(embed) is not None or not has_claim_option(message, embed, client.claim_emojis):
+            return None
+        if (_claim_coordinator.is_reserved(message.id) or message.id in client.processed_claim_messages
+                or _alt_roll_board.get(message.id) is not None):
+            return None
+        channel_id = message.channel.id
+        others = [handle for handle in sibling_links() if handle.channel_id == channel_id]
+        if not others:
+            return None
+        card = embed.author.name.strip()
+        own_wanted, own_why, k_val = await roll_interest_for_this_account(message)
+        refresh_predicted_claim_and_rt()
+        if own_wanted and side_kind_for(client) is None and main_keeps_for_reset():
+            return None  # the main saves it for its coming claim reset (as before)
+        own_open = not (client.is_paused or key_limit_blocks(client, AREA_OTHER) or is_key_mode_kakera_only()
+                        or is_maintenance_active() or is_inactive_hour()) and bool(
+            client.claim_right_available or (own_wanted and bot_may_use_rt() and can_spend_restore_on_character(
+                k_val, restore_min_kakera(), not _alt_claim.is_value_reason(own_why),
+                client.rt_ignore_min_kakera_for_wishlist)))
+        accounts = sorted([link, *others], key=lambda handle: getattr(handle, "account_index", 1) or 1)
+        main_handle = next((handle for handle in accounts if (getattr(handle, "account_index", 1) or 1) == 1), None)
+        roller_is_main = main_handle is link
+        # $rt for someone else's roll only where it already was allowed: an alt on a roll of the main.
+        allow_restore = bool(roller_is_main and getattr(client, "main_rolls_while_alt_can_claim", False))
+        answers = await asyncio.gather(
+            *(handle.ask_roll_interest(message.id, channel_id, timeout=_alt_claim.MESSAGE_LOOKUP_SECONDS + 1.5)
+              for handle in others),
+            return_exceptions=True)
+        labels = {link.key: _alt_claim.roller_label_for(account_label_for(client) or ("main" if roller_is_main else "alt"))}
+        good = {link.key: bool(own_wanted)}
+        whys = {link.key: own_why}
+        can = {link.key: own_open}
+        for handle, answer in zip(others, answers):
+            is_alt = handle is not main_handle
+            labels[handle.key] = _alt_claim.roller_label_for(
+                account_label_for(handle.client) or ("alt" if is_alt else "main"))
+            if isinstance(answer, tuple) and len(answer) == 2:
+                good[handle.key], whys[handle.key] = bool(answer[0]), answer[1]
+            else:
+                good[handle.key] = False
+            try:
+                can[handle.key] = handle.alt_roll_precheck(allow_restore=allow_restore and is_alt) is None
+            except Exception:
+                can[handle.key] = False
+        ranking = _alt_claim.smart_ranking(roller=link.key, order=[handle.key for handle in accounts],
+                                           good=good, can_claim=can,
+                                           main_key=getattr(main_handle, "key", None))
+        if not ranking:
+            if any(good.values()):
+                BotLogger.log(f"smart: nobody of this profile can claim \u2068{card}\u2069 now.", preset_name, "DEBUG", client)
+            return None
+        if ranking[0] == link.key and good[link.key]:
+            return None  # its own good roll, and it can claim it: its own rules
+        takers = []
+        for key in ranking:
+            if key == link.key:
+                if good[link.key]:
+                    break  # the others first; if they all pass, its own rules
+                if (not after_batch and getattr(client, "is_actively_rolling", False)
+                        and _coop.rolling_blocks_taking(client.key_mode)):
+                    # Mid-batch: the accounts before it are asked now; with none, it is
+                    # decided again with its batch's leftovers.
+                    break
+            takers.append(key)
+        if not takers:
+            return None
+        by_key = {handle.key: handle for handle in accounts}
+        roller_label = labels[link.key]
+        first_why = next((whys.get(key) for key in [handle.key for handle in accounts] if good.get(key)), "") or "good roll"
+        created_at = getattr(message, "created_at", None)
+        age = 0.0
+        if created_at is not None:
+            try:
+                age = min(max((datetime.datetime.now(timezone.utc) - created_at).total_seconds(), 0.0), 60.0)
+            except Exception:
+                age = 0.0
+        deadline = time.monotonic() - age + _best_roll.CLAIM_WINDOW_SECONDS - _best_roll.CLAIM_SAFETY_MARGIN_SECONDS
+
+        def start(key):
+            why = whys.get(key) if good.get(key) else first_why
+            return by_key[key].start_alt_roll_judge(message.id, channel_id, roller_label, card, trusted_why=why or first_why)
+
+        async def run():
+            state, taker_key = await _alt_roll_board.offer_in_turn(
+                message.id, offerer_key=link.key, offerer_label=roller_label, card=card, takers=takers,
+                start=start, sleep=active_delay, candidates=[handle.key for handle in others], deadline=deadline,
+            )
+            taker = by_key.get(taker_key)
+            taker_label = labels.get(taker_key) or "an account"
+            if state in (_alt_claim.CLAIMED, _alt_claim.TAKING):
+                client.processed_claim_messages.add(message.id)
+                if state == _alt_claim.CLAIMED:
+                    reason = _alt_claim.smart_reason(taker_key, roller=link.key, good=good, can_claim=can, labels=labels)
+                    BotLogger.log(_alt_claim.smart_line(card, roller_label, taker_label, reason), preset_name, "CLAIM",
+                                  taker.client if taker is not None else client)
+                if taker_key != link.key:
+                    BotLogger.log(_alt_claim.left_line(card, taker_label), preset_name, "CLAIM", client)
+                return True
+            if state == _alt_claim.GAVE_UP:
+                BotLogger.log(f"{taker_label} did not answer in time about \u2068{card}\u2069; nobody else tries.", preset_name, "INFO", client)
+            elif state == _alt_claim.FAILED:
+                BotLogger.log(f"{taker_label} could not claim \u2068{card}\u2069; nobody else tries.", preset_name, "INFO", client)
+            elif state == _alt_claim.PASSED:
+                BotLogger.log(_alt_claim.not_taken_line(card, roller_label, "smart: nobody could take it"), preset_name, "DEBUG", client)
+            return False
+
+        if not background:
+            return await run()
+
+        async def run_beside():
+            # Key mode: when nobody took it and it is good for this account, its own rules afterwards
+            # (its claim paths skipped the card while the offer was open).
+            try:
+                left = await run()
+                if left is False and own_wanted and not _claim_coordinator.is_reserved(message.id):
+                    fresh = _cached_own_message(client, message.id) or message
+                    await handle_collected_mudae_messages(client, message.channel, [fresh], False, False)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                BotLogger.log(f"Smart hand-off error: {e}", preset_name, "ERROR", client)
+
+        client.loop.create_task(run_beside())
+        await asyncio.sleep(0)  # the offer is open before this account's own claim paths run
+        return None
 
     async def alt_would_claim_own_roll(message):
         """Alt: would this account claim its own roll under its own rules right now?"""
@@ -8795,8 +9015,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         account's own claim paths run; the wait for the main runs beside them
         and None is returned at once.
         """
-        if not getattr(client, "main_claims_alt_rolls", False) or side_kind_for(client) != "alt":
-            return None
+        if not smart_mode_on() and not getattr(client, "main_claims_alt_rolls", False) or side_kind_for(client) != "alt":
+            return None  # (smart mode counts this switch as on when either direction switch is on)
         link = getattr(client, "_account_link", None)
         if link is None or _side_roll_coordinator.handoff_for_side(link.key) is not None:
             return None
@@ -8819,6 +9039,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if main_link.channel_id != message.channel.id:
             BotLogger.log(f"Main does not roll in this channel; keeping \u2068{card}\u2069 to the alt's own rules.", preset_name, "DEBUG", client)
             return None
+        if smart_mode_on():
+            # One decision for the whole profile (main, this alt, the other alts).
+            return await smart_share_own_roll(message, background=background)
         alt_wants = await alt_would_claim_own_roll(message)
         if not _alt_claim.main_should_be_asked(client.main_claims_alt_rolls_mode, alt_wants):
             return None
@@ -10985,7 +11208,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         schedule_farm_release_after_other_claim(message)
 
-        if character_roll_origin is not None and getattr(client, "main_claims_alt_rolls", False):
+        if character_roll_origin is not None and (getattr(client, "main_claims_alt_rolls", False) or smart_mode_on()):
             # Kakera on the roll is still collected below; a card left to the
             # main is marked processed/completed so no claim path takes it.
             # Key mode: the offer opens now, but the main decides beside this account's

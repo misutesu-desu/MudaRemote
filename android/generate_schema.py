@@ -204,7 +204,8 @@ def main(project_root, output_dir):
     # field takes no space in the app and keeps its stored value; the app shows or hides it at once when the
     # controlling field changes. Only fields that the controlling field really switches off are listed: a
     # field that a manual «now» action also reads (spheres_keep, give_kakera_button_minimum, perk10_max_characters,
-    # perk10_amount, side_perk10) stays visible.
+    # perk10_amount, side_perk10) stays visible. main_claims_alt_rolls_mode stays visible too: its «smart»
+    # choice applies with either «Main claims good rolls made by its alts» or «Alts claim good rolls made by the main».
     def when(field, equals):
         return {"field": field, "equals": equals}
 
@@ -223,7 +224,6 @@ def main(project_root, output_dir):
         "sphere_give_interval_min": when("auto_give_spheres", True),
         "perk10_min_spheres": when("auto_perk10", True),
         "perk10_daily_cap": when("auto_perk10", True),
-        "main_claims_alt_rolls_mode": when("main_claims_alt_rolls", True),
         "key_limit_pause_scope": when("pause_on_key_limit", True),
         "claim_best_when": when("claim_best_when_nothing_qualifies", True),
         "claim_best_min_kakera": when("claim_best_when_nothing_qualifies", True),

@@ -677,7 +677,7 @@ DEFAULTS = {
     "side_rolls_max_per_reset": 1,
     "side_claim_leftovers": False,
     "main_claims_alt_rolls": False,
-    "main_claims_alt_rolls_mode": "when the alt would not claim",
+    "main_claims_alt_rolls_mode": "smart",
     "alts_claim_main_rolls": False,
     "main_rolls_while_alt_can_claim": False,
     "accounts_share_kakera_reacts": False,
@@ -1012,6 +1012,7 @@ MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "auto_give_harem", "auto
 ALT_ROLL_CLAIM_MODE_CHOICES = {
     "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
     "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+    "smart": "Smart (whoever can claim takes it, whoever rolled it)",
 }
 # «Claim the best roll when nothing meets the minimum»: when (mudae_core.best_roll_claim.WHEN_CHOICES).
 CLAIM_BEST_WHEN_CHOICES = {
@@ -3439,8 +3440,13 @@ class PresetEditor:
             roles_frame.content, "main_claims_alt_rolls_mode", "Which good alt rolls the main takes", {
                 "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
                 "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+                "smart": "Smart (whoever can claim takes it, whoever rolled it)",
             },
-            description="Only matters with «Main claims good rolls made by its alts» on.",
+            description="Smart: a roll of the main or of any alt that is good for any account's own rules is claimed by "
+                        "one account that has a claim: the one it is good for (the main first, then the roller, then the "
+                        "alts in order), else another account with a claim so it is not lost. In smart mode «Main claims "
+                        "good rolls made by its alts» and «Alts claim good rolls made by the main» both count as on when "
+                        "either is on. The other two choices only matter with «Main claims good rolls made by its alts» on.",
         )
         self.add_checkbox(
             roles_frame.content, "alts_claim_main_rolls", "Alts claim good rolls made by the main",

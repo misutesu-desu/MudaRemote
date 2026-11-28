@@ -112,7 +112,7 @@ async def main_judge(board, main, card, alt_label="alt 1", logs=None):
         board.main_finish(card["id"], main.key, claimed)
 
 
-async def alt_sees_own_roll(board, alt, main, main_thread, card, *, option=True, mode=arc.DEFAULT_MODE,
+async def alt_sees_own_roll(board, alt, main, main_thread, card, *, option=True, mode=arc.MODE_WHEN_ALT_PASSES,
                             decision_timeout=arc.DECISION_WAIT_SECONDS, result_timeout=5.0, logs=None):
     """offer_own_roll_to_main + the alt's own claim paths after it."""
     logs = logs if logs is not None else []
@@ -449,9 +449,11 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(arc.claim_blocker(lurking=True, why="min kakera, 300 ka"), "waits for its claim hour (Lurker)")
 
     def test_modes(self):
-        self.assertEqual(arc.normalize_mode(None), arc.MODE_WHEN_ALT_PASSES)
+        self.assertEqual(arc.normalize_mode(None), arc.MODE_SMART, "smart is the default for new presets")
+        self.assertEqual(arc.normalize_mode("when the alt would not claim"), arc.MODE_WHEN_ALT_PASSES)
+        self.assertEqual(arc.normalize_mode("Smart"), arc.MODE_SMART)
         self.assertEqual(arc.normalize_mode("prefer_main"), arc.MODE_PREFER_MAIN)
-        self.assertEqual(arc.normalize_mode("nonsense"), arc.MODE_WHEN_ALT_PASSES)
+        self.assertEqual(arc.normalize_mode("nonsense"), arc.DEFAULT_MODE)
         self.assertFalse(arc.main_should_be_asked(arc.MODE_WHEN_ALT_PASSES, True))
         self.assertTrue(arc.main_should_be_asked(arc.MODE_WHEN_ALT_PASSES, False))
         self.assertTrue(arc.main_should_be_asked(arc.MODE_PREFER_MAIN, True))
@@ -490,7 +492,9 @@ class SettingsWiring(unittest.TestCase):
     def test_off_by_default(self):
         client = self.configured({})
         self.assertFalse(client.main_claims_alt_rolls)
-        self.assertEqual(client.main_claims_alt_rolls_mode, arc.MODE_WHEN_ALT_PASSES)
+        self.assertEqual(client.main_claims_alt_rolls_mode, arc.MODE_SMART)
+        self.assertEqual(self.configured({"main_claims_alt_rolls_mode": "when the alt would not claim"})
+                         .main_claims_alt_rolls_mode, arc.MODE_WHEN_ALT_PASSES, "a stored old mode keeps working")
 
     def test_on_and_live(self):
         client = self.configured({"main_claims_alt_rolls": True, "main_claims_alt_rolls_mode": "prefer the main"})
@@ -534,7 +538,7 @@ class SettingsWiring(unittest.TestCase):
     def test_editor_and_android_schema(self):
         editor = (ROOT / "mudae_preset_editor.py").read_text(encoding="utf-8")
         self.assertIn('"main_claims_alt_rolls": False,', editor)
-        self.assertIn('"main_claims_alt_rolls_mode": "when the alt would not claim",', editor)
+        self.assertIn('"main_claims_alt_rolls_mode": "smart",', editor)
         with tempfile.TemporaryDirectory() as folder:
             subprocess.run([sys.executable, str(ROOT / "android" / "generate_schema.py"), str(ROOT), folder],
                            check=True)
@@ -551,7 +555,9 @@ class SettingsWiring(unittest.TestCase):
         mode = fields["main_claims_alt_rolls_mode"]
         self.assertEqual(mode["section"], "Main & alts")
         self.assertEqual(set(mode["choices"]), set(arc.MODES))
-        self.assertEqual(mode["default"], arc.MODE_WHEN_ALT_PASSES)
+        self.assertEqual(mode["default"], arc.MODE_SMART)
+        self.assertEqual(mode["choices"][arc.MODE_SMART], "Smart (whoever can claim takes it, whoever rolled it)")
+        self.assertNotIn("visible_when", mode, "its smart choice also applies with «Alts claim good rolls made by the main»")
 
 
 if __name__ == "__main__":
