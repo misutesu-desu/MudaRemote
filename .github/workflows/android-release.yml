@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event_name == 'push' && github.ref_name || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
