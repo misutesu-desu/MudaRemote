@@ -7,6 +7,9 @@ import re
 import datetime
 import uuid
 
+from .auto_give import validate_auto_give_settings
+from .perk_upgrade import validate_perk10_settings
+
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$")
 
@@ -345,6 +348,9 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
             errors.append("auto_dk_min_power cannot exceed max_dk_power.")
     except (TypeError, ValueError):
         pass
+
+    errors.extend(validate_perk10_settings(data))
+    errors.extend(validate_auto_give_settings(data))
 
     if data.get("kakera_filter_match_mode", "all") not in ("all", "any"):
         errors.append("Match selected filters must be All (all) or Any (any).")

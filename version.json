@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_bot.py",
-      "sha256": "d9f68187b6de6319cefeef0cfe51f3fc6ffce5cc6dcf69500debb226123d80e4"
+      "sha256": "e59a06d14cb7d30bf537b61cf8fd55b3b752cd4865462b422d7e35936b575b0b"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_preset_editor.py",
-      "sha256": "de2849d157913d26e7dbbe8558a2d7920e01b199a621fb3e2e73bf4e5cc2797a"
+      "sha256": "8ab5e16237a91a9d57c6fd9290df18d00994cf15c15edd49c3b8a59da1a59f76"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -28,7 +28,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/config.py",
-      "sha256": "35524d60ca62503c6b18e2909b7caab7f6243c0f2a6c1d457ea9a29d1896a4eb"
+      "sha256": "485a866c81ae189e230199c5ca68305bb0d458ddabd3d15234b638022201553b"
     },
     {
       "path": "mudae_core/kakera.py",
@@ -83,7 +83,7 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/bot_config.py",
-      "sha256": "1d136f9af675560986186477daafe3dc77480fc0cc54f328d62ab7019d1eca88"
+      "sha256": "1e10f3b3a512626a97c3cd497ddbaa56295bd6eafeb9a4ec6c8ed7e905565846"
     },
     {
       "path": "mudae_core/activity_events.py",
@@ -144,6 +144,26 @@
       "path": "mudae_core/preset_reload.py",
       "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/preset_reload.py",
       "sha256": "f892663b8cf9583ae926ad92379b1bd7048f74845bb03545797296bdf19129d5"
+    },
+    {
+      "path": "mudae_core/harem_list.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/harem_list.py",
+      "sha256": "ceb5a83726abb1ce2e16041a71d48387c3a5736e1a62d366ec27c442234fd3dc"
+    },
+    {
+      "path": "mudae_core/sphere_stock.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/sphere_stock.py",
+      "sha256": "73846d2c7cadca0e1cc221037d0add8c0c396f878962fefc522cc380028009af"
+    },
+    {
+      "path": "mudae_core/perk_upgrade.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/perk_upgrade.py",
+      "sha256": "85927ca792a9ef05aae2db931adbdf18383ecb2480d0d1d02ad07331abeb7802"
+    },
+    {
+      "path": "mudae_core/auto_give.py",
+      "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v5.3.9/mudae_core/auto_give.py",
+      "sha256": "df9b2a08021614ab8fde955ac3453d99a302fe662a106e2910a27a869c3afcaa"
     }
   ],
   "apk_version": "1.2.37",
