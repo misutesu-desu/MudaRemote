@@ -218,7 +218,6 @@ capture_harem_choice() {
     return 1
   fi
   reveal_text "Give when my harem reaches" || return 1
-  nudge_up
   shot "$OUT/harem-1-collapsed.png" || true
   tap_text "Give when my harem reaches" || return 1
   shot "$OUT/harem-2-expanded.png" || true
