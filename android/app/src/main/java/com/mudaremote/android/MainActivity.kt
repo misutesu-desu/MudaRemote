@@ -340,6 +340,20 @@ class MainActivity : ComponentActivity() {
         val bottomBarView = buildStickyBottomBar()
         root.addView(bottomBarView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
+        // The scroll content ends above the dock: bottom padding = the dock's measured height
+        // (it already includes the system-bar inset) + a gap, kept in step with every layout change.
+        var keyboardExtra = 0
+        fun syncContentBottomPadding() {
+            val dockHeight = if (bottomBarView.height > 0) bottomBarView.height else UiTheme.dp(this, 96)
+            val wanted = dockHeight + keyboardExtra + UiTheme.dp(this, 16)
+            if (scrollContent.paddingBottom != wanted) {
+                scrollContent.setPadding(scrollContent.paddingLeft, scrollContent.paddingTop, scrollContent.paddingRight, wanted)
+            }
+        }
+        bottomBarView.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) syncContentBottomPadding()
+        }
+
         // Window Insets listener to safely avoid status bar, notch, and navigation buttons
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val sysInsets = insets.getInsets(
@@ -348,19 +362,23 @@ class MainActivity : ComponentActivity() {
 
             // The keyboard (adjustResize) is in the ime inset; the dock stays above the system bars.
             val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            keyboardExtra = maxOf(0, imeBottom - sysInsets.bottom)
             scrollContent.setPadding(
                 UiTheme.dp(this@MainActivity, 16) + sysInsets.left,
                 sysInsets.top + UiTheme.dp(this@MainActivity, 12),
                 UiTheme.dp(this@MainActivity, 16) + sysInsets.right,
-                maxOf(sysInsets.bottom, imeBottom) + UiTheme.dp(this@MainActivity, 120)
+                scrollContent.paddingBottom
             )
 
             bottomBarView.setPadding(
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.left,
-                0,
+                UiTheme.dp(this@MainActivity, 8),
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.right,
                 sysInsets.bottom + UiTheme.dp(this@MainActivity, 10)
             )
+            // The dock's padding just changed; its height follows on the next layout pass, which
+            // re-syncs through the layout listener. Sync now too for the keyboard part.
+            syncContentBottomPadding()
 
             insets
         }
@@ -418,18 +436,16 @@ class MainActivity : ComponentActivity() {
         }
         card.addView(desc)
 
-        // Three equal-width actions.
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Three actions at their natural width on a wrapping row: short one-line labels, so nothing
+        // is cut at a large font size; a button that does not fit moves to the next line whole.
+        val actionsRow = FlowLayout(this)
+        fun oneLine(button: TextView): TextView = button.apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-
-        val btnBattery = createGitHubButton("Keep running") { scrollToKeepRunning() }
-        val btnCheckUpdates = createGitHubButton("Fetch updates") { checkPythonUpdates(force = true) }
-        val btnImportPresets = createGitHubButton("Import presets") { presetsPicker.launch(arrayOf("application/json", "text/plain")) }
-
-        actionsRow.addView(btnBattery, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        actionsRow.addView(btnCheckUpdates, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        actionsRow.addView(btnImportPresets, LinearLayout.LayoutParams(0, -2, 1f))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Keep running", UiTheme.ButtonStyle.TONAL) { _ -> scrollToKeepRunning() }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Check updates", UiTheme.ButtonStyle.TONAL) { _ -> checkPythonUpdates(force = true) }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Import", UiTheme.ButtonStyle.TONAL) { _ -> presetsPicker.launch(arrayOf("application/json", "text/plain")) }))
         card.addView(actionsRow)
 
         return card.apply {
@@ -467,7 +483,7 @@ class MainActivity : ComponentActivity() {
         card.addView(headerRow)
 
         card.addView(TextView(this).apply {
-            text = "Pick a profile to edit it. Run starts the open profile; hold Run to pick several."
+            text = "Pick a profile to edit it. Run (at the bottom) starts the open profile; hold Run to pick several."
             UiTheme.styleSupporting(this)
             setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, 0)
         })
@@ -501,21 +517,6 @@ class MainActivity : ComponentActivity() {
         summaryRow.addView(profileRoleChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
         summaryRow.addView(profileRunChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
         card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
-
-        // Quick actions: equal widths, never touching
-        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val runBtn = createGitHubButton("Run", UiTheme.ButtonStyle.FILLED, HapticFeedbackConstants.CONFIRM) { startRuntime(listOf(currentProfile)) }.apply {
-            contentDescription = "Start the open profile. Hold to pick several profiles."
-            setOnLongClickListener {
-                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                showStartOptionsDialog()
-                true
-            }
-        }
-        val stopBtn = createGitHubButton("Stop all", UiTheme.ButtonStyle.DANGER, HapticFeedbackConstants.REJECT) { doStopAll() }
-        quickRow.addView(runBtn, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
-        quickRow.addView(stopBtn, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(quickRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 12) })
 
         giveKakeraQuickBtn = createGitHubButton("Give all kakera", UiTheme.ButtonStyle.TONAL) { requestGiveAllKakera() }
         card.addView(giveKakeraQuickBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
@@ -712,7 +713,7 @@ class MainActivity : ComponentActivity() {
         }
 
         searchInput = EditText(this).apply {
-            hint = "Search settings (snipe, kakera, speed...)"
+            hint = "Search settings"
             textSize = UiTheme.TYPE_BODY
             maxLines = 1
             setSingleLine(true)
@@ -941,7 +942,7 @@ class MainActivity : ComponentActivity() {
             text = "Newest first · the last 200 entries of this launch"
             UiTheme.styleSupporting(this)
             setTextColor(UiTheme.TEXT_MUTED)
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPaddingRelative(UiTheme.dp(this@MainActivity, 4), 0, 0, UiTheme.dp(this@MainActivity, 8))
         }
@@ -996,9 +997,10 @@ class MainActivity : ComponentActivity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            // Fully opaque: nothing of the scrolled content shows through behind the dock.
             background = UiTheme.cardDrawable(
                 this@MainActivity,
-                UiTheme.withAlpha(UiTheme.SURFACE_CONTAINER_HIGH, 0xF5),
+                UiTheme.SURFACE_CONTAINER_HIGH,
                 Color.TRANSPARENT,
                 radiusDp = UiTheme.SHAPE_XL,
                 strokeWidthDp = 0f
@@ -1025,7 +1027,9 @@ class MainActivity : ComponentActivity() {
         dock.addView(btnStop, LinearLayout.LayoutParams(0, -2, 1f))
 
         return FrameLayout(this).apply {
-            setPadding(UiTheme.dp(this@MainActivity, 12), 0, UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+            // Opaque strip behind the dock (and the system navigation area under it).
+            setBackgroundColor(UiTheme.BG_APP)
+            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
             addView(dock)
         }
     }
@@ -1310,7 +1314,7 @@ class MainActivity : ComponentActivity() {
                 headerText.addView(TextView(this).apply {
                     text = getSectionDescription(section)
                     UiTheme.styleSupporting(this)
-                    maxLines = 1
+                    maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
                 headerLayout.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
@@ -1468,11 +1472,12 @@ class MainActivity : ComponentActivity() {
             note = NO_ALTS_HINT
         }
         note?.let { text ->
-            (view as? LinearLayout)?.addView(TextView(this).apply {
+            // A switch row keeps its note inside the row surface; other fields put it underneath.
+            val target = (view.findViewWithTag<View>("switch_row") as? LinearLayout) ?: (view as? LinearLayout)
+            target?.addView(TextView(this).apply {
                 this.text = text
-                UiTheme.styleSupporting(this)
-                setTextColor(UiTheme.TEXT_MUTED)
-                setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, 0)
+                UiTheme.styleRowDescription(this)
+                setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
             })
         }
         return view
@@ -1648,33 +1653,28 @@ class MainActivity : ComponentActivity() {
 
         when (value) {
             is Boolean -> {
-                // Switch Card
+                // Switch row: title and switch on the first line (switch at the top end), the
+                // description full width under them, notes inside the same row surface.
                 val switchCard = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH)
+                    orientation = LinearLayout.VERTICAL
+                    background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH, UiTheme.SHAPE_LG)
                     minimumHeight = UiTheme.dp(this@MainActivity, 56)
-                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12))
+                    tag = "switch_row"
                 }
 
-                val textCol = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
+                val topLine = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.TOP
                 }
                 val label = TextView(this).apply {
                     text = labelText
                     UiTheme.styleLabel(this)
                 }
-                textCol.addView(label)
-
-                if (descriptionText.isNotBlank()) {
-                    val desc = TextView(this).apply {
-                        text = descriptionText
-                        UiTheme.styleSupporting(this)
-                        setPaddingRelative(0, UiTheme.dp(this@MainActivity, 2), 0, 0)
-                    }
-                    textCol.addView(desc)
-                }
-                switchCard.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+                topLine.addView(label, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    // Centre the title on the 48dp switch for the common one-line case.
+                    topMargin = UiTheme.dp(this@MainActivity, 10)
+                })
 
                 val switchView = Switch(this).apply {
                     UiTheme.styleSwitch(this)
@@ -1682,7 +1682,16 @@ class MainActivity : ComponentActivity() {
                     tag = key
                     contentDescription = labelText
                 }
-                switchCard.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+                topLine.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+                switchCard.addView(topLine, LinearLayout.LayoutParams(-1, -2))
+
+                if (descriptionText.isNotBlank()) {
+                    val desc = TextView(this).apply {
+                        text = descriptionText
+                        UiTheme.styleRowDescription(this)
+                    }
+                    switchCard.addView(desc, LinearLayout.LayoutParams(-1, -2))
+                }
 
                 switchCard.setOnClickListener {
                     switchView.isChecked = !switchView.isChecked
@@ -2398,16 +2407,26 @@ class MainActivity : ComponentActivity() {
                     .callAttr("get_runtime_info", filesDir.absolutePath)
                     .toString()
                 val info = JSONObject(infoJson)
-                val installed = info.optString("installed_version", info.optString("current_version", "4.9.1-beta.2"))
-                val live = info.optString("live_version", "")
+                // A JSON null must read as "unknown": optString turns it into the text "null".
+                fun versionOf(key: String): String {
+                    if (info.isNull(key)) return ""
+                    val text = info.optString(key, "").trim()
+                    return if (text.equals("null", ignoreCase = true)) "" else text
+                }
+                val installed = versionOf("installed_version").ifBlank { versionOf("current_version") }
+                val live = versionOf("live_version")
                 val isUpdated = info.optBoolean("is_updated", false)
                 val isStaged = info.optBoolean("is_staged", false)
-                val displayVer = if (live.isNotBlank()) live else installed
-                val statusTag = if (isStaged) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
+                val displayVer = live.ifBlank { installed }
+                val statusTag = if (isStaged && installed.isNotBlank()) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
                 val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
                 val isBeta = prefs.getBoolean("pref_beta_channel", true)
                 val channelBadge = if (isBeta) "[Beta]" else "[Stable]"
-                val label = "Python engine v$displayVer $statusTag $channelBadge"
+                val label = if (displayVer.isBlank()) {
+                    "Python engine (bundled) $channelBadge"
+                } else {
+                    "Python engine v$displayVer $statusTag $channelBadge"
+                }
                 lastEngineLabel = label
                 runOnUiThread {
                     if (::engineVersionText.isInitialized) {

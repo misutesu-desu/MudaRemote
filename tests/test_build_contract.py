@@ -129,6 +129,23 @@ class BuildContractTests(unittest.TestCase):
         manifest = read_project_file("android", "app", "src", "main", "AndroidManifest.xml")
         self.assertIn('android:label="MudaFork"', manifest)
 
+    def test_ci_runs_the_app_in_an_emulator_and_uploads_screenshots(self):
+        ci = read_project_file(".github", "workflows", "ci.yml")
+        self.assertIn("android-screens:", ci)
+        self.assertIn("reactivecircus/android-emulator-runner@v2", ci)
+        self.assertIn("android/scripts/screens.sh", ci)
+        self.assertIn("name: MudaFork-screens", ci)
+        script = read_project_file("android", "scripts", "screens.sh")
+        for needle in ("screencap -p", "font_scale 1.3", "debug.force_rtl", "gfxinfo", "meminfo"):
+            self.assertIn(needle, script)
+
+    def test_release_apk_is_arm64_only_while_debug_keeps_the_emulator_abi(self):
+        gradle = read_project_file("android", "app", "build.gradle.kts")
+        self.assertIn("abiFilters += mudaAbis", gradle)
+        self.assertIn('listOf("arm64-v8a", "x86_64")', gradle)
+        release = read_project_file(".github", "workflows", "android-release.yml")
+        self.assertIn("-PmudaAbis=arm64-v8a", release)
+
 
 if __name__ == "__main__":
     unittest.main()

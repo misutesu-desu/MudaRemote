@@ -17,6 +17,14 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 val hasReleaseSigning = keystoreProperties.isNotEmpty()
+
+// ABIs packaged into the APK (Chaquopy takes them from ndk.abiFilters). The default keeps both the
+// phone ABI and x86_64 so the debug build runs in the CI emulator; the release workflow passes
+// -PmudaAbis=arm64-v8a to ship a phone-only APK (the x86_64 Python runtime is the bulk of the saving).
+val mudaAbis: List<String> = (findProperty("mudaAbis") as String?)
+    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+    ?.takeIf { it.isNotEmpty() }
+    ?: listOf("arm64-v8a", "x86_64")
 val preparePythonRuntime by tasks.registering(Sync::class) {
     from(projectDir.parentFile.parentFile) {
         include("mudae_bot.py", "mudae_core/**/*.py")
@@ -41,11 +49,11 @@ android {
         applicationId = "com.mudafork.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "6.0.0"
+        versionCode = 2
+        versionName = "6.0.1"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += mudaAbis
         }
     }
 

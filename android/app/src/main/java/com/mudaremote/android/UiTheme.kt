@@ -273,6 +273,9 @@ object UiTheme {
         view.gravity = Gravity.CENTER
         view.maxLines = 2
         view.ellipsize = TextUtils.TruncateAt.END
+        // Wrap only between words: never hyphenate or split a word mid-way.
+        view.breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
+        view.hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
         view.minHeight = dp(c, 48)
         view.minimumHeight = dp(c, 48)
         val h = dp(c, if (compact) 16 else 24)
@@ -383,6 +386,14 @@ object UiTheme {
         view.textSize = TYPE_SUPPORTING
         view.typeface = Typeface.DEFAULT
         view.setTextColor(ON_SURFACE_VARIANT)
+        view.setLineSpacing(0f, 1.15f)
+    }
+
+    /** A setting's description inside a row: one step smaller and dimmer than [styleSupporting]. */
+    fun styleRowDescription(view: TextView) {
+        view.textSize = TYPE_LABEL
+        view.typeface = Typeface.DEFAULT
+        view.setTextColor(ON_SURFACE_DIM)
         view.setLineSpacing(0f, 1.15f)
     }
 
