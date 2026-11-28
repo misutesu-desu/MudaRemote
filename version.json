@@ -13,7 +13,7 @@
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_preset_editor.py",
-      "sha256": "3665eabbf025e5832148abf04c6145e4e2d37271f8cd66a6a99941ff99ad02be"
+      "sha256": "a37fff8afef0e03f9b5182d74757106de1cda2e546beba577c2dd02b4991bc87"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -63,12 +63,12 @@
     {
       "path": "mudae_core/harem_give.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_core/harem_give.py",
-      "sha256": "ceb028ac2ed6ac853a4c600c7e9f23f2103fa8450850aa2c11ef90613d918e36"
+      "sha256": "6aebb5cccd28e750f1a56dd207229243263cb7d2dea8c326fbf69a381fdd8c91"
     },
     {
       "path": "mudae_core/perk_upgrade.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.3/mudae_core/perk_upgrade.py",
-      "sha256": "e060f5548a9b0cf3b1fdca20cfe187c5a7ba710db43887e840515df2cb79367f"
+      "sha256": "a6c4b0baaf1210b35307cec073b778ca7cf397a74caf3a0b52e728f4f6d9031a"
     },
     {
       "path": "mudae_core/sphere_give.py",
