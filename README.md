@@ -15,10 +15,7 @@
 ---
 
 > [!WARNING]
-> Automating a user account (a self-bot) is against Discord's Terms of Service and can get the account banned.
-
-MudaFork is a fork of [MudaRemote](https://github.com/misutesu-desu/MudaRemote) (MIT, Copyright (c) 2025 Mystes). The original license is kept in [LICENSE](LICENSE). MudaFork updates only from its own releases at [YoRu72/MudaPersonalFork](https://github.com/YoRu72/MudaPersonalFork).
-
+> Automating a user account (a self-
 ## What the fork adds
 
 - Side rolls and gives
