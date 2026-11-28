@@ -414,6 +414,9 @@ from mudae_core.account_state import AccountStateStore, default_state_path  # no
 from mudae_core.fast_setup import FastSetup  # noqa: E402
 from mudae_core.kakera_give import BotReply, GiveSettings, KakeraGiver  # noqa: E402
 from mudae_core.totals import TotalsBook, account_key, parse_sphere_game_result  # noqa: E402
+# Harem list reader and auto-give harem pages to the main (pure logic in
+# mudae_core.harem_list / harem_give; this file only wires it).
+from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_receiving  # noqa: E402
 _totals_book = TotalsBook()
 _account_state_store = None
 _account_state_store_lock = threading.Lock()
@@ -524,6 +527,35 @@ class _AccountLink:
         if deadline is None:
             return ("unknown",)
         return ("deadline", deadline.replace(second=0, microsecond=0))
+
+    # Main side of a harem give ($give): the side asks the running Main to answer.
+    def busy_reason(self):
+        check = getattr(self.client, "_gift_busy_reason", None)
+        if check is None:
+            return "not ready"
+        try:
+            return check()
+        except Exception:
+            return "state unknown"
+
+    async def answer(self, channel_id, text):
+        """Send y/n as this (Main) account, on its own event loop."""
+        send = getattr(self.client, "_gift_answer", None)
+        if send is None:
+            return None
+        try:
+            main_loop = self.client.loop
+        except Exception:
+            main_loop = None
+        current_loop = asyncio.get_running_loop()
+        if main_loop is None or main_loop is current_loop or not main_loop.is_running():
+            return await send(channel_id, text)
+        future = asyncio.run_coroutine_threadsafe(send(channel_id, text), main_loop)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
 
     # Side side of the hand-off: run the rolls on this account's own loop.
     async def run_handoff_rolls(self, handoff):
@@ -1420,10 +1452,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         wait=lambda seconds: active_delay(seconds),
         log=lambda message, level: BotLogger.log(message, preset_name, level),
     )
+    client._harem_give_task = None
+    client._harem_give_last_skip = None
+    # Pages are turned with the list's buttons through guarded_click (as for
+    # kakera buttons and sphere boards); edits arrive through on_message_edit.
+    client.harem_giver = HaremGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        click=lambda button: guarded_click(button),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
     client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
     client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
     def apply_saved_settings(data):
+        previous_give_now_round = getattr(client, "give_kakera_now_round", 0)
         changed = apply_live_config(
             client, data, bot_name=BOT_NAME, claim_emojis=CLAIM_EMOJIS,
             kakera_emojis=KAKERA_EMOJIS, sphere_emojis=SPHERE_EMOJIS,
@@ -1440,6 +1484,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.loop.create_task(run_fast_setup())
             if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
                 schedule_auto_give("settings changed")
+            if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
+                client.loop.create_task(run_give_all_kakera_now())
+            if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
+                          "harem_give_value", "account_role"}:
+                schedule_harem_give("settings changed")
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
                 if task is not None:
@@ -3535,6 +3584,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             await run_fast_setup()
         except Exception as e:
             BotLogger.log(f"Fast setup error: {e}", preset_name, "ERROR")
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(harem_give_schedule_task())
 
         if client.rolling_enabled:
             if not client.skip_initial_commands:
@@ -6316,6 +6367,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log("Own roll batch deferred: a kakera give to the main is in progress.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="kakera-give-busy")
             return
+        if client.harem_giver.active or main_receiving(client._account_link.key):
+            # A $give (harem pages) procedure is open on this account or its main answers one.
+            BotLogger.log("Own roll batch deferred: a harem give is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="harem-give-busy")
+            return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
         if channel.id != client.target_channel_id:
@@ -6947,6 +7003,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         is_snipe_action = pending["is_snipe_action"]
         lbl = "Snipe Verification" if is_snipe_action else "Claim Verification"
         BotLogger.log(f"{lbl}: SUCCESS! We got {char_name}. ({verification_source})", preset_name, "CLAIM")
+        schedule_harem_give("after a claim")
 
         now = datetime.datetime.now(timezone.utc)
         if consumes_claim:
@@ -7774,7 +7831,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 totals=client.account_totals,
                 main_totals=_totals_book.by_user_id(main_id),
                 prefix=client.mudae_prefix,
-                busy=auto_give_busy_reason,
+                busy=lambda: auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None),
             )
             if outcome.status == "skipped":
                 if outcome.reason != getattr(client, "_auto_give_last_skip", None):
@@ -7789,6 +7846,140 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"Auto-give error: {e}", preset_name, "ERROR")
         finally:
             client._auto_give_task = None
+
+    async def run_give_all_kakera_now():
+        """«Give all kakera now» (button): one give of the whole total to the main."""
+        try:
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                BotLogger.log("Give all kakera: not given — no command channel.", preset_name, "WARN")
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.kakera_giver.give_all_now(
+                channel,
+                minimum=client.give_kakera_button_minimum,
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Waits for the next $tu the program already sends; never sends one.
+                busy=lambda: auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None),
+                total_wait_seconds=3600.0,
+            )
+            if outcome.status == "ignored":
+                BotLogger.log(f"Give all kakera: press ignored — {outcome.reason}.", preset_name, "INFO")
+                return
+            log_totals("after «Give all kakera now»")
+            wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Give all kakera error: {e}", preset_name, "ERROR")
+
+    def any_procedure_busy_reason():
+        """Busy for a give partner: rolling/claiming/$tu/games, or a give procedure of its own."""
+        reason = auto_give_busy_reason()
+        if reason:
+            return reason
+        if client.kakera_giver.active:
+            return "giving kakera"
+        if client.harem_giver.active:
+            return "giving harem pages"
+        return None
+
+    async def answer_gift_question(channel_id, text):
+        """As a Main: answer y/n to a side's $give confirmation (runs on this account's loop)."""
+        channel = client.get_channel(int(channel_id))
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(int(channel_id))
+            except Exception:
+                return None
+        BotLogger.log(f"Harem give: the main answers {text} to its side's $give.", preset_name, "INFO")
+        return await guarded_send(channel, text)
+
+    client._gift_busy_reason = any_procedure_busy_reason
+    client._gift_answer = answer_gift_question
+
+    def harem_give_settings():
+        return HaremGiveSettings.from_preset({
+            "auto_give_harem": client.auto_give_harem,
+            "harem_give_trigger": client.harem_give_trigger,
+            "harem_give_pages": client.harem_give_pages,
+            "harem_give_characters": client.harem_give_characters,
+            "harem_give_value": client.harem_give_value,
+            "harem_check_hours": client.harem_check_hours,
+            "harem_give_pages_text": client.harem_give_pages_text,
+            "harem_keep_first_pages": client.harem_keep_first_pages,
+            "harem_give_daily_cap": client.harem_give_daily_cap,
+        })
+
+    def own_display_names():
+        user = client.user
+        names = [getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)]
+        for guild in getattr(client, "guilds", ()) or ():
+            member = getattr(guild, "me", None)
+            names.append(getattr(member, "nick", None))
+            names.append(getattr(member, "display_name", None))
+        return [name for name in dict.fromkeys(names) if name]
+
+    def schedule_harem_give(reason):
+        if not (getattr(client, "auto_give_harem", False) and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.harem_giver.active or getattr(client, "_harem_give_task", None) is not None:
+            return
+        client._harem_give_task = client.loop.create_task(run_harem_give(reason))
+
+    async def run_harem_give(reason):
+        try:
+            waited = 0.0
+            while (auto_give_busy_reason() is not None or client.kakera_giver.active) and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            link = client._account_link
+            partner = _side_roll_coordinator.resolve_main(link)
+            if partner is not None and not partner.is_ready():
+                partner = None
+            outcome = await client.harem_giver.maybe_give(
+                channel, harem_give_settings(),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=effective_main_account_id(),
+                partner=partner,
+                prefix=client.mudae_prefix,
+                busy=lambda: auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None),
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_harem_give_last_skip", None):
+                    client._harem_give_last_skip = outcome.reason
+                    BotLogger.log(f"Harem give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+            else:
+                client._harem_give_last_skip = None
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Harem give error: {e}", preset_name, "ERROR")
+        finally:
+            client._harem_give_task = None
+
+    async def harem_give_schedule_task():
+        """Wake every few minutes; the giver itself keeps «Check every N hours»."""
+        while not client.is_closed():
+            schedule_harem_give("schedule")
+            if not await active_delay(600.0):
+                if client.is_closed():
+                    return
+                await asyncio.sleep(60.0)
 
     async def run_fast_setup():
         """Send the one-time Fast setup message if it is due for this account."""
@@ -8681,6 +8872,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
         if update_event is not None:
             update_event.set()
+        if client.harem_giver.reader.watching(getattr(after, 'id', None)):
+            client.harem_giver.on_edit(after)
         client.sphere_runtime.capture_sphere_game_bonus(after)
         observe_sphere_game_result(after)
         schedule_farm_release_after_other_claim(after, previous_message=before)
@@ -8694,6 +8887,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         message_id = getattr(payload, 'message_id', None)
         if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
             client.kakera_giver.on_refused(message_id)
+            client.harem_giver.on_refused(message_id)
             client._recent_mudae_command_rejections[message_id] = time.monotonic()
             while len(client._recent_mudae_command_rejections) > 200:
                 client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
@@ -8723,6 +8917,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             update_event.set()
         # Cached edits are handled by on_message_edit with the complete message.
         if getattr(payload, 'cached_message', None) is not None:
+            return
+        if client.harem_giver.reader.watching(getattr(payload, 'message_id', None)):
+            # A harem list page turned by our click, but the message was not cached.
+            try:
+                list_channel = client.get_channel(payload.channel_id) or await client.fetch_channel(payload.channel_id)
+                client.harem_giver.on_edit(await list_channel.fetch_message(payload.message_id))
+            except (discord.HTTPException, AttributeError):
+                pass
             return
         channel_id = getattr(payload, 'channel_id', None)
         if not client.snipe_mode or channel_id not in {client.target_channel_id, *client.snipe_channels}:
@@ -8768,6 +8970,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 message.id, message.channel.id, bot_message_text(message),
                 getattr(reference, "message_id", None),
             ))
+        if (client.harem_giver.active or client.harem_giver.reader.active) and message.author.id == TARGET_BOT_ID:
+            client.harem_giver.on_message(message, bot_message_text(message))
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (

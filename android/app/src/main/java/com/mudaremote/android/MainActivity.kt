@@ -428,6 +428,7 @@ class MainActivity : ComponentActivity() {
         actionsRow.addView(createGitHubSmallBtn("✏️ Rename") { _ -> promptRenameProfile() })
         actionsRow.addView(createGitHubSmallBtn("🗑️ Delete") { _ -> promptDeleteCurrentProfile() })
         actionsRow.addView(createGitHubSmallBtn("📦 Export") { _ -> shareCurrentProfile() })
+        actionsRow.addView(createGitHubSmallBtn("💸 Give all kakera") { _ -> requestGiveAllKakera() })
         card.addView(actionsRow)
 
         // Horizontal Profile Tabs ScrollView
@@ -1355,6 +1356,7 @@ class MainActivity : ComponentActivity() {
 
     private fun buildFieldView(key: String, value: Any?, meta: JSONObject?): View {
         if (meta?.optString("widget", "") == "send_again") return buildSendAgainField(key, value, meta)
+        if (meta?.optString("widget", "") == "request_now") return buildRequestNowField(key, value, meta)
         var shown = value
         var note: String? = null
         if (key == "fast_setup" && value == true) {
@@ -1441,6 +1443,51 @@ class MainActivity : ComponentActivity() {
         })
         container.addView(counter)
         return container
+    }
+
+    /** «Give all kakera now»: a hidden request counter and a button that raises it and saves (live apply). */
+    private fun buildRequestNowField(key: String, value: Any?, meta: JSONObject): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, UiTheme.dp(this@MainActivity, 5), 0, UiTheme.dp(this@MainActivity, 5))
+            tag = "field_container_$key"
+        }
+        val counter = EditText(this).apply {
+            setText(((value as? Number)?.toInt() ?: 0).toString())
+            inputType = InputType.TYPE_CLASS_NUMBER
+            visibility = View.GONE
+            tag = key
+        }
+        fieldViews[key] = counter
+        val description = meta.optString("description", "")
+        if (description.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = description
+                textSize = 11f
+                setTextColor(UiTheme.TEXT_SECONDARY)
+            })
+        }
+        container.addView(createGitHubSmallBtn(meta.optString("label", "Give all kakera now")) { _ -> requestGiveAllKakera() })
+        container.addView(counter)
+        return container
+    }
+
+    /** Raise the profile's «Give all kakera now» counter and save; the running side gives its whole total once. */
+    private fun requestGiveAllKakera() {
+        val data = profiles[currentProfile] ?: return
+        if (data.optString("account_role", "main") != "side") {
+            toast("Give all kakera now: only a side account gives kakera to its main.")
+            return
+        }
+        val counter = fieldViews["give_kakera_now_round"] as? EditText
+        if (counter == null) {
+            toast("Give all kakera now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Give all kakera requested; the result appears in the logs and the account's status.")
     }
 
     private fun buildFieldViewInner(key: String, value: Any?, meta: JSONObject?): View {

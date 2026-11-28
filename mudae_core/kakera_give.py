@@ -31,7 +31,12 @@ GIVE_DEFAULTS = {
     "give_kakera_threshold": 45000,
     "give_kakera_extra": True,
     "give_kakera_daily_cap": 3,
+    "give_kakera_button_minimum": 1000,
 }
+# «Give all kakera now» (a button, started by hand).
+MANUAL_COOLDOWN_SECONDS = 60.0
+MANUAL_BUSY_WAIT_SECONDS = 600.0
+MANUAL_POLL_SECONDS = 3.0
 GIVE_THRESHOLD_MAX = 1_000_000_000
 GIVE_DAILY_CAP_MAX = 50
 QUESTION_TIMEOUT_SECONDS = 20.0
@@ -151,6 +156,8 @@ def validate_give_settings(data):
         errors.append("«Give kakera to my main when I reach» must be a whole number from 1 to {:,}.".format(GIVE_THRESHOLD_MAX))
     if _whole(data.get("give_kakera_daily_cap", 3), 3, 1, GIVE_DAILY_CAP_MAX) is None:
         errors.append("«At most N gives per day» must be a whole number from 1 to {}.".format(GIVE_DAILY_CAP_MAX))
+    if _whole(data.get("give_kakera_button_minimum", 1000), 1000, 1, GIVE_THRESHOLD_MAX) is None:
+        errors.append("«Minimum for the button» must be a whole number from 1 to {:,}.".format(GIVE_THRESHOLD_MAX))
     return errors
 
 
@@ -180,6 +187,7 @@ class _Attempt:
     own_names: Tuple[str, ...]
     sent_ids: set = field(default_factory=set)
     question_open: bool = False
+    manual: bool = False  # «Give all kakera now»: not counted toward the automatic daily cap
 
 
 def _now():
@@ -209,6 +217,9 @@ class KakeraGiver:
         self._retry_at = None  # monotonic seconds
         self._attempt: Optional[_Attempt] = None
         self._queue: Optional[asyncio.Queue] = None
+        self.manual_status = "Give all kakera: not used yet."
+        self._manual_in_flight = False
+        self._manual_pressed_at = None  # monotonic seconds
 
     # -- feeding replies -------------------------------------------------
     @property
@@ -282,6 +293,95 @@ class KakeraGiver:
         self._finish(outcome)
         return outcome
 
+    # -- «Give all kakera now» --------------------------------------------
+    async def give_all_now(self, channel, *, minimum, role, own_id, own_names, main_id, totals, main_totals=None,
+                           prefix="$", busy: Callable[[], Optional[str]] = lambda: None,
+                           total_wait_seconds=3600.0, busy_wait_seconds=MANUAL_BUSY_WAIT_SECONDS,
+                           poll_seconds=MANUAL_POLL_SECONDS) -> GiveOutcome:
+        """One give of the WHOLE kakera total to the main, started by hand.
+
+        Ignores the auto-give switch, threshold and daily cap; needs a known
+        total of at least ``minimum`` (waits for the next ``$tu`` the program
+        already sends when unknown), defers while busy, one at a time and at
+        most one press per minute.
+        """
+        if role != "side":
+            return self._manual_result(GiveOutcome("refused", "only a side account gives kakera to its main"))
+        if not main_id:
+            return self._manual_result(GiveOutcome(
+                "refused", "the main account is not known (set Main Account ID or pick a running Main profile)"))
+        if own_id and str(main_id) == str(own_id):
+            return self._manual_result(GiveOutcome("refused", "the main is this account itself"))
+        now = self._monotonic()
+        if self._manual_in_flight:
+            return GiveOutcome("ignored", "a «Give all kakera» request is already running")
+        if self._manual_pressed_at is not None and now - self._manual_pressed_at < MANUAL_COOLDOWN_SECONDS:
+            return GiveOutcome("ignored", "pressed again too soon; wait {} s".format(
+                int(MANUAL_COOLDOWN_SECONDS - (now - self._manual_pressed_at)) + 1))
+        self._manual_pressed_at = now
+        self._manual_in_flight = True
+        try:
+            if totals is None or totals.kakera is None:
+                self.manual_status = "Give all kakera: the total is unknown; waiting for the next $tu (up to {} min).".format(
+                    max(1, int(total_wait_seconds // 60)))
+                self._log(self.manual_status, "INFO")
+                deadline = self._monotonic() + total_wait_seconds
+                while totals is None or totals.kakera is None:
+                    if self._monotonic() >= deadline:
+                        return self._manual_result(GiveOutcome("stopped", "the kakera total is still unknown (no $tu reply read in time)"))
+                    if not await self._wait(poll_seconds):
+                        return self._manual_result(GiveOutcome("stopped", "paused or stopping"))
+            deadline = self._monotonic() + busy_wait_seconds
+            announced = False
+            while True:
+                reason = busy() or ("an automatic give is in progress" if self._attempt is not None else None)
+                if reason is None:
+                    break
+                if not announced:
+                    announced = True
+                    self.manual_status = "Give all kakera: deferred while {}; it runs right after.".format(reason)
+                    self._log(self.manual_status, "INFO")
+                if self._monotonic() >= deadline:
+                    return self._manual_result(GiveOutcome("stopped", "still busy ({})".format(reason)))
+                if not await self._wait(poll_seconds):
+                    return self._manual_result(GiveOutcome("stopped", "paused or stopping"))
+            total = totals.kakera if totals is not None else None  # re-read just before sending
+            if total is None:
+                return self._manual_result(GiveOutcome("stopped", "the kakera total became unknown"))
+            if total < minimum:
+                return self._manual_result(GiveOutcome("skipped", "Only {:,} kakera — the minimum is {:,}".format(total, minimum)))
+            self._attempt = _Attempt(
+                channel_id=getattr(channel, "id", None), amount=int(total), main_id=str(main_id), own_id=str(own_id or ""),
+                own_names=tuple(str(name).casefold() for name in own_names or () if name), manual=True,
+            )
+            self._queue = asyncio.Queue()
+            try:
+                outcome = await self._run(channel, prefix, totals, main_totals, busy)
+            except asyncio.CancelledError:
+                await self._answer_no_if_open(channel)
+                raise
+            except Exception as exc:
+                await self._answer_no_if_open(channel)
+                outcome = GiveOutcome("stopped", "error: {}".format(type(exc).__name__), int(total))
+            finally:
+                self._attempt = None
+                self._queue = None
+                self.state = IDLE
+            return self._manual_result(outcome)
+        finally:
+            self._manual_in_flight = False
+
+    def _manual_result(self, outcome: GiveOutcome) -> GiveOutcome:
+        bot_text = " Bot said: «{}»".format(outcome.bot_text.strip()[:300]) if outcome.bot_text and outcome.status != "given" else ""
+        if outcome.status == "given":
+            self.manual_status = "Give all kakera: " + outcome.reason + "."
+            self._log(self.manual_status, "SUCCESS")
+        else:
+            reason = outcome.reason[:1].upper() + outcome.reason[1:] if outcome.reason.startswith("Only ") else outcome.reason
+            self.manual_status = "Give all kakera: not given — {}.".format(reason)
+            self._log(self.manual_status + bot_text, "WARN" if outcome.status == "stopped" else "INFO")
+        return outcome
+
     # -- the flow --------------------------------------------------------
     async def _send_tracked(self, channel, text):
         receipt = await self._send(channel, text)
@@ -297,7 +397,8 @@ class KakeraGiver:
         amount = attempt.amount
         self.state = SENDING
         command = "{}givek <@{}> {}".format(prefix or "$", attempt.main_id, amount)
-        self._log("Auto-give: giving {:,} kakera to the main.".format(amount), "INFO")
+        self._log("{}: giving {:,} kakera to the main.".format(
+            "Give all kakera" if attempt.manual else "Auto-give", amount), "INFO")
         if not await self._send_tracked(channel, command):
             return GiveOutcome("stopped", "the $givek command could not be sent", amount)
 
@@ -342,7 +443,8 @@ class KakeraGiver:
         # next $tu, and the attempt counts toward the daily limit.
         if totals is not None:
             totals.set_total(KAKERA, None, SOURCE_GIVE)
-        self.store.count_give(self.key, self.today())
+        if not attempt.manual:
+            self.store.count_give(self.key, self.today())
         if kind == "timeout":
             return GiveOutcome("stopped", "no «just gifted» confirmation in time", amount)
         if kind == "refused":
@@ -359,12 +461,14 @@ class KakeraGiver:
             totals.add(KAKERA, -amount, SOURCE_GIVE)
         if main_totals is not None:
             main_totals.add(KAKERA, amount, SOURCE_GIFT_RECEIVED)
-        count = self.store.count_give(self.key, self.today())
+        count = self.store.gives_today(self.key, self.today()) if attempt.manual else self.store.count_give(self.key, self.today())
         note = ""
         if gift and gift.receiver_id and gift.receiver_id != attempt.main_id:
             note = " (the confirmation names another receiver; check the log)"
         if amount != attempt.amount:
             note += " (confirmed {:,}, intended {:,})".format(amount, attempt.amount)
+        if attempt.manual:
+            return GiveOutcome("given", "gave {:,} kakera to the main{}".format(amount, note), amount, reply.text)
         return GiveOutcome("given", "gave {:,} kakera to the main (give {} today){}".format(amount, count, note),
                            amount, reply.text)
 

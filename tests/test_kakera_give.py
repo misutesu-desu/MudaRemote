@@ -70,6 +70,7 @@ class GiveFlowTests(unittest.TestCase):
         bot = FakeBot(ref, script)
 
         async def wait(seconds):
+            await asyncio.sleep(min(seconds, 0.01))
             return True
 
         giver = KakeraGiver(
@@ -219,6 +220,114 @@ class GiveFlowTests(unittest.TestCase):
         self.assertEqual(validate_give_settings({"give_kakera_threshold": 45000, "give_kakera_daily_cap": 3}), [])
         self.assertTrue(validate_give_settings({"give_kakera_threshold": 0}))
         self.assertTrue(validate_give_settings({"give_kakera_daily_cap": "x"}))
+
+
+class GiveAllNowTests(GiveFlowTests.__bases__[0]):
+    """«Give all kakera now» (the button)."""
+
+    setUp = GiveFlowTests.setUp
+    tearDown = GiveFlowTests.tearDown
+    make = GiveFlowTests.make
+
+    def press(self, giver, minimum=1000, **overrides):
+        options = dict(role="side", own_id=SIDE_ID, own_names=("SideUser",), main_id=MAIN_ID,
+                       totals=self.side, main_totals=self.main, total_wait_seconds=0.5, busy_wait_seconds=0.5,
+                       poll_seconds=0.01)
+        options.update(overrides)
+        return giver.give_all_now(CHANNEL, minimum=minimum, **options)
+
+    def test_happy_path_gives_whole_total_and_skips_cap(self):
+        for _ in range(3):
+            self.store.count_give("pside#1", WHEN.date())  # automatic cap reached: the button still works
+        giver, bot = self.make([[question(45132)], [success(45132)]])
+        outcome = asyncio.run(self.press(giver))
+        self.assertEqual(outcome.status, "given", outcome)
+        self.assertEqual(bot.sent, ["$givek <@{}> 45132".format(MAIN_ID), "y"])
+        self.assertEqual((self.side.kakera, self.main.kakera), (0, 1000 + 45132))
+        self.assertEqual(self.store.gives_today("pside#1", WHEN.date()), 3)
+        self.assertIn("gave 45,132", giver.manual_status)
+
+    def test_below_minimum(self):
+        self.side.set_total(KAKERA, 500, SOURCE_TU)
+        giver, bot = self.make([])
+        outcome = asyncio.run(self.press(giver, minimum=1000))
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(outcome.reason, "Only 500 kakera — the minimum is 1,000")
+        self.assertIn("Only 500 kakera — the minimum is 1,000", giver.manual_status)
+        self.assertEqual(bot.sent, [])
+
+    def test_unknown_total_waits_for_tu_then_goes(self):
+        self.side.set_total(KAKERA, None, SOURCE_TU)
+        giver, bot = self.make([[question(2000)], [success(2000)]])
+
+        async def run():
+            task = asyncio.ensure_future(self.press(giver))
+            await asyncio.sleep(0.05)
+            self.assertTrue(any("waiting for the next $tu" in message for _level, message in self.logs))
+            self.side.set_total(KAKERA, 2000, SOURCE_TU)  # the program's own $tu arrived
+            return await task
+
+        outcome = asyncio.run(run())
+        self.assertEqual(outcome.status, "given", outcome)
+        self.assertEqual(bot.sent[0], "$givek <@{}> 2000".format(MAIN_ID))
+        self.assertNotIn("$tu", bot.sent)
+
+    def test_unknown_total_times_out(self):
+        self.side.set_total(KAKERA, None, SOURCE_TU)
+        giver, bot = self.make([])
+        outcome = asyncio.run(self.press(giver, total_wait_seconds=0.05))
+        self.assertEqual(outcome.status, "stopped")
+        self.assertIn("unknown", outcome.reason)
+        self.assertEqual(bot.sent, [])
+
+    def test_busy_defers_then_runs(self):
+        state = {"busy": "rolling"}
+        giver, bot = self.make([[question(45132)], [success(45132)]])
+
+        async def run():
+            task = asyncio.ensure_future(self.press(giver, busy=lambda: state["busy"], busy_wait_seconds=2.0))
+            await asyncio.sleep(0.05)
+            self.assertEqual(bot.sent, [])
+            self.assertIn("deferred while rolling", giver.manual_status)
+            state["busy"] = None
+            return await task
+
+        self.assertEqual(asyncio.run(run()).status, "given")
+
+    def test_refused_on_main_or_without_main(self):
+        for overrides, words in (({"role": "main"}, "only a side"), ({"main_id": ""}, "not known"),
+                                 ({"main_id": SIDE_ID}, "itself")):
+            giver, bot = self.make([])
+            outcome = asyncio.run(self.press(giver, **overrides))
+            self.assertEqual(outcome.status, "refused")
+            self.assertIn(words, outcome.reason)
+            self.assertEqual(bot.sent, [])
+
+    def test_double_press_ignored_and_cooldown(self):
+        now = [0.0]
+        giver, bot = self.make([[question(45132)], [success(45132)]])
+        giver._monotonic = lambda: now[0]
+
+        async def run():
+            first = asyncio.ensure_future(self.press(giver))
+            await asyncio.sleep(0)
+            second = await self.press(giver)
+            return await first, second
+
+        first, second = asyncio.run(run())
+        self.assertEqual(first.status, "given")
+        self.assertEqual(second.status, "ignored")
+        self.assertIn("already running", second.reason)
+        self.assertEqual(asyncio.run(self.press(giver)).status, "ignored")  # within 60 s
+        now[0] = 61.0
+        self.side.set_total(KAKERA, 10, SOURCE_TU)
+        self.assertEqual(asyncio.run(self.press(giver)).status, "skipped")  # pressed again after the cooldown
+
+    def test_question_mismatch_answers_n(self):
+        giver, bot = self.make([[question(4513)], None])
+        outcome = asyncio.run(self.press(giver))
+        self.assertEqual(outcome.status, "stopped")
+        self.assertEqual(bot.sent[-1], "n")
 
 
 if __name__ == "__main__":

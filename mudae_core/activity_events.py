@@ -31,6 +31,9 @@ _SIDE_CLAIM = re.compile("^Main claimed \u2068(?P<name>.+?)\u2069 from \u2068(?P
 # Running totals and auto-give (see totals.AccountTotals.describe / kakera_give).
 _TOTALS = re.compile(r"^Totals: kakera (?P<kakera>[\d,]+|unknown) \u00b7 spheres (?P<spheres>[\d,]+|unknown) \((?P<why>[^()]*)\)$")
 _GIVE_OK = re.compile(r"^Auto-give: gave (?P<ka>[\d,]+) kakera to the main")
+_GIVE_ALL = re.compile(r"^Give all kakera: (?P<what>gave (?P<ka>[\d,]+) kakera to the main|not given \u2014 .+?)\.?(?: Bot said: .*)?$")
+_HAREM_GIVE_OK = re.compile(r"^Harem give: gave (?P<pages>[\d,]+) harem page\(s\) to the main")
+_HAREM_GIVE_STOP = re.compile(r"^Harem give stopped: (?P<why>.+?)\. Next try in")
 
 
 def _number(text: Optional[str]) -> Optional[int]:
@@ -96,6 +99,17 @@ class ActivityClassifier:
         if found:
             kakera = _number(found.group("ka"))
             return [("kakera_give", {"kakera": kakera, "message": "Gave {} kakera to the main".format(found.group("ka"))})]
+        found = _GIVE_ALL.match(text)
+        if found:
+            return [("kakera_give_now", {"kakera": _number(found.group("ka")),
+                                         "message": "Give all kakera: " + found.group("what")[:200]})]
+        found = _HAREM_GIVE_OK.match(text)
+        if found:
+            pages = _number(found.group("pages"))
+            return [("harem_give", {"pages": pages, "message": "Gave {} harem page(s) to the main".format(found.group("pages"))})]
+        found = _HAREM_GIVE_STOP.match(text)
+        if found:
+            return [("harem_give_stopped", {"message": "Harem give stopped: {}".format(found.group("why")[:200])})]
         found = _ROLLING.match(text)
         if found:
             rolls = int(found.group("n"))

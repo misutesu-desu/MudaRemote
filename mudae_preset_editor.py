@@ -46,6 +46,7 @@ try:
     from mudae_core.account_state import AccountStateStore, default_state_path
     from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
     from mudae_core.totals import account_key
+    from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -81,6 +82,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.account_state import AccountStateStore, default_state_path
     from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
     from mudae_core.totals import account_key
+    from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -675,6 +677,17 @@ DEFAULTS = {
     "give_kakera_threshold": 45000,
     "give_kakera_extra": True,
     "give_kakera_daily_cap": 3,
+    "give_kakera_button_minimum": 1000,
+    "give_kakera_now_round": 0,
+    "auto_give_harem": False,
+    "harem_give_trigger": "pages",
+    "harem_give_pages": 10,
+    "harem_give_characters": 150,
+    "harem_give_value": 100000,
+    "harem_check_hours": 6,
+    "harem_give_pages_text": "",
+    "harem_keep_first_pages": 0,
+    "harem_give_daily_cap": 1,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -960,11 +973,23 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem")
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
     ("give_kakera_daily_cap", "At most N gives per day", 1),
+    ("give_kakera_button_minimum", "Minimum for the button", 1),
+    ("harem_give_pages", "Give when my harem reaches X pages", 1),
+    ("harem_give_characters", "Give when my harem reaches X characters", 1),
+    ("harem_give_value", "Give when my harem value reaches X", 1),
+    ("harem_check_hours", "Check every N hours", 1),
+    ("harem_keep_first_pages", "Keep the first N pages", 0),
+    ("harem_give_daily_cap", "At most N harem gives per day", 1),
 )
+HAREM_TRIGGER_CHOICES = {
+    "pages": "Pages: when my harem reaches X pages ($mm)",
+    "characters": "Characters: when my harem reaches X characters ($mmi)",
+    "value": "Value: when my harem value reaches X ($mmrk)",
+}
 
 
 def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
@@ -988,11 +1013,28 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
             data[key] = int(value)
         else:
             errors.append("«{}» must be a whole number of at least {}.".format(label, minimum))
+    trigger = widgets.get("harem_give_trigger")
+    if trigger is not None:
+        value = str(trigger.get() or "pages")
+        data["harem_give_trigger"] = value if value in HAREM_TRIGGER_CHOICES else "pages"
+    pages_text = widgets.get("harem_give_pages_text")
+    if pages_text is not None:
+        text = str(pages_text.get() or "").strip()
+        try:
+            parse_page_selection(text)
+            data["harem_give_pages_text"] = text
+        except ValueError as error:
+            errors.append(str(error))
     try:
         saved_round = int((previous or {}).get("fast_setup_round", 0) or 0)
     except (TypeError, ValueError):
         saved_round = 0
     data["fast_setup_round"] = rearm_round if rearm_round is not None else max(0, saved_round)
+    # «Give all kakera now» is a request counter, not a form field.
+    try:
+        data["give_kakera_now_round"] = max(0, int((previous or {}).get("give_kakera_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["give_kakera_now_round"] = 0
     return errors
 
 
@@ -3249,6 +3291,74 @@ class PresetEditor:
             self.give_fields_frame, "give_kakera_daily_cap", "At most N gives per day", 3,
             description="A safety limit. The receiver is the main's Discord ID (Main Profile or Main Account ID above).",
         )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_button_minimum", "Minimum for the button", 1000,
+            description="«Give all kakera now» gives the whole kakera total only when it is known and at least this much.",
+        )
+        give_now_row = tk.Frame(self.give_fields_frame, bg=self._get_parent_bg(self.give_fields_frame))
+        give_now_row.pack(fill=tk.X, pady=(0, 8))
+        self.create_flat_button(
+            give_now_row, "Give all kakera now", self._request_give_all_kakera,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+        ).pack(side=tk.LEFT, padx=(20, 10))
+        self.give_now_status_label = tk.Label(
+            give_now_row, text="Runs one give of the whole total to the main (the account must be running).",
+            bg=give_now_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
+        )
+        self.give_now_status_label.pack(side=tk.LEFT)
+
+        # Auto-give harem pages to the main (side only)
+        harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to Main", start_open=False)
+        harem_frame.pack(fill=tk.X, pady=(0, 15))
+        self.harem_reason_label = tk.Label(
+            harem_frame.content, text="", bg=self._get_parent_bg(harem_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.harem_reason_label.pack(anchor=tk.W, pady=(4, 2))
+        self.harem_fields_frame = tk.Frame(harem_frame.content, bg=self._get_parent_bg(harem_frame.content))
+        self.harem_fields_frame.pack(fill=tk.X)
+        self.add_checkbox(
+            self.harem_fields_frame, "auto_give_harem", "Give harem pages to my main automatically (side accounts)",
+            description="Checks this side's own harem list on its own schedule (never $tu), then sends $give to the main "
+                        "with the pages; the main (running in this app) confirms. Off by default.",
+        )
+        self.add_choice_field(
+            self.harem_fields_frame, "harem_give_trigger", "Give when my harem reaches", {
+                "pages": "Pages: when my harem reaches X pages ($mm)",
+                "characters": "Characters: when my harem reaches X characters ($mmi)",
+                "value": "Value: when my harem value reaches X ($mmrk)",
+            },
+            description="Only the number of the chosen kind below is used.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_pages", "Give when my harem reaches X pages", 10,
+            description="Read from the «Page 1 / N» footer of $mm.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_characters", "Give when my harem reaches X characters", 150,
+            description="Read from the «Belongs to … ~~ 1 / TOTAL» footer of $mmi.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_value", "Give when my harem value reaches X", 100000,
+            description="Read from «Total value» in $mmrk.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_check_hours", "Check every N hours", 6,
+            description="The check command is sent at most once per interval (also after this account's claims). At least 1.",
+        )
+        self.add_text_field(
+            self.harem_fields_frame, "harem_give_pages_text", "Pages to give",
+            description="Empty: every page up to X (all pages for the characters/value triggers). "
+                        "A number like 3: the first 3 pages. A list or range: «1-3», «2 4 5».",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_keep_first_pages", "Keep the first N pages", 0,
+            description="Pages 1..N are never given (0 keeps none).",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_daily_cap", "At most N harem gives per day", 1,
+            description="A safety limit. A long page list given in several rounds counts as one give.",
+        )
         role_var = self.widgets.get("account_role")
         if role_var is not None:
             role_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
@@ -3552,6 +3662,14 @@ class PresetEditor:
             if isinstance(widget, (ttk.Entry, tk.Entry)):
                 widget.delete(0, tk.END)
                 widget.insert(0, str(data.get(key, DEFAULTS[key])))
+        pages_text = widgets.get("harem_give_pages_text")
+        if isinstance(pages_text, (ttk.Entry, tk.Entry)):
+            pages_text.delete(0, tk.END)
+            pages_text.insert(0, str(data.get("harem_give_pages_text", "") or ""))
+        trigger = widgets.get("harem_give_trigger")
+        if trigger is not None:
+            value = str(data.get("harem_give_trigger", "pages") or "pages")
+            trigger.set(value if value in HAREM_TRIGGER_CHOICES else "pages")
         status = "Not sent yet."
         setup = self._fast_setup_record(data)
         round_number = data.get("fast_setup_round", 0)
@@ -3582,6 +3700,27 @@ class PresetEditor:
             label.configure(text="Will be sent once more after you save.")
         self.mark_dirty()
 
+    def _request_give_all_kakera(self):
+        """«Give all kakera now»: raise the request counter and save, so the running side picks it up."""
+        if not self.current_preset:
+            return
+        role_var = self.widgets.get("account_role")
+        if (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE:
+            messagebox.showinfo("Give all kakera now", "Only a side account gives kakera to its main.", parent=self.root)
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("give_kakera_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["give_kakera_now_round"] = next_round
+        label = getattr(self, "give_now_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: the running side gives its whole total once (see the log for the result).")
+        else:
+            saved["give_kakera_now_round"] = next_round - 1
+
     def _refresh_give_fields_state(self):
         frame = getattr(self, "give_fields_frame", None)
         if frame is None:
@@ -3589,6 +3728,16 @@ class PresetEditor:
         role_var = self.widgets.get("account_role")
         is_side = (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) == ACCOUNT_ROLE_SIDE
         self._set_children_enabled(frame, is_side)
+        harem_frame = getattr(self, "harem_fields_frame", None)
+        if harem_frame is not None:
+            self._set_children_enabled(harem_frame, is_side)
+        harem_label = getattr(self, "harem_reason_label", None)
+        if harem_label is not None:
+            harem_label.configure(text=(
+                "The receiver is the main (Main Profile or Main Account ID); it must run in this app to confirm."
+                if is_side else
+                "Harem Pages to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
+            ))
         label = getattr(self, "give_reason_label", None)
         if label is not None:
             label.configure(text=(
