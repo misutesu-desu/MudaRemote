@@ -10186,6 +10186,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 claim_outcome = await verify_snipe_outcome(client, channel, msg, pending)
                                 if claim_outcome == ClaimOutcome.SUCCESS:
                                     await collect_refreshed_purple_after_claim(channel, msg, is_snipe=is_snipe)
+                                note_app_character_claim(msg)
                                 return True
                             release_failed_claim(getattr(msg, "id", None), pending)
 
@@ -10207,6 +10208,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     claim_outcome = await verify_snipe_outcome(client, channel, msg, pending)
                     if claim_outcome == ClaimOutcome.SUCCESS:
                         await collect_refreshed_purple_after_claim(channel, msg, is_snipe=is_snipe)
+                    note_app_character_claim(msg)
                     return True
                 except Exception as e:
                     release_failed_claim(getattr(msg, "id", None), locals().get('pending'))
@@ -10219,25 +10221,20 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if claim_registered or rt_registered:
                     _claim_coordinator.release_all(msg.id)
 
-    _claim_character_impl = claim_character
-
-    async def claim_character(client, channel, msg, *args, **kwargs):  # noqa: F811
-        """claim_character, plus: a character claim stands down the profile's «best roll» round."""
-        is_kakera = kwargs.get("is_kakera", args[0] if args else False)
-        result = await _claim_character_impl(client, channel, msg, *args, **kwargs)
-        if result and not is_kakera:
-            try:
-                note_character_claimed()
-                author = getattr(msg.embeds[0], "author", None) if getattr(msg, "embeds", None) else None
-                name = str(getattr(author, "name", "") or "").strip().casefold()
-                if name:
-                    names = client._app_claimed_names
-                    names[name] = time.monotonic()
-                    while len(names) > 50:
-                        names.pop(next(iter(names)))
-            except Exception:
-                pass
-        return result
+    def note_app_character_claim(msg):
+        """A character claim of the app's own went out: the profile's «best roll» round stands
+        down, and the name is remembered so its «now married» line is not taken for a manual claim."""
+        try:
+            note_character_claimed()
+            author = getattr(msg.embeds[0], "author", None) if getattr(msg, "embeds", None) else None
+            name = str(getattr(author, "name", "") or "").strip().casefold()
+            if name:
+                names = client._app_claimed_names
+                names[name] = time.monotonic()
+                while len(names) > 50:
+                    names.pop(next(iter(names)))
+        except Exception:
+            pass
 
     async def humanized_wait_and_proceed(client, channel, base_reset_minutes, reason="reset", *, hard_deadline=False, boundary_fields=None):
         """Wait for a state boundary before requesting status.
