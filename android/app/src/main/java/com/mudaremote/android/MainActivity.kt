@@ -1,6 +1,7 @@
 package com.mudaremote.android
 
 import android.Manifest
+import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -43,6 +44,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -73,6 +75,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var logScroll: ScrollView
     private lateinit var logStatusDot: TextView
     private lateinit var vault: SecretVault
+    private lateinit var rootScroll: ScrollView
+    private lateinit var keepRunningCard: LinearLayout
+    private lateinit var keepRunningStatus: LinearLayout
+    private var pendingNoticeResume = false
 
     private var schemaFields = JSONObject()
     private val profiles = linkedMapOf<String, JSONObject>()
@@ -132,6 +138,10 @@ class MainActivity : ComponentActivity() {
         loadSchema()
         restore()
         loadEngineVersion()
+        if (savedInstanceState == null && intent?.action == KeepAlive.ACTION_RESUME_FROM_NOTICE) {
+            intent?.action = null
+            pendingNoticeResume = true  // started from onResume, when the app is in the foreground
+        }
     }
 
     override fun onResume() {
@@ -144,6 +154,28 @@ class MainActivity : ComponentActivity() {
         loadEngineVersion()
         syncRuntimeStatusBadge()
         adoptLiveLogsIfRunning()
+        if (::keepRunningStatus.isInitialized) refreshKeepRunningStatus()
+        if (pendingNoticeResume) {
+            pendingNoticeResume = false
+            resumeFromNotice()
+        }
+    }
+
+    /** "Tap to resume": the app is in the foreground now, so Android allows the start. */
+    private fun resumeFromNotice() {
+        KeepAlive.clearTapToResume(this)
+        if (MudaRemoteService.runtimeState != MudaRemoteService.RuntimeState.STOPPED) return
+        if (!KeepAlive.shouldBeRunning(this)) {
+            toast("Nothing to resume: the bot was stopped.")
+            return
+        }
+        runCatching { MudaRemoteService.resume(this, KeepAlive.REASON_NOTICE) }
+            .onSuccess {
+                beginLogSession()
+                updateStatusBadge("● Resuming...", UiTheme.ACCENT_YELLOW)
+                toast("Resuming the bot...")
+            }
+            .onFailure { error -> toast("Could not resume: ${error.message}") }
     }
 
     /**
@@ -238,6 +270,10 @@ class MainActivity : ComponentActivity() {
         }
         scrollContent.addView(fieldsContainer)
 
+        // 6a. Keep running (phones that close background apps)
+        keepRunningCard = buildKeepRunningCard()
+        scrollContent.addView(keepRunningCard)
+
         // 6. Python Engine & Releases Card
         scrollContent.addView(buildEngineManagerCard())
 
@@ -249,6 +285,7 @@ class MainActivity : ComponentActivity() {
             isVerticalScrollBarEnabled = false
             addView(scrollContent)
         }
+        rootScroll = scrollView
         root.addView(scrollView, FrameLayout.LayoutParams(-1, -1))
 
         // 8. Sticky Bottom Action Bar (GitHub PR / Workflow Action Dock)
@@ -370,7 +407,7 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        val btnBattery = createGitHubButton("🔋 Battery Guide") { promptBatteryOptimization() }
+        val btnBattery = createGitHubButton("🔋 Keep running") { scrollToKeepRunning() }
         val btnCheckUpdates = createGitHubButton("🔄 Fetch Updates") { checkPythonUpdates(force = true) }
         val btnImportPresets = createGitHubButton("📥 Import Presets") { presetsPicker.launch(arrayOf("application/json", "text/plain")) }
 
@@ -2448,6 +2485,210 @@ class MainActivity : ComponentActivity() {
                 isUpdateInFlight = false
             }
         }.start()
+    }
+
+    // =========================================================================
+    // KEEP RUNNING (phones that close background apps)
+    // =========================================================================
+
+    private fun scrollToKeepRunning() {
+        if (!::rootScroll.isInitialized || !::keepRunningCard.isInitialized) return
+        refreshKeepRunningStatus()
+        rootScroll.post { rootScroll.smoothScrollTo(0, keepRunningCard.top) }
+    }
+
+    private fun buildKeepRunningCard(): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
+            setPadding(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
+        }
+        card.addView(TextView(this).apply {
+            text = "🛡️ Keep running"
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        })
+        card.addView(TextView(this).apply {
+            text = "Some phones close background apps even when battery optimisation is off. " +
+                "Check each row, then follow the steps for your phone."
+            textSize = 11.5f
+            setTextColor(UiTheme.TEXT_SECONDARY)
+            setPadding(0, UiTheme.dp(this@MainActivity, 3), 0, UiTheme.dp(this@MainActivity, 8))
+        })
+
+        keepRunningStatus = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        card.addView(keepRunningStatus)
+        refreshKeepRunningStatus()
+
+        // Start again after reboot (switch, default on)
+        val bootRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = UiTheme.dp(this@MainActivity, 48)
+            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_SURFACE, UiTheme.BORDER_SUBTLE, 6f, 1f)
+            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 6))
+        }
+        val bootText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        bootText.addView(TextView(this).apply {
+            text = "Start again after reboot"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        })
+        bootText.addView(TextView(this).apply {
+            text = "If the bot was running when the phone turned off, start it again after the phone starts."
+            textSize = 11f
+            setTextColor(UiTheme.TEXT_SECONDARY)
+        })
+        bootRow.addView(bootText, LinearLayout.LayoutParams(0, -2, 1f))
+        val initialBoot = KeepAlive.resumeAfterBoot(this)
+        val bootSwitch = Switch(this).apply {
+            isChecked = initialBoot
+            minimumHeight = UiTheme.dp(this@MainActivity, 40)
+            thumbTintList = ColorStateList.valueOf(if (initialBoot) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
+            trackTintList = ColorStateList.valueOf(if (initialBoot) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
+            setOnCheckedChangeListener { _, checked ->
+                thumbTintList = ColorStateList.valueOf(if (checked) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
+                trackTintList = ColorStateList.valueOf(if (checked) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
+                KeepAlive.setResumeAfterBoot(this@MainActivity, checked)
+            }
+        }
+        bootRow.addView(bootSwitch)
+        bootRow.setOnClickListener { bootSwitch.isChecked = !bootSwitch.isChecked }
+        card.addView(bootRow, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = UiTheme.dp(this@MainActivity, 4)
+            bottomMargin = UiTheme.dp(this@MainActivity, 8)
+        })
+
+        // Phone maker steps
+        val maker = KeepAlive.maker()
+        card.addView(TextView(this).apply {
+            text = "Steps for ${KeepAlive.makerTitle(maker)}"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setPadding(0, UiTheme.dp(this@MainActivity, 2), 0, UiTheme.dp(this@MainActivity, 4))
+        })
+        KeepAlive.makerSteps(maker).forEachIndexed { index, step ->
+            card.addView(TextView(this).apply {
+                text = "${index + 1}. $step"
+                textSize = 11.5f
+                setTextColor(UiTheme.TEXT_SECONDARY)
+                setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 4))
+            })
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+        }
+        actions.addView(
+            createGitHubButton("🚀 Open auto-start page") { openAutoStartSettings() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = UiTheme.dp(this@MainActivity, 4) }
+        )
+        actions.addView(
+            createGitHubButton("ℹ️ App info") { openAppDetails() },
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+        card.addView(actions)
+
+        return card.apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = UiTheme.dp(this@MainActivity, 8)
+                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+            }
+        }
+    }
+
+    private fun refreshKeepRunningStatus() {
+        if (!::keepRunningStatus.isInitialized) return
+        keepRunningStatus.removeAllViews()
+
+        val pm = getSystemService(PowerManager::class.java)
+        val batteryExempt = runCatching { pm.isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
+        addKeepRunningRow(
+            "Battery optimisation",
+            batteryExempt,
+            if (batteryExempt) "Off for MudaRemote (good)" else "On: Android may stop the bot"
+        ) { promptBatteryOptimization() }
+
+        val notificationsOn = runCatching { NotificationManagerCompat.from(this).areNotificationsEnabled() }.getOrDefault(true)
+        addKeepRunningRow(
+            "Notifications",
+            notificationsOn,
+            if (notificationsOn) "Allowed (good)" else "Blocked: you will not see stop or resume notices"
+        ) { openNotificationSettings() }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val restricted = runCatching {
+                getSystemService(ActivityManager::class.java).isBackgroundRestricted
+            }.getOrDefault(false)
+            addKeepRunningRow(
+                "Background activity",
+                !restricted,
+                if (restricted) "Restricted: Android will stop the bot in the background" else "Allowed (good)"
+            ) { openAppDetails() }
+        }
+    }
+
+    private fun addKeepRunningRow(label: String, ok: Boolean, state: String, onOpen: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = UiTheme.dp(this@MainActivity, 48)
+            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_SURFACE, UiTheme.BORDER_SUBTLE, 6f, 1f)
+            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 6))
+        }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = (if (ok) "✅ " else "⚠️ ") + label
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        })
+        texts.addView(TextView(this).apply {
+            text = state
+            textSize = 11f
+            setTextColor(if (ok) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.ACCENT_YELLOW)
+        })
+        row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(createGitHubSmallBtn("Open") { onOpen() })
+        keepRunningStatus.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = UiTheme.dp(this@MainActivity, 6)
+        })
+    }
+
+    private fun openNotificationSettings() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        }.onFailure { openAppDetails() }
+    }
+
+    private fun openAppDetails() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+    }
+
+    /** Tries the maker's known auto-start pages; falls back to this app's details page. */
+    private fun openAutoStartSettings() {
+        for (component in KeepAlive.autoStartComponents(KeepAlive.maker())) {
+            val candidate = Intent().setComponent(component)
+            val resolvable = runCatching { candidate.resolveActivity(packageManager) != null }.getOrDefault(false)
+            if (!resolvable) continue
+            if (runCatching { startActivity(candidate) }.isSuccess) return
+        }
+        toast("No auto-start page found on this phone. Opening app info instead.")
+        openAppDetails()
     }
 
     private fun promptBatteryOptimization() {
