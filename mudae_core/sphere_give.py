@@ -18,7 +18,9 @@ Flow (the owner's words: «$givesp <@id> then Y»; same shape as ``$givek``):
     side:  $givesp <@MAIN_ID> 1250          (the whole known stock minus the keep, re-read just before sending)
     bot:   «<side>, do you really want to give 1250 <sphere> ? (y/n/yes/no)»     [ASSUMED wording]
     side:  Y                                (only when the amount equals ours and no other receiver is named)
-    bot:   «<@side> just gifted 1250 <sphere> to <@main>» or a ✅ on our Y       [ASSUMED wording]
+    bot:   «<@side> just gifted 1250 <sphere> to <@main>» or a ✅ on our $givesp command or on our Y
+           (the live run of the sibling ``$oic`` put the ✅ on the COMMAND message; either counts, but only
+           after we have answered Y to a verified question)       [ASSUMED wording]
 
 The real reply wording of ``$givesp`` is NOT in the owner's samples, so every
 pattern lives in the two tables below (``QUESTION_PATTERNS`` and
@@ -186,6 +188,7 @@ class _Attempt:
     own_id: str
     own_names: Tuple[str, ...]
     sent_ids: set = field(default_factory=set)
+    command_id: object = None
     answer_id: object = None
     question_open: bool = False
     manual: bool = False
@@ -425,8 +428,10 @@ class SphereGiver:
         command = "{}givesp <@{}> {}".format(prefix or "$", attempt.main_id, amount)
         self._log("{}: giving {:,} spheres to the main.".format(
             "Give all spheres" if attempt.manual else "Sphere give", amount), "INFO")
-        if not await self._send_tracked(channel, command):
+        sent_command = await self._send_tracked(channel, command)
+        if not sent_command:
             return GiveOutcome("stopped", "the $givesp command could not be sent", amount)
+        attempt.command_id = getattr(sent_command, "id", None)
 
         self.state = AWAITING_QUESTION
         kind, reply = await self._next(self.question_timeout)
@@ -459,6 +464,7 @@ class SphereGiver:
         if current is not None and amount > current:
             await self._answer_no_if_open(channel)
             return GiveOutcome("stopped", "the known stock fell to {:,} below {:,}; answered n".format(current, amount), amount)
+        self._drop_queued_acks()
         answered = await self._send_tracked(channel, "Y")
         if not answered:
             await self._answer_no_if_open(channel)
@@ -545,8 +551,11 @@ class SphereGiver:
                     return "refused", None
                 continue
             if kind == "ack":
-                # A ✅ counts only on our own «Y» (a ✅ on the command alone proves nothing).
-                if accept_ack and payload is not None and payload == self._attempt.answer_id:
+                # A ✅ counts on our «Y» or on our own command message, and only once Y has been answered
+                # (accept_ack is False before that, so a ✅ on the command alone, early, proves nothing).
+                attempt = self._attempt
+                if (accept_ack and payload is not None and attempt.answer_id is not None
+                        and payload in (attempt.answer_id, attempt.command_id)):
                     return "ack", None
                 continue
             reply = payload
@@ -563,6 +572,22 @@ class SphereGiver:
             if parse_sphere_question(reply.text) is not None:
                 return "question", reply
             return ("refusal" if looks_like_refusal(reply.text) else "other"), reply
+
+    def _drop_queued_acks(self):
+        """Forget ✅ events that arrived before we answered (they cannot be the result of the answer)."""
+        queue = self._queue
+        if queue is None:
+            return
+        kept = []
+        while True:
+            try:
+                item = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item[0] != "ack":
+                kept.append(item)
+        for item in kept:
+            queue.put_nowait(item)
 
     async def _answer_no_if_open(self, channel):
         attempt = self._attempt

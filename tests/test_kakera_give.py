@@ -35,16 +35,25 @@ class FakeBot:
         self.script = list(script)  # one entry per message we send: list of reply texts, "REFUSE", or None
         self.sent = []
         self.next_id = 1000
+        self.first_id = None
 
     async def send(self, channel, text):
         self.sent.append(text)
         self.next_id += 1
         my_id = self.next_id
+        if self.first_id is None:
+            self.first_id = my_id
         replies = self.script.pop(0) if self.script else None
         loop = asyncio.get_running_loop()
         for reply in replies or ():
             if reply == "REFUSE":
                 loop.call_soon(self.giver_ref[0].on_refused, my_id)
+                continue
+            if reply == "ACK":  # ✅ on the message being sent now
+                loop.call_soon(self.giver_ref[0].on_ack, my_id)
+                continue
+            if reply == "ACK_COMMAND":  # ✅ on our first message (the command)
+                loop.call_soon(self.giver_ref[0].on_ack, self.first_id)
                 continue
             self.next_id += 1
             loop.call_soon(self.giver_ref[0].on_reply, BotReply(self.next_id, channel.id, reply))
@@ -112,6 +121,25 @@ class GiveFlowTests(unittest.TestCase):
         self.assertEqual(self.side.kakera, 0)
         self.assertEqual(self.main.kakera, 1000 + 45132)
         self.assertEqual(self.store.gives_today("pside#1", WHEN.date()), 1)
+
+    def test_check_reaction_on_the_command_after_y_is_success(self):
+        giver, bot = self.make([[question(45132)], ["ACK_COMMAND"]])
+        outcome = self.give(giver)
+        self.assertEqual(outcome.status, "given", outcome)
+        self.assertEqual(self.side.kakera, 0)
+        self.assertEqual(self.main.kakera, 1000 + 45132)
+
+    def test_check_reaction_on_our_y_is_success(self):
+        giver, bot = self.make([[question(45132)], ["ACK"]])
+        self.assertEqual(self.give(giver).status, "given")
+        self.assertEqual(bot.sent, ["$givek <@{}> 45132".format(MAIN_ID), "y"])
+
+    def test_check_reaction_before_any_answer_is_not_success(self):
+        giver, bot = self.make([["ACK"], None])
+        outcome = self.give(giver)
+        self.assertEqual(outcome.status, "stopped")
+        self.assertNotIn("y", bot.sent)
+        self.assertEqual(self.side.kakera, 45132)
 
     def test_happy_path_without_extra(self):
         giver, bot = self.make([[question(45000)], [success(45000)]])

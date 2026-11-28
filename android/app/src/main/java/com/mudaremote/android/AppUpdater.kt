@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.content.FileProvider
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -27,7 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The app's own updater. It looks only at the releases of the owner's fork on GitHub,
- * downloads `MudaFork-<version>.apk` to the app cache (with resume and retry), checks its
+ * downloads `MudaFork-<version>.apk` to the app cache ([RangeDownloader]: several connections,
+ * resume of half-done chunks, retry with back-off, one connection when the server cannot cut the
+ * file), checks its
  * size, its SHA-256 (when the release states one), its package name and its signing
  * certificate, and then hands it to Android's installer.
  *
@@ -43,6 +44,7 @@ object AppUpdater {
         val done: Long,
         val total: Long,
         val message: String,
+        val speed: Long = 0L,  // bytes per second while downloading, 0 when not known
     )
 
     enum class FailKind { OFFLINE, RATE_LIMITED, ERROR }
@@ -109,8 +111,8 @@ object AppUpdater {
 
     fun isBusy(): Boolean = snapshot.phase == Phase.DOWNLOADING || snapshot.phase == Phase.VERIFYING
 
-    private fun set(phase: Phase, release: AppUpdateCore.ReleaseInfo?, done: Long = 0L, total: Long = 0L, message: String = "") {
-        val snap = Snapshot(phase, release, done, total, message)
+    private fun set(phase: Phase, release: AppUpdateCore.ReleaseInfo?, done: Long = 0L, total: Long = 0L, message: String = "", speed: Long = 0L) {
+        val snap = Snapshot(phase, release, done, total, message, speed)
         snapshot = snap
         main.post { listener?.invoke(snap) }
     }
@@ -267,6 +269,20 @@ object AppUpdater {
         throw IOException("Too many redirects")
     }
 
+    /** Connections for the APK download: same identity and timeouts; redirects are followed (and checked) by [RangeDownloader]. */
+    private val downloadOpener = RangeDownloader.Opener { url ->
+        val c = url.openConnection() as HttpURLConnection
+        c.instanceFollowRedirects = false
+        c.connectTimeout = 15000
+        c.readTimeout = 30000
+        c.setRequestProperty("User-Agent", "MudaFork-Updater")
+        c.setRequestProperty("Accept", "application/octet-stream")
+        c
+    }
+
+    /** Every address of the download, after every redirect, must be one of GitHub's own hosts. */
+    private val downloadCheck = RangeDownloader.UrlCheck { url -> AppUpdateCore.isTrustedUrl(url) }
+
     private fun httpGetText(url: String, accept: String): HttpResult {
         val c = openFollowing(url, 0L, accept)
         try {
@@ -309,6 +325,7 @@ object AppUpdater {
         val dir = updatesDir(app)
         val finalFile = File(dir, AppUpdateCore.apkNameFor(release.version))
         val part = File(dir, finalFile.name + ".part")
+        val state = File(dir, finalFile.name + ".part.state")
         val total = release.apk.size
         try {
             set(Phase.DOWNLOADING, release, 0L, total)
@@ -330,13 +347,13 @@ object AppUpdater {
             val alreadyHere = finalFile.isFile && (total <= 0L || finalFile.length() == total)
             if (!alreadyHere) {
                 finalFile.delete()
-                downloadWithRetry(app, release, part)
+                downloadWithRetry(app, release, part, state)
                 if (!part.renameTo(finalFile)) throw IOException("Could not store the downloaded file.")
             }
             set(Phase.VERIFYING, release, total, total)
             if (total > 0L && finalFile.length() != total) {
                 finalFile.delete()
-                part.delete()
+                discardPartial(part, state)
                 fail(app, release, "The downloaded file has the wrong size.")
                 return
             }
@@ -345,7 +362,7 @@ object AppUpdater {
                 val actual = sha256OfFile(finalFile)
                 if (actual != wanted) {
                     finalFile.delete()
-                    part.delete()
+                    discardPartial(part, state)
                     fail(app, release, "The downloaded file is damaged (checksum mismatch). Try again.")
                     return
                 }
@@ -376,12 +393,19 @@ object AppUpdater {
         return if (r.code == 200) r.body else null
     }
 
-    private fun downloadWithRetry(app: Context, release: AppUpdateCore.ReleaseInfo, part: File) {
+    /** The partial file, its progress record and the record's temporary copy. */
+    private fun discardPartial(part: File, state: File) {
+        part.delete()
+        state.delete()
+        File(state.path + ".tmp").delete()
+    }
+
+    private fun downloadWithRetry(app: Context, release: AppUpdateCore.ReleaseInfo, part: File, state: File) {
         var attempt = 0
         while (true) {
             attempt++
             try {
-                downloadOnce(release, part)
+                downloadOnce(app, release, part, state)
                 return
             } catch (e: CancelledException) {
                 throw e
@@ -390,7 +414,7 @@ object AppUpdater {
             } catch (e: IOException) {
                 if (attempt >= MAX_ATTEMPTS) throw e
                 system(app, "Download interrupted; retrying ($attempt/$MAX_ATTEMPTS).")
-                set(Phase.DOWNLOADING, release, if (part.isFile) part.length() else 0L, release.apk.size, "Connection lost; retrying ($attempt/$MAX_ATTEMPTS)...")
+                set(Phase.DOWNLOADING, release, snapshot.done, release.apk.size, "Connection lost; retrying ($attempt/$MAX_ATTEMPTS)...")
                 var waited = 0L
                 while (waited < 2000L * attempt) {
                     if (cancelFlag.get()) throw CancelledException()
@@ -401,63 +425,30 @@ object AppUpdater {
         }
     }
 
-    private fun downloadOnce(release: AppUpdateCore.ReleaseInfo, part: File) {
+    /** One run of the downloader: it resumes from the progress record when the size and the ETag/date still match. */
+    private fun downloadOnce(app: Context, release: AppUpdateCore.ReleaseInfo, part: File, state: File) {
         val total = release.apk.size
-        var existing = if (part.isFile) part.length() else 0L
-        if (total > 0L && existing > total) {
-            part.delete()
-            existing = 0L
-        }
-        if (total > 0L && existing == total) return
-        var conn = openFollowing(release.apk.url, existing, "application/octet-stream")
-        var code = conn.responseCode
-        if (code == 416) {
-            conn.disconnect()
-            part.delete()
-            existing = 0L
-            conn = openFollowing(release.apk.url, 0L, "application/octet-stream")
-            code = conn.responseCode
-        }
-        try {
-            var append = false
-            if (code == 206) {
-                val range = conn.getHeaderField("Content-Range") ?: ""
-                if (existing > 0L && range.startsWith("bytes $existing-")) {
-                    append = true
-                } else {
-                    throw IOException("Unexpected range answer")
-                }
-            } else if (code == 200) {
-                existing = 0L
-            } else if (code >= 500) {
-                throw IOException("HTTP $code")
-            } else {
-                throw FatalDownloadException("The download was refused (HTTP $code).")
+        val result = try {
+            RangeDownloader.fetch(
+                release.apk.url, part, state, RangeDownloader.MAX_CONNECTIONS, downloadOpener, downloadCheck, cancelFlag,
+                RangeDownloader.Listener { done, size, speed ->
+                    set(Phase.DOWNLOADING, release, done, if (size > 0L) size else total, "", speed)
+                },
+            )
+        } catch (e: RangeDownloader.Cancelled) {
+            throw CancelledException()
+        } catch (e: RangeDownloader.Refused) {
+            throw FatalDownloadException("The download address is not on GitHub.")
+        } catch (e: RangeDownloader.Status) {
+            if (e.code in 400..499 && !RangeDownloader.isRetryableStatus(e.code)) {
+                throw FatalDownloadException("The download was refused (HTTP ${e.code}).")
             }
-            var done = existing
-            var lastPost = 0L
-            conn.inputStream.use { input ->
-                FileOutputStream(part, append).use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        if (cancelFlag.get()) throw CancelledException()
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        done += n
-                        val now = System.currentTimeMillis()
-                        if (now - lastPost >= 250L) {
-                            lastPost = now
-                            set(Phase.DOWNLOADING, release, done, total)
-                        }
-                    }
-                    out.flush()
-                }
-            }
-            if (total > 0L && part.length() != total) throw IOException("Incomplete download")
-        } finally {
-            conn.disconnect()
+            throw e
         }
+        if (result.resumed) system(app, "Download went on from the earlier partial file.")
+        if (!result.ranged) system(app, "The server cannot send the file in parts; it was downloaded over one connection.")
+        else system(app, "Downloaded over ${result.connections} connection(s).")
+        // The size is checked against the release by the caller (a wrong size is refused there).
     }
 
     private fun sha256OfFile(file: File): String {

@@ -312,6 +312,10 @@ def configure_client(
     client.main_claims_alt_rolls_mode = normalize_alt_roll_claim_mode(preset_data.get("main_claims_alt_rolls_mode"))
     # The mirror: «Alts claim good rolls made by the main», off by default.
     client.alts_claim_main_rolls = bool(preset_data.get("alts_claim_main_rolls", False))
+    # 6.0.2 (mudae_core.main_alt_coop), both off by default: the main keeps rolling
+    # while an alt can claim; the accounts of a profile take each other's kakera.
+    client.main_rolls_while_alt_can_claim = bool(preset_data.get("main_rolls_while_alt_can_claim", False))
+    client.accounts_share_kakera_reacts = bool(preset_data.get("accounts_share_kakera_reacts", False))
     # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
     client.fast_setup = bool(preset_data.get("fast_setup", False))
     client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
@@ -319,7 +323,9 @@ def configure_client(
     client.give_kakera_threshold = _bounded_int(
         preset_data.get("give_kakera_threshold", 45000), 45000, 1, 1_000_000_000
     )
-    client.give_kakera_extra = bool(preset_data.get("give_kakera_extra", True))
+    from .kakera_give import AMOUNT_MODE_EVERYTHING, amount_mode_from_preset
+    client.give_kakera_amount_mode = amount_mode_from_preset(preset_data)
+    client.give_kakera_extra = client.give_kakera_amount_mode == AMOUNT_MODE_EVERYTHING
     client.give_kakera_daily_cap = _bounded_int(preset_data.get("give_kakera_daily_cap", 3), 3, 1, 50)
     client.give_kakera_button_minimum = _bounded_int(
         preset_data.get("give_kakera_button_minimum", 1000), 1000, 1, 1_000_000_000
@@ -353,6 +359,9 @@ def configure_client(
     client.perk10_min_spheres = perk10.min_spheres
     client.perk10_max_characters = perk10.max_characters
     client.perk10_daily_cap = perk10.daily_cap
+    client.perk10_amount = perk10.amount
+    # «Upgrade perk 10 now»: a request counter raised by the editor/app button.
+    client.perk10_now_round = _bounded_int(preset_data.get("perk10_now_round", 0), 0, 0, 1_000_000_000)
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -750,13 +759,14 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
     "account_role", "stored_account_role", "main_profile_id", "side_order", "side_rolls_for_main",
     "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode",
-    "alts_claim_main_rolls",
+    "alts_claim_main_rolls", "main_rolls_while_alt_can_claim", "accounts_share_kakera_reacts",
     "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
-    "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
+    "give_kakera_extra", "give_kakera_amount_mode", "give_kakera_daily_cap", "give_kakera_button_minimum",
     "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
     "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
     "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages",
     "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
+    "perk10_amount", "perk10_now_round",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",

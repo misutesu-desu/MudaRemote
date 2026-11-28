@@ -249,6 +249,13 @@ object AppUpdateCore {
 
     fun formatMb(bytes: Long): String = String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
 
+    /** The download speed as "1.2 MB/s"; below 100 KB/s as "85 KB/s"; blank when not known yet. */
+    fun formatSpeed(bytesPerSecond: Long): String = when {
+        bytesPerSecond <= 0L -> ""
+        bytesPerSecond < 100L * 1024L -> String.format(Locale.US, "%d KB/s", maxOf(1L, bytesPerSecond / 1024L))
+        else -> String.format(Locale.US, "%.1f MB/s", bytesPerSecond / 1048576.0)
+    }
+
     /** The date part of GitHub's timestamp ("2026-11-28T10:00:00Z" -> "2026-11-28"); blank when absent. */
     fun publishedDate(iso: String): String = if (iso.length >= 10) iso.substring(0, 10) else ""
 
@@ -262,7 +269,7 @@ object AppUpdateCore {
 
     // ---------------------------------------------------------------- cache files
 
-    private val CACHE_FILE = Regex("^MudaFork-(.+?)\\.apk(\\.part)?$")
+    private val CACHE_FILE = Regex("^MudaFork-(.+?)\\.apk(\\.part(\\.state(\\.tmp)?)?)?$")
 
     /** The version in the name of one of the updater's own cache files; null for any other file. */
     fun versionOfCacheFile(name: String): String? = CACHE_FILE.matchEntire(name)?.groupValues?.get(1)

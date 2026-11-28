@@ -361,7 +361,9 @@ class AppUpdateUi(private val activity: Activity) {
                     progress?.isIndeterminate = false
                     progress?.progress = ((snap.done * 1000L) / snap.total).toInt()
                     val pct = (snap.done * 100L) / snap.total
-                    val base = "$pct%  ·  ${AppUpdateCore.formatMb(snap.done)} / ${AppUpdateCore.formatMb(snap.total)}"
+                    val speedText = AppUpdateCore.formatSpeed(snap.speed)
+                    val base = "$pct%  ·  ${AppUpdateCore.formatMb(snap.done)} / ${AppUpdateCore.formatMb(snap.total)}" +
+                        if (speedText.isEmpty()) "" else "  ·  $speedText"
                     status?.text = if (snap.message.isNotEmpty()) snap.message else base
                 } else {
                     progress?.isIndeterminate = true

@@ -352,6 +352,24 @@ def main_receiving(main_key) -> bool:
         return main_key in _busy_mains
 
 
+# Key farming mode: the main's own rolls hold only while it answers «y»
+# (mudae_core.main_alt_coop.receiver_holds_rolls), not for the whole give.
+_confirming_mains = set()
+
+
+def _set_confirming(main_key, on):
+    with _pairs_lock:
+        if on:
+            _confirming_mains.add(main_key)
+        else:
+            _confirming_mains.discard(main_key)
+
+
+def main_confirming(main_key) -> bool:
+    with _pairs_lock:
+        return main_key in _confirming_mains
+
+
 # ---------------------------------------------------------------------------
 # The flow
 # ---------------------------------------------------------------------------
@@ -559,6 +577,7 @@ class HaremGiver:
             self._attempt = None
             self._queue = None
             self.state = IDLE
+            _set_confirming(partner.key, False)
             _release_main(partner.key)
         if outcome.status == "stopped" and attempt is not None and attempt.rounds_done:
             outcome.reason += " (after {} round(s) that gave page(s) {})".format(
@@ -638,8 +657,13 @@ class HaremGiver:
             raise _Stop(wrong + "; the main answered n", reply.text)
 
         self.state = CONFIRMING
-        await self._pause(busy, partner)
-        receipt = await partner.answer(attempt.channel_id, "y")
+        # From the confirm question until the «y» is out, the main's own rolls hold.
+        _set_confirming(partner.key, True)
+        try:
+            await self._pause(busy, partner)
+            receipt = await partner.answer(attempt.channel_id, "y")
+        finally:
+            _set_confirming(partner.key, False)
         if not receipt:
             raise _Stop("the main could not answer y")
         if getattr(receipt, "id", None) is not None:

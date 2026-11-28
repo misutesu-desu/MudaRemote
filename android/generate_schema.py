@@ -101,7 +101,7 @@ def main(project_root, output_dir):
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
-        "Main & alts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
+        "Main & alts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_rolls_while_alt_can_claim", "accounts_share_kakera_reacts", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_amount_mode", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap", "perk10_amount", "perk10_now_round"},
         "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "key_limit_pause_scope", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
@@ -117,16 +117,20 @@ def main(project_root, output_dir):
     # stores the picked profile's stable id (see MainActivity.buildFieldView).
     settings.setdefault("main_profile_id", {})["picker"] = "profile"
     # The old separate-profile fields come last («Advanced: separate profiles»).
-    role_order = ["side_rolls_for_main",
+    role_order = ["side_rolls_for_main", "main_rolls_while_alt_can_claim",
                   "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls",
-                  "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id",
+                  "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "accounts_share_kakera_reacts",
+                  "main_account_id",
                   "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
-                  "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
-                  "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
-                  "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages",
+                  "give_kakera_amount_mode", "give_kakera_daily_cap", "give_kakera_button_minimum",
+                  "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
+                  "auto_give_harem", "harem_give_trigger", "harem_give_pages",
                   "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text",
                   "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres",
-                  "perk10_max_characters", "perk10_daily_cap", "account_role", "main_profile_id", "side_order"]
+                  "perk10_max_characters", "perk10_daily_cap", "perk10_amount",
+                  "account_role", "main_profile_id", "side_order",
+                  # the manual actions: small rows at the very end of the group
+                  "give_kakera_now_round", "give_spheres_now_round", "perk10_now_round"]
     for order, key in enumerate(role_order):
         settings.setdefault(key, {})["order"] = order
     # «Send again» for Fast setup: the app shows a button that raises this
@@ -142,14 +146,26 @@ def main(project_root, output_dir):
     # (the running side then gives its whole total once).
     settings.setdefault("give_kakera_now_round", {}).update({
         "widget": "request_now",
-        "label": "Give all kakera now",
+        "label": "Give kakera now",
         "description": "One give of the whole kakera total to the main, when it is known and at least «Minimum for the button». The account must be running.",
     })
     settings.setdefault("give_spheres_now_round", {}).update({
         "widget": "request_now",
-        "label": "Give all spheres now",
+        "label": "Give spheres now",
         "description": "One give of all the spheres (minus «Spheres to keep on this account») to the main. The account must be running.",
     })
+    settings.setdefault("perk10_amount", {}).update({
+        "label": "Characters to upgrade each time (0 = as many as the spheres allow)",
+        "description": "Optional. Once the spheres reach the minimum, it upgrades exactly this many (or fewer when the spheres afford fewer). 0 upgrades as many as the spheres allow.",
+    })
+    settings.setdefault("perk10_now_round", {}).update({
+        "widget": "request_now",
+        "label": "Upgrade perk 10 now",
+        "description": "One perk-10 upgrade now (needs at least 1,000 spheres known). Works with the automatic switch off; alts only with «Let side accounts upgrade too». The account must be running.",
+    })
+    # The 6.0.x switch «give_kakera_extra» is replaced by the choice «give_kakera_amount_mode»; the app does not show
+    # it (a stored profile keeps the key, and the bot reads it when the choice is absent).
+    settings.pop("give_kakera_extra", None)
     settings.setdefault("auto_perk10", {}).update({
         "label": "Upgrade perk 10 automatically",
         "description": "Upgrades the main's characters. Alts upgrade too only with «Let side accounts upgrade too». "
@@ -164,7 +180,7 @@ def main(project_root, output_dir):
         entry["label"] = "Advanced: separate profiles — " + str(entry.get("label", key))
         entry["description"] = ("Only for profiles set up before alts lived under Account Tokens; leave as is. "
                                 + str(entry.get("description", "")).strip())
-    for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap",
+    for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_amount_mode", "give_kakera_daily_cap",
                 "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres",
                 "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round",
                 "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours",

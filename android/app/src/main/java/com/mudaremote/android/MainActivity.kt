@@ -81,7 +81,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var profileSummaryTitle: TextView
     private lateinit var profileRoleChip: TextView
     private lateinit var profileRunChip: TextView
-    private lateinit var giveKakeraQuickBtn: TextView
     private var pendingNoticeResume = false
 
     private var schemaFields = JSONObject()
@@ -522,9 +521,6 @@ class MainActivity : ComponentActivity() {
         summaryRow.addView(summaryChips, LinearLayout.LayoutParams(-1, -2))
         card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
 
-        giveKakeraQuickBtn = createGitHubButton("Give all kakera", UiTheme.ButtonStyle.TONAL) { requestGiveAllKakera() }
-        card.addView(giveKakeraQuickBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
-
         // Profile management on its own wrapping row so nothing clips on narrow screens.
         val actionsRow = FlowLayout(this).apply {
             setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, 0)
@@ -543,7 +539,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Role, runtime state and the side-only action of the open profile; changes only what differs. */
+    /** Role and runtime state of the open profile; changes only what differs. */
     private fun refreshProfileSummary() {
         if (!::profileSummaryTitle.isInitialized) return
         val data = profiles[currentProfile]
@@ -566,8 +562,6 @@ class MainActivity : ComponentActivity() {
             profileRunChip.text = runText
             UiTheme.styleStatusChip(profileRunChip, runColor)
         }
-        val kakeraVisibility = if (isLegacySide || alts > 0) View.VISIBLE else View.GONE
-        if (giveKakeraQuickBtn.visibility != kakeraVisibility) giveKakeraQuickBtn.visibility = kakeraVisibility
     }
 
     private fun setTextIfChanged(view: TextView, value: String) {
@@ -1291,7 +1285,10 @@ class MainActivity : ComponentActivity() {
         var sectionBody: LinearLayout? = null
 
         for (key in keys) {
-            val value = data.opt(key) ?: if (key in inheritedKakeraFields) {
+            val value = data.opt(key) ?: if (key == "give_kakera_amount_mode") {
+                // A profile saved before the choice existed keeps its old «give_kakera_extra» switch.
+                if (data.optBoolean("give_kakera_extra", true)) "everything" else "amount"
+            } else if (key in inheritedKakeraFields) {
                 JSONArray(inheritedKakeraAtRender)
             } else null
             val meta = schemaFields.optJSONObject(key)
@@ -1321,12 +1318,13 @@ class MainActivity : ComponentActivity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
                 headerText.addView(headerTitle)
-                headerText.addView(TextView(this).apply {
+                val headerDescription = TextView(this).apply {
                     text = getSectionDescription(section)
                     UiTheme.styleSupporting(this)
                     maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                })
+                }
+                headerText.addView(headerDescription)
                 headerLayout.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
 
                 val chevron = TextView(this).apply {
@@ -1348,6 +1346,9 @@ class MainActivity : ComponentActivity() {
                     val open = newBody.visibility == View.VISIBLE
                     chevron.text = if (open) "▲" else "▼"
                     headerTitle.text = section
+                    // Expanded: the whole description; collapsed: at most two lines.
+                    headerDescription.maxLines = if (open) Int.MAX_VALUE else 2
+                    headerDescription.ellipsize = if (open) null else android.text.TextUtils.TruncateAt.END
                     headerLayout.contentDescription = "$section, " + if (open) "expanded" else "collapsed"
                 }
                 updateHeader()
@@ -1573,8 +1574,12 @@ class MainActivity : ComponentActivity() {
             })
         }
         container.addView(
-            createGitHubSmallBtn(meta.optString("label", "Give all kakera now"), UiTheme.ButtonStyle.TONAL) { _ ->
-                if (key == "give_spheres_now_round") requestGiveAllSpheres() else requestGiveAllKakera()
+            createGitHubSmallBtn(meta.optString("label", "Give kakera now"), UiTheme.ButtonStyle.TONAL) { _ ->
+                when (key) {
+                    "give_spheres_now_round" -> requestGiveAllSpheres()
+                    "perk10_now_round" -> requestUpgradePerk10()
+                    else -> requestGiveAllKakera()
+                }
             },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) }
         )
@@ -1586,36 +1591,50 @@ class MainActivity : ComponentActivity() {
     private fun requestGiveAllKakera() {
         if (profiles[currentProfile] == null) return
         if (!profileUsesAlts(currentProfile)) {
-            toast("Give all kakera now: $NO_ALTS_HINT.")
+            toast("Give kakera now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_kakera_now_round"] as? EditText
         if (counter == null) {
-            toast("Give all kakera now: open this profile's settings first.")
+            toast("Give kakera now: open this profile's settings first.")
             return
         }
         val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
         counter.setText(next.toString())
         saveCurrentProfile(true)
-        toast("Give all kakera requested; the result appears in the logs and the account's status.")
+        toast("Give kakera requested; the result appears in the logs and the account's status.")
     }
 
     /** Raise the profile's «Give all spheres now» counter and save; the running side gives its spheres once. */
     private fun requestGiveAllSpheres() {
         if (profiles[currentProfile] == null) return
         if (!profileUsesAlts(currentProfile)) {
-            toast("Give all spheres now: $NO_ALTS_HINT.")
+            toast("Give spheres now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_spheres_now_round"] as? EditText
         if (counter == null) {
-            toast("Give all spheres now: open this profile's settings first.")
+            toast("Give spheres now: open this profile's settings first.")
             return
         }
         val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
         counter.setText(next.toString())
         saveCurrentProfile(true)
-        toast("Give all spheres requested; the result appears in the logs and the account's status.")
+        toast("Give spheres requested; the result appears in the logs and the account's status.")
+    }
+
+    /** Raise the profile's «Upgrade perk 10 now» counter and save; the running main (and alts with «side_perk10») upgrade once. */
+    private fun requestUpgradePerk10() {
+        if (profiles[currentProfile] == null) return
+        val counter = fieldViews["perk10_now_round"] as? EditText
+        if (counter == null) {
+            toast("Upgrade perk 10 now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Upgrade perk 10 requested; the result appears in the logs and the account's status.")
     }
 
     private fun buildFieldViewInner(key: String, value: Any?, meta: JSONObject?): View {
@@ -1678,23 +1697,33 @@ class MainActivity : ComponentActivity() {
                 val topLine = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.TOP
+                    // Baseline alignment with the switch shifts a wrapped title up and clips its last line.
+                    isBaselineAligned = false
                 }
+                // The title takes the width left of the switch and grows downward as far as it needs:
+                // no line limit, no ellipsis, no fixed height, no top margin.
                 val label = TextView(this).apply {
                     text = labelText
                     UiTheme.styleLabel(this)
+                    maxLines = Int.MAX_VALUE
+                    ellipsize = null
+                    setSingleLine(false)
                 }
-                topLine.addView(label, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    // Centre the title on the 48dp switch for the common one-line case.
-                    topMargin = UiTheme.dp(this@MainActivity, 10)
-                })
+                topLine.addView(label, LinearLayout.LayoutParams(0, -2, 1f))
 
                 val switchView = Switch(this).apply {
                     UiTheme.styleSwitch(this)
+                    // The row is the touch target; the switch must not force a 48dp first line.
+                    minHeight = 0
+                    minimumHeight = 0
                     isChecked = value
                     tag = key
                     contentDescription = labelText
                 }
-                topLine.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+                topLine.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply {
+                    marginStart = UiTheme.dp(this@MainActivity, 12)
+                    gravity = Gravity.TOP or Gravity.END
+                })
                 switchCard.addView(topLine, LinearLayout.LayoutParams(-1, -2))
 
                 if (descriptionText.isNotBlank()) {
@@ -1702,7 +1731,7 @@ class MainActivity : ComponentActivity() {
                         text = descriptionText
                         UiTheme.styleRowDescription(this)
                     }
-                    switchCard.addView(desc, LinearLayout.LayoutParams(-1, -2))
+                    switchCard.addView(desc, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 5) })
                 }
 
                 switchCard.setOnClickListener {
@@ -1913,7 +1942,7 @@ class MainActivity : ComponentActivity() {
         if (!::fieldsContainer.isInitialized || currentProfile.isBlank()) return
         val data = profiles[currentProfile] ?: JSONObject()
         val oldKeys = data.keys().asSequence().toList()
-        oldKeys.filter { it != "token" && it != "profile_id" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
+        oldKeys.filter { it != "token" && it != "profile_id" && it != "give_kakera_extra" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
         if (!profileIdPattern.matches(data.optString("profile_id", ""))) data.put("profile_id", newProfileId())
 
         for ((key, view) in fieldViews) {

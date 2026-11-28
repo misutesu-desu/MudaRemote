@@ -1,212 +1,217 @@
 {
-  "version": "6.0.1",
-  "changelog": "**MudaFork v6.0.1**\n\n### Fixed\n- **Alts are your extra account tokens.** The first token of a profile is the main; the tokens under «Account Tokens (multi-account)» are its alts. Giving kakera, spheres and harem pages, side rolls and fast setup are set once in the profile and run on the alts. Nothing is greyed out any more.\n- **The main no longer seems to stop for no reason.** When «Pause on Key Limit» pauses an account, the log now names the account, the reason and when it resumes, and turning the switch off ends the pause at once.\n- **Screen repairs:** header buttons are no longer cut, the engine line shows its version, the bottom bar no longer covers content, and each setting shows its description under its title.\n\n### New\n- **Main claims good rolls made by its alts**, and **alts claim good rolls the main leaves** — two options, both off by default. Only one account ever clicks.\n- **Let side accounts upgrade too:** alts upgrade perk 10 only with this on, and then keep their spheres.\n- **Key limit pauses:** «everything» (as before) or «rolls only».\n- Logs of a multi-account profile start each line with «main:» or «alt N:».\n\n### Lighter\n- The app is built for phones only (arm64), which makes the download smaller.",
-  "download_url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_bot.py",
-  "exe_download_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v6.0.1/MudaFork.exe",
+  "version": "6.0.2",
+  "changelog": "**MudaFork v6.0.2**\n\n### Fixed\n- **Perk 10 no longer sends a command without a character.** One character is upgraded with `$oi Name $ 10`, several with `$oic`. A command is never sent unless every name is real, and «No character found!» is treated as a refusal.\n- **Setting titles are no longer cut** when they wrap to a second line.\n- **Gives and upgrades are confirmed correctly** when the bot ticks the command instead of the answer.\n- «Give all kakera» is no longer a button on the Profiles card.\n\n### New\n- **Main keeps rolling while an alt can claim**: an alt with a claim or `$rt` takes the main's good rolls.\n- **Main and alts take each other's kakera.**\n- **Key farming:** the main and its alts roll independently.\n- **Perk 10:** choose how many characters to upgrade each time, and «Upgrade perk 10 now».\n- **Kakera give:** choose «give everything» or «give only the amount».\n- **The `$mmz-` page buttons** are recognised in more ways, and the log says what the list showed when a page cannot be turned.\n\n### App\n- **Updates download faster and resume** after a dropped connection, with the speed shown.\n- The restart notice now reads «Android closed MudaFork at … It started again at …», with the reason when Android gives one.\n\nAll new options are off until you turn them on.",
+  "download_url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_bot.py",
+  "exe_download_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v6.0.2/MudaFork.exe",
   "exe_sha256": "pending-github-actions",
   "source_files": [
     {
       "path": "mudae_bot.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_bot.py",
-      "sha256": "0e3705dd1f8330d6bdc328aa64c62c254fdd4733a65ab4a6252ac5bb948898eb"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_bot.py",
+      "sha256": "1ebe3494d14a6aac6fedc8f40ba12c7553198af3de78c1b8f3c039cdbc6dd50b"
     },
     {
       "path": "mudae_preset_editor.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_preset_editor.py",
-      "sha256": "aba0dc936862b4c9c0ea0a309ead40f421c50c1411b8784f73e00365a5ce2d74"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_preset_editor.py",
+      "sha256": "8e0cf376504a8716fc6f616002df47253cc5541de26ff5f3ad080b0f47ff0838"
     },
     {
       "path": "mudae_core/__init__.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/__init__.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/__init__.py",
       "sha256": "f3a6ce06b739ec4b87b70c2178577bc3972ec6c9ebd3c23e9165ee0ad417fafe"
     },
     {
       "path": "mudae_core/claiming.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/claiming.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/claiming.py",
       "sha256": "7a3af3402178292d5ccae9fc0ea4fb17fbf752f3031229074724d9ecf0a1224c"
     },
     {
       "path": "mudae_core/config.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/config.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/config.py",
       "sha256": "49f23fe57f8304fd9c7cc003859bc0fe76f34ac5f71f1ae5c953d32f34f0abdd"
     },
     {
       "path": "mudae_core/kakera.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/kakera.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/kakera.py",
       "sha256": "493bcd6f1ac69f6d5d034b6333740e94c218c58f5cfb873de221b829d73ead3c"
     },
     {
       "path": "mudae_core/coordinator.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/coordinator.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/coordinator.py",
       "sha256": "34e876e05f4afa37b1f023917d0e5d962959b55469649b5f10e519918baa9513"
     },
     {
       "path": "mudae_core/account_state.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/account_state.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/account_state.py",
       "sha256": "edc715cbac5fa9941385e250cc1f05046ab8fc9ba9a240243c0bc25ace06ffff"
     },
     {
       "path": "mudae_core/fast_setup.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/fast_setup.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/fast_setup.py",
       "sha256": "92a9fb4e1ad74ac5b32ca2a3a922d8fb1ff0f8ff042c7051a0c0ebab861e1ff3"
     },
     {
       "path": "mudae_core/kakera_give.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/kakera_give.py",
-      "sha256": "56171f13388d9de7a8fcba8cb20f9b76a533674fd773ea645fc8eaeb3b4aef69"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/kakera_give.py",
+      "sha256": "31bb56c5b228237be34012d5f334ba71e7105173b7116a2c5717708604bb545e"
     },
     {
       "path": "mudae_core/harem_list.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/harem_list.py",
-      "sha256": "804ff529234ee4626ece9951788c344fe7e2a1d1c78ff28d21b20af96c6be7aa"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/harem_list.py",
+      "sha256": "6ef7ad3796a163dc6725b171174678fdf80023396690162324285e121d10b7ac"
     },
     {
       "path": "mudae_core/harem_give.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/harem_give.py",
-      "sha256": "61ec7232260abad9c1cc7694677cc625d4ce09e0b9da6540c4fd66c997ad7a6e"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/harem_give.py",
+      "sha256": "abba0d4c7d27ae4cf9e311a63f9445188b1d9eec6ac91a60fe6214888f89406c"
     },
     {
       "path": "mudae_core/perk_upgrade.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/perk_upgrade.py",
-      "sha256": "54a60a10d1389a9af0fe59aff30a282815b22a5df8ededd9d5f463d5e450bc08"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/perk_upgrade.py",
+      "sha256": "c61b74d226a33afdd54e5ca685525f9bc1110b259f30851060ed2d3fe6d7f359"
     },
     {
       "path": "mudae_core/sphere_give.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/sphere_give.py",
-      "sha256": "238c3b8f7f4b614691ea57015cebbbffe61e41b62fa5570f03771bfc713b892e"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/sphere_give.py",
+      "sha256": "935b553bf6ad27a96540dd6b3f7874fc98d0c3888130afe6aa78ba1f7318d785"
     },
     {
       "path": "mudae_core/account_roles.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/account_roles.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/account_roles.py",
       "sha256": "7ac9ff1f28f2d75952b87079b5d7a6f2d5ce8efdce9d8a47091de715b9277b04"
     },
     {
       "path": "mudae_core/alt_roll_claim.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/alt_roll_claim.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/alt_roll_claim.py",
       "sha256": "ffe4e3603e57dd7d544d1572062444501e5967a52b2d724d0fc82e2ec51f5355"
     },
     {
       "path": "mudae_core/key_limit.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/key_limit.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/key_limit.py",
       "sha256": "8d5aea4c20a4fd5d7c2a924bb8c25c5cdee8dd11eb34fa1b0e493460a584e75e"
     },
     {
+      "path": "mudae_core/main_alt_coop.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/main_alt_coop.py",
+      "sha256": "36d637bba0b2e812827e0006f54a2e83b7da077bba3fdc14521714aea6638706"
+    },
+    {
       "path": "mudae_core/logs.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/logs.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/logs.py",
       "sha256": "1f78e2c20f2ed7c4f87327d06cd6bf5e9b3b9e3c0c080d839a37bdc4dbde7df8"
     },
     {
       "path": "mudae_core/totals.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/totals.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/totals.py",
       "sha256": "3d0a550cf8f2561afd30a936dda24094c15c3b1679b0f8eedddec0f868d6c0c9"
     },
     {
       "path": "mudae_core/runtime.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/runtime.py",
-      "sha256": "6ff71ce2e58c6a47b9e8508e2d67adbb65a74bf2646f694f5b5ff592583a13a5"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/runtime.py",
+      "sha256": "30ce34dde46f25c621eef42d596db761333ab6ff40fe0d3011f43fade3c4bc30"
     },
     {
       "path": "mudae_core/secrets.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/secrets.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/secrets.py",
       "sha256": "589e09b9f0ce28c1c1b0e5bee9e0ca5d86bb245364cf05e4d81dfcf179c5ae1c"
     },
     {
       "path": "mudae_core/status.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/status.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/status.py",
       "sha256": "0d5a353a56ce08b38ea101d0cfe654308c267dad42e0f6732fe87b43b3b08cd3"
     },
     {
       "path": "mudae_core/spheres.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/spheres.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/spheres.py",
       "sha256": "97bb5d505bf7ebeb2fcafdd5741326f548c94bf3706f6ef396514e54b3efede5"
     },
     {
       "path": "mudae_core/filters.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/filters.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/filters.py",
       "sha256": "95d5a15407496e5373a9324caea378a8ff7af52efd5496069eb07eaa304606cd"
     },
     {
       "path": "mudae_core/webhooks.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/webhooks.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/webhooks.py",
       "sha256": "620a1f7f57f27c9d8d5511fe0a6e7f13d22de0d28dee77970afc75e22aceb064"
     },
     {
       "path": "mudae_core/updater.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/updater.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/updater.py",
       "sha256": "1b1ecd3aac86136571f40ffe5bd73b9476ecc5db58997973c9aa233c636d103a"
     },
     {
       "path": "mudae_core/versioning.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/versioning.py",
-      "sha256": "8894f21104a8ee4e8c14d8a42a0d59793f91bbc273d9667d3699a5f9875a1d07"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/versioning.py",
+      "sha256": "06fe7dc41c8924a3940167860ab9bcd07bf3f6e76cdbd72947e6eec15d1218a3"
     },
     {
       "path": "mudae_core/bot_config.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/bot_config.py",
-      "sha256": "461451e2d85b6ed206bfcabdebe235fe7a1a2ab01f5c11bd68c3b131aaa691f5"
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/bot_config.py",
+      "sha256": "1b48850f6c97bcc4ed522347e665c58381a53ba6efea5bb1acac3bc9097fc0f9"
     },
     {
       "path": "mudae_core/activity_events.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/activity_events.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/activity_events.py",
       "sha256": "1f23cf1f116976c1dd712bf064d08acb2f5d737098d5a23fb15212db24f1d928"
     },
     {
       "path": "mudae_core/bot_runtime.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/bot_runtime.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/bot_runtime.py",
       "sha256": "f36fcd2262d14a63b91e0f19968c76fe2db84dd5e935c33df8573f35727bccb3"
     },
     {
       "path": "mudae_core/worker.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/worker.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/worker.py",
       "sha256": "45c43ab46d93bb2c7ad28001d0666e3000e116893e0050eed62013abff24d6f8"
     },
     {
       "path": "mudae_core/watchdog.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/watchdog.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/watchdog.py",
       "sha256": "7e24bb5e295f4e3835f02bc1a5f012d7cb6338feecfdc86e94b5e5c8909a84a5"
     },
     {
       "path": "mudae_core/cloud_protocol.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/cloud_protocol.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/cloud_protocol.py",
       "sha256": "138291cce58a0925aa3e28397c9b0c605b7b8493c652b70389d2508ab4ba695e"
     },
     {
       "path": "mudae_core/worker_outbox.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/worker_outbox.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/worker_outbox.py",
       "sha256": "95152e16bf6745c20c70ce499ba1421c39d13159d119435e77cb959577a81beb"
     },
     {
       "path": "mudae_core/cloud_worker.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/cloud_worker.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/cloud_worker.py",
       "sha256": "c8acc8900fc8f970d30f458f7318b246504a816ce15fee36907776c4ad1de5d0"
     },
     {
       "path": "mudae_core/sphere_runtime.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/sphere_runtime.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/sphere_runtime.py",
       "sha256": "98ad6811761f41a146f11739e8dd6061e90b3317af8b9f8af6c30efb22b93658"
     },
     {
       "path": "requirements.txt",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/requirements.txt",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/requirements.txt",
       "sha256": "be9ba4d455b5095e5df39730f078b561ddb7bf18abc132dbe8ea47bc7cd61c4f"
     },
     {
       "path": "mudae_core/loot.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/loot.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/loot.py",
       "sha256": "e2dc06cc362f3eec7cf5f2004df22e0f6de94f5519f869050885696ebd64e3b5"
     },
     {
       "path": "mudae_core/roll_mode.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/roll_mode.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/roll_mode.py",
       "sha256": "7c0bc09929e7c6c00bfb51ae0884b7f8a4d08f0cc3f1dd3930068ba36ef0dae7"
     },
     {
       "path": "mudae_core/preset_reload.py",
-      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/preset_reload.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.2/mudae_core/preset_reload.py",
       "sha256": "f892663b8cf9583ae926ad92379b1bd7048f74845bb03545797296bdf19129d5"
     }
   ],
-  "apk_version": "6.0.1",
-  "apk_version_code": 2,
-  "apk_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v6.0.1/MudaFork-6.0.1.apk"
+  "apk_version": "6.0.2",
+  "apk_version_code": 3,
+  "apk_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v6.0.2/MudaFork-6.0.2.apk"
 }

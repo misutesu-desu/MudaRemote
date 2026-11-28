@@ -679,11 +679,14 @@ DEFAULTS = {
     "main_claims_alt_rolls": False,
     "main_claims_alt_rolls_mode": "when the alt would not claim",
     "alts_claim_main_rolls": False,
+    "main_rolls_while_alt_can_claim": False,
+    "accounts_share_kakera_reacts": False,
     "fast_setup": False,
     "fast_setup_round": 0,
     "auto_give_kakera": False,
     "give_kakera_threshold": 45000,
     "give_kakera_extra": True,
+    "give_kakera_amount_mode": "everything",
     "give_kakera_daily_cap": 3,
     "give_kakera_button_minimum": 1000,
     "give_kakera_now_round": 0,
@@ -705,6 +708,8 @@ DEFAULTS = {
     "perk10_min_spheres": 2000,
     "perk10_max_characters": 100,
     "perk10_daily_cap": 3,
+    "perk10_amount": 0,
+    "perk10_now_round": 0,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -997,12 +1002,17 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
-                      "main_claims_alt_rolls", "alts_claim_main_rolls")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
+                      "main_claims_alt_rolls", "alts_claim_main_rolls", "main_rolls_while_alt_can_claim",
+                      "accounts_share_kakera_reacts")
 # «Main claims good rolls made by its alts»: who gets a good alt roll (mudae_core.alt_roll_claim.MODES).
 ALT_ROLL_CLAIM_MODE_CHOICES = {
     "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
     "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+}
+GIVE_KAKERA_AMOUNT_MODE_CHOICES = {
+    "everything": "Give everything",
+    "amount": "Give only the amount",
 }
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
@@ -1019,6 +1029,7 @@ MUDAFORK_NUMBER_KEYS = (
     ("perk10_min_spheres", "Upgrade when spheres reach", 1000),
     ("perk10_max_characters", "Most characters per upgrade (0 = no limit)", 0),
     ("perk10_daily_cap", "At most N upgrades per day", 1),
+    ("perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0),
 )
 HAREM_TRIGGER_CHOICES = {
     "pages": "Pages: when my harem reaches X pages ($mm)",
@@ -1052,6 +1063,12 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
     if trigger is not None:
         value = str(trigger.get() or "pages")
         data["harem_give_trigger"] = value if value in HAREM_TRIGGER_CHOICES else "pages"
+    amount_mode = widgets.get("give_kakera_amount_mode")
+    if amount_mode is not None:
+        value = str(amount_mode.get() or "")
+        value = value if value in GIVE_KAKERA_AMOUNT_MODE_CHOICES else "everything"
+        data["give_kakera_amount_mode"] = value
+        data["give_kakera_extra"] = value == "everything"  # the old switch stays in step (never deleted)
     alt_mode = widgets.get("main_claims_alt_rolls_mode")
     if alt_mode is not None:
         value = str(alt_mode.get() or "")
@@ -1079,6 +1096,10 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
         data["give_spheres_now_round"] = max(0, int((previous or {}).get("give_spheres_now_round", 0) or 0))
     except (TypeError, ValueError):
         data["give_spheres_now_round"] = 0
+    try:
+        data["perk10_now_round"] = max(0, int((previous or {}).get("perk10_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["perk10_now_round"] = 0
     return errors
 
 
@@ -3361,6 +3382,13 @@ class PresetEditor:
             description="When the main's rolls end with its claim unused, an alt in the same channel rolls and the "
                         "main claims from those rolls with its own wishlist and kakera rules.",
         )
+        self.add_checkbox(
+            roles_frame.content, "main_rolls_while_alt_can_claim", "Main keeps rolling while an alt can claim",
+            description="When the main has no claim (and no $rt) but an alt in the same channel has a claim or $rt, "
+                        "the main still uses its rolls; a good roll it cannot claim goes to that alt (as with "
+                        "«Alts claim good rolls made by the main»), and an alt whose claim is spent may use its own "
+                        "$rt for it (its $rt settings apply). Off by default.",
+        )
         self.add_number_field(
             roles_frame.content, "side_rolls_max_per_reset", "Max alts per reset (1-10)", 1,
             description="How many alts may roll for the main in one claim reset (in the order of Account Tokens).",
@@ -3389,6 +3417,13 @@ class PresetEditor:
                         "Account Tokens order whose claim is free claims it after its snipe delay. The main always "
                         "comes first on its own rolls. Off by default.",
         )
+        self.add_checkbox(
+            roles_frame.content, "accounts_share_kakera_reacts", "Main and alts take each other's kakera",
+            description="When the account that rolled does not take a kakera button (no power, its power rules, "
+                        "the emoji is not in its lists, paused), one other account of this profile that would take "
+                        "it by its own lists and power clicks it (the main first, then the alts in order), after "
+                        "its kakera reaction delay. Off by default.",
+        )
         self.add_text_field(
             roles_frame.content, "main_account_id",
             "Main Account ID (optional override)",
@@ -3411,6 +3446,30 @@ class PresetEditor:
             legacy_frame.content, "side_order", "Side order (old way; 1 = asked first)", 1,
             description="Old separate side profiles only. Alts are asked in the order of Account Tokens.",
         )
+
+        # Manual actions: small secondary rows at the end of the group (never hero buttons).
+        actions_frame = tk.Frame(roles_frame.content, bg=self._get_parent_bg(roles_frame.content))
+        actions_frame.pack(fill=tk.X, pady=(10, 0))
+        for text, command, status_attr, hint in (
+            ("Give kakera now", self._request_give_all_kakera, "give_now_status_label",
+             "One give of the whole kakera total to the main (the account must be running)."),
+            ("Give spheres now", self._request_give_all_spheres, "give_spheres_status_label",
+             "One give of all the spheres (minus the amount to keep) to the main."),
+            ("Upgrade perk 10 now", self._request_upgrade_perk10, "perk10_now_status_label",
+             "One upgrade now (needs at least 1,000 spheres known; works with the switch off; "
+             "alts only with «Let side accounts upgrade too»)."),
+        ):
+            action_row = tk.Frame(actions_frame, bg=self._get_parent_bg(actions_frame))
+            action_row.pack(fill=tk.X, pady=(0, 6))
+            self.create_flat_button(
+                action_row, text, command, bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+            ).pack(side=tk.LEFT, padx=(20, 10))
+            label = tk.Label(
+                action_row, text=hint, bg=action_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9),
+                justify=tk.LEFT, wraplength=480,
+            )
+            label.pack(side=tk.LEFT)
+            setattr(self, status_attr, label)
 
         # «Fast setup» (main and side) and auto-give kakera to the main (side only)
         fork_frame = CollapsibleLabelFrame(frame, text="Fast Setup & Kakera to the Main", start_open=False)
@@ -3446,9 +3505,10 @@ class PresetEditor:
             self.give_fields_frame, "give_kakera_threshold", "Give kakera to my main when I reach", 45000,
             description="Whole number, at least 1.",
         )
-        self.add_checkbox(
-            self.give_fields_frame, "give_kakera_extra", "Also give what is above it",
-            description="On: has 45132 with 45000 picked → gives 45132. Off: gives exactly 45000.",
+        self.add_choice_field(
+            self.give_fields_frame, "give_kakera_amount_mode", "When kakera reaches the amount",
+            {"everything": "Give everything", "amount": "Give only the amount"},
+            description="Has 45,132 with 45,000 picked: «give everything» gives 45,132; «give only the amount» gives exactly 45,000.",
         )
         self.add_number_field(
             self.give_fields_frame, "give_kakera_daily_cap", "At most N gives per day", 3,
@@ -3456,19 +3516,8 @@ class PresetEditor:
         )
         self.add_number_field(
             self.give_fields_frame, "give_kakera_button_minimum", "Minimum for the button", 1000,
-            description="«Give all kakera now» gives the whole kakera total only when it is known and at least this much.",
+            description="«Give kakera now» gives the whole kakera total only when it is known and at least this much.",
         )
-        give_now_row = tk.Frame(self.give_fields_frame, bg=self._get_parent_bg(self.give_fields_frame))
-        give_now_row.pack(fill=tk.X, pady=(0, 8))
-        self.create_flat_button(
-            give_now_row, "Give all kakera now", self._request_give_all_kakera,
-            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
-        ).pack(side=tk.LEFT, padx=(20, 10))
-        self.give_now_status_label = tk.Label(
-            give_now_row, text="Runs one give of the whole total to the main (the account must be running).",
-            bg=give_now_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
-        )
-        self.give_now_status_label.pack(side=tk.LEFT)
         self.add_checkbox(
             self.give_fields_frame, "auto_give_spheres", "Alts give spheres to the main",
             description="Whenever an alt has spheres (read from the $tu replies and sphere-game results the app already gets), "
@@ -3490,17 +3539,6 @@ class PresetEditor:
             self.give_fields_frame, "spheres_keep", "Spheres to keep on this account", 0,
             description="0 gives everything. With 250 here and 1,250 in stock it gives 1,000.",
         )
-        give_spheres_row = tk.Frame(self.give_fields_frame, bg=self._get_parent_bg(self.give_fields_frame))
-        give_spheres_row.pack(fill=tk.X, pady=(0, 8))
-        self.create_flat_button(
-            give_spheres_row, "Give all spheres now", self._request_give_all_spheres,
-            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
-        ).pack(side=tk.LEFT, padx=(20, 10))
-        self.give_spheres_status_label = tk.Label(
-            give_spheres_row, text="Runs one give of all the spheres (minus the amount to keep) to the main.",
-            bg=give_spheres_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
-        )
-        self.give_spheres_status_label.pack(side=tk.LEFT)
 
         # Auto-give harem pages to the main (side only)
         harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to the Main", start_open=False)
@@ -3580,6 +3618,11 @@ class PresetEditor:
         self.add_number_field(
             perk_frame.content, "perk10_daily_cap", "At most N upgrades per day", 3,
             description="A safety limit. A long name list sent in several commands counts as one upgrade.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0,
+            description="Optional. Once the spheres reach the minimum, it upgrades exactly this many (or fewer when the "
+                        "spheres afford fewer); 0 upgrades as many as the spheres allow.",
         )
 
         tokens_entry = self.widgets.get("additional_tokens")
@@ -3911,6 +3954,12 @@ class PresetEditor:
         if trigger is not None:
             value = str(data.get("harem_give_trigger", "pages") or "pages")
             trigger.set(value if value in HAREM_TRIGGER_CHOICES else "pages")
+        amount_mode = widgets.get("give_kakera_amount_mode")
+        if amount_mode is not None:
+            value = str(data.get("give_kakera_amount_mode", "") or "")
+            if value not in GIVE_KAKERA_AMOUNT_MODE_CHOICES:  # an older profile: its «give_kakera_extra» switch
+                value = "everything" if data.get("give_kakera_extra", True) else "amount"
+            amount_mode.set(value)
         alt_mode = widgets.get("main_claims_alt_rolls_mode")
         if alt_mode is not None:
             value = str(data.get("main_claims_alt_rolls_mode", "") or "")
@@ -3970,7 +4019,7 @@ class PresetEditor:
         if not self.current_preset:
             return
         if not self._current_uses_alts():
-            messagebox.showinfo("Give all kakera now", NO_ALTS_HINT + ".", parent=self.root)
+            messagebox.showinfo("Give kakera now", NO_ALTS_HINT + ".", parent=self.root)
             return
         saved = self.presets.get(self.current_preset, {})
         try:
@@ -3990,7 +4039,7 @@ class PresetEditor:
         if not self.current_preset:
             return
         if not self._current_uses_alts():
-            messagebox.showinfo("Give all spheres now", NO_ALTS_HINT + ".", parent=self.root)
+            messagebox.showinfo("Give spheres now", NO_ALTS_HINT + ".", parent=self.root)
             return
         saved = self.presets.get(self.current_preset, {})
         try:
@@ -4004,6 +4053,24 @@ class PresetEditor:
                 label.configure(text="Requested: each running alt gives its spheres once (see the log for the result).")
         else:
             saved["give_spheres_now_round"] = next_round - 1
+
+    def _request_upgrade_perk10(self):
+        """«Upgrade perk 10 now»: raise the request counter and save, so the running account(s) pick it up."""
+        if not self.current_preset:
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("perk10_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["perk10_now_round"] = next_round
+        label = getattr(self, "perk10_now_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: the main upgrades once (alts only with «Let side accounts upgrade too»); "
+                                     "see the log for the result.")
+        else:
+            saved["perk10_now_round"] = next_round - 1
 
     def _refresh_give_fields_state(self):
         """The give settings stay editable; without alts they only show a one-line hint."""

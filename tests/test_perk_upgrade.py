@@ -8,7 +8,7 @@ from types import SimpleNamespace as NS
 from mudae_core.account_state import AccountStateStore
 from mudae_core.perk_upgrade import (
     COMMAND_LENGTH_LIMIT, PERK10_DEFAULTS, Perk10Settings, PerkUpgrader, build_commands, normalize_name,
-    parse_not_found, parse_oic_question, sphere_games_pending, upgrade_count, validate_perk10_settings,
+    parse_not_found, parse_oic_question, parse_oi_question, command_for, sphere_games_pending, upgrade_count, validate_perk10_settings,
 )
 from mudae_core.totals import SPHERES, AccountTotals
 from tests.test_harem_list import list_message
@@ -74,8 +74,9 @@ class FakeMudae:
             self.list_id = self.next_id
             self.current = 1
             loop.call_soon(self.ref[0].on_message, self._list(1), "")
-        elif text.startswith("$oic "):
-            body = text[len("$oic "):]
+        elif text.startswith("$oic ") or text.startswith("$oi "):
+            self.oic_id = my_id
+            body = text.split(" ", 1)[1]
             parts = [part.strip() for part in body.split("$")]
             assert parts[-1] == "10", text
             names = parts[:-1]
@@ -92,6 +93,8 @@ class FakeMudae:
             reply = self._script("y", "ACK")
             if reply == "ACK":
                 loop.call_soon(self.ref[0].on_ack, my_id)
+            elif reply == "ACK_COMMAND":  # the live run: ✅ on the $oic command message
+                loop.call_soon(self.ref[0].on_ack, self.oic_id)
             elif reply is not None:
                 self._emit_text(reply)
         return NS(id=my_id)
@@ -158,7 +161,47 @@ class MathTests(unittest.TestCase):
         self.assertEqual(build_commands(["A", "B"], "!")[0][0], "!oic A $ B $ 10")
 
 
-class FlowTests(unittest.TestCase):
+class EmptyNameGuardTests(unittest.TestCase):
+    def test_empty_or_invisible_names_never_make_a_command(self):
+        for bad in ([""], [" "], ["\u200b"], ["\u2800"], ["A", "\u200e"], ["A", ""]):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                build_commands(bad, "$")
+        with self.assertRaises(ValueError):
+            command_for([], "$")
+        self.assertEqual(build_commands([], "$"), [])
+
+    def test_one_name_uses_oi_two_or_more_oic(self):
+        self.assertEqual(build_commands(["Sonia Nevermind"])[0][0], "$oi Sonia Nevermind $ 10")
+        self.assertEqual(build_commands(["A", "B"])[0][0], "$oic A $ B $ 10")
+        self.assertEqual(build_commands(["A"], "!")[0][0], "!oi A $ 10")
+        names = ["Name Number {:03d} With Some Length".format(index) for index in range(61)]
+        commands = build_commands(names)
+        self.assertTrue(commands[-1][0].startswith("$oi ") or commands[-1][0].startswith("$oic "))
+        for command, chunk in commands:
+            self.assertEqual(command.startswith("$oi "), len(chunk) == 1)
+
+    def test_single_question_variants(self):
+        ok = [
+            "Do you really want to spend 1,000 <:spR:1> for 1 characters? (y/n/yes/no)",
+            "Do you really want to spend **1,000** <:spR:1> for **1** character? (y/n/yes/no)",
+            "TestUser, do you really want to spend 1,000 <:spR:1>? (y/n/yes/no)",
+            "Do you really want to spend 1,000 <:spR:1> on **Sonia Nevermind**? (y/n/yes/no)",
+        ]
+        for text in ok:
+            q = parse_oi_question(text, "Sonia Nevermind", ("TestUser",))
+            self.assertEqual((q.cost, q.count), (1000, 1), text)
+        bad = [
+            "Do you really want to spend 2,000 <:spR:1> for 2 characters? (y/n/yes/no)",
+            "Do you really want to spend 1,000 <:spR:1> on **Claire Redfield**? (y/n/yes/no)",
+            "Do you really want to spend 1,000 <:spR:1> for 3 characters? (y/n/yes/no)",
+            "Do you really want to buy something? (y/n/yes/no)",
+            "Do you really want to spend 1,000 <:spR:1> for 1 characters?",
+        ]
+        for text in bad:
+            self.assertIsNone(parse_oi_question(text, "Sonia Nevermind", ("TestUser",)), text)
+
+
+class FlowBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.logs = []
@@ -185,6 +228,7 @@ class FlowTests(unittest.TestCase):
         upgrader.reader.reply_timeout = 0.3
         upgrader.reader.edit_timeout = 0.3
         upgrader.reader.click_delay = (0, 0)
+        upgrader.reader.retry_delay = (0, 0)
         ref[0] = upgrader
         return upgrader, fake
 
@@ -200,6 +244,8 @@ class FlowTests(unittest.TestCase):
         settings = settings or Perk10Settings(enabled=True)
         return asyncio.run(upgrader.maybe_upgrade(CHANNEL, settings, **options))
 
+
+class FlowTests(FlowBase):
     def test_happy_path_ten(self):
         upgrader, fake = self.make()
         totals = self.totals(10000)
@@ -215,6 +261,75 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(upgrader.upgrades_today(), 1)
         self.assertTrue(any(level == "SUCCESS" and "upgraded 10 character(s) for 10,000 spheres" in message
                             for level, message in self.logs))
+
+    def test_check_reaction_on_the_command_counts(self):
+        upgrader, fake = self.make(script={"y": "ACK_COMMAND"})
+        totals = self.totals(10000)
+        outcome = self.run_upgrade(upgrader, totals)
+        self.assertEqual(outcome.status, "upgraded", outcome.reason)
+        self.assertEqual(totals.spheres, 0)
+
+    def test_owner_page_with_an_invisible_first_line_never_sends_an_empty_name(self):
+        # The 16:41 run on 6.0.1 sent «$oic  $ 10». A line that prints as nothing (zero-width space,
+        # Braille blank) in the description must be skipped; the first real name goes out, with $oi.
+        names = ["Sonia Nevermind", "Claire Redfield", "Kitasan Black"]
+        pages = [["\u200b", "\u2800 ", " "] + names]
+        upgrader, fake = self.make(pages=pages)
+        totals = self.totals(1225)
+        settings = Perk10Settings(enabled=True, min_spheres=1000)  # a minimum at or under his stock: allowed by setting
+        outcome = self.run_upgrade(upgrader, totals, settings)
+        self.assertEqual(outcome.status, "upgraded", outcome.reason)
+        commands = [text for text in fake.sent if text.startswith("$oi")]
+        self.assertEqual(commands, ["$oi Sonia Nevermind $ 10"])
+        for text in fake.sent:
+            self.assertNotIn("$oic  $", text)
+            self.assertNotIn("$oi  $", text)
+
+    def test_page_of_only_invisible_lines_sends_nothing(self):
+        upgrader, fake = self.make(pages=[["\u200b", "\u2800"]])
+        outcome = self.run_upgrade(upgrader, self.totals(5000))
+        self.assertEqual(outcome.status, "empty")
+        self.assertEqual([t for t in fake.sent if t.startswith("$oi")], [])
+
+    def test_stock_1225_with_default_minimum_sends_nothing(self):
+        upgrader, fake = self.make()
+        outcome = self.run_upgrade(upgrader, self.totals(1225))
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(fake.sent, [])
+
+    def test_tu_layout_of_the_owner_gives_the_sphere_stock(self):
+        from mudae_core.totals import parse_tu_totals
+        raw = ("Tester, you can't claim for another **48** min.\nStock: **159,247** <:kakera:1>\n\n"
+               "**0** $oh left for today, **0** $oc, **0** $oq and **0** $ot (+**1** stored).\n"
+               "**14h 42** min before the refill. **4/12** buttons clicked.\nStock: **1,225** <:spR:2>\n")
+        self.assertEqual(parse_tu_totals(raw).spheres, 1225)
+
+    def test_no_character_found_is_a_refusal_never_answered(self):
+        upgrader, fake = self.make(script={"oic": "No character found!\nSyntax: $oi <character> $ <perk(s) number to upgrade>"})
+        outcome = self.run_upgrade(upgrader, self.totals(1000), Perk10Settings(enabled=True, min_spheres=1000))
+        self.assertEqual(outcome.status, "stopped")
+        self.assertNotIn("Y", fake.sent)
+        self.assertNotIn("n", fake.sent)
+        self.assertTrue(any("No character found" in message for _level, message in self.logs))
+        self.assertIsNotNone(upgrader._retry_at)
+
+    def test_single_character_uses_oi_and_the_same_flow(self):
+        upgrader, fake = self.make()
+        totals = self.totals(1000)
+        outcome = self.run_upgrade(upgrader, totals, Perk10Settings(enabled=True, min_spheres=1000))
+        self.assertEqual(outcome.status, "upgraded", outcome.reason)
+        self.assertEqual(fake.sent[1], "$oi " + page_names(1)[0] + " $ 10")
+        self.assertEqual(fake.sent[2], "Y")
+        self.assertEqual(totals.spheres, 0)
+
+    def test_unrecognised_single_question_is_answered_n_and_logged_as_error(self):
+        weird = "Do you really want to spend 1,500 <:spR:1> for this? (y/n/yes/no)"
+        upgrader, fake = self.make(script={"oic": weird})
+        outcome = self.run_upgrade(upgrader, self.totals(1000), Perk10Settings(enabled=True, min_spheres=1000))
+        self.assertEqual(outcome.status, "stopped")
+        self.assertNotIn("Y", fake.sent)
+        self.assertEqual(fake.sent[-1], "n")
+        self.assertTrue(any(level == "ERROR" and "1,500" in message for level, message in self.logs))
 
     def test_below_minimum_and_disabled(self):
         upgrader, fake = self.make()
@@ -250,6 +365,21 @@ class FlowTests(unittest.TestCase):
         sent_names = [name for command in fake.sent if command.startswith("$oic") for name in
                       command[5:].split(" $ ")[:-1]]
         self.assertEqual(sent_names, page_names(1) + page_names(2) + page_names(3)[:10])
+
+    def test_page_flip_failure_uses_names_collected_and_never_resends_list(self):
+        upgrader, fake = self.make()
+
+        async def dead_click(button):
+            fake.clicks += 1
+            return True  # the bot never edits the list
+
+        upgrader.reader._click = dead_click
+        outcome = self.run_upgrade(upgrader, self.totals(40000))
+        self.assertEqual(outcome.status, "upgraded", outcome.reason)
+        self.assertEqual(outcome.characters, 15)  # page 1 only
+        self.assertEqual(fake.clicks, 2)  # one click and one retry, then stop
+        self.assertEqual(fake.sent.count("$mmz-"), 1)
+        self.assertTrue(any(level == "ERROR" and "could not turn the $mmz- page" in text for level, text in self.logs))
 
     def test_capped_by_names_available(self):
         upgrader, fake = self.make(pages=[page_names(1, per_page=4)])
@@ -427,6 +557,158 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(outcome.status, "upgraded")
         self.assertIn("stopped early", outcome.reason)
         self.assertEqual(len([text for text in fake.sent if text.startswith("$oic")]), 1)
+
+
+class AmountTests(unittest.TestCase):
+    def test_amount_zero_is_unchanged(self):
+        self.assertEqual(upgrade_count(10000, 2000, 100, amount=0), 10)
+        self.assertEqual(upgrade_count(250000, 2000, 100, amount=0), 100)
+
+    def test_amount_three_at_each_stock(self):
+        self.assertEqual(upgrade_count(2000, 2000, 100, amount=3), 2)   # affordable only
+        self.assertEqual(upgrade_count(2300, 2000, 100, amount=3), 2)
+        self.assertEqual(upgrade_count(5000, 2000, 100, amount=3), 3)
+        self.assertEqual(upgrade_count(10000, 2000, 100, amount=3), 3)
+        self.assertEqual(upgrade_count(1999, 2000, 100, amount=3), 0)   # below the minimum: nothing
+
+    def test_amount_above_affordable_and_with_maximum(self):
+        self.assertEqual(upgrade_count(2300, 2000, 0, amount=5), 2)     # never waits, never overspends
+        self.assertEqual(upgrade_count(10000, 2000, 2, amount=5), 2)    # the maximum still caps
+        self.assertEqual(upgrade_count(10000, 2000, 0, amount=5), 5)
+        self.assertEqual(upgrade_count(10000, 2000, 100, amount=5, names_available=1), 1)
+
+    def test_settings_and_validation(self):
+        self.assertEqual(Perk10Settings.from_preset({}).amount, 0)
+        self.assertEqual(Perk10Settings.from_preset({"perk10_amount": "7"}).amount, 7)
+        self.assertEqual(Perk10Settings.from_preset({"perk10_amount": -1}).amount, 0)
+        self.assertEqual(validate_perk10_settings({"perk10_amount": 0}), [])
+        self.assertEqual(len(validate_perk10_settings({"perk10_amount": -2})), 1)
+        self.assertEqual(len(validate_perk10_settings({"perk10_amount": "x"})), 1)
+
+
+class AmountFlowTests(FlowBase):
+    def test_amount_three_with_stock_5000_sends_three_names(self):
+        upgrader, fake = self.make()
+        totals = self.totals(5000)
+        outcome = self.run_upgrade(upgrader, totals, Perk10Settings(enabled=True, amount=3))
+        self.assertEqual((outcome.status, outcome.characters, outcome.cost), ("upgraded", 3, 3000))
+        self.assertEqual(fake.sent[1], "$oic " + " $ ".join(page_names(1)[:3]) + " $ 10")
+        self.assertEqual(totals.spheres, 2000)
+
+    def test_amount_five_with_stock_2300_upgrades_two(self):
+        upgrader, fake = self.make()
+        totals = self.totals(2300)
+        outcome = self.run_upgrade(upgrader, totals, Perk10Settings(enabled=True, amount=5))
+        self.assertEqual((outcome.characters, outcome.cost), (2, 2000))
+        self.assertEqual(totals.spheres, 300)
+
+
+class UpgradeNowTests(FlowBase):
+    def run_now(self, upgrader, totals, settings=None, **overrides):
+        options = dict(own_id=OWN_ID, own_names=("TestUser",), totals=totals, poll_seconds=0.01,
+                       total_wait_seconds=0.2, busy_wait_seconds=0.2)
+        options.update(overrides)
+        return asyncio.run(upgrader.upgrade_now(CHANNEL, settings or Perk10Settings(enabled=False), **options))
+
+    def test_happy_path_with_switch_off_ignores_minimum_and_daily_cap(self):
+        upgrader, fake = self.make()
+        upgrader.store.put(upgrader.key, "perk10_upgrades", {"day": WHEN.date().isoformat(), "count": 99})
+        totals = self.totals(1500)  # below the 2,000 minimum, daily cap long reached
+        outcome = self.run_now(upgrader, totals, Perk10Settings(enabled=False, min_spheres=2000, daily_cap=1))
+        self.assertEqual((outcome.status, outcome.characters, outcome.cost), ("upgraded", 1, 1000))
+        self.assertEqual(fake.sent[0], "$mmz-")
+        self.assertEqual(totals.spheres, 500)
+        self.assertTrue(any("Perk 10: upgraded 1 character(s)" in text for _l, text in self.logs))
+
+    def test_uses_amount_and_maximum(self):
+        upgrader, fake = self.make()
+        outcome = self.run_now(upgrader, self.totals(10000), Perk10Settings(amount=4, max_characters=3))
+        self.assertEqual(outcome.characters, 3)
+
+    def test_below_1000_does_nothing(self):
+        upgrader, fake = self.make()
+        outcome = self.run_now(upgrader, self.totals(999))
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(fake.sent, [])
+        self.assertIn("needs at least 1,000", upgrader.status)
+
+    def test_unknown_stock_waits_then_arriving_tu_lets_it_run(self):
+        upgrader, fake = self.make()
+        totals = self.totals(None)
+        calls = []
+
+        async def wait(seconds):
+            calls.append(seconds)
+            if len(calls) == 3:
+                totals.set_total(SPHERES, 3000, "$tu")  # the next $tu the program sends
+            await asyncio.sleep(0)
+            return True
+
+        upgrader._wait = wait
+        upgrader.reader._wait = wait
+        outcome = self.run_now(upgrader, totals, total_wait_seconds=60)
+        self.assertEqual((outcome.status, outcome.characters), ("upgraded", 3))
+        self.assertNotIn("$tu", fake.sent)
+
+    def test_unknown_stock_gives_up_without_sending(self):
+        upgrader, fake = self.make()
+
+        async def wait(seconds):
+            await asyncio.sleep(0.02)
+            return True
+
+        upgrader._wait = wait
+        outcome = self.run_now(upgrader, self.totals(None), total_wait_seconds=0.05)
+        self.assertEqual(outcome.status, "stopped")
+        self.assertEqual(fake.sent, [])
+
+    def test_games_and_busy_work_are_waited_for(self):
+        upgrader, fake = self.make()
+        state = {"calls": 0}
+
+        def games():
+            state["calls"] += 1
+            return "sphere games are still available ($oh 1)" if state["calls"] < 3 else None
+
+        outcome = self.run_now(upgrader, self.totals(3000), games=games, busy_wait_seconds=5)
+        self.assertEqual(outcome.status, "upgraded")
+        self.assertGreaterEqual(state["calls"], 3)
+        always = self.run_now(self.make()[0], self.totals(3000), busy=lambda: "rolling or claiming")
+        self.assertEqual(always.status, "stopped")
+        self.assertIn("still busy", always.reason)
+
+    def test_cooldown_and_one_at_a_time(self):
+        upgrader, fake = self.make()
+        totals = self.totals(5000)
+        first = self.run_now(upgrader, totals)
+        self.assertEqual(first.status, "upgraded")
+        second = self.run_now(upgrader, totals)
+        self.assertEqual(second.status, "ignored")
+        self.assertIn("too soon", second.reason)
+        upgrader._manual_pressed_at -= 61
+        upgrader._manual_in_flight = True
+        self.assertEqual(self.run_now(upgrader, totals).status, "ignored")
+
+    def test_alt_without_side_perk10_is_refused_with_reason(self):
+        upgrader, fake = self.make()
+        outcome = self.run_now(upgrader, self.totals(5000),
+                               allowed_reason="this alt does not upgrade perk 10 (turn on «Let side accounts upgrade too»)")
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(fake.sent, [])
+        self.assertIn("Let side accounts upgrade too", upgrader.status)
+        self.assertTrue(any("not run" in text for _l, text in self.logs))
+
+    def test_failed_upgrade_is_logged_like_the_automatic_path(self):
+        upgrader, fake = self.make(script={"y": None})
+        outcome = self.run_now(upgrader, self.totals(5000))
+        self.assertEqual(outcome.status, "stopped")
+        self.assertIn("Perk 10 stopped", upgrader.status)
+
+    def test_account_role_rule_for_the_button(self):
+        from mudae_core.account_roles import ROLE_SIDE, perk10_enabled
+        self.assertTrue(perk10_enabled("main", None, True, False))
+        self.assertFalse(perk10_enabled(ROLE_SIDE, "alt", True, False))
+        self.assertTrue(perk10_enabled(ROLE_SIDE, "alt", True, True))
 
 
 class ActivityEventTests(unittest.TestCase):

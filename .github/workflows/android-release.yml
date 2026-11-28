@@ -9,11 +9,11 @@ on:
       tag:
         description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "v6.0.1"
+        default: "v6.0.2"
       title:
         description: "Release title"
         required: false
-        default: "MudaFork v6.0.1"
+        default: "MudaFork v6.0.2"
 
 permissions:
   contents: write
@@ -106,6 +106,24 @@ jobs:
           # Compare this digest with the one from your first release: a different value
           # means the keystore changed and phones will refuse to update over the old APK.
           echo "Signer certificate SHA-256: $SIGNER_SHA256"
+
+      - name: APK size breakdown
+        run: |
+          set -euo pipefail
+          python android/scripts/apk_breakdown.py "$APK_NAME" > apk-breakdown.txt
+          cat apk-breakdown.txt
+          {
+            echo '### APK size breakdown'
+            echo '```'
+            cat apk-breakdown.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MudaFork-apk-breakdown
+          path: apk-breakdown.txt
+          if-no-files-found: error
 
       - name: Write release notes
         run: |
