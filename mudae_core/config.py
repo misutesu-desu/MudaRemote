@@ -257,6 +257,20 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("Main Account ID must be empty or a positive number.")
+    errors.extend(validate_account_role_settings(data))
+    # MudaFork: «Fast setup» and auto-give kakera to the main.
+    from .fast_setup import validate_fast_setup_settings
+    from .kakera_give import validate_give_settings
+    errors.extend(validate_fast_setup_settings(data))
+    errors.extend(validate_give_settings(data))
+    from .sphere_give import validate_sphere_give_settings
+    errors.extend(validate_sphere_give_settings(data))
+    from .harem_give import validate_harem_give_settings
+    errors.extend(validate_harem_give_settings(data))
+    from .perk_upgrade import validate_perk10_settings
+    errors.extend(validate_perk10_settings(data))
+    from .logs import validate_log_settings
+    errors.extend(validate_log_settings(data))
     webhook_url = str(data.get("webhook_url", "") or "").strip()
     if webhook_url and not re.match(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/", webhook_url):
         errors.append("Remote Log Webhook URL must be a Discord HTTPS webhook URL.")
@@ -388,3 +402,244 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
                 except (TypeError, ValueError):
                     errors.append("Round {} {} must be a non-negative integer.".format(round_number, key))
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Profiles: stable ids, display names, and Main/Side account roles
+# ---------------------------------------------------------------------------
+
+PROFILE_NAME_MAX_LENGTH = 40
+ACCOUNT_ROLE_MAIN = "main"
+ACCOUNT_ROLE_SIDE = "side"
+ACCOUNT_ROLES = (ACCOUNT_ROLE_MAIN, ACCOUNT_ROLE_SIDE)
+SIDE_ROLLS_MAX_PER_RESET_LIMIT = 10
+
+# Defaults for the role and hand-off settings (all hand-off options are off).
+ACCOUNT_ROLE_DEFAULTS = {
+    "profile_id": "",
+    "account_role": ACCOUNT_ROLE_MAIN,
+    "main_profile_id": "",
+    "side_order": 1,
+    "side_rolls_for_main": False,
+    "side_rolls_max_per_reset": 1,
+    "side_claim_leftovers": False,
+}
+
+_PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def new_profile_id():
+    """A stable profile key that never changes when the profile is renamed."""
+    return "p" + uuid.uuid4().hex[:15]
+
+
+def normalize_profile_name(name):
+    """Return ``(clean_name, error)``: trimmed, 1-40 characters, any script."""
+    if not isinstance(name, str):
+        return None, "Profile name must be text."
+    clean = name.strip()
+    if not clean:
+        return None, "Profile name cannot be empty."
+    if len(clean) > PROFILE_NAME_MAX_LENGTH:
+        return None, "Profile name must be at most {} characters.".format(PROFILE_NAME_MAX_LENGTH)
+    if any(ord(ch) < 32 for ch in clean):
+        return None, "Profile name cannot contain control characters."
+    return clean, None
+
+
+def profile_name_conflict(presets, name, ignore=None):
+    """The existing profile name that equals ``name`` ignoring case, else None."""
+    wanted = str(name or "").casefold()
+    ignored = None if ignore is None else str(ignore).casefold()
+    for existing in presets or {}:
+        folded = str(existing).casefold()
+        if folded == wanted and folded != ignored:
+            return existing
+    return None
+
+
+def validate_new_profile_name(presets, name, current=None):
+    """Return ``(clean_name, error)`` for a new or renamed profile."""
+    clean, error = normalize_profile_name(name)
+    if error:
+        return None, error
+    clash = profile_name_conflict(presets, clean, ignore=current)
+    if clash is not None:
+        return None, "A profile named '{}' already exists (names ignore upper/lower case).".format(clash)
+    return clean, None
+
+
+def profile_id_of(data):
+    value = str((data or {}).get("profile_id") or "").strip()
+    return value if _PROFILE_ID_RE.match(value) else ""
+
+
+def ensure_profile_ids(presets):
+    """Give every profile a unique stable id and move old Main/Side settings.
+
+    Returns True when anything changed. Old configs have no ``profile_id``;
+    and ``main_account_id`` used to be the only way to mark an alt account,
+    so a profile with it and no explicit role becomes a Side of that Discord
+    user (the id keeps working; the Main is matched by its user id at run
+    time until a Main profile is picked in the editor).
+    """
+    changed = False
+    seen = set()
+    for _name, data in (presets or {}).items():
+        if not isinstance(data, dict):
+            continue
+        profile_id = profile_id_of(data)
+        if not profile_id or profile_id in seen:
+            profile_id = new_profile_id()
+            while profile_id in seen:
+                profile_id = new_profile_id()
+            data["profile_id"] = profile_id
+            changed = True
+        seen.add(profile_id)
+        if "account_role" not in data:
+            legacy_main = str(data.get("main_account_id") or "").strip()
+            data["account_role"] = ACCOUNT_ROLE_SIDE if legacy_main else ACCOUNT_ROLE_MAIN
+            changed = True
+        for key, default in ACCOUNT_ROLE_DEFAULTS.items():
+            if key not in data:
+                data[key] = default
+                changed = True
+    return changed
+
+
+def profile_name_for_id(presets, profile_id):
+    if not profile_id:
+        return None
+    for name, data in (presets or {}).items():
+        if isinstance(data, dict) and profile_id_of(data) == profile_id:
+            return name
+    return None
+
+
+def rename_profile(presets, old_name, new_name):
+    """Rename a profile in place, keeping its order, id and every setting.
+
+    References between profiles use the stable ``profile_id`` so nothing
+    else in ``presets`` changes. Returns the clean new name; raises
+    ``KeyError`` for an unknown profile and ``ValueError`` for a bad name.
+    """
+    if old_name not in presets:
+        raise KeyError(old_name)
+    clean, error = validate_new_profile_name(presets, new_name, current=old_name)
+    if error:
+        raise ValueError(error)
+    if clean == old_name:
+        return clean
+    items = list(presets.items())
+    presets.clear()
+    for name, data in items:
+        presets[clean if name == old_name else name] = data
+    return clean
+
+
+def _setting_int_in_range(data, key, default, minimum, maximum, errors, label):
+    value = data.get(key, default)
+    if isinstance(value, bool):
+        errors.append("{} must be a whole number from {} to {}.".format(label, minimum, maximum))
+        return None
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        errors.append("{} must be a whole number from {} to {}.".format(label, minimum, maximum))
+        return None
+    if not minimum <= number <= maximum:
+        errors.append("{} must be a whole number from {} to {}.".format(label, minimum, maximum))
+        return None
+    return number
+
+
+def validate_account_role_settings(data):
+    """Errors in one profile's own role/hand-off fields."""
+    errors = []
+    role = data.get("account_role", ACCOUNT_ROLE_MAIN)
+    if role not in ACCOUNT_ROLES:
+        errors.append("Account role must be main or side.")
+    main_profile_id = data.get("main_profile_id", "")
+    if main_profile_id not in (None, "") and not _PROFILE_ID_RE.match(str(main_profile_id)):
+        errors.append("Main profile must be one of your profiles.")
+    if main_profile_id and main_profile_id == profile_id_of(data):
+        errors.append("A side account cannot be its own main.")
+    _setting_int_in_range(data, "side_order", 1, 1, 999, errors, "Side order")
+    _setting_int_in_range(
+        data, "side_rolls_max_per_reset", 1, 1, SIDE_ROLLS_MAX_PER_RESET_LIMIT, errors,
+        "Max side accounts per reset",
+    )
+    return errors
+
+
+def resolve_account_roles(presets):
+    """Effective role of every profile, with the reason when a Side falls back.
+
+    Returns ``{name: {"role": "main"|"side"|"ordinary", "main": name|None,
+    "main_profile_id": id, "main_account_id": str, "reason": str|None,
+    "error": bool}}``. A Side whose Main is missing runs as an ordinary
+    account; a Side pointing at itself or at another Side is an error (and
+    also runs as an ordinary account if it is started anyway). A Side with
+    only a legacy ``main_account_id`` keeps that id as its Main.
+    """
+    presets = presets or {}
+    by_id = {}
+    for name, data in presets.items():
+        if isinstance(data, dict) and profile_id_of(data):
+            by_id[profile_id_of(data)] = name
+    result = {}
+    for name, data in presets.items():
+        data = data if isinstance(data, dict) else {}
+        role = data.get("account_role", ACCOUNT_ROLE_MAIN)
+        legacy_main = str(data.get("main_account_id") or "").strip()
+        entry = {"role": ACCOUNT_ROLE_MAIN, "main": None, "main_profile_id": "",
+                 "main_account_id": legacy_main, "reason": None, "error": False}
+        if role != ACCOUNT_ROLE_SIDE:
+            result[name] = entry
+            continue
+        main_profile_id = str(data.get("main_profile_id") or "").strip()
+        if main_profile_id:
+            main_name = by_id.get(main_profile_id)
+            if main_profile_id == profile_id_of(data):
+                entry.update(role="ordinary", error=True,
+                             reason="A side account cannot be its own main; it runs as an ordinary account.")
+            elif main_name is None:
+                entry.update(role="ordinary",
+                             reason="Its main profile no longer exists; it runs as an ordinary account.")
+            elif (presets.get(main_name) or {}).get("account_role", ACCOUNT_ROLE_MAIN) == ACCOUNT_ROLE_SIDE:
+                entry.update(role="ordinary", error=True, main=main_name,
+                             reason="Its main '{}' is itself a side account; pick a main account.".format(main_name))
+            else:
+                entry.update(role=ACCOUNT_ROLE_SIDE, main=main_name, main_profile_id=main_profile_id)
+        elif legacy_main:
+            entry.update(role=ACCOUNT_ROLE_SIDE)
+        else:
+            entry.update(role="ordinary",
+                         reason="No main profile is picked; it runs as an ordinary account.")
+        result[name] = entry
+    return result
+
+
+def account_role_errors(presets, name):
+    """Blocking cross-profile errors for one profile (self or side as main)."""
+    info = resolve_account_roles(presets).get(name)
+    return [info["reason"]] if info and info["error"] else []
+
+
+def side_profiles_for(presets, main_name):
+    """The Side profile names of one Main, in their configured order."""
+    main_data = (presets or {}).get(main_name) or {}
+    main_id = profile_id_of(main_data)
+    if not main_id:
+        return []
+    roles = resolve_account_roles(presets)
+    sides = []
+    for index, (name, data) in enumerate((presets or {}).items()):
+        info = roles.get(name) or {}
+        if info.get("role") == ACCOUNT_ROLE_SIDE and info.get("main_profile_id") == main_id:
+            try:
+                order = int((data or {}).get("side_order", 1))
+            except (TypeError, ValueError):
+                order = 1
+            sides.append((order, index, name))
+    return [name for _order, _index, name in sorted(sides)]

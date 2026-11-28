@@ -33,7 +33,7 @@ def main(project_root, output_dir):
                     if isinstance(item, (list, tuple)) and len(item) >= 3:
                         settings.setdefault(str(item[0]), {})["default"] = item[2]
 
-    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field", "add_choice_field"}
+    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field", "add_choice_field", "add_profile_picker"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr not in wanted:
             continue
@@ -99,7 +99,8 @@ def main(project_root, output_dir):
     settings.pop("additional_tokens", None)
 
     section_groups = {
-        "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
+        "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
+        "Main & Side Accounts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
         "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
@@ -108,9 +109,58 @@ def main(project_root, output_dir):
         "Wishlist and Farming": {"wishlist", "avoid_list", "key_mode", "only_chaos", "farm_character", "farm_characters", "farm_character_enabled", "forcedivorce_channel_id", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim", "auto_divorce_enabled", "auto_divorce_max_kakera", "auto_divorce_series", "auto_divorce_blacklist", "auto_divorce_blacklist_series", "auto_divorce_protect_wishes"},
         "Spheres and Emoji": {"claim_emojis", "kakera_emojis", "chaos_emojis", "sphere_perk_emojis", "mk_kakera_emojis", "op5_kakera_emojis", "randomized_claim_reactions", "kakera_priority_order", "sphere_click_targets", "sphere_collect_any_last", "auto_oh_enabled", "oh_priority_order", "oh_unknown_explore_clicks", "oh_use_individually", "auto_oc_enabled", "oc_reward_priority_order", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only"},
         "Timing and Humanization": {"humanization_enabled", "humanization_window_minutes", "humanization_inactivity_seconds", "inactive_hours", "scheduled_roll_times", "persistent_stagger_seconds", "time_rolls_to_claim_reset"},
-        "Advanced": {"debug_mode", "debug_log_categories", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
+        "Advanced": {"debug_mode", "debug_log_categories", "save_logs_txt", "logs_keep_days", "logs_max_mb", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
     }
     sections = {key: section for section, keys in section_groups.items() for key in keys}
+    # The Android app fills this field with a picker of the other profiles and
+    # stores the picked profile's stable id (see MainActivity.buildFieldView).
+    settings.setdefault("main_profile_id", {})["picker"] = "profile"
+    role_order = ["account_role", "main_profile_id", "side_order", "side_rolls_for_main",
+                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id",
+                  "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
+                  "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
+                  "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
+                  "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages",
+                  "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text",
+                  "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres",
+                  "perk10_max_characters", "perk10_daily_cap"]
+    for order, key in enumerate(role_order):
+        settings.setdefault(key, {})["order"] = order
+    # «Send again» for Fast setup: the app shows a button that raises this
+    # counter (and switches Fast setup on) instead of a number field.
+    settings.setdefault("fast_setup_round", {}).update({
+        "widget": "send_again",
+        "label": "Fast setup: Send again",
+        "description": "Fast setup is sent once and then stays off. Press to send it once more (save to apply).",
+    })
+    # Shown disabled, with the reason, on a Main account.
+    # «Give all kakera now»: a button that raises this request counter and saves
+    # (the running side then gives its whole total once).
+    settings.setdefault("give_kakera_now_round", {}).update({
+        "widget": "request_now",
+        "label": "Give all kakera now",
+        "description": "One give of the whole kakera total to the main, when it is known and at least «Minimum for the button». The account must be running.",
+    })
+    settings.setdefault("give_spheres_now_round", {}).update({
+        "widget": "request_now",
+        "label": "Give all spheres now",
+        "description": "One give of all the spheres (minus «Spheres to keep on this account») to the main. The account must be running.",
+    })
+    settings.setdefault("auto_perk10", {}).update({
+        "label": "Upgrade perk 10 automatically",
+        "description": "On a side account: lets it upgrade its own characters. Turns off automatic sphere giving "
+                       "(the saved «Give spheres to my main automatically» value is kept but has no effect). "
+                       "On a main account it only upgrades. Off by default.",
+    })
+    settings.setdefault("auto_give_spheres", {})["description"] = (
+        "Sends the side's spheres to its main automatically. Off while «Upgrade perk 10 automatically» is on "
+        "for this account (your choice here is kept). Waits for the sphere games first. Off by default.")
+    for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap",
+                "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres",
+                "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round",
+                "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours",
+                "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap"):
+        settings.setdefault(key, {})["side_only"] = True
     filter_keys = ["kakera_filter_match_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
     for order, key in enumerate(filter_keys):
         sections[key] = "Kakera Reactions"

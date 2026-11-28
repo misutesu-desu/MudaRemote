@@ -33,7 +33,7 @@ class BuildContractTests(unittest.TestCase):
                              hashlib.sha256(b"current source\n").hexdigest())
 
     def test_release_spec_disables_upx_and_avoids_collect_all(self):
-        spec = read_project_file("MudaRemote.spec")
+        spec = read_project_file("MudaFork.spec")
         self.assertIn("upx=False", spec)
         self.assertNotIn("collect_all", spec)
 
@@ -87,10 +87,47 @@ class BuildContractTests(unittest.TestCase):
             "ANDROID_KS_KEY_PASSWORD",
         ):
             self.assertIn(f": \"${{{secret}:?", workflow)
-        self.assertIn("keytool -list -keystore mudaremote-release.jks", workflow)
-        self.assertIn("verify --verbose --print-certs Mudaremote.apk", workflow)
-        self.assertIn("aefcfd68eae4fcddf789a654b90c4818fa128aca9e52bceb2767b39ff6587839", workflow)
+        self.assertIn("keytool -list -keystore mudafork-release.jks", workflow)
+        self.assertIn('verify --verbose --print-certs "$APK_NAME"', workflow)
+        self.assertNotIn("aefcfd68eae4fcddf789a654b90c4818fa128aca9e52bceb2767b39ff6587839", workflow)
+        self.assertIn("MudaFork-${VERSION}.apk", workflow)
         self.assertNotIn("falling back to debug signing", workflow)
+
+    def test_fork_points_every_update_and_release_url_at_the_fork(self):
+        import glob
+        owner = "YoRu72/MudaPersonalFork"
+        checked = ["version.json", "mudae_bot.py", "mudae_preset_editor.py"]
+        checked += [os.path.relpath(p, PROJECT_ROOT) for p in glob.glob(os.path.join(PROJECT_ROOT, "mudae_core", "*.py"))]
+        checked += ["packaging/publish_stable_manifest.py", "android/app/src/main/python/android_bridge.py"]
+        checked += [os.path.relpath(p, PROJECT_ROOT) for p in glob.glob(os.path.join(PROJECT_ROOT, ".github", "workflows", "*.yml"))]
+        for relative in checked:
+            text = read_project_file(*relative.split("/"))
+            self.assertNotIn("misutesu", text, relative)
+        self.assertIn(owner, read_project_file("mudae_core", "versioning.py"))
+        self.assertFalse(os.path.exists(os.path.join(PROJECT_ROOT, ".github", "FUNDING.yml")))
+
+    def test_windows_release_is_manual_only_and_android_release_has_tag_and_manual_triggers(self):
+        windows = read_project_file(".github", "workflows", "windows-release.yml")
+        triggers = windows[windows.index("on:"):windows.index("permissions:")]
+        self.assertIn("workflow_dispatch:", triggers)
+        self.assertNotIn("push:", triggers)
+        android = read_project_file(".github", "workflows", "android-release.yml")
+        triggers = android[android.index("on:"):android.index("permissions:")]
+        self.assertIn("workflow_dispatch:", triggers)
+        self.assertIn("tags:", triggers)
+
+    def test_ci_builds_the_android_debug_apk_on_fork_branches(self):
+        ci = read_project_file(".github", "workflows", "ci.yml")
+        self.assertIn("work-mudafork", ci)
+        self.assertIn("workflow_dispatch:", ci)
+        self.assertIn(":app:assembleDebug", ci)
+        self.assertIn("upload-artifact@v4", ci)
+
+    def test_android_app_installs_beside_the_original(self):
+        gradle = read_project_file("android", "app", "build.gradle.kts")
+        self.assertIn('applicationId = "com.mudafork.android"', gradle)
+        manifest = read_project_file("android", "app", "src", "main", "AndroidManifest.xml")
+        self.assertIn('android:label="MudaFork"', manifest)
 
 
 if __name__ == "__main__":

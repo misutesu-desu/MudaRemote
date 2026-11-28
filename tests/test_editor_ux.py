@@ -54,7 +54,7 @@ class EditorUxContractTests(unittest.TestCase):
 
     def test_sidebar_links_to_the_repository_for_stars(self):
         import mudae_preset_editor
-        self.assertEqual(mudae_preset_editor.REPO_URL, "https://github.com/misutesu-desu/MudaRemote")
+        self.assertEqual(mudae_preset_editor.REPO_URL, "https://github.com/YoRu72/MudaPersonalFork")
         self.assertIn("webbrowser.open(REPO_URL)", self.editor)
 
     def test_readme_screenshot_exists(self):

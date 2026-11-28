@@ -1,16 +1,19 @@
 name: Android Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
         description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "v5.3.9"
+        default: "v6.0.0"
       title:
         description: "Release title"
         required: false
-        default: "MudaRemote v5.3.9"
+        default: "MudaFork v6.0.0"
 
 permissions:
   contents: write
@@ -21,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.event_name == 'push' && github.ref_name || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -49,15 +52,15 @@ jobs:
           : "${ANDROID_KS_STORE_PASSWORD:?ANDROID_KS_STORE_PASSWORD is required}"
           : "${ANDROID_KS_ALIAS:?ANDROID_KS_ALIAS is required}"
           : "${ANDROID_KS_KEY_PASSWORD:?ANDROID_KS_KEY_PASSWORD is required}"
-          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > mudaremote-release.jks
-          test -s mudaremote-release.jks
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > mudafork-release.jks
+          test -s mudafork-release.jks
           cat > keystore.properties <<EOF
-          storeFile=mudaremote-release.jks
+          storeFile=mudafork-release.jks
           storePassword=${ANDROID_KS_STORE_PASSWORD}
           keyAlias=${ANDROID_KS_ALIAS}
           keyPassword=${ANDROID_KS_KEY_PASSWORD}
           EOF
-          keytool -list -keystore mudaremote-release.jks \
+          keytool -list -keystore mudafork-release.jks \
             -storepass "$ANDROID_KS_STORE_PASSWORD" -alias "$ANDROID_KS_ALIAS" >/dev/null
 
       - name: Build ux APK
@@ -65,11 +68,22 @@ jobs:
         run: gradle :app:testUxUnitTest :app:assembleUx --no-daemon --stacktrace
 
       - name: Stage release APK
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
           SRC="android/app/build/outputs/apk/ux/app-ux.apk"
           test -s "$SRC" || { echo "APK missing at $SRC"; exit 1; }
-          cp "$SRC" Mudaremote.apk
-          ls -lh Mudaremote.apk
+          cp "$SRC" "MudaFork-${VERSION}.apk"
+          # The checksum file the in-app updater checks the download against ("<hex>  <name>").
+          sha256sum "MudaFork-${VERSION}.apk" > "MudaFork-${VERSION}.apk.sha256"
+          test -s "MudaFork-${VERSION}.apk.sha256"
+          cat "MudaFork-${VERSION}.apk.sha256"
+          echo "APK_NAME=MudaFork-${VERSION}.apk" >> "$GITHUB_ENV"
+          echo "APK_SHA_NAME=MudaFork-${VERSION}.apk.sha256" >> "$GITHUB_ENV"
+          echo "APK_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          ls -lh "MudaFork-${VERSION}.apk"
 
       - name: Verify stable APK signer continuity
         run: |
@@ -78,44 +92,48 @@ jobs:
           test -n "$SDK_ROOT" || { echo "::error::Android SDK path is unavailable"; exit 1; }
           APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           test -n "$APKSIGNER" && test -x "$APKSIGNER" || { echo "::error::apksigner is unavailable"; exit 1; }
-          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs Mudaremote.apk)"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK_NAME")"
           printf '%s\n' "$VERIFY_OUTPUT"
           SIGNER_COUNT="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Number of signers: //p')"
           # Older apksigner prints "Signer #1 certificate ...", newer "V2 Signer: certificate ...";
           # every certificate line it prints must name the same, expected signer.
           SIGNER_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer):? certificate SHA-256 digest: //p' | sort -u)"
-          EXPECTED_SIGNER_SHA256="aefcfd68eae4fcddf789a654b90c4818fa128aca9e52bceb2767b39ff6587839"
           test "$SIGNER_COUNT" = "1" || { echo "::error::Expected exactly one APK signer"; exit 1; }
-          test "$SIGNER_SHA256" = "$EXPECTED_SIGNER_SHA256" || {
-            echo "::error::APK signer does not match the verified v4.9.8 stable signer"
+          test -n "$SIGNER_SHA256" && test "$(printf '%s\n' "$SIGNER_SHA256" | wc -l)" = "1" || {
+            echo "::error::Expected exactly one signer certificate"
             exit 1
           }
+          # Compare this digest with the one from your first release: a different value
+          # means the keystore changed and phones will refuse to update over the old APK.
+          echo "Signer certificate SHA-256: $SIGNER_SHA256"
 
       - name: Write release notes
-        run: cp packaging/release-notes-v5.3.9.md release_notes.md
+        run: |
+          if [ -f "packaging/release-notes-v${APK_VERSION}.md" ]; then
+            cp "packaging/release-notes-v${APK_VERSION}.md" release_notes.md
+          else
+            printf '**MudaFork v%s** (Android build)\n' "$APK_VERSION" > release_notes.md
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Mudaremote-apk
-          path: Mudaremote.apk
+          name: MudaFork-${{ env.APK_VERSION }}.apk
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_SHA_NAME }}
 
       - name: Publish Android asset
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag }}
-          TITLE: ${{ github.event.inputs.title }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TITLE: ${{ github.event.inputs.title || format('MudaFork {0}', github.ref_name) }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" Mudaremote.apk --clobber
+            gh release upload "$TAG" "$APK_NAME" "$APK_SHA_NAME" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file release_notes.md
             echo "Updated asset on existing release $TAG"
           else
-            if [ "$TAG" = "v5.3.9" ]; then
-              echo "::error::Publish the Windows stable release before attaching its Android APK."
-              exit 1
-            fi
-            gh release create "$TAG" Mudaremote.apk \
-              --prerelease \
+            gh release create "$TAG" "$APK_NAME" "$APK_SHA_NAME" \
               --target "$GITHUB_SHA" \
               --title "$TITLE" \
               --notes-file release_notes.md
@@ -125,7 +143,7 @@ jobs:
       - name: Verify published release notes and APK
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release view "$TAG" --json body,isPrerelease,assets > published-release.json
           python - <<'PY'
@@ -133,8 +151,11 @@ jobs:
           import os
           from pathlib import Path
           release = json.loads(Path("published-release.json").read_text())
-          assert release["isPrerelease"] is (os.environ["TAG"] != "v5.3.9")
           assert release["body"].strip() == Path("release_notes.md").read_text().strip()
-          assets = [a for a in release["assets"] if a["name"] == "Mudaremote.apk"]
-          assert len(assets) == 1 and assets[0]["size"] == Path("Mudaremote.apk").stat().st_size
+          name = os.environ["APK_NAME"]
+          assets = [a for a in release["assets"] if a["name"] == name]
+          assert len(assets) == 1 and assets[0]["size"] == Path(name).stat().st_size
+          sha_name = os.environ["APK_SHA_NAME"]
+          sha_assets = [a for a in release["assets"] if a["name"] == sha_name]
+          assert len(sha_assets) == 1 and sha_assets[0]["size"] == Path(sha_name).stat().st_size
           PY

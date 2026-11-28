@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MudaRemoteAndroid"
+rootProject.name = "MudaForkAndroid"
 include(":app")

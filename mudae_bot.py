@@ -175,7 +175,7 @@ def _bootstrap_modular_core():
     """Bridge legacy two-file updaters to the first modular release."""
     base_path = os.path.dirname(os.path.abspath(__file__))
     manifest_response = requests.get(
-        "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/version.json",
+        "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/main/version.json",
         timeout=15,
     )
     manifest_response.raise_for_status()
@@ -267,6 +267,7 @@ try:
     from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
     from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.loot import LootAutomation
+    from mudae_core.logs import DailyLogWriter, LogSettings, build_line as build_log_line, logs_dir_for
     from mudae_core.roll_mode import adaptive_slash_ledger
 except (ModuleNotFoundError, ImportError) as core_error:
     missing_module = str(getattr(core_error, "name", ""))
@@ -305,6 +306,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.loot import LootAutomation
+    from mudae_core.logs import DailyLogWriter, LogSettings, build_line as build_log_line, logs_dir_for
 
 if os.name == 'nt':
     import msvcrt
@@ -367,7 +369,7 @@ except ImportError:
     Route = None
 
 # Bot Identification
-BOT_NAME = "MudaRemote"
+BOT_NAME = "MudaFork"
 from mudae_core.versioning import (
     CURRENT_VERSION,
     load_startup_update_check_setting,
@@ -402,6 +404,182 @@ _original_terminal_settings = None
 _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
+from mudae_core.coordinator import SideRollCoordinator  # noqa: E402
+# Main/Side accounts running in this process (Android, Run All, multi-token).
+_side_roll_coordinator = SideRollCoordinator()
+SIDE_HANDOFF_TIMEOUT_SECONDS = 600.0
+SIDE_LEFTOVER_DECISION_WAIT_SECONDS = 8.0
+
+# Running kakera/sphere totals, «Fast setup» and auto-give kakera (pure logic
+# in mudae_core.totals / fast_setup / kakera_give; this file only wires it).
+from mudae_core.account_state import AccountStateStore, default_state_path  # noqa: E402
+from mudae_core.fast_setup import FastSetup  # noqa: E402
+from mudae_core.kakera_give import BotReply, GiveSettings, KakeraGiver  # noqa: E402
+from mudae_core.totals import TotalsBook, account_key, parse_sphere_game_result  # noqa: E402
+# Harem list reader and auto-give harem pages to the main (pure logic in
+# mudae_core.harem_list / harem_give; this file only wires it).
+from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_receiving  # noqa: E402
+# Automatic perk-10 upgrade ($mmz- names → $oic … $ 10; pure logic in mudae_core.perk_upgrade).
+from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending  # noqa: E402
+# Auto-give spheres to the main ($givesp <@main> AMOUNT then Y; pure logic in mudae_core.sphere_give).
+from mudae_core.sphere_give import PERK10_OFF_REASON, SphereGiveSettings, SphereGiver  # noqa: E402
+_totals_book = TotalsBook()
+_account_state_store = None
+_account_state_store_lock = threading.Lock()
+
+
+def _get_account_state_store():
+    global _account_state_store
+    with _account_state_store_lock:
+        if _account_state_store is None:
+            _account_state_store = AccountStateStore(default_state_path(get_base_path()))
+        return _account_state_store
+
+
+def _account_link_key(client):
+    link = getattr(client, "_account_link", None)
+    return getattr(link, "key", None)
+
+
+class _AccountLink:
+    """How the side-roll coordinator sees one running account.
+
+    Settings are read from the client each time, so a live preset reload
+    (role, main profile, options) applies without a restart.
+    """
+
+    def __init__(self, client, preset_name, preset_data):
+        self.client = client
+        self.name = preset_name
+        source_name = str(preset_data.get("_source_preset_name") or preset_name)
+        self._fallback_profile_id = "name:" + source_name
+        self.key = "{}#{}".format(source_name, id(client))
+        self.roll_for_main = None
+
+    @property
+    def profile_id(self):
+        return getattr(self.client, "profile_id", "") or self._fallback_profile_id
+
+    @property
+    def account_index(self):
+        return getattr(self.client, "account_index", 1)
+
+    @property
+    def role(self):
+        return getattr(self.client, "account_role", "main")
+
+    @property
+    def main_profile_id(self):
+        return getattr(self.client, "main_profile_id", "")
+
+    @property
+    def main_account_id(self):
+        return getattr(self.client, "main_account_id", "")
+
+    @property
+    def side_order(self):
+        return getattr(self.client, "side_order", 1)
+
+    @property
+    def user_id(self):
+        user = getattr(self.client, "user", None)
+        return getattr(user, "id", None)
+
+    @property
+    def channel_id(self):
+        try:
+            return int(getattr(self.client, "target_channel_id", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def is_ready(self):
+        try:
+            return bool(self.client.is_ready()) and self.user_id is not None
+        except Exception:
+            return False
+
+    def is_paused(self):
+        return bool(getattr(self.client, "is_paused", False) or getattr(self.client, "key_limit_hit", False))
+
+    def is_rolling(self):
+        return bool(getattr(self.client, "is_actively_rolling", False))
+
+    def rolls_left(self):
+        try:
+            return int(getattr(self.client, "rolls_left", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # Main side of the hand-off.
+    def options(self):
+        return {
+            "enabled": bool(getattr(self.client, "side_rolls_for_main", False)),
+            "max_sides": getattr(self.client, "side_rolls_max_per_reset", 1),
+            "leftovers": bool(getattr(self.client, "side_claim_leftovers", False)),
+        }
+
+    def claim_open(self):
+        client = self.client
+        return bool(
+            getattr(client, "claim_right_available", False)
+            and not getattr(client, "is_paused", False)
+        )
+
+    def claim_reset_key(self):
+        cycle_id = getattr(self.client, "current_claim_cycle_id", None)
+        if cycle_id is not None:
+            return ("cycle", cycle_id)
+        deadline = getattr(self.client, "next_claim_reset_at_utc", None)
+        if deadline is None:
+            return ("unknown",)
+        return ("deadline", deadline.replace(second=0, microsecond=0))
+
+    # Main side of a harem give ($give): the side asks the running Main to answer.
+    def busy_reason(self):
+        check = getattr(self.client, "_gift_busy_reason", None)
+        if check is None:
+            return "not ready"
+        try:
+            return check()
+        except Exception:
+            return "state unknown"
+
+    async def answer(self, channel_id, text):
+        """Send y/n as this (Main) account, on its own event loop."""
+        send = getattr(self.client, "_gift_answer", None)
+        if send is None:
+            return None
+        try:
+            main_loop = self.client.loop
+        except Exception:
+            main_loop = None
+        current_loop = asyncio.get_running_loop()
+        if main_loop is None or main_loop is current_loop or not main_loop.is_running():
+            return await send(channel_id, text)
+        future = asyncio.run_coroutine_threadsafe(send(channel_id, text), main_loop)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
+
+    # Side side of the hand-off: run the rolls on this account's own loop.
+    async def run_handoff_rolls(self, handoff):
+        if self.roll_for_main is None:
+            raise RuntimeError("this account is not ready to roll for a main")
+        try:
+            side_loop = self.client.loop
+        except Exception:
+            side_loop = None
+        current_loop = asyncio.get_running_loop()
+        if side_loop is None or side_loop is current_loop or not side_loop.is_running():
+            return await self.roll_for_main(handoff)
+        future = asyncio.run_coroutine_threadsafe(self.roll_for_main(handoff), side_loop)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
 TU_GLOBAL_INTERVAL_SECONDS = 2.0
 # A permanently busy channel must never stall status refreshes (and therefore
 # rolling) forever; after this much cumulative quiet-channel waiting, send $tu
@@ -554,8 +732,40 @@ class BotLogger:
                 return category
         return "other"
 
+    _daily_writer = None
+    _daily_writer_error_shown = False
+
     @classmethod
-    def log(cls, message, preset_name="MudaRemote", log_type="INFO", client=None):
+    def configure_files(cls, preset_data=None):
+        """Apply save_logs_txt / logs_keep_days / logs_max_mb (last profile wins)."""
+        try:
+            settings = LogSettings.from_data(preset_data or {})
+            if cls._daily_writer is None:
+                cls._daily_writer = DailyLogWriter(
+                    logs_dir_for(get_log_data_dir()), settings,
+                    on_error=cls._daily_writer_failed, autoflush=True)
+            else:
+                cls._daily_writer.configure(settings)
+        except Exception:
+            pass
+
+    @classmethod
+    def _daily_writer_failed(cls, text):
+        if not cls._daily_writer_error_shown:
+            cls._daily_writer_error_shown = True
+            try:
+                print(console_text(text))
+            except Exception:
+                pass
+
+    @classmethod
+    def write_daily_file(cls, preset_name, line, when):
+        writer = cls._daily_writer
+        if writer is not None:
+            writer.write(preset_name, line, when)
+
+    @classmethod
+    def log(cls, message, preset_name="MudaFork", log_type="INFO", client=None):
         original_log_type = str(log_type or "INFO").upper()
         if original_log_type == "DEBUG" and not getattr(client, 'debug_mode', False):
             return
@@ -570,10 +780,11 @@ class BotLogger:
             msg_clean = f"[DEBUG] {msg_clean}"
             log_type_upper = "INFO"
 
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        preset_aligned = f"[{preset_name[:12]:<12}]"
-        prefix = cls.PREFIXES.get(log_type_upper, "ℹ️  [INFO]   ")
-        formatted = f"[{timestamp}] {preset_aligned} {prefix} {msg_clean}"
+        now = datetime.datetime.now()
+        # One line shape everywhere (mudae_core.logs): redacted, classified,
+        # then shown, stored in logs.txt, written to the daily TXT file and
+        # sent to the webhook.
+        formatted = build_log_line(now, preset_name, original_log_type, msg_clean)
 
         color_code = cls.COLORS.get(log_type_upper, cls.COLORS["INFO"])
         console_line = console_text(f"{color_code}{formatted}{cls.COLORS['ENDC']}")
@@ -595,6 +806,7 @@ class BotLogger:
                     f.write(formatted + "\n")
         except Exception:
             pass
+        cls.write_daily_file(preset_name, formatted, now)
         webhook_types = set(getattr(client, "webhook_log_types", ()) or ())
         if (
             getattr(client, "webhook_url", "")
@@ -690,6 +902,10 @@ def get_base_path():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+def get_log_data_dir():
+    """Desktop: beside the config; Android: the app files directory."""
+    return os.environ.get("MUDAREMOTE_RUNTIME_HOME") or get_base_path()
 
 
 MUDAE_EMOJI_ASSET_DIR = os.path.join(get_base_path(), "mudae_emoji_assets")
@@ -861,7 +1077,7 @@ except Exception:
 UPDATE_URL = get_update_manifest_url()
 
 def _confirm_update_in_console(latest_version, changelog):
-    print(f"\nMudaRemote v{latest_version} is available.\n")
+    print(f"\nMudaFork v{latest_version} is available.\n")
     print("Changelog:")
     print(changelog)
     print()
@@ -986,7 +1202,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None, pr
             progress=progress,
         )
         if result == "frozen":
-            print_system_log("Verified update staged. The updater helper replaces MudaRemote and relaunches it once this process exits.", "RESET")
+            print_system_log("Verified update staged. The updater helper replaces MudaFork and relaunches it once this process exits.", "RESET")
             return "frozen"
         if result == "git":
             print_system_log("This installation is managed by Git. No files were changed; run 'git pull' to update.", "INFO")
@@ -1017,7 +1233,7 @@ def load_desktop_presets():
         loaded = load_json(presets_path, {})
         store = SecretStore(get_base_path())
         for name, data in loaded.items():
-            data["tokens"] = store.get_tokens(name, data.get("tokens") or data.get("token", ""))
+            data["tokens"] = store.get_profile_tokens(name, data, data.get("tokens") or data.get("token", ""))
             data["token"] = data["tokens"][0] if data["tokens"] else ""
         # Android injects into this mapping before launching account threads.
         presets.clear()
@@ -1207,6 +1423,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     # uses BotLogger's console/file/webhook behavior; concurrent accounts cannot
     # change one another's logging policy.
     BotLogger = globals()["BotLogger"]
+    if not preset_data.get("_runtime_mode"):
+        BotLogger.configure_files(preset_data)
     if preset_data.get("_runtime_mode"):
         secret = str(preset_data.get("token") or "")
         other_secrets = [str(value) for value in (preset_data.get("tokens") or ()) if value]
@@ -1266,10 +1484,55 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     )
     client._live_preset_ready = False
     client._scheduled_roll_task = None
+    client._account_link = _AccountLink(client, preset_name, preset_data)
+    _side_roll_coordinator.register(client._account_link)
+    client._totals_key = account_key(client._account_link.profile_id, client.account_index)
+    client.account_totals = _totals_book.account(client._totals_key, preset_name)
+    client._own_sphere_result_ids = {}
+    client._auto_give_task = None
+    client._auto_give_last_skip = None
+    client.fast_setup_runner = FastSetup(_get_account_state_store(), client._totals_key)
+    client.kakera_giver = KakeraGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
+    client._harem_give_task = None
+    client._harem_give_last_skip = None
+    # Pages are turned with the list's buttons through guarded_click (as for
+    # kakera buttons and sphere boards); edits arrive through on_message_edit.
+    client.harem_giver = HaremGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        click=lambda button: guarded_click(button),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
+    client._sphere_give_task = None
+    client._sphere_give_last_skip = None
+    client.sphere_giver = SphereGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
+    client._perk10_task = None
+    client._perk10_last_skip = None
+    client._perk10_sphere_status_seen = False
+    client.perk_upgrader = PerkUpgrader(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        click=lambda button: guarded_click(button),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
     client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
     client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
     def apply_saved_settings(data):
+        previous_give_now_round = getattr(client, "give_kakera_now_round", 0)
+        previous_sphere_now_round = getattr(client, "give_spheres_now_round", 0)
         changed = apply_live_config(
             client, data, bot_name=BOT_NAME, claim_emojis=CLAIM_EMOJIS,
             kakera_emojis=KAKERA_EMOJIS, sphere_emojis=SPHERE_EMOJIS,
@@ -1282,6 +1545,21 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         preset_data.update(data)
         if changed:
             update_dynamic_thresholds()
+            if changed & {"fast_setup", "fast_setup_round"} and client._live_preset_ready:
+                client.loop.create_task(run_fast_setup())
+            if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
+                schedule_auto_give("settings changed")
+            if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
+                client.loop.create_task(run_give_all_kakera_now())
+            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10"}:
+                schedule_sphere_give("settings changed")
+            if "give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round:
+                client.loop.create_task(run_give_all_spheres_now())
+            if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
+                          "harem_give_value", "account_role"}:
+                schedule_harem_give("settings changed")
+            if changed & {"auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
+                schedule_perk10("settings changed")
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
                 if task is not None:
@@ -1644,7 +1922,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     def process_claim_cooldown_message(message):
         if not getattr(message, 'content', None) or getattr(message, 'embeds', None):
             return False
-        # A manual /tu (or another MudaRemote instance's /tu) is already an
+        # A manual /tu (or another MudaFork instance's /tu) is already an
         # authoritative status snapshot, not a rejected claim. Refreshing in
         # response makes two running instances trigger each other forever.
         if is_tu_status_snapshot_for_self(message):
@@ -3291,9 +3569,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         client._runtime_state_event = asyncio.Event()
         client._claim_evidence_event = asyncio.Event()
         runtime_mode = "Android" if IS_TERMUX else ("EXE" if getattr(sys, "frozen", False) else "Python")
-        BotLogger.log(f"MudaRemote v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
+        BotLogger.log(f"MudaFork v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
+        _totals_book.note_user_id(client._totals_key, getattr(client.user, "id", None))
         client.loop.create_task(health_monitor_task())
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(report_account_role())
 
         try: target_ch_id = int(target_channel_id)
         except Exception:
@@ -3369,6 +3650,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 except Exception as e:
                     BotLogger.log(f"Runtime ready callback error: {e}", preset_name, "WARN")
             return
+
+        try:
+            await run_fast_setup()
+        except Exception as e:
+            BotLogger.log(f"Fast setup error: {e}", preset_name, "ERROR")
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(harem_give_schedule_task())
+        client.loop.create_task(perk10_schedule_task())
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(sphere_give_schedule_task())
 
         if client.rolling_enabled:
             if not client.skip_initial_commands:
@@ -5041,6 +5332,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 # Reset skip reason cache after successful physical $tu
                 client._last_tu_skip_reason_key = None
                 c_lower = tu_content.lower()
+                try:
+                    note_tu_totals(tu_content)
+                except Exception as e:
+                    BotLogger.log(f"Totals parse error: {e}", preset_name, "WARN")
 
             sphere_budget_observed = client.sphere_button_budget.observe(tu_content, request_started_at)
             if sphere_budget_observed:
@@ -5273,6 +5568,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         preset_name,
                         "INFO",
                     )
+                client._perk10_sphere_status_seen = True
                 await client.sphere_runtime.run_available_sphere_games(cmd_channel, sphere_status)
             elif any_sphere_game_enabled(client):
                 BotLogger.log(
@@ -5280,6 +5576,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     preset_name,
                     "WARN",
                 )
+            # Perk 10 comes after the games this $tu showed (it waits while any is left).
+            schedule_perk10("$tu")
 
             rt_reset_minutes = parse_timer_minutes("RT_RESET", c_lower)
             if rt_reset_minutes is not None:
@@ -6135,6 +6433,32 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
         if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
+        if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
+            # This account is rolling for its main right now; its own batch
+            # waits for the status refresh that follows the hand-off.
+            BotLogger.log("Own roll batch skipped: this side account is rolling for its main.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="side-handoff-busy")
+            return
+        if client.kakera_giver.active:
+            # A $givek confirmation is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a kakera give to the main is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="kakera-give-busy")
+            return
+        if client.harem_giver.active or main_receiving(client._account_link.key):
+            # A $give (harem pages) procedure is open on this account or its main answers one.
+            BotLogger.log("Own roll batch deferred: a harem give is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="harem-give-busy")
+            return
+        if client.sphere_giver.active:
+            # A $givesp confirmation is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a sphere give to the main is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="sphere-give-busy")
+            return
+        if client.perk_upgrader.active:
+            # A $mmz-/$oic perk-10 upgrade is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a perk-10 upgrade is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="perk10-busy")
+            return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
         if channel.id != client.target_channel_id:
@@ -6666,6 +6990,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.collected_rolls.clear()
         client.is_timing_mode_active = False
         await active_delay(1.0 + random.uniform(0.1, 0.5))
+        if (not is_us_pull and client._rolls_sent > 0
+                and not (not is_timing_mode_active and auto_rolls_will_extend)):
+            await ask_sides_to_roll_for_main()
 
     async def execute_auto_divorce(client, channel, char_name):
         try:
@@ -6763,6 +7090,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         is_snipe_action = pending["is_snipe_action"]
         lbl = "Snipe Verification" if is_snipe_action else "Claim Verification"
         BotLogger.log(f"{lbl}: SUCCESS! We got {char_name}. ({verification_source})", preset_name, "CLAIM")
+        schedule_harem_give("after a claim")
 
         now = datetime.datetime.now(timezone.utc)
         if consumes_claim:
@@ -7345,6 +7673,615 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 finally:
                     _claim_coordinator.release_all(msg_rt.id)
         return bool(msg_claimed_id != -1)
+
+    # ------------------------------------------------------------------
+    # Main / Side accounts
+    # ------------------------------------------------------------------
+    def side_handoff_log(message, level="INFO"):
+        BotLogger.log(message, preset_name, level, client)
+
+    def effective_main_account_id():
+        """The Main's Discord id for wish sync: the pasted id, else the Main profile's."""
+        if client.main_account_id:
+            return client.main_account_id
+        link = getattr(client, "_account_link", None)
+        main_link = _side_roll_coordinator.resolve_main(link) if link is not None else None
+        user_id = getattr(main_link, "user_id", None) if main_link is not None else None
+        return str(user_id) if user_id else ""
+
+    async def report_account_role():
+        """Say once, after the accounts had time to connect, how this account's role resolved."""
+        if getattr(client, "account_role", "main") != "side":
+            return
+        if not await active_delay(45.0):
+            return
+        main_link = _side_roll_coordinator.resolve_main(client._account_link)
+        if main_link is not None:
+            BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+        elif client.main_account_id:
+            BotLogger.log("Side account: its main (Main Account ID) is not running in this app; wish sync still works, roll hand-offs need both accounts running together.", preset_name, "INFO")
+        else:
+            BotLogger.log("Side account: its main profile is not running here (or was not picked); this account runs as an ordinary account.", preset_name, "WARN")
+
+    async def roll_for_main(handoff):
+        """Side: roll this account's own rolls so the Main can claim from them.
+
+        Uses the normal roll sender, pacing, pause and maintenance checks. The
+        Side's own claim is not spent here (see the on_message hand-off branch).
+        """
+        if client.is_paused or client.key_limit_hit or is_maintenance_active():
+            return 0
+        channel = client.get_channel(client.target_channel_id) or client._main_channel
+        if channel is None:
+            raise RuntimeError("roll channel is not available")
+        ready, _ = await wait_for_tu_inactivity(channel, before_roll=True)
+        if not ready:
+            return 0
+        to_send = max(0, int(client.rolls_left or 0))
+        if to_send <= 0 or handoff.should_stop():
+            return 0
+        BotLogger.log(f"Rolling {to_send} times for main \u2068{handoff.main_name}\u2069", preset_name, "INFO")
+        client.is_actively_rolling = True
+        client.interrupt_rolling = False
+        client._rolls_sent = client._rolls_received = 0
+        sent = 0
+        try:
+            while to_send > 0:
+                if client.is_paused or is_maintenance_active() or client.interrupt_rolling or handoff.should_stop():
+                    break
+                if not await send_roll_command(
+                    channel, roll_command,
+                    expected_reset_boundary_utc=client.roll_reset_at_utc,
+                ):
+                    break
+                sent += 1
+                client._rolls_sent += 1
+                to_send -= 1
+                client.rolls_left = to_send
+                roll_delay = (max(2.0, client.roll_speed) if effective_slash_rolls() else client.roll_speed) + random.uniform(0.05, 0.25)
+                if not await active_delay(roll_delay):
+                    break
+            poll_start = time.time()
+            while (not client.is_paused and time.time() - poll_start < 5.0
+                   and client._rolls_received < client._rolls_sent and not handoff.should_stop()):
+                if not await active_delay(0.05):
+                    break
+        finally:
+            client.is_actively_rolling = False
+            # The local count is a best guess once another account claimed
+            # mid-batch; let the next $tu settle it.
+            mark_status_dirty(client, {"rolls"}, reason="side-handoff-rolls")
+            request_status_refresh({"rolls"}, reason="side-handoff-rolls")
+        return sent
+
+    client._account_link.roll_for_main = roll_for_main
+
+    async def ask_sides_to_roll_for_main():
+        """Main: rolls ended with the claim unused and nothing claimable."""
+        if (getattr(client, "account_role", "main") != "main"
+                or getattr(client, "account_index", 1) != 1
+                or not getattr(client, "side_rolls_for_main", False)):
+            return
+        if (not client.claim_right_available or client.is_paused or client.key_limit_hit
+                or getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None
+                or is_key_mode_kakera_only() or is_maintenance_active()):
+            return
+        if getattr(client, "_account_link", None) is None:
+            return
+        try:
+            await _side_roll_coordinator.run_for_main(
+                client._account_link,
+                log=side_handoff_log,
+                settle=lambda: active_delay(1.5 + random.uniform(0.1, 0.4)),
+                timeout_seconds=SIDE_HANDOFF_TIMEOUT_SECONDS,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Side hand-off error: {e}", preset_name, "ERROR")
+
+    async def judge_side_roll_for_main(handoff, message):
+        """Main: judge a card a Side rolled with the Main's own rules."""
+        embed = message.embeds[0]
+        card = (embed.author.name if embed.author else "Unknown").strip()
+        claimed = False
+        try:
+            if client.claim_right_available and not handoff.should_stop():
+                claimed = await handle_mudae_messages(client, message.channel, [message], False, False)
+        except Exception as e:
+            BotLogger.log(f"Side roll processing error: {e}", preset_name, "ERROR")
+        handoff.record_main_decision(message.id, claimed, card if claimed else None)
+        if claimed:
+            BotLogger.log(f"Main claimed \u2068{card}\u2069 from \u2068{handoff.side_name}\u2069's roll", preset_name, "CLAIM")
+
+    async def process_own_roll_for_main(handoff, message):
+        """Side: a card this account rolled for its Main."""
+        handoff.note_side_roll()
+        if client.is_actively_rolling:
+            client._rolls_received += 1
+        if handoff.claim_leftovers:
+            waited = 0.0
+            while (handoff.main_decision(message.id) is None and not handoff.closed
+                   and waited < SIDE_LEFTOVER_DECISION_WAIT_SECONDS):
+                if not await active_delay(0.1):
+                    return
+                waited += 0.1
+            if handoff.main_decision(message.id) is False:
+                try:
+                    if await handle_mudae_messages(client, message.channel, [message], False, False):
+                        card = (message.embeds[0].author.name if message.embeds[0].author else "Unknown").strip()
+                        BotLogger.log(f"Side kept leftover \u2068{card}\u2069 the main passed on.", preset_name, "CLAIM")
+                except Exception as e:
+                    BotLogger.log(f"Leftover claim error: {e}", preset_name, "ERROR")
+        # Kakera on this account's own roll is still collected as usual.
+        if has_collectible_kakera_button(message.components, get_all_collectible_kakera_emojis()):
+            d_min, d_max = client.reactive_kakera_delay_range
+            if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)):
+                return
+            await claim_character(client, message.channel, message, is_kakera=True)
+
+    # ------------------------------------------------------------------
+    # Totals ($tu / game results), Fast setup, auto-give kakera to the main
+    # ------------------------------------------------------------------
+    def bot_message_text(message):
+        parts = [str(getattr(message, "content", "") or "")]
+        for embed in getattr(message, "embeds", ()) or ():
+            parts.append(str(getattr(embed, "description", "") or ""))
+            for embed_field in getattr(embed, "fields", ()) or ():
+                parts.append(str(getattr(embed_field, "value", "") or ""))
+        return "\n".join(part for part in parts if part)
+
+    def log_totals(reason):
+        BotLogger.log(f"Totals: {client.account_totals.describe()} ({reason})", preset_name, "INFO")
+
+    def note_tu_totals(tu_text):
+        """Read kakera/sphere totals from a $tu reply the program already got (no new $tu)."""
+        before = (client.account_totals.kakera, client.account_totals.spheres)
+        client.account_totals.apply_tu(tu_text)
+        if (client.account_totals.kakera, client.account_totals.spheres) != before:
+            log_totals("from $tu")
+        schedule_auto_give("$tu")
+        schedule_sphere_give("$tu")
+
+    def observe_sphere_game_result(message):
+        """Spheres from this account's own game-result message (new or edited)."""
+        if getattr(getattr(message, "author", None), "id", None) != TARGET_BOT_ID:
+            return
+        message_id = getattr(message, "id", None)
+        tracked = client._own_sphere_result_ids
+        text = bot_message_text(message)
+        if message_id not in tracked:
+            # A new result counts only while this account's own game runs here.
+            kind = getattr(client, "_sphere_game_response_kind", None)
+            game_channel = getattr(client, "_sphere_game_response_channel_id", None)
+            if kind is None or (game_channel is not None and getattr(message.channel, "id", None) != game_channel):
+                return
+            if not parse_sphere_game_result(text).is_result:
+                return
+            tracked[message_id] = True
+            while len(tracked) > 50:
+                tracked.pop(next(iter(tracked)))
+        if client.account_totals.apply_sphere_game_result(message_id, text):
+            log_totals("from the sphere game")
+            schedule_perk10("sphere game result")
+            schedule_sphere_give("sphere game result")
+
+    def auto_give_busy_reason():
+        if client.is_paused or client.key_limit_hit:
+            return "paused"
+        if is_maintenance_active():
+            return "maintenance"
+        if is_inactive_hour():
+            return "inactive hours"
+        if client.loot_automation is not None:
+            return "loot mode"
+        if claim_critical_work_pending():
+            return "rolling or claiming"
+        if client.tu_lock is not None and client.tu_lock.locked():
+            return "reading $tu"
+        if client._sphere_game_lock is not None and client._sphere_game_lock.locked():
+            return "playing a sphere game"
+        if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
+            return "rolling for its main"
+        return None
+
+    def schedule_auto_give(reason):
+        if not (client.auto_give_kakera and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.kakera_giver.active or getattr(client, "_auto_give_task", None) is not None:
+            return
+        client._auto_give_task = client.loop.create_task(run_auto_give(reason))
+
+    async def run_auto_give(reason):
+        try:
+            # Let the $tu handling and any roll/claim it starts settle first.
+            waited = 0.0
+            while auto_give_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            main_id = effective_main_account_id()
+            user = client.user
+            outcome = await client.kakera_giver.maybe_give(
+                channel, GiveSettings.from_preset({
+                    "auto_give_kakera": client.auto_give_kakera,
+                    "give_kakera_threshold": client.give_kakera_threshold,
+                    "give_kakera_extra": client.give_kakera_extra,
+                    "give_kakera_daily_cap": client.give_kakera_daily_cap,
+                }),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(user, "id", "") or ""),
+                own_names=[getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)],
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                busy=lambda: (auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
+                              or ("upgrading perk 10" if client.perk_upgrader.active else None)),
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_auto_give_last_skip", None):
+                    client._auto_give_last_skip = outcome.reason
+                    BotLogger.log(f"Auto-give waits: {outcome.reason}.", preset_name, "DEBUG", client)
+            else:
+                client._auto_give_last_skip = None
+                log_totals("after the give")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Auto-give error: {e}", preset_name, "ERROR")
+        finally:
+            client._auto_give_task = None
+
+    async def run_give_all_kakera_now():
+        """«Give all kakera now» (button): one give of the whole total to the main."""
+        try:
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                BotLogger.log("Give all kakera: not given — no command channel.", preset_name, "WARN")
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.kakera_giver.give_all_now(
+                channel,
+                minimum=client.give_kakera_button_minimum,
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Waits for the next $tu the program already sends; never sends one.
+                busy=lambda: (auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
+                              or ("upgrading perk 10" if client.perk_upgrader.active else None)),
+                total_wait_seconds=3600.0,
+            )
+            if outcome.status == "ignored":
+                BotLogger.log(f"Give all kakera: press ignored — {outcome.reason}.", preset_name, "INFO")
+                return
+            log_totals("after «Give all kakera now»")
+            wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Give all kakera error: {e}", preset_name, "ERROR")
+
+    def any_procedure_busy_reason():
+        """Busy for a give partner: rolling/claiming/$tu/games, or a give procedure of its own."""
+        reason = auto_give_busy_reason()
+        if reason:
+            return reason
+        if client.kakera_giver.active:
+            return "giving kakera"
+        if client.harem_giver.active:
+            return "giving harem pages"
+        if client.sphere_giver.active:
+            return "giving spheres"
+        if client.perk_upgrader.active:
+            return "upgrading perk 10"
+        return None
+
+    async def answer_gift_question(channel_id, text):
+        """As a Main: answer y/n to a side's $give confirmation (runs on this account's loop)."""
+        channel = client.get_channel(int(channel_id))
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(int(channel_id))
+            except Exception:
+                return None
+        BotLogger.log(f"Harem give: the main answers {text} to its side's $give.", preset_name, "INFO")
+        return await guarded_send(channel, text)
+
+    client._gift_busy_reason = any_procedure_busy_reason
+    client._gift_answer = answer_gift_question
+
+    def harem_give_settings():
+        return HaremGiveSettings.from_preset({
+            "auto_give_harem": client.auto_give_harem,
+            "harem_give_trigger": client.harem_give_trigger,
+            "harem_give_pages": client.harem_give_pages,
+            "harem_give_characters": client.harem_give_characters,
+            "harem_give_value": client.harem_give_value,
+            "harem_check_hours": client.harem_check_hours,
+            "harem_give_pages_text": client.harem_give_pages_text,
+            "harem_keep_first_pages": client.harem_keep_first_pages,
+            "harem_give_daily_cap": client.harem_give_daily_cap,
+        })
+
+    def own_display_names():
+        user = client.user
+        names = [getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)]
+        for guild in getattr(client, "guilds", ()) or ():
+            member = getattr(guild, "me", None)
+            names.append(getattr(member, "nick", None))
+            names.append(getattr(member, "display_name", None))
+        return [name for name in dict.fromkeys(names) if name]
+
+    def schedule_harem_give(reason):
+        if not (getattr(client, "auto_give_harem", False) and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.harem_giver.active or getattr(client, "_harem_give_task", None) is not None:
+            return
+        client._harem_give_task = client.loop.create_task(run_harem_give(reason))
+
+    async def run_harem_give(reason):
+        try:
+            waited = 0.0
+            while (auto_give_busy_reason() is not None or client.kakera_giver.active
+                   or client.sphere_giver.active) and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            link = client._account_link
+            partner = _side_roll_coordinator.resolve_main(link)
+            if partner is not None and not partner.is_ready():
+                partner = None
+            outcome = await client.harem_giver.maybe_give(
+                channel, harem_give_settings(),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=effective_main_account_id(),
+                partner=partner,
+                prefix=client.mudae_prefix,
+                busy=lambda: (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
+                              or ("upgrading perk 10" if client.perk_upgrader.active else None)),
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_harem_give_last_skip", None):
+                    client._harem_give_last_skip = outcome.reason
+                    BotLogger.log(f"Harem give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+            else:
+                client._harem_give_last_skip = None
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Harem give error: {e}", preset_name, "ERROR")
+        finally:
+            client._harem_give_task = None
+
+    def sphere_give_settings():
+        return SphereGiveSettings.from_preset({
+            "auto_give_spheres": client.auto_give_spheres,
+            "sphere_give_interval_min": client.sphere_give_interval_min,
+            "spheres_keep": client.spheres_keep,
+            "auto_perk10": getattr(client, "auto_perk10", False),
+        })
+
+    def sphere_give_busy_reason():
+        return (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
+                or ("giving harem pages" if client.harem_giver.active or main_receiving(client._account_link.key) else None)
+                or ("upgrading perk 10" if client.perk_upgrader.active else None))
+
+    def schedule_sphere_give(reason):
+        if not (getattr(client, "auto_give_spheres", False) and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.sphere_giver.active or getattr(client, "_sphere_give_task", None) is not None:
+            return
+        client._sphere_give_task = client.loop.create_task(run_sphere_give(reason))
+
+    async def run_sphere_give(reason):
+        try:
+            waited = 0.0
+            while sphere_give_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.sphere_giver.maybe_give(
+                channel, sphere_give_settings(),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Never sends $tu: an unknown stock waits for the next one the program sends.
+                games=perk10_games_reason,
+                busy=sphere_give_busy_reason,
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_sphere_give_last_skip", None):
+                    client._sphere_give_last_skip = outcome.reason
+                    if outcome.reason == PERK10_OFF_REASON:
+                        BotLogger.log(f"{outcome.reason}.", preset_name, "INFO", client)
+                    else:
+                        BotLogger.log(f"Sphere give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+            else:
+                client._sphere_give_last_skip = None
+                log_totals("after the sphere give")
+                wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Sphere give error: {e}", preset_name, "ERROR")
+        finally:
+            client._sphere_give_task = None
+
+    async def run_give_all_spheres_now():
+        """«Give all spheres now» (button): one give of the whole stock (minus the keep) to the main."""
+        try:
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                BotLogger.log("Give all spheres: not given \u2014 no command channel.", preset_name, "WARN")
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.sphere_giver.give_all_now(
+                channel,
+                keep=client.spheres_keep,
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Waits for the next $tu the program already sends; never sends one.
+                busy=sphere_give_busy_reason,
+                games=perk10_games_reason,
+                total_wait_seconds=3600.0,
+            )
+            if outcome.status == "ignored":
+                BotLogger.log(f"Give all spheres: press ignored \u2014 {outcome.reason}.", preset_name, "INFO")
+                return
+            log_totals("after \u00abGive all spheres now\u00bb")
+            wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Give all spheres error: {e}", preset_name, "ERROR")
+
+    async def sphere_give_schedule_task():
+        """Wake every few minutes so a deferred give runs once games, perk 10 and busy work are done."""
+        while not client.is_closed():
+            schedule_sphere_give("schedule")
+            if not await active_delay(300.0):
+                if client.is_closed():
+                    return
+                await asyncio.sleep(60.0)
+
+    def perk10_settings():
+        return Perk10Settings.from_preset({
+            "auto_perk10": client.auto_perk10,
+            "perk10_min_spheres": client.perk10_min_spheres,
+            "perk10_max_characters": client.perk10_max_characters,
+            "perk10_daily_cap": client.perk10_daily_cap,
+        })
+
+    def perk10_games_reason():
+        """Sphere games come first: every game the latest $tu showed must be played out."""
+        enabled = {kind: getattr(client, f"auto_{kind}_enabled", False) for kind in SPHERE_GAME_KINDS}
+        running = bool(getattr(client, "_sphere_games_running", False)
+                       or (client._sphere_game_lock is not None and client._sphere_game_lock.locked()))
+        return sphere_games_pending(client.sphere_game_counts, enabled, running=running,
+                                    status_seen=client._perk10_sphere_status_seen)
+
+    def perk10_busy_reason():
+        reason = auto_give_busy_reason()
+        if reason:
+            return reason
+        if client.kakera_giver.active:
+            return "giving kakera"
+        if client.harem_giver.active or main_receiving(client._account_link.key):
+            return "a harem give is in progress"
+        if client.sphere_giver.active:
+            return "giving spheres"
+        return None
+
+    def schedule_perk10(reason):
+        if not getattr(client, "auto_perk10", False):
+            return
+        if client.perk_upgrader.active or getattr(client, "_perk10_task", None) is not None:
+            return
+        client._perk10_task = client.loop.create_task(run_perk10(reason))
+
+    async def run_perk10(reason):
+        try:
+            waited = 0.0
+            while perk10_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            outcome = await client.perk_upgrader.maybe_upgrade(
+                channel, perk10_settings(),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                totals=client.account_totals,
+                prefix=client.mudae_prefix,
+                # Never sends $tu: an unknown stock waits for the next one the program sends.
+                games=perk10_games_reason,
+                busy=perk10_busy_reason,
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_perk10_last_skip", None):
+                    client._perk10_last_skip = outcome.reason
+                    BotLogger.log(f"Perk 10 waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+            else:
+                client._perk10_last_skip = None
+                if outcome.status == "upgraded":
+                    log_totals("after the perk-10 upgrade")
+                wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Perk 10 error: {e}", preset_name, "ERROR")
+        finally:
+            client._perk10_task = None
+
+    async def perk10_schedule_task():
+        """Wake every few minutes so a deferred upgrade runs once the games and busy work are done."""
+        while not client.is_closed():
+            schedule_perk10("schedule")
+            if not await active_delay(600.0):
+                if client.is_closed():
+                    return
+                await asyncio.sleep(60.0)
+
+    async def harem_give_schedule_task():
+        """Wake every few minutes; the giver itself keeps «Check every N hours»."""
+        while not client.is_closed():
+            schedule_harem_give("schedule")
+            if not await active_delay(600.0):
+                if client.is_closed():
+                    return
+                await asyncio.sleep(60.0)
+
+    async def run_fast_setup():
+        """Send the one-time Fast setup message if it is due for this account."""
+        if not client.fast_setup:
+            return
+        channel = await _resolve_administrative_command_channel()
+        if channel is None:
+            return
+        await client.fast_setup_runner.run(
+            client.fast_setup, client.fast_setup_round, guarded_send, channel,
+            prefix=client.mudae_prefix,
+            log=lambda message, level: BotLogger.log(message, preset_name, level),
+        )
 
     def regular_kakera_filter_reason(client, msg, embed, *, button=None, is_mk_roll=False, is_external_roll=False):
         """Explain why ordinary Kakera is blocked without blocking spheres or purple."""
@@ -8224,7 +9161,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         update_event = client._sphere_board_update_events.get(getattr(after, 'id', None))
         if update_event is not None:
             update_event.set()
+        if client.harem_giver.reader.watching(getattr(after, 'id', None)):
+            client.harem_giver.on_edit(after)
+        if client.perk_upgrader.reader.watching(getattr(after, 'id', None)):
+            client.perk_upgrader.on_edit(after)
         client.sphere_runtime.capture_sphere_game_bonus(after)
+        observe_sphere_game_result(after)
         schedule_farm_release_after_other_claim(after, previous_message=before)
         await process_edited_wish(after)
 
@@ -8235,6 +9177,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return
         message_id = getattr(payload, 'message_id', None)
         if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
+            client.kakera_giver.on_refused(message_id)
+            client.harem_giver.on_refused(message_id)
+            client.perk_upgrader.on_refused(message_id)
+            client.sphere_giver.on_refused(message_id)
             client._recent_mudae_command_rejections[message_id] = time.monotonic()
             while len(client._recent_mudae_command_rejections) > 200:
                 client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
@@ -8245,6 +9191,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if not mudae_command_ack_matches(payload, message_id, TARGET_BOT_ID):
             return
         client._recent_mudae_command_acks[message_id] = time.monotonic()
+        client.perk_upgrader.on_ack(message_id)  # ✅ on the account's «Y» to $oic
+        client.sphere_giver.on_ack(message_id)  # ✅ on the account's «Y» to $givesp
         while len(client._recent_mudae_command_acks) > 500:
             client._recent_mudae_command_acks.pop(next(iter(client._recent_mudae_command_acks)))
         operation = getattr(client, '_rt_command_in_flight', None)
@@ -8264,6 +9212,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             update_event.set()
         # Cached edits are handled by on_message_edit with the complete message.
         if getattr(payload, 'cached_message', None) is not None:
+            return
+        if client.harem_giver.reader.watching(getattr(payload, 'message_id', None)):
+            # A harem list page turned by our click, but the message was not cached.
+            try:
+                list_channel = client.get_channel(payload.channel_id) or await client.fetch_channel(payload.channel_id)
+                client.harem_giver.on_edit(await list_channel.fetch_message(payload.message_id))
+            except (discord.HTTPException, AttributeError):
+                pass
+            return
+        if client.perk_upgrader.reader.watching(getattr(payload, 'message_id', None)):
+            # A $mmz- page turned by our click, but the message was not cached.
+            try:
+                list_channel = client.get_channel(payload.channel_id) or await client.fetch_channel(payload.channel_id)
+                client.perk_upgrader.on_edit(await list_channel.fetch_message(payload.message_id))
+            except (discord.HTTPException, AttributeError):
+                pass
             return
         channel_id = getattr(payload, 'channel_id', None)
         if not client.snipe_mode or channel_id not in {client.target_channel_id, *client.snipe_channels}:
@@ -8302,6 +9266,23 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         observe_dk_reply(message)
         client.sphere_runtime.capture_sphere_game_response(message)
         client.sphere_runtime.capture_sphere_game_bonus(message)
+        observe_sphere_game_result(message)
+        if client.kakera_giver.active and message.author.id == TARGET_BOT_ID:
+            reference = getattr(message, "reference", None)
+            client.kakera_giver.on_reply(BotReply(
+                message.id, message.channel.id, bot_message_text(message),
+                getattr(reference, "message_id", None),
+            ))
+        if client.sphere_giver.active and message.author.id == TARGET_BOT_ID:
+            reference = getattr(message, "reference", None)
+            client.sphere_giver.on_reply(BotReply(
+                message.id, message.channel.id, bot_message_text(message),
+                getattr(reference, "message_id", None),
+            ))
+        if (client.harem_giver.active or client.harem_giver.reader.active) and message.author.id == TARGET_BOT_ID:
+            client.harem_giver.on_message(message, bot_message_text(message))
+        if (client.perk_upgrader.active or client.perk_upgrader.reader.active) and message.author.id == TARGET_BOT_ID:
+            client.perk_upgrader.on_message(message, bot_message_text(message))
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (
@@ -8454,8 +9435,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         schedule_farm_release_after_other_claim(message)
 
-        if client.main_account_id:
-            try: main_id = int(client.main_account_id)
+        sync_main_id = (
+            effective_main_account_id()
+            if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is None
+            else ""
+        )
+        if sync_main_id:
+            try: main_id = int(sync_main_id)
             except ValueError: main_id = None
             if main_id is not None and message.embeds:
                 embed_ma = message.embeds[0]
@@ -8546,6 +9532,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             str(getattr(client.user, "display_name", "") or "").casefold(),
         }
         is_self_roll = owner_id == client.user.id or bool(owner_name and owner_name in self_names)
+        main_handoff = _side_roll_coordinator.handoff_for_main(_account_link_key(client))
+        if main_handoff is not None and not is_self_roll and main_handoff.is_side_roll(owner_id, message.channel.id):
+            await judge_side_roll_for_main(main_handoff, message)
+            return
+        side_handoff = _side_roll_coordinator.handoff_for_side(_account_link_key(client))
+        if side_handoff is not None and is_self_roll and message.channel.id == side_handoff.channel_id:
+            await process_own_roll_for_main(side_handoff, message)
+            return
         roll_context = "normal-self" if is_self_roll else "external"
         BotLogger.log(
             f"Roll context: {roll_context} (command={origin_command or 'unknown'}, message={message.id}).",
@@ -9003,13 +9997,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         with _active_clients_lock:
             if client in _active_clients:
                 _active_clients.remove(client)
+        _side_roll_coordinator.unregister(client._account_link)
         return
 
     if IS_TERMUX:
         threading.Thread(
             target=_close_client_on_mobile_stop,
             args=(client,),
-            name=f"MudaRemote-StopWatcher-{preset_name}",
+            name=f"MudaFork-StopWatcher-{preset_name}",
             daemon=True,
         ).start()
 
@@ -9031,6 +10026,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if "set_wakeup_fd" not in str(e):
             BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
     finally:
+        _side_roll_coordinator.unregister(client._account_link)
         with _active_clients_lock:
             if client in _active_clients: _active_clients.remove(client)
             _mobile_client_close_futures.pop(id(client), None)
@@ -9232,7 +10228,7 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
 
 def reset_mobile_runtime():
     """Reset process-wide mobile state after the previous workers have exited."""
-    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator
+    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator, _totals_book
     with _active_clients_lock:
         _active_clients.clear()
         _mobile_client_close_futures.clear()
@@ -9241,6 +10237,8 @@ def reset_mobile_runtime():
     _claim_coordinator = ClaimCoordinator()
     _server_reset_coordinator = ServerResetCoordinator()
     _tu_interval_coordinator = GlobalIntervalCoordinator()
+    _side_roll_coordinator = SideRollCoordinator()
+    _totals_book = TotalsBook()
 
 def parse_args(argv=None):
     import argparse
@@ -9260,7 +10258,7 @@ def run_cli(argv=None):
         update_result = None
         print_system_log("Update check at startup is off.", "INFO")
     if update_result == "frozen":
-        print_system_log("Exiting so the updater helper can replace MudaRemote and relaunch it.", "RESET")
+        print_system_log("Exiting so the updater helper can replace MudaFork and relaunch it.", "RESET")
         sys.exit(0)
     if update_result == "source" and not (
         os.environ.get("TERMUX_VERSION") == "MudaRemote-Android"
@@ -9301,7 +10299,7 @@ def run_cli(argv=None):
         try:
             while True: time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[MudaRemote] Shutting down...")
+            print("\n[MudaFork] Shutting down...")
 
 if __name__ == "__main__":
     run_cli()

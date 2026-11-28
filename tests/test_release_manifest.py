@@ -73,7 +73,7 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn("group: windows-release-v{}".format(version), workflow)
         self.assertIn("RELEASE_VERSION: {}".format(version), workflow)
         self.assertIn("RELEASE_TAG: v{}".format(version), workflow)
-        self.assertIn("RELEASE_TITLE: MudaRemote v{}".format(version), workflow)
+        self.assertIn("RELEASE_TITLE: MudaFork v{}".format(version), workflow)
         self.assertIn("release-notes-v{}.md".format(version), workflow)
 
 

@@ -29,7 +29,7 @@ class WebhookDispatcher:
         with cls._start_lock:
             if cls._started:
                 return
-            threading.Thread(target=cls._worker, name="MudaRemoteWebhook", daemon=True).start()
+            threading.Thread(target=cls._worker, name="MudaForkWebhook", daemon=True).start()
             cls._started = True
 
     @classmethod

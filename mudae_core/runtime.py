@@ -1792,6 +1792,8 @@ def prepare_active_presets(preset_names, preset_mapping, start_index=0):
         for token_index, token in enumerate(tokens, 1):
             account_data = dict(data)
             account_data["_source_preset_name"] = name
+            # The first account of a profile is the one a Main role applies to.
+            account_data["_account_index"] = token_index
             account_data.pop("tokens", None)
             account_data["token"] = token
             active_index = max(0, int(start_index or 0)) + len(prepared)

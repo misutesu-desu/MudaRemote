@@ -20,7 +20,7 @@ def prepare_manifest(release, read_ref):
     for entry in manifest["source_files"]:
         if hashlib.sha256(read_ref(tag, entry["path"])).hexdigest() != entry["sha256"]:
             raise ValueError("Stable source checksum mismatch: " + entry["path"])
-    assets = [asset for asset in release["assets"] if asset["name"] == "MudaRemote.exe"]
+    assets = [asset for asset in release["assets"] if asset["name"] == "MudaFork.exe"]
     if len(assets) != 1 or assets[0].get("digest") != "sha256:" + manifest["exe_sha256"]:
         raise ValueError("Stable executable checksum does not match GitHub's asset digest")
     return manifest
@@ -28,7 +28,7 @@ def prepare_manifest(release, read_ref):
 
 def main():
     release = json.loads(subprocess.check_output([
-        "gh", "api", "repos/misutesu-desu/MudaRemote/releases/latest",
+        "gh", "api", "repos/YoRu72/MudaPersonalFork/releases/latest",
     ]))
     manifest = prepare_manifest(release, lambda tag, path: subprocess.check_output(["git", "show", tag + ":" + path]))
     output = Path("stable-manifest/version.json")

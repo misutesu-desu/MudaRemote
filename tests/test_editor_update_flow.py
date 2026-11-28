@@ -208,8 +208,8 @@ class EditorUpdateFlowTests(unittest.TestCase):
 
     def test_checksum_failure_surfaces_artifact_detail_and_restores_controls(self):
         detail = (
-            "The published download for executable MudaRemote.exe does not match "
-            "its checksum.\nURL: https://example.invalid/MudaRemote.exe"
+            "The published download for executable MudaFork.exe does not match "
+            "its checksum.\nURL: https://example.invalid/MudaFork.exe"
         )
 
         def fake_check_for_updates(**kwargs):

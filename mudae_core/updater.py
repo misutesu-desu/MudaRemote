@@ -720,7 +720,7 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable, progre
 
     # Isolated per-attempt staging directory ensures concurrent attempts never collide
     stage_dir = tempfile.mkdtemp(prefix="mudae-frozen-update-", dir=base_path)
-    staged_exe = os.path.join(stage_dir, "MudaRemote_update.exe")
+    staged_exe = os.path.join(stage_dir, "MudaFork_update.exe")
     with open(staged_exe, "wb") as handle:
         handle.write(content)
 
@@ -741,7 +741,7 @@ def _stage_frozen_update_locked(session, manifest, base_path, executable, progre
 
     ps_script_path = os.path.join(stage_dir, "update_helper.ps1")
     ps_content = (
-        '# MudaRemote Frozen Update Helper\r\n'
+        '# MudaFork Frozen Update Helper\r\n'
         'param([string]$PayloadPath)\r\n'
         '$ErrorActionPreference = "Stop"\r\n'
         'try { Import-Module Microsoft.PowerShell.Utility -ErrorAction SilentlyContinue } catch {}\r\n'

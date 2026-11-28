@@ -7,7 +7,7 @@ import os
 import re
 from ctypes import wintypes
 
-from .config import atomic_write_json, load_json
+from .config import atomic_write_json, load_json, profile_id_of
 
 
 class SecretStoreError(RuntimeError):
@@ -32,6 +32,69 @@ class SecretStore:
     def _env_name(preset_name):
         clean = re.sub(r"[^A-Za-z0-9]+", "_", preset_name).strip("_").upper()
         return "MUDAREMOTE_TOKEN_{}".format(clean)
+
+    # -- stable profile keys ----------------------------------------------
+    # Tokens used to be stored under the profile's display name, so a rename
+    # orphaned them. They now live under the profile's stable id; the old
+    # name key is read once and moved.
+    @staticmethod
+    def profile_key(preset_name, preset_data=None):
+        profile_id = profile_id_of(preset_data or {})
+        return "profile:{}".format(profile_id) if profile_id else preset_name
+
+    def get_profile_tokens(self, preset_name, preset_data=None, legacy_tokens=None):
+        """Tokens of a profile: env var, then its stable-id key, then the old name key."""
+        key = self.profile_key(preset_name, preset_data)
+        if key != preset_name:
+            if not os.environ.get(self._env_name(preset_name)):
+                profile_id = profile_id_of(preset_data or {})
+                env_token = os.environ.get(self._env_name(profile_id))
+                if env_token:
+                    return self._decode_tokens(env_token)
+                try:
+                    stored = self._get_platform_secret(key)
+                except SecretStoreError:
+                    stored = ""
+                if stored:
+                    return self._decode_tokens(stored)
+        return self.get_tokens(preset_name, legacy_tokens)
+
+    def set_profile_tokens(self, preset_name, preset_data, tokens):
+        key = self.profile_key(preset_name, preset_data)
+        self.set_tokens(key, tokens)
+        if key != preset_name:
+            try:
+                if self._get_platform_secret(preset_name):
+                    self.set_tokens(preset_name, [])
+            except SecretStoreError:
+                pass
+
+    def delete_profile_tokens(self, preset_name, preset_data=None):
+        key = self.profile_key(preset_name, preset_data)
+        self.set_tokens(key, [])
+        if key != preset_name:
+            try:
+                if self._get_platform_secret(preset_name):
+                    self.set_tokens(preset_name, [])
+            except SecretStoreError:
+                pass
+
+    def migrate_profile_tokens(self, preset_name, preset_data):
+        """Move tokens stored under the display name to the stable id key."""
+        key = self.profile_key(preset_name, preset_data)
+        if key == preset_name:
+            return False
+        try:
+            if self._get_platform_secret(key):
+                return False
+            stored = self._get_platform_secret(preset_name)
+        except SecretStoreError:
+            return False
+        if not stored:
+            return False
+        self.set_tokens(key, self._decode_tokens(stored))
+        self.set_tokens(preset_name, [])
+        return True
 
     def get_token(self, preset_name, legacy_token=""):
         tokens = self.get_tokens(preset_name, legacy_token)
@@ -163,7 +226,7 @@ class SecretStore:
             atomic_write_json(self.path, values)
         except OSError as exc:
             raise SecretStoreError(
-                "The token store could not be written to {}. MudaRemote needs a folder you can write to.".format(self.path)
+                "The token store could not be written to {}. MudaFork needs a folder you can write to.".format(self.path)
             ) from exc
 
     def _load_dpapi_values(self):

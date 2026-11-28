@@ -1,4 +1,4 @@
-"""Android lifecycle adapter and self-updating runtime for MudaRemote."""
+"""Android lifecycle adapter and self-updating runtime for MudaFork."""
 
 import asyncio
 import hashlib
@@ -104,8 +104,18 @@ def _configure_storage(files_dir):
     _log_path = os.path.join(files_dir, "mudaremote_android.log")
 
 
+def _format_log_line(message, preset, kind):
+    """The shared line shape (mudae_core.logs); the old shape if it cannot load."""
+    try:
+        import datetime
+        from mudae_core.logs import build_line
+        return build_line(datetime.datetime.now(), preset, kind, message)
+    except Exception:
+        return "[{}] [{}] {}".format(kind, preset, message)
+
+
 def _log(message, preset="ANDROID", kind="INFO"):
-    line = "[{}] [{}] {}".format(kind, preset, message)
+    line = _format_log_line(message, preset, kind)
     print(line, flush=True)
     if _log_path and not _tee_active:
         # While the CLI tee is active it captures this print() and mirrors it
@@ -468,7 +478,7 @@ def _download_file(url, timeout_seconds=15.0):
         return resp.content
     except Exception:
         import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "MudaRemote-Android"})
+        req = urllib.request.Request(url, headers={"User-Agent": "MudaFork-Android"})
         with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
             return resp.read()
 
@@ -491,7 +501,7 @@ def _apk_download_available(url, timeout_seconds=5.0):
     except ImportError:
         try:
             import urllib.request
-            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "MudaRemote-Android"})
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "MudaFork-Android"})
             with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
                 available = 200 <= resp.status < 300
         except Exception:
@@ -841,7 +851,7 @@ def _inject_runtime_presets(mudae_bot, files_dir, token_overrides=None):
         store = mudae_bot.SecretStore(str(files_dir))
         for name in loaded:
             try:
-                tokens_by_preset[name] = store.get_tokens(name, "")
+                tokens_by_preset[name] = store.get_profile_tokens(name, loaded.get(name) or {}, "")
             except Exception as exc:
                 _log("Token store error for '{}': {}".format(name, exc), "ANDROID", "WARN")
                 tokens_by_preset[name] = []
@@ -1116,7 +1126,7 @@ def start(profiles_json, tokens_json, files_dir):
             _runtime_thread = threading.Thread(
                 target=_monitor_workers,
                 args=(session_id,),
-                name="MudaRemote-Supervisor",
+                name="MudaFork-Supervisor",
                 daemon=True,
             )
             _runtime_thread.start()
