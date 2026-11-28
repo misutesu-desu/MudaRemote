@@ -55,7 +55,7 @@ def main(project_root, output_dir):
         entry = settings.setdefault(key, {})
         entry.setdefault("default", value)
         entry.setdefault("label", key.replace("_", " ").title())
-        entry.setdefault("description", "This setting is also available in the desktop preset editor.")
+        entry.setdefault("description", "")  # no filler text: the app shows nothing without a real description
 
     # The desktop editor derives emoji-list defaults from module constants
     # rather than the DEFAULTS mapping, so the AST scan above never sees them.
@@ -101,7 +101,7 @@ def main(project_root, output_dir):
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
-        "Main & alts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
+        "Main & alts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"},
         "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "key_limit_pause_scope", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
@@ -118,7 +118,8 @@ def main(project_root, output_dir):
     settings.setdefault("main_profile_id", {})["picker"] = "profile"
     # The old separate-profile fields come last («Advanced: separate profiles»).
     role_order = ["side_rolls_for_main",
-                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id",
+                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls",
+                  "main_claims_alt_rolls_mode", "alts_claim_main_rolls", "main_account_id",
                   "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
                   "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
                   "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
@@ -177,7 +178,7 @@ def main(project_root, output_dir):
         if "default" not in entry:
             entry["default"] = ""
         entry.setdefault("label", key.replace("_", " ").title())
-        entry.setdefault("description", "This setting is also available in the desktop preset editor.")
+        entry.setdefault("description", "")  # no filler text: the app shows nothing without a real description
         entry["section"] = sections.get(key, "Advanced")
         value = entry["default"]
         if isinstance(value, bool):

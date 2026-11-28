@@ -28,6 +28,11 @@ _BONUS_ROLLS = re.compile(r"^Gained \+(?P<n>\d+) extra rolls from Kakera")
 # Main/Side hand-off lines; names sit inside Unicode isolates (U+2068 ... U+2069).
 _SIDE_ASK = re.compile("^Main found nothing \u2014 asking side \u2068(?P<side>.+?)\u2069 to roll$")
 _SIDE_CLAIM = re.compile("^Main claimed \u2068(?P<name>.+?)\u2069 from \u2068(?P<side>.+?)\u2069's roll$")
+# «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim).
+_ALT_ROLL_TAKE = re.compile("^claiming \u2068(?P<name>.+?)\u2069 rolled by (?P<alt>.+?) \\((?P<why>[^()]*)\\)$")
+_ALT_ROLL_LEFT = re.compile("^left \u2068(?P<name>.+?)\u2069 for (?P<taker>the main|alt \\d+)$")
+# A profile running several accounts puts «main: » / «alt N: » in front of its lines.
+_ACCOUNT_LABEL = re.compile(r"^(?P<label>main|alt \d+): ")
 # Running totals and auto-give (see totals.AccountTotals.describe / kakera_give).
 _TOTALS = re.compile(r"^Totals: kakera (?P<kakera>[\d,]+|unknown) \u00b7 spheres (?P<spheres>[\d,]+|unknown) \((?P<why>[^()]*)\)$")
 _GIVE_OK = re.compile(r"^Auto-give: gave (?P<ka>[\d,]+) kakera to the main")
@@ -66,6 +71,12 @@ class ActivityClassifier:
         """The events for one log line (usually none or one). ``ERROR`` lines are the caller's business."""
         text = str(message or "").strip()
         level = str(level or "").upper()
+        labelled = _ACCOUNT_LABEL.match(text)
+        if labelled:
+            events = self.classify(level, text[labelled.end():])
+            for _kind, data in events:
+                data.setdefault("account", labelled.group("label"))
+            return events
 
         found = _CLAIM_OK.match(text)
         if found:
@@ -97,6 +108,15 @@ class ActivityClassifier:
             name, side = found.group("name"), found.group("side")
             return [("side_roll", {"character": name, "side": side,
                                    "message": "Claimed {} from {}'s roll".format(name, side)})]
+        found = _ALT_ROLL_TAKE.match(text)
+        if found:
+            name, alt = found.group("name"), found.group("alt")
+            return [("alt_roll_claim", {"character": name, "alt": alt, "why": found.group("why")[:60],
+                                        "message": "Claiming {} rolled by {} ({})".format(name, alt, found.group("why"))})]
+        found = _ALT_ROLL_LEFT.match(text)
+        if found:
+            return [("alt_roll_left", {"character": found.group("name"), "taker": found.group("taker"),
+                                       "message": "Left {} for {}".format(found.group("name"), found.group("taker"))})]
         found = _TOTALS.match(text)
         if found:
             return [("totals", {"kakera": _number(found.group("kakera")), "spheres": _number(found.group("spheres")),

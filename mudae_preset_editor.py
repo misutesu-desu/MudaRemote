@@ -676,6 +676,9 @@ DEFAULTS = {
     "side_rolls_for_main": False,
     "side_rolls_max_per_reset": 1,
     "side_claim_leftovers": False,
+    "main_claims_alt_rolls": False,
+    "main_claims_alt_rolls_mode": "when the alt would not claim",
+    "alts_claim_main_rolls": False,
     "fast_setup": False,
     "fast_setup_round": 0,
     "auto_give_kakera": False,
@@ -994,7 +997,13 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
+                      "main_claims_alt_rolls", "alts_claim_main_rolls")
+# «Main claims good rolls made by its alts»: who gets a good alt roll (mudae_core.alt_roll_claim.MODES).
+ALT_ROLL_CLAIM_MODE_CHOICES = {
+    "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
+    "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+}
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
     ("give_kakera_daily_cap", "At most N gives per day", 1),
@@ -1043,6 +1052,11 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
     if trigger is not None:
         value = str(trigger.get() or "pages")
         data["harem_give_trigger"] = value if value in HAREM_TRIGGER_CHOICES else "pages"
+    alt_mode = widgets.get("main_claims_alt_rolls_mode")
+    if alt_mode is not None:
+        value = str(alt_mode.get() or "")
+        data["main_claims_alt_rolls_mode"] = (
+            value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
     pages_text = widgets.get("harem_give_pages_text")
     if pages_text is not None:
         text = str(pages_text.get() or "").strip()
@@ -3355,6 +3369,26 @@ class PresetEditor:
             roles_frame.content, "side_claim_leftovers", "Alts may claim leftovers for themselves",
             description="After the main passes on a card an alt rolled for it, the alt may claim it with its own claim.",
         )
+        self.add_checkbox(
+            roles_frame.content, "main_claims_alt_rolls", "Main claims good rolls made by its alts",
+            description="When an alt rolls a character the main would claim (its wishlist, ranks and min kakera), "
+                        "the main claims it in the same channel after its snipe delay, and the alt leaves it. "
+                        "Uses the main's normal claim only (never $rt, no extra commands). Off by default.",
+        )
+        self.add_choice_field(
+            roles_frame.content, "main_claims_alt_rolls_mode", "Which good alt rolls the main takes", {
+                "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
+                "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+            },
+            description="Only matters with «Main claims good rolls made by its alts» on.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "alts_claim_main_rolls", "Alts claim good rolls made by the main",
+            description="When the main rolls a character it would want (wishlist, ranks, min kakera) but will not or "
+                        "cannot claim it (no claim now, key limit, its claim went to a better card), the first alt in "
+                        "Account Tokens order whose claim is free claims it after its snipe delay. The main always "
+                        "comes first on its own rolls. Off by default.",
+        )
         self.add_text_field(
             roles_frame.content, "main_account_id",
             "Main Account ID (optional override)",
@@ -3877,6 +3911,10 @@ class PresetEditor:
         if trigger is not None:
             value = str(data.get("harem_give_trigger", "pages") or "pages")
             trigger.set(value if value in HAREM_TRIGGER_CHOICES else "pages")
+        alt_mode = widgets.get("main_claims_alt_rolls_mode")
+        if alt_mode is not None:
+            value = str(data.get("main_claims_alt_rolls_mode", "") or "")
+            alt_mode.set(value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
         status = "Not sent yet."
         setup = self._fast_setup_record(data)
         round_number = data.get("fast_setup_round", 0)

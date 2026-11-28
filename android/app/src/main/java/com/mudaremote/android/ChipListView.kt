@@ -90,7 +90,7 @@ class ChipListView(
         }
 
         addItemInput = EditText(context).apply {
-            hint = if (isSensitive) "Paste one or more account tokens" else "Add item (e.g. wa, 102938...)"
+            hint = if (isSensitive) "Paste alt tokens" else "Add item (e.g. wa, 102938...)"
             textSize = UiTheme.TYPE_BODY
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)

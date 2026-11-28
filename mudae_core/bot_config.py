@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from mudae_core.account_roles import SIDE_KIND_ALT, account_role_for, alt_number, side_kind_for
 from mudae_core.key_limit import normalize_scope as normalize_key_limit_scope
+from mudae_core.alt_roll_claim import normalize_mode as normalize_alt_roll_claim_mode
 from mudae_core.claiming import expand_claim_emojis
 from mudae_core.filters import CharacterNameSet, split_dollar_names
 from mudae_core.kakera import (
@@ -306,6 +307,11 @@ def configure_client(
         preset_data.get("side_rolls_max_per_reset", 1), 1, 1, 10
     )
     client.side_claim_leftovers = bool(preset_data.get("side_claim_leftovers", False))
+    # «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim), off by default.
+    client.main_claims_alt_rolls = bool(preset_data.get("main_claims_alt_rolls", False))
+    client.main_claims_alt_rolls_mode = normalize_alt_roll_claim_mode(preset_data.get("main_claims_alt_rolls_mode"))
+    # The mirror: «Alts claim good rolls made by the main», off by default.
+    client.alts_claim_main_rolls = bool(preset_data.get("alts_claim_main_rolls", False))
     # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
     client.fast_setup = bool(preset_data.get("fast_setup", False))
     client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
@@ -743,7 +749,8 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
     "account_role", "stored_account_role", "main_profile_id", "side_order", "side_rolls_for_main",
-    "side_rolls_max_per_reset", "side_claim_leftovers",
+    "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode",
+    "alts_claim_main_rolls",
     "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
     "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
     "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",

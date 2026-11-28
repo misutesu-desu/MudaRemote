@@ -500,22 +500,26 @@ class MainActivity : ComponentActivity() {
 
         // The open profile: role (Main/Side) and the runtime state
         val summaryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = UiTheme.rowSurface(this@MainActivity)
             minimumHeight = UiTheme.dp(this@MainActivity, 56)
             setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
         }
         profileSummaryTitle = TextView(this).apply {
             UiTheme.styleLabel(this)
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         profileRoleChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.SECONDARY) }
         profileRunChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.TEXT_MUTED) }
-        summaryRow.addView(profileSummaryTitle, LinearLayout.LayoutParams(0, -2, 1f))
-        summaryRow.addView(profileRoleChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
-        summaryRow.addView(profileRunChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
+        // Name on the whole first line; role and runtime chips wrap on the line under it.
+        summaryRow.addView(profileSummaryTitle, LinearLayout.LayoutParams(-1, -2))
+        val summaryChips = FlowLayout(this).apply {
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+        }
+        summaryChips.addView(profileRoleChip)
+        summaryChips.addView(profileRunChip)
+        summaryRow.addView(summaryChips, LinearLayout.LayoutParams(-1, -2))
         card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
 
         giveKakeraQuickBtn = createGitHubButton("Give all kakera", UiTheme.ButtonStyle.TONAL) { requestGiveAllKakera() }
@@ -622,7 +626,7 @@ class MainActivity : ComponentActivity() {
         }
 
         tokenInput = EditText(this).apply {
-            hint = "Paste your Discord token here"
+            hint = "Paste token"
             textSize = UiTheme.TYPE_BODY
             typeface = Typeface.MONOSPACE
             setTextColor(UiTheme.TEXT_PRIMARY)
@@ -644,7 +648,12 @@ class MainActivity : ComponentActivity() {
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { toggleTokenVisibility() }
         }
-        inputContainer.addView(tokenShowHideBtn)
+        // Show / Paste / ✕ sit on their own row under the field so they never take its width.
+        val tokenActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        tokenActions.addView(tokenShowHideBtn)
 
         val pasteBtn = TextView(this).apply {
             text = "Paste"
@@ -656,7 +665,7 @@ class MainActivity : ComponentActivity() {
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { pasteTokenFromClipboard() }
         }
-        inputContainer.addView(pasteBtn)
+        tokenActions.addView(pasteBtn)
 
         val clearBtn = TextView(this).apply {
             text = "✕"
@@ -681,8 +690,9 @@ class MainActivity : ComponentActivity() {
                     .show()
             }
         }
-        inputContainer.addView(clearBtn)
+        tokenActions.addView(clearBtn)
         card.addView(inputContainer)
+        card.addView(tokenActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 4) })
 
         val importSecretsBtn = createGitHubButton("Import secrets file (.mudae-secrets.json)", UiTheme.ButtonStyle.TEXT) {
             secretsPicker.launch(arrayOf("application/json", "text/plain"))
@@ -1644,10 +1654,12 @@ class MainActivity : ComponentActivity() {
             }
             fieldViews[key] = group
             container.addView(group)
-            container.addView(TextView(this).apply {
-                text = descriptionText
-                UiTheme.styleSupporting(this)
-            })
+            if (descriptionText.isNotBlank()) {
+                container.addView(TextView(this).apply {
+                    text = descriptionText
+                    UiTheme.styleSupporting(this)
+                })
+            }
             return container
         }
 
@@ -2780,19 +2792,17 @@ class MainActivity : ComponentActivity() {
             })
         }
 
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // The two buttons wrap onto a second line instead of squeezing their labels.
+        val actions = FlowLayout(this).apply {
             setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, 0)
         }
-        actions.addView(
-            createGitHubButton("Open auto-start page") { openAutoStartSettings() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) }
-        )
-        actions.addView(
-            createGitHubButton("App info", UiTheme.ButtonStyle.OUTLINED) { openAppDetails() },
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-        card.addView(actions)
+        actions.addView(createGitHubButton("Auto-start settings") { openAutoStartSettings() }.apply {
+            maxLines = 1
+        })
+        actions.addView(createGitHubButton("App info", UiTheme.ButtonStyle.OUTLINED) { openAppDetails() }.apply {
+            maxLines = 1
+        })
+        card.addView(actions, LinearLayout.LayoutParams(-1, -2))
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
