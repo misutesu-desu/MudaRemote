@@ -631,6 +631,13 @@ DEFAULTS = {
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
     "main_account_id": "",
+    "auto_give_kakera": False,
+    "give_kakera_threshold": 45000,
+    "give_kakera_amount_mode": "everything",
+    "give_kakera_daily_cap": 3,
+    "auto_give_spheres": False,
+    "sphere_give_interval_min": 30,
+    "spheres_keep": 0,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -755,6 +762,8 @@ BOOL_SETTINGS = [
     ("auto_ot_enabled", "Auto $ot (Automatically play Sphere Trace when available)", False),
     ("sphere_games_daily_only", "Sphere Games: Daily Uses Only (Leave stored $oh/$oc/$oq/$ot uses for you to play)", False),
     ("auto_perk10", "Auto Perk 10 Upgrade (Spend spheres on $oic for the characters $mmz- lists)", False),
+    ("auto_give_kakera", "Auto Give Kakera to the Main Account ($givek)", False),
+    ("auto_give_spheres", "Auto Give Spheres to the Main Account ($givesp)", False),
     ("wish_starwish_kakera_only", "Wish/Starwish Only (Either wish or starwish)", False),
 ]
 
@@ -788,6 +797,10 @@ NUMERIC_SETTINGS = [
     ("perk10_max_characters", "Perk 10: Most Characters per Upgrade (0 = no limit)", 100, int),
     ("perk10_amount", "Perk 10: Characters per Upgrade (0 = as many as the spheres allow)", 0, int),
     ("perk10_daily_cap", "Perk 10: Upgrades per Day", 3, int),
+    ("give_kakera_threshold", "Give Kakera When It Reaches", 45000, int),
+    ("give_kakera_daily_cap", "Kakera Gives per Day", 3, int),
+    ("sphere_give_interval_min", "At Most One Sphere Give Every N Minutes", 30, int),
+    ("spheres_keep", "Spheres to Keep on This Account", 0, int),
     ("kl_amount", "$kl Spend Amount", 1000, int),
     ("kl_arlp_every", "Send $arlp After Every N $kl (0 = only after a too many pins error)", 0, int),
     ("scrap_amount", "$givescrap Amount", 500000000, int),
@@ -3025,6 +3038,32 @@ class PresetEditor:
 
         # [NEW] Task 6: Main account ID for wishlist syncing
         self.add_text_field(power_frame.content, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
+        self.add_checkbox(
+            power_frame.content,
+            "auto_give_kakera",
+            "Auto Give Kakera to the Main Account ($givek)",
+            description="Sends $givek <@Main Account ID> and answers Y once the bot asks about the same amount. "
+                        "The kakera count comes from the $tu the bot already sends. Does nothing on the main "
+                        "account itself or without a Main Account ID.",
+        )
+        self.add_number_field(power_frame.content, "give_kakera_threshold", "Give Kakera When It Reaches", 45000)
+        self.add_choice_field(
+            power_frame.content, "give_kakera_amount_mode", "When Kakera Reaches the Amount", {
+                "everything": "Give everything",
+                "amount": "Give only the amount",
+            },
+        )
+        self.add_number_field(power_frame.content, "give_kakera_daily_cap", "Kakera Gives per Day", 3)
+        self.add_checkbox(
+            power_frame.content,
+            "auto_give_spheres",
+            "Auto Give Spheres to the Main Account ($givesp)",
+            description="After the sphere games are played, sends $givesp <@Main Account ID> with the whole "
+                        "sphere stock minus the spheres to keep, and answers Y. Off while Auto Perk 10 Upgrade "
+                        "is on for this account.",
+        )
+        self.add_number_field(power_frame.content, "sphere_give_interval_min", "At Most One Sphere Give Every N Minutes", 30)
+        self.add_number_field(power_frame.content, "spheres_keep", "Spheres to Keep on This Account", 0)
 
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
@@ -3559,6 +3598,7 @@ class PresetEditor:
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "sphere_collect_any_last",
                     "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap",
+                    "give_kakera_threshold", "give_kakera_daily_cap", "sphere_give_interval_min", "spheres_keep",
                     "scrap_target_id", "slash_claim_target", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]:
             if key in self.widgets:
@@ -3578,6 +3618,8 @@ class PresetEditor:
             self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
         if "loot_mode" in self.widgets:
             self.widgets["loot_mode"].set(data.get("loot_mode", "off"))
+        if "give_kakera_amount_mode" in self.widgets:
+            self.widgets["give_kakera_amount_mode"].set(data.get("give_kakera_amount_mode", "everything"))
 
         # Populate boolean fields
         for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",
@@ -3592,7 +3634,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10", "auto_give_kakera", "auto_give_spheres",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
@@ -3822,14 +3864,16 @@ class PresetEditor:
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                     "oh_unknown_explore_clicks", "sphere_collect_any_last", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes",
-                    "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap"]
+                    "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap",
+                    "give_kakera_threshold", "give_kakera_daily_cap", "sphere_give_interval_min", "spheres_keep"]
         for key in numeric_keys:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     try:
                         if key in {"kl_amount", "kl_arlp_every", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes",
-                                   "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap"}:
+                                   "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap",
+                                   "give_kakera_threshold", "give_kakera_daily_cap", "sphere_give_interval_min", "spheres_keep"}:
                             data[key] = int(value) if re.fullmatch(r"[0-9]+", value) else value
                             continue
                         # Determine type
@@ -3891,6 +3935,8 @@ class PresetEditor:
             data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
         if "loot_mode" in self.widgets:
             data["loot_mode"] = self.widgets["loot_mode"].get()
+        if "give_kakera_amount_mode" in self.widgets:
+            data["give_kakera_amount_mode"] = self.widgets["give_kakera_amount_mode"].get()
 
         # Collect boolean fields
         for key in ["rolling", "use_slash_rolls", "pause_on_key_limit", "snipe_mode", "snipe_ignore_min_kakera_reset",
@@ -3905,7 +3951,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10", "auto_give_kakera", "auto_give_spheres",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()

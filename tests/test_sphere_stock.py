@@ -2,7 +2,8 @@
 import unittest
 
 from mudae_core.sphere_stock import (
-    SphereStock, is_sphere_emoji, parse_amount, parse_sphere_game_result, parse_tu_sphere_stock,
+    KakeraStock, SphereStock, is_kakera_emoji, is_sphere_emoji, parse_amount, parse_sphere_game_result,
+    parse_tu_kakera_stock, parse_tu_sphere_stock,
 )
 
 TU_REPLY = "\n".join([
@@ -44,6 +45,13 @@ class ParsingTests(unittest.TestCase):
         self.assertIsNone(parse_tu_sphere_stock("Stock: **159,247** <:kakera:100>"))
         self.assertIsNone(parse_tu_sphere_stock("Stock: 5 <:spR:1>\nStock: 6 <:spB:1>"))
 
+    def test_tu_takes_the_stock_line_with_the_kakera_emoji(self):
+        self.assertEqual(parse_tu_kakera_stock(TU_REPLY), 159247)
+        self.assertEqual(parse_tu_kakera_stock("Stock: **1,225** <:spR:2>\nStock: **119,937** <:kakera:1>"), 119937)
+        self.assertIsNone(parse_tu_kakera_stock("Stock: **905** <:spR:200>"))
+        self.assertTrue(is_kakera_emoji(":kakeraP:"))
+        self.assertFalse(is_kakera_emoji("spR"))
+
     def test_game_result(self):
         text = "<:spB:1> +28\n<:spB:1> +28\n<:spR:1> +168\n<:spP:1> (Free) +92\n<:spO:1> +108 (Stock: **8,635**)"
         self.assertEqual(parse_sphere_game_result(text), ((28, 28, 168, 92, 108), 8635))
@@ -84,6 +92,15 @@ class StockTests(unittest.TestCase):
         self.assertIsNone(stock.spend(1000))
         stock.set(2500)
         self.assertEqual(stock.spend(2000), 500)
+
+
+    def test_kakera_stock(self):
+        stock = KakeraStock()
+        self.assertIsNone(stock.kakera)
+        self.assertEqual(stock.apply_tu(TU_REPLY), 159247)
+        self.assertEqual(stock.spend(59247), 100000)
+        stock.apply_tu("Stock: **905** <:spR:200>")
+        self.assertIsNone(stock.kakera)
 
 
 if __name__ == "__main__":

@@ -269,7 +269,8 @@ try:
     from mudae_core.loot import LootAutomation
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending
-    from mudae_core.sphere_stock import SphereStock, is_sphere_game_result
+    from mudae_core.sphere_stock import KakeraStock, SphereStock, is_sphere_game_result
+    from mudae_core.auto_give import KAKERA, SPHERES, AutoGiveSettings, MainAccountGiver
 except (ModuleNotFoundError, ImportError) as core_error:
     missing_module = str(getattr(core_error, "name", ""))
     if missing_module and not missing_module.startswith("mudae_core"):
@@ -307,7 +308,8 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending
-    from mudae_core.sphere_stock import SphereStock, is_sphere_game_result
+    from mudae_core.sphere_stock import KakeraStock, SphereStock, is_sphere_game_result
+    from mudae_core.auto_give import KAKERA, SPHERES, AutoGiveSettings, MainAccountGiver
     from mudae_core.loot import LootAutomation
 
 if os.name == 'nt':
@@ -1284,6 +1286,20 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         wait=lambda seconds: active_delay(seconds),
         log=lambda message, level: BotLogger.log(message, preset_name, level),
     )
+    # Automatic gives to the main account (pure logic in mudae_core.auto_give);
+    # the kakera stock is read from the $tu replies the bot already gets.
+    client.kakera_stock = KakeraStock()
+    client._auto_give_task = None
+    client._auto_give_last_skip = {}
+    client.kakera_giver, client.sphere_giver = (
+        MainAccountGiver(
+            kind,
+            send=lambda channel, content: guarded_send(channel, content),
+            wait=lambda seconds: active_delay(seconds),
+            log=lambda message, level: BotLogger.log(message, preset_name, level),
+        )
+        for kind in (KAKERA, SPHERES)
+    )
     client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
     client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
@@ -1310,6 +1326,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     client._scheduled_roll_task = client.loop.create_task(scheduled_roll_task(client._main_channel))
             if changed & {"auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap"}:
                 schedule_perk10("settings changed")
+            if changed & {"main_account_id", "auto_perk10", "auto_give_kakera", "give_kakera_threshold",
+                          "give_kakera_amount_mode", "give_kakera_daily_cap", "auto_give_spheres",
+                          "sphere_give_interval_min", "spheres_keep"}:
+                schedule_auto_give("settings changed")
             wake_status_loop()
         return changed
 
@@ -4685,8 +4705,15 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         except Exception as e:
             BotLogger.log(f"Sphere stock parse error: {e}", preset_name, "WARN")
             return
-        if after != before and client.auto_perk10:
+        if after != before and (client.auto_perk10 or client.auto_give_spheres):
             BotLogger.log(f"Sphere stock: {'unknown' if after is None else f'{after:,}'} (from $tu).", preset_name, "INFO")
+
+    def note_tu_kakera_stock(tu_text):
+        """Read the kakera stock from a $tu reply the bot already got (never sends $tu)."""
+        try:
+            client.kakera_stock.apply_tu(tu_text)
+        except Exception as e:
+            BotLogger.log(f"Kakera stock parse error: {e}", preset_name, "WARN")
 
     def observe_sphere_game_result(message):
         """Spheres from this account's own game-result message (new or edited)."""
@@ -4708,6 +4735,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 tracked.pop(next(iter(tracked)))
         if client.sphere_stock.apply_game_result(message_id, text):
             schedule_perk10("sphere game result")
+            schedule_auto_give("sphere game result")
 
     def perk10_settings():
         return Perk10Settings(
@@ -4726,7 +4754,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return sphere_games_pending(client.sphere_game_counts, enabled, running=running,
                                     status_seen=client._perk10_sphere_status_seen)
 
-    def perk10_busy_reason():
+    def perk10_busy_reason(giving_ok=False):
+        if not giving_ok and (client.kakera_giver.active or client.sphere_giver.active):
+            return "giving to the main account"
         if client.is_paused:
             return "paused"
         if is_maintenance_active():
@@ -4785,13 +4815,83 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             client._perk10_task = None
 
     async def perk10_schedule_task():
-        """Wake every few minutes so a deferred upgrade runs once the games and busy work are done."""
+        """Wake every few minutes so a deferred upgrade (or give) runs once the games and busy work are done."""
         while not client.is_closed():
             schedule_perk10("schedule")
+            schedule_auto_give("schedule")
             if not await active_delay(600.0):
                 if client.is_closed():
                     return
                 await asyncio.sleep(60.0)
+
+    # ------------------------------------------------------------------
+    # Automatic gives to the main account ($givek / $givesp)
+    # ------------------------------------------------------------------
+    def auto_give_settings():
+        return AutoGiveSettings(
+            give_kakera=client.auto_give_kakera,
+            kakera_threshold=client.give_kakera_threshold,
+            kakera_mode=client.give_kakera_amount_mode,
+            kakera_daily_cap=client.give_kakera_daily_cap,
+            give_spheres=client.auto_give_spheres,
+            sphere_interval_min=client.sphere_give_interval_min,
+            spheres_keep=client.spheres_keep,
+            perk10_on=client.auto_perk10,
+        )
+
+    def auto_give_busy_reason():
+        if client.perk_upgrader.active:
+            return "a perk-10 upgrade is in progress"
+        if getattr(client, "_sphere_games_running", False) or (
+                client._sphere_game_lock is not None and client._sphere_game_lock.locked()):
+            return "a sphere game is being played"
+        return perk10_busy_reason(giving_ok=True)
+
+    def schedule_auto_give(reason):
+        if not (client.auto_give_kakera or client.auto_give_spheres):
+            return
+        if client._auto_give_task is not None:
+            return
+        client._auto_give_task = client.loop.create_task(run_auto_give(reason))
+
+    async def run_auto_give(reason):
+        try:
+            waited = 0.0
+            while auto_give_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            settings = auto_give_settings()
+            # Kakera first, then spheres; one give at a time. Never sends $tu.
+            for giver, stock in ((client.kakera_giver, client.kakera_stock), (client.sphere_giver, client.sphere_stock)):
+                outcome = await giver.maybe_give(
+                    channel, settings,
+                    own_id=str(getattr(client.user, "id", "") or ""),
+                    own_names=own_display_names(),
+                    main_id=client.main_account_id,
+                    stock=stock,
+                    prefix=client.mudae_prefix,
+                    games=perk10_games_reason,
+                    busy=auto_give_busy_reason,
+                )
+                if outcome.status == "skipped":
+                    if outcome.reason not in ("off", client._auto_give_last_skip.get(giver.kind)):
+                        BotLogger.log(f"{giver.label} waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+                    client._auto_give_last_skip[giver.kind] = outcome.reason
+                else:
+                    client._auto_give_last_skip.pop(giver.kind, None)
+                    wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Auto give error: {e}", preset_name, "ERROR")
+        finally:
+            client._auto_give_task = None
 
     async def run_independent_known_work(channel, current_cycle_id):
         """Run due work whose prerequisites do not require a fresh /tu."""
@@ -5199,6 +5299,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client._last_tu_skip_reason_key = None
                 c_lower = tu_content.lower()
                 note_tu_sphere_stock(tu_content)
+                note_tu_kakera_stock(tu_content)
 
             sphere_budget_observed = client.sphere_button_budget.observe(tu_content, request_started_at)
             if sphere_budget_observed:
@@ -5441,6 +5542,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 )
             # Perk 10 comes after the games this $tu showed (it waits while any is left).
             schedule_perk10("$tu")
+            schedule_auto_give("$tu")
 
             rt_reset_minutes = parse_timer_minutes("RT_RESET", c_lower)
             if rt_reset_minutes is not None:
@@ -6296,9 +6398,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
         if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
-        if client.perk_upgrader.active:
-            # A $mmz-/$oic perk-10 upgrade is in flight; rolls wait for the next status pass.
-            BotLogger.log("Own roll batch deferred: a perk-10 upgrade is in progress.", preset_name, "DEBUG", client)
+        if client.perk_upgrader.active or client.kakera_giver.active or client.sphere_giver.active:
+            # A $mmz-/$oic perk-10 upgrade or a give to the main is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a perk-10 upgrade or a give is in progress.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="perk10-busy")
             return
         client.interrupt_rolling = False
@@ -8405,6 +8507,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         message_id = getattr(payload, 'message_id', None)
         if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
             client.perk_upgrader.on_refused(message_id)
+            client.kakera_giver.on_refused(message_id)
+            client.sphere_giver.on_refused(message_id)
             client._recent_mudae_command_rejections[message_id] = time.monotonic()
             while len(client._recent_mudae_command_rejections) > 200:
                 client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
@@ -8416,6 +8520,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return
         client._recent_mudae_command_acks[message_id] = time.monotonic()
         client.perk_upgrader.on_ack(message_id)  # ✅ on the account's $oic command or its «Y»
+        client.kakera_giver.on_ack(message_id)  # … or on its $givek / $givesp command or «Y»
+        client.sphere_giver.on_ack(message_id)
         while len(client._recent_mudae_command_acks) > 500:
             client._recent_mudae_command_acks.pop(next(iter(client._recent_mudae_command_acks)))
         operation = getattr(client, '_rt_command_in_flight', None)
@@ -8484,6 +8590,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         observe_sphere_game_result(message)
         if (client.perk_upgrader.active or client.perk_upgrader.reader.active) and message.author.id == TARGET_BOT_ID:
             client.perk_upgrader.on_message(message, bot_message_text(message))
+        if (client.kakera_giver.active or client.sphere_giver.active) and message.author.id == TARGET_BOT_ID:
+            client.kakera_giver.on_message(message, bot_message_text(message))
+            client.sphere_giver.on_message(message, bot_message_text(message))
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (

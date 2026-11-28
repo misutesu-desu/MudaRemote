@@ -23,6 +23,7 @@ from mudae_core.runtime import (
     RollActionTiming,
     RollCommandCorrelation,
 )
+from mudae_core.auto_give import AutoGiveSettings
 from mudae_core.perk_upgrade import Perk10Settings
 from mudae_core.spheres import SphereButtonBudget
 from mudae_core.status import ResetAnchor, initialize_status_tracking
@@ -271,6 +272,14 @@ def configure_client(
         "randomized_claim_reactions"
     ) or ["💖", "💗", "💘", "❤️", "👍", "🔥"]
     client.main_account_id = str(preset_data.get("main_account_id") or "").strip()
+    auto_give = AutoGiveSettings.from_preset(preset_data)
+    client.auto_give_kakera = auto_give.give_kakera
+    client.give_kakera_threshold = auto_give.kakera_threshold
+    client.give_kakera_amount_mode = auto_give.kakera_mode
+    client.give_kakera_daily_cap = auto_give.kakera_daily_cap
+    client.auto_give_spheres = auto_give.give_spheres
+    client.sphere_give_interval_min = auto_give.sphere_interval_min
+    client.spheres_keep = auto_give.spheres_keep
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -670,6 +679,8 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "snipe_ignore_min_kakera_reset", "wishlist", "series_snipe_mode",
     "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
+    "auto_give_kakera", "give_kakera_threshold", "give_kakera_amount_mode", "give_kakera_daily_cap",
+    "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",

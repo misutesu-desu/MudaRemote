@@ -8,6 +8,13 @@
     "command_channel_id": "",
     "forcedivorce_channel_id": "",
     "main_account_id": "",
+    "auto_give_kakera": false,
+    "give_kakera_threshold": 45000,
+    "give_kakera_amount_mode": "everything",
+    "give_kakera_daily_cap": 3,
+    "auto_give_spheres": false,
+    "sphere_give_interval_min": 30,
+    "spheres_keep": 0,
     "autostart": false,
 
     "rolling": true,
