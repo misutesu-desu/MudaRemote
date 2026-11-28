@@ -339,8 +339,8 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(fake.side_sent.count("$mm"), len(page_messages))
         self.assertTrue(page_messages[1].startswith("Page 1 2 "))
         given = sum(len(text.split()) - 1 for text in page_messages)
-        self.assertEqual(given, 1000)
-        self.assertEqual(fake.pages, 200)
+        self.assertEqual(given, 1200)  # the number is only the minimum: every page goes
+        self.assertEqual(fake.pages, 0)
         self.assertEqual(giver.gives_today(), 1)
 
     def test_unexpected_count_between_rounds_stops(self):

@@ -292,7 +292,8 @@ _COUNT_RE = re.compile(r"\bfor\s+\**\s*(?P<count>" + NUMBER + r")\s*\**\s*charac
 
 
 def parse_oi_question(text, name="", own_names=()) -> Optional[OicQuestion]:
-    """The bot's y/n question for ONE character (``$oi``). ASSUMED shape: its wording is not in the samples.
+    """The bot's y/n question for ONE character (``$oi``): «Do you really want to spend **1,000** <sphere>
+    for **<character>**? (y/n/yes/no)», followed by «Perks upgraded:» lines.
 
     Accepted when the text is a y/n question that states a cost of exactly 1,000, says «1 character» when
     it states a count, and, when it names a character in bold, names ours (normalised). Else None.
@@ -308,7 +309,10 @@ def parse_oi_question(text, name="", own_names=()) -> Optional[OicQuestion]:
         return None
     ours = normalize_name(name)
     mine = {normalize_name(item) for item in own_names or ()}
-    for bold in re.findall(r"\*\*([^*\n]+)\*\*", folded):
+    # Only the question sentence names a character; the «Perks upgraded» lines below it carry bold
+    # numbers such as «+20» and «+1%» that are not names.
+    sentence = folded[:_YES_NO.search(folded).start()]
+    for bold in re.findall(r"\*\*([^*\n]+)\*\*", sentence):
         said = normalize_name(bold)
         if not said or re.fullmatch(r"[\d.,\s]+", said) or said in mine or said in ("y", "n", "yes", "no"):
             continue
