@@ -186,6 +186,59 @@ def main(project_root, output_dir):
                 "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters", "harem_give_value", "harem_check_hours",
                 "harem_give_pages_text", "harem_keep_first_pages", "harem_give_daily_cap"):
         settings.setdefault(key, {})["side_only"] = True
+    # The harem trigger: one short choice, and only the number of the chosen kind is shown.
+    settings.setdefault("harem_give_trigger", {}).update({
+        "label": "Give when my harem reaches",
+        "description": "",
+        "choices": {
+            "pages": "Pages ($mm)",
+            "characters": "Characters ($mmi)",
+            "value": "Harem value ($mmrk)",
+        },
+    })
+    settings.setdefault("harem_give_pages", {})["label"] = "Number of pages"
+    settings.setdefault("harem_give_characters", {})["label"] = "Number of characters"
+    settings.setdefault("harem_give_value", {})["label"] = "Harem value"
+    # Conditional fields. «visible_when» is one condition {"field", "equals"} or a list of them (all must
+    # hold); «equals» is one value (a choice string or true/false for a switch) or a list (any of). A hidden
+    # field takes no space in the app and keeps its stored value; the app shows or hides it at once when the
+    # controlling field changes. Only fields that the controlling field really switches off are listed: a
+    # field that a manual «now» action also reads (spheres_keep, give_kakera_button_minimum, perk10_max_characters,
+    # perk10_amount, side_perk10) stays visible. main_claims_alt_rolls_mode stays visible too: its «smart»
+    # choice applies with either «Main claims good rolls made by its alts» or «Alts claim good rolls made by the main».
+    def when(field, equals):
+        return {"field": field, "equals": equals}
+
+    visibility = {
+        "harem_give_pages": [when("auto_give_harem", True), when("harem_give_trigger", "pages")],
+        "harem_give_characters": [when("auto_give_harem", True), when("harem_give_trigger", "characters")],
+        "harem_give_value": [when("auto_give_harem", True), when("harem_give_trigger", "value")],
+        "harem_give_trigger": when("auto_give_harem", True),
+        "harem_check_hours": when("auto_give_harem", True),
+        "harem_give_pages_text": when("auto_give_harem", True),
+        "harem_keep_first_pages": when("auto_give_harem", True),
+        "harem_give_daily_cap": when("auto_give_harem", True),
+        "give_kakera_threshold": when("auto_give_kakera", True),
+        "give_kakera_amount_mode": when("auto_give_kakera", True),
+        "give_kakera_daily_cap": when("auto_give_kakera", True),
+        "sphere_give_interval_min": when("auto_give_spheres", True),
+        "perk10_min_spheres": when("auto_perk10", True),
+        "perk10_daily_cap": when("auto_perk10", True),
+        "key_limit_pause_scope": when("pause_on_key_limit", True),
+        "claim_best_when": when("claim_best_when_nothing_qualifies", True),
+        "claim_best_min_kakera": when("claim_best_when_nothing_qualifies", True),
+        "kl_amount": when("loot_mode", "kl"),
+        "kl_arlp_every": when("loot_mode", "kl"),
+        "scrap_target_id": when("loot_mode", "scrap"),
+        "scrap_amount": when("loot_mode", "scrap"),
+        "loot_min_cooldown": when("loot_mode", ["kl", "scrap"]),
+        "loot_max_cooldown": when("loot_mode", ["kl", "scrap"]),
+        "main_profile_id": when("account_role", "side"),
+        "side_order": when("account_role", "side"),
+    }
+    for key, condition in visibility.items():
+        if key in settings:
+            settings[key]["visible_when"] = condition
     filter_keys = ["kakera_filter_match_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
     for order, key in enumerate(filter_keys):
         sections[key] = "Kakera Reactions"

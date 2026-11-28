@@ -1653,30 +1653,16 @@ class MainActivity : ComponentActivity() {
 
         val choices = meta?.optJSONObject("choices")
         if (choices != null) {
-            container.addView(TextView(this).apply {
-                text = labelText
-                UiTheme.styleLabel(this)
-            })
-            val group = RadioGroup(this)
-            choices.keys().asSequence().sorted().forEach { choice ->
-                val radio = RadioButton(this).apply {
-                    id = View.generateViewId()
-                    tag = choice
-                    text = choices.getString(choice)
-                    textSize = UiTheme.TYPE_BODY
-                    setTextColor(UiTheme.TEXT_PRIMARY)
-                    minHeight = UiTheme.dp(this@MainActivity, 48)
-                    buttonTintList = ColorStateList.valueOf(UiTheme.PRIMARY)
-                }
-                group.addView(radio)
-                if (choice == value) group.check(radio.id)
-            }
-            fieldViews[key] = group
-            container.addView(group)
+            val options = LinkedHashMap<String, String>()
+            choices.keys().forEach { choice -> options[choice] = choices.optString(choice, choice) }
+            val list = ChoiceListView(this, labelText, options, value as? String) { onFieldChanged(key) }
+            fieldViews[key] = list
+            container.addView(list, LinearLayout.LayoutParams(-1, -2))
             if (descriptionText.isNotBlank()) {
                 container.addView(TextView(this).apply {
                     text = descriptionText
                     UiTheme.styleSupporting(this)
+                    setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
                 })
             }
             return container
@@ -1738,6 +1724,7 @@ class MainActivity : ComponentActivity() {
                     switchView.isChecked = !switchView.isChecked
                 }
 
+                switchView.setOnCheckedChangeListener { _, _ -> onFieldChanged(key) }
                 fieldViews[key] = switchView
                 container.addView(switchCard)
             }
@@ -1856,6 +1843,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** The value a field has on screen right now (a view the user may have changed), else stored, else the schema default. */
+    private fun currentFieldValue(field: String): Any? {
+        when (val view = fieldViews[field]) {
+            is Switch -> return view.isChecked
+            is ChoiceListView -> view.selected?.let { return it }
+            is EditText -> return parseValue(view.text.toString(), profiles[currentProfile]?.opt(field))
+        }
+        return profiles[currentProfile]?.opt(field) ?: schemaFields.optJSONObject(field)?.opt("default")
+    }
+
+    /** True when the field's «visible_when» (if any) holds; a hidden field keeps its value and is still saved. */
+    private fun conditionHolds(key: String): Boolean =
+        VisibleWhen.isVisible(schemaFields.optJSONObject(key)?.opt("visible_when")) { currentFieldValue(it) }
+
+    /** A switch or choice changed: fields that depend on it appear or disappear at once. */
+    private fun onFieldChanged(key: String) {
+        if (!::fieldsContainer.isInitialized || fieldViews.isEmpty()) return
+        val controlsSomething = schemaFields.keys().asSequence().any { other ->
+            VisibleWhen.controllers(schemaFields.optJSONObject(other)?.opt("visible_when")).contains(key)
+        }
+        if (!controlsSomething) return
+        TransitionManager.beginDelayedTransition(
+            fieldsContainer,
+            ChangeBounds().setDuration(180).setInterpolator(android.view.animation.DecelerateInterpolator())
+        )
+        filterSettings()
+    }
+
     private fun filterSettings() {
         val query = activeSearchQuery.lowercase()
         var matchCount = 0
@@ -1876,7 +1891,7 @@ class MainActivity : ComponentActivity() {
 
                 val queryMatches = (query.isBlank() || key.lowercase().contains(query) || label.contains(query) || desc.contains(query))
 
-                if (categoryMatches && queryMatches) {
+                if (categoryMatches && queryMatches && conditionHolds(key)) {
                     fieldContainer.visibility = View.VISIBLE
                     visibleFieldsCount++
                     matchCount++
@@ -1950,6 +1965,7 @@ class MainActivity : ComponentActivity() {
             val value = when (view) {
                 is Switch -> view.isChecked
                 is RadioGroup -> view.findViewById<RadioButton>(view.checkedRadioButtonId)?.tag ?: oldValue
+                is ChoiceListView -> view.selected ?: oldValue
                 is ChipListView -> view.getJsonArray()
                 is EditText -> parseValue(view.text.toString(), oldValue)
                 else -> view.toString()

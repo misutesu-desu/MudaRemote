@@ -18,8 +18,7 @@ procedure of its own that is still open («The procedure has been stopped.»).
 
 When to give (one trigger, read on its own modest schedule, never ``$tu``):
 pages (``$mm`` footer N), characters (``$mmi`` footer TOTAL) or harem value
-(``$mmrk`` «Total value»). What to give: «Pages to give» (default: every page
-up to X), minus «Keep the first N pages». A long page list is given in several
+(``$mmrk`` «Total value»). What to give: «Pages to give» (default: every page), minus «Keep the first N pages». A long page list is given in several
 rounds and ``$mm`` is re-read between rounds (given pages shift the rest).
 """
 
@@ -44,7 +43,7 @@ TRIGGER_COMMANDS = {TRIGGER_PAGES: LIST_MM, TRIGGER_CHARACTERS: LIST_MMI, TRIGGE
 HAREM_GIVE_DEFAULTS = {
     "auto_give_harem": False,
     "harem_give_trigger": TRIGGER_PAGES,
-    "harem_give_pages": 10,
+    "harem_give_pages": 2,
     "harem_give_characters": 150,
     "harem_give_value": 100000,
     "harem_check_hours": 6,
@@ -243,7 +242,7 @@ def renumber_after_give(pages: Sequence[int], given: Sequence[int]) -> List[int]
 class HaremGiveSettings:
     enabled: bool = False
     trigger: str = TRIGGER_PAGES
-    pages: int = 10
+    pages: int = 2
     characters: int = 150
     value: int = 100000
     check_hours: int = 6
@@ -608,8 +607,8 @@ class HaremGiver:
     async def _run(self, channel, settings, partner, prefix, busy, first_list):
         attempt = self._attempt
         page_count = first_list.pages if first_list is not None else await self._read_page_count(channel, prefix)
-        up_to = settings.pages if settings.trigger == TRIGGER_PAGES else None
-        pages = resolve_pages(settings.selection, page_count, up_to=up_to, keep_first=settings.keep_first)
+        # X is only the minimum that starts a give: once reached, every page goes (unless «Pages to give» says otherwise).
+        pages = resolve_pages(settings.selection, page_count, keep_first=settings.keep_first)
         if not pages:
             return GiveOutcome("skipped", "no page to give (harem has {} page(s), keep first {})".format(
                 page_count, settings.keep_first))

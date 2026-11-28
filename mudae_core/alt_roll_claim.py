@@ -13,7 +13,14 @@ clicks the card. Once the main committed, the alt never claims that card.
 Sub-option ``main_claims_alt_rolls_mode``:
 - «when the alt would not claim» (default): the main only takes what the alt
   was going to pass on or cannot claim;
-- «prefer the main»: the main takes anything good for it.
+- «prefer the main»: the main takes anything good for it;
+- «smart» (default for new presets): whoever can claim takes it, whoever rolled
+  it. Any roll of any account of the profile that is good for ANY account's
+  own rules goes to exactly one account with a claim (``smart_ranking``): the
+  accounts it is good for first (the main, then the roller, then the alts in
+  order), then the others with a claim, so the roll is not lost. In this mode
+  ``main_claims_alt_rolls`` and ``alts_claim_main_rolls`` both count as on
+  when either is on.
 
 Mirror, ``alts_claim_main_rolls`` (off by default): a good roll of the MAIN
 that the main will not or cannot claim goes to ONE alt, the first in list
@@ -37,11 +44,13 @@ MIRROR_SETTING = "alts_claim_main_rolls"
 KEEP_FOR_RESET_SECONDS = 20.0
 MODE_WHEN_ALT_PASSES = "when the alt would not claim"
 MODE_PREFER_MAIN = "prefer the main"
-MODES = (MODE_WHEN_ALT_PASSES, MODE_PREFER_MAIN)
-DEFAULT_MODE = MODE_WHEN_ALT_PASSES
+MODE_SMART = "smart"
+MODES = (MODE_WHEN_ALT_PASSES, MODE_PREFER_MAIN, MODE_SMART)
+DEFAULT_MODE = MODE_SMART
 MODE_CHOICES = {
     MODE_WHEN_ALT_PASSES: "When the alt would not claim (the alt keeps its own good rolls)",
     MODE_PREFER_MAIN: "Prefer the main (the main takes anything good for it; alts keep their claims)",
+    MODE_SMART: "Smart (whoever can claim takes it, whoever rolled it)",
 }
 
 # How long the alt waits for the main's decision, then for the click result.
@@ -65,6 +74,8 @@ def normalize_mode(value):
     text = str(value or "").strip().lower().replace("_", " ")
     if text in ("prefer the main", "prefer main"):
         return MODE_PREFER_MAIN
+    if text == MODE_WHEN_ALT_PASSES:
+        return MODE_WHEN_ALT_PASSES
     return DEFAULT_MODE
 
 
@@ -72,15 +83,86 @@ def validate_alt_roll_claim_settings(data):
     value = (data or {}).get(MODE_SETTING, DEFAULT_MODE)
     text = str(value or "").strip().lower().replace("_", " ")
     if text and text not in MODES and text != "prefer main":
-        return ["«Main claims good rolls made by its alts» mode must be «{}» or «{}».".format(*MODES)]
+        return ["«Main claims good rolls made by its alts» mode must be «{}», «{}» or «{}».".format(*MODES)]
     return []
 
 
+def is_smart(mode):
+    return normalize_mode(mode) == MODE_SMART
+
+
+def smart_on(mode, main_claims_alt_rolls, alts_claim_main_rolls):
+    """Smart mode decides when either direction switch is on (both then count as on)."""
+    return is_smart(mode) and bool(main_claims_alt_rolls or alts_claim_main_rolls)
+
+
 def main_should_be_asked(mode, alt_would_claim):
-    """Does the alt offer this roll to its main at all?"""
-    if normalize_mode(mode) == MODE_PREFER_MAIN:
+    """Does the alt offer this roll to its main at all? (Old modes; smart uses ``smart_ranking``.)"""
+    if normalize_mode(mode) in (MODE_PREFER_MAIN, MODE_SMART):
         return True
     return not alt_would_claim
+
+
+def smart_ranking(*, roller, order, good, can_claim, main_key=None):
+    """Smart mode: the accounts that may claim one roll, best first ([] = nobody).
+
+    ``roller`` rolled it; ``order`` = every account of the profile, the main
+    first then the alts in Account Tokens order; ``good[key]`` = the roll is
+    good under that account's OWN rules; ``can_claim[key]`` = that account has
+    a claim now (or its existing rules would use $rt). Only one account ever
+    claims: the first that commits on the board, asked in this order.
+
+    1. an account without a claim is never chosen; nothing when the roll is
+       good for nobody;
+    2. the accounts it is good for come first, then the other accounts with a
+       claim (so a good roll is not lost);
+    3. inside each group: the main, then the roller, then the alts in order.
+    """
+    keys = list(dict.fromkeys(list(order or ()) + ([roller] if roller is not None else [])))
+    good = good or {}
+    can_claim = can_claim or {}
+    if not any(good.get(key) for key in keys):
+        return []
+    main = main_key if main_key is not None else (keys[0] if keys else None)
+
+    def rank(key):
+        return (0 if key == main else 1 if key == roller else 2, keys.index(key))
+
+    candidates = [key for key in keys if can_claim.get(key)]
+    first = sorted((key for key in candidates if good.get(key)), key=rank)
+    second = sorted((key for key in candidates if not good.get(key)), key=rank)
+    return first + second
+
+
+def smart_reason(chosen, *, roller, good, can_claim, labels=None):
+    """Why ``chosen`` takes the roll, for the log: «alt 1 has no claim», …"""
+    labels = labels or {}
+    good = good or {}
+    can_claim = can_claim or {}
+
+    def name(key):
+        return labels.get(key) or str(key)
+
+    parts = []
+    if chosen != roller:
+        if not can_claim.get(roller):
+            parts.append("{} has no claim".format(name(roller)))
+        elif good.get(roller) and good.get(chosen):
+            parts.append("good for both, {} comes first".format(name(chosen)))
+        elif not good.get(roller):
+            parts.append("not good for {}".format(name(roller)))
+    if not good.get(chosen):
+        owners = [key for key in labels if good.get(key) and key != chosen] or [
+            key for key in good if good.get(key) and key != chosen]
+        if owners:
+            parts.append("good for {}, which cannot claim it".format(" and ".join(name(key) for key in owners)))
+    return "; ".join(parts) or "good for {}".format(name(chosen))
+
+
+def smart_line(card, roller_label, taker_label, reason):
+    """«⁨X⁩ (rolled by alt 1) — claimed by the main (smart: alt 1 has no claim)»."""
+    return "\u2068{}\u2069 (rolled by {}) \u2014 claimed by {} (smart: {})".format(
+        card, roller_label or "an alt", taker_label or "an account", reason)
 
 
 def _int(value):
@@ -329,21 +411,27 @@ class AltRollBoard:
 
     async def offer_in_turn(self, message_id, *, offerer_key, offerer_label, card, takers, start, sleep,
                             decision_timeout=DECISION_WAIT_SECONDS, result_timeout=RESULT_WAIT_EXTRA_SECONDS,
-                            step=0.1):
+                            step=0.1, candidates=None, deadline=None, clock=time.monotonic):
         """Offer one roll to ``takers`` in order until one claims it.
 
         ``start(taker_key)`` schedules that taker's judge (False = it could not
         be asked). Only a PASS moves on to the next taker; a timeout, a failed
         claim or a commit still running ends the round (nobody else tries).
-        Returns ``(state, taker_key)``.
+        ``candidates`` (smart mode): every account that must leave the roll to
+        the hand-off while it is open (the takers always are). ``deadline``
+        (``clock()`` time): no further taker is asked after it (claim window).
+        The offerer may be one of the takers (it then claims its own roll
+        through the same judge). Returns ``(state, taker_key)``.
         """
         takers = list(takers)
         if not takers:
             return None, None
         if self.open(message_id, taker_key=takers[0], offerer_key=offerer_key, offerer_label=offerer_label,
-                     card=card, candidates=takers) is None:
+                     card=card, candidates=list(takers) + list(candidates or ())) is None:
             return None, None
         for index, taker in enumerate(takers):
+            if index and deadline is not None and clock() >= deadline:
+                break
             if index and not self.pass_on(message_id, offerer_key, taker):
                 break
             try:

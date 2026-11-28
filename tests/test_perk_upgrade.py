@@ -186,6 +186,8 @@ class EmptyNameGuardTests(unittest.TestCase):
             "Do you really want to spend **1,000** <:spR:1> for **1** character? (y/n/yes/no)",
             "TestUser, do you really want to spend 1,000 <:spR:1>? (y/n/yes/no)",
             "Do you really want to spend 1,000 <:spR:1> on **Sonia Nevermind**? (y/n/yes/no)",
+            "Do you really want to spend **1,000** <:spR:1> for **Sonia Nevermind**? (y/n/yes/no)\nPerks upgraded:\n\n"
+            "[10] The first $oh of the day generates **+20** spheres and has **+1%** chance to give 1 $oq",
         ]
         for text in ok:
             q = parse_oi_question(text, "Sonia Nevermind", ("TestUser",))
@@ -195,6 +197,8 @@ class EmptyNameGuardTests(unittest.TestCase):
             "Do you really want to spend 1,000 <:spR:1> on **Claire Redfield**? (y/n/yes/no)",
             "Do you really want to spend 1,000 <:spR:1> for 3 characters? (y/n/yes/no)",
             "Do you really want to buy something? (y/n/yes/no)",
+            "Do you really want to spend **1,000** <:spR:1> for **Claire Redfield**? (y/n/yes/no)\nPerks upgraded:\n\n"
+            "[10] The first $oh of the day generates **+20** spheres and has **+1%** chance to give 1 $oq",
             "Do you really want to spend 1,000 <:spR:1> for 1 characters?",
         ]
         for text in bad:
