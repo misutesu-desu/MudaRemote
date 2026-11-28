@@ -49,8 +49,8 @@ android {
         applicationId = "com.mudafork.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "6.0.3"
+        versionCode = 5
+        versionName = "6.0.4"
 
         ndk {
             abiFilters += mudaAbis
