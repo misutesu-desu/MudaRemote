@@ -43,6 +43,9 @@ try:
         validate_new_profile_name,
     )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_state import AccountStateStore, default_state_path
+    from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
+    from mudae_core.totals import account_key
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -75,6 +78,9 @@ except (ModuleNotFoundError, ImportError) as core_error:
         validate_new_profile_name,
     )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_state import AccountStateStore, default_state_path
+    from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
+    from mudae_core.totals import account_key
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
         CURRENT_VERSION,
@@ -663,6 +669,12 @@ DEFAULTS = {
     "side_rolls_for_main": False,
     "side_rolls_max_per_reset": 1,
     "side_claim_leftovers": False,
+    "fast_setup": False,
+    "fast_setup_round": 0,
+    "auto_give_kakera": False,
+    "give_kakera_threshold": 45000,
+    "give_kakera_extra": True,
+    "give_kakera_daily_cap": 3,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -945,6 +957,42 @@ def collect_account_role_fields(widgets, presets, data):
             data["main_profile_id"] = ""
         else:
             data["main_profile_id"] = profile_id_of((presets or {}).get(picked, {}))
+    return errors
+
+
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra")
+MUDAFORK_NUMBER_KEYS = (
+    ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
+    ("give_kakera_daily_cap", "At most N gives per day", 1),
+)
+
+
+def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
+    """Read «Fast setup» and auto-give fields into ``data``; return messages.
+
+    ``fast_setup_round`` is not a form field: it is kept from the saved
+    profile, or raised by «Send again» (``rearm_round``).
+    """
+    errors = []
+    for key in MUDAFORK_BOOL_KEYS:
+        if key in widgets:
+            data[key] = bool(widgets[key].get())
+    for key, label, minimum in MUDAFORK_NUMBER_KEYS:
+        widget = widgets.get(key)
+        if widget is None:
+            continue
+        value = str(widget.get() or "").strip().replace(",", "")
+        if not value:
+            data[key] = DEFAULTS[key]
+        elif re.fullmatch(r"[0-9]+", value) and int(value) >= minimum:
+            data[key] = int(value)
+        else:
+            errors.append("«{}» must be a whole number of at least {}.".format(label, minimum))
+    try:
+        saved_round = int((previous or {}).get("fast_setup_round", 0) or 0)
+    except (TypeError, ValueError):
+        saved_round = 0
+    data["fast_setup_round"] = rearm_round if rearm_round is not None else max(0, saved_round)
     return errors
 
 
@@ -3159,6 +3207,52 @@ class PresetEditor:
             description="Old way to link an alt. Leave empty when a Main Profile is picked; the main's ID is then known automatically.",
         )
 
+        # «Fast setup» (main and side) and auto-give kakera to the main (side only)
+        fork_frame = CollapsibleLabelFrame(frame, text="Fast Setup & Kakera to Main", start_open=False)
+        fork_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_checkbox(
+            fork_frame.content, "fast_setup", "Fast setup (send the $ta setup message once)",
+            description="Sends one $ta message in the command channel so $tu shows kakera and sphere stock, "
+                        "then turns itself off for good. «Send again» repeats it once.",
+        )
+        fast_row = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
+        fast_row.pack(fill=tk.X, pady=(0, 8))
+        self.create_flat_button(
+            fast_row, "Send again", self._rearm_fast_setup,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+        ).pack(side=tk.LEFT, padx=(20, 10))
+        self.fast_setup_status_label = tk.Label(
+            fast_row, text="", bg=fast_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
+        )
+        self.fast_setup_status_label.pack(side=tk.LEFT)
+        self.give_reason_label = tk.Label(
+            fork_frame.content, text="", bg=self._get_parent_bg(fork_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.give_reason_label.pack(anchor=tk.W, pady=(4, 2))
+        self.give_fields_frame = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
+        self.give_fields_frame.pack(fill=tk.X)
+        self.add_checkbox(
+            self.give_fields_frame, "auto_give_kakera", "Give kakera to my main automatically (side accounts)",
+            description="When this side's kakera (read from the $tu replies the app already gets) reaches the amount "
+                        "below, it sends $givek to its main and confirms. Off by default.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_threshold", "Give kakera to my main when I reach", 45000,
+            description="Whole number, at least 1.",
+        )
+        self.add_checkbox(
+            self.give_fields_frame, "give_kakera_extra", "Also give what is above it",
+            description="On: has 45132 with 45000 picked → gives 45132. Off: gives exactly 45000.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_daily_cap", "At most N gives per day", 3,
+            description="A safety limit. The receiver is the main's Discord ID (Main Profile or Main Account ID above).",
+        )
+        role_var = self.widgets.get("account_role")
+        if role_var is not None:
+            role_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
+
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
         sched_row.pack(fill=tk.X, pady=5)
@@ -3434,6 +3528,85 @@ class PresetEditor:
                 text = ("Main account. Sides: {}.".format(", ".join(sides)) if sides
                         else "Main account. No side profile points at it yet.")
             label.configure(text=text)
+
+    def _fast_setup_record(self, data):
+        """The «done» mark of this profile's first account, or None."""
+        profile_id = profile_id_of(data or {})
+        if not profile_id:
+            return None
+        try:
+            store = AccountStateStore(default_state_path(get_base_path()))
+            return FastSetup(store, account_key(profile_id, 1))
+        except Exception:
+            return None
+
+    def _populate_mudafork_fields(self, preset_name, data):
+        """Fast setup reads as off once sent; give fields only matter for a side."""
+        self._fast_setup_rearm_round = None
+        widgets = self.widgets
+        for key in MUDAFORK_BOOL_KEYS:
+            if key in widgets:
+                widgets[key].set(bool(data.get(key, DEFAULTS[key])))
+        for key, _label, _minimum in MUDAFORK_NUMBER_KEYS:
+            widget = widgets.get(key)
+            if isinstance(widget, (ttk.Entry, tk.Entry)):
+                widget.delete(0, tk.END)
+                widget.insert(0, str(data.get(key, DEFAULTS[key])))
+        status = "Not sent yet."
+        setup = self._fast_setup_record(data)
+        round_number = data.get("fast_setup_round", 0)
+        try:
+            record = setup.record() if setup is not None else None
+            if setup is not None and setup.is_done(round_number):
+                if "fast_setup" in widgets:
+                    widgets["fast_setup"].set(False)
+                status = "Sent once ({}). It stays off; «Send again» repeats it once.".format(
+                    str(record.get("at", ""))[:16].replace("T", " ") or "date unknown")
+        except Exception:
+            pass
+        label = getattr(self, "fast_setup_status_label", None)
+        if label is not None:
+            label.configure(text=status)
+        self._refresh_give_fields_state()
+
+    def _rearm_fast_setup(self):
+        if not self.current_preset:
+            return
+        saved = self.presets.get(self.current_preset, {})
+        data = rearm_fast_setup({"fast_setup_round": saved.get("fast_setup_round", 0)})
+        self._fast_setup_rearm_round = data["fast_setup_round"]
+        if "fast_setup" in self.widgets:
+            self.widgets["fast_setup"].set(True)
+        label = getattr(self, "fast_setup_status_label", None)
+        if label is not None:
+            label.configure(text="Will be sent once more after you save.")
+        self.mark_dirty()
+
+    def _refresh_give_fields_state(self):
+        frame = getattr(self, "give_fields_frame", None)
+        if frame is None:
+            return
+        role_var = self.widgets.get("account_role")
+        is_side = (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) == ACCOUNT_ROLE_SIDE
+        self._set_children_enabled(frame, is_side)
+        label = getattr(self, "give_reason_label", None)
+        if label is not None:
+            label.configure(text=(
+                "Totals come from the $tu replies the app already gets (see the «Totals:» log lines)."
+                if is_side else
+                "Kakera to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
+            ))
+
+    def _set_children_enabled(self, widget, enabled):
+        for child in widget.winfo_children():
+            try:
+                if isinstance(child, ttk.Widget):
+                    child.state(["!disabled"] if enabled else ["disabled"])
+                elif isinstance(child, (tk.Entry, tk.Button, tk.Checkbutton)):
+                    child.configure(state=tk.NORMAL if enabled else tk.DISABLED)
+            except tk.TclError:
+                pass
+            self._set_children_enabled(child, enabled)
 
     def add_choice_field(self, parent, key, label, choices, description=None):
         container = ttk.Frame(parent)
@@ -3920,6 +4093,7 @@ class PresetEditor:
         self._populate_quick_setup(data, stored_tokens=stored_tokens)
 
         self._populate_account_roles(preset_name, data)
+        self._populate_mudafork_fields(preset_name, data)
 
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
@@ -4261,6 +4435,13 @@ class PresetEditor:
         role_errors = collect_account_role_fields(self.widgets, known_presets, data)
         if role_errors:
             messagebox.showerror("Validation Error", "\n".join(role_errors), parent=self.root)
+            return False
+        fork_errors = collect_mudafork_fields(
+            self.widgets, data, known_presets.get(self.current_preset, {}),
+            rearm_round=getattr(self, "_fast_setup_rearm_round", None),
+        )
+        if fork_errors:
+            messagebox.showerror("Validation Error", "\n".join(fork_errors), parent=self.root)
             return False
 
         return self._persist_preset_data(

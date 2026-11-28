@@ -258,6 +258,11 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
         except (TypeError, ValueError):
             errors.append("Main Account ID must be empty or a positive number.")
     errors.extend(validate_account_role_settings(data))
+    # MudaFork: «Fast setup» and auto-give kakera to the main.
+    from .fast_setup import validate_fast_setup_settings
+    from .kakera_give import validate_give_settings
+    errors.extend(validate_fast_setup_settings(data))
+    errors.extend(validate_give_settings(data))
     webhook_url = str(data.get("webhook_url", "") or "").strip()
     if webhook_url and not re.match(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/", webhook_url):
         errors.append("Remote Log Webhook URL must be a Discord HTTPS webhook URL.")

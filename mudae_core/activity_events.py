@@ -28,6 +28,9 @@ _BONUS_ROLLS = re.compile(r"^Gained \+(?P<n>\d+) extra rolls from Kakera")
 # Main/Side hand-off lines; names sit inside Unicode isolates (U+2068 ... U+2069).
 _SIDE_ASK = re.compile("^Main found nothing \u2014 asking side \u2068(?P<side>.+?)\u2069 to roll$")
 _SIDE_CLAIM = re.compile("^Main claimed \u2068(?P<name>.+?)\u2069 from \u2068(?P<side>.+?)\u2069's roll$")
+# Running totals and auto-give (see totals.AccountTotals.describe / kakera_give).
+_TOTALS = re.compile(r"^Totals: kakera (?P<kakera>[\d,]+|unknown) \u00b7 spheres (?P<spheres>[\d,]+|unknown) \((?P<why>[^()]*)\)$")
+_GIVE_OK = re.compile(r"^Auto-give: gave (?P<ka>[\d,]+) kakera to the main")
 
 
 def _number(text: Optional[str]) -> Optional[int]:
@@ -85,6 +88,14 @@ class ActivityClassifier:
             name, side = found.group("name"), found.group("side")
             return [("side_roll", {"character": name, "side": side,
                                    "message": "Claimed {} from {}'s roll".format(name, side)})]
+        found = _TOTALS.match(text)
+        if found:
+            return [("totals", {"kakera": _number(found.group("kakera")), "spheres": _number(found.group("spheres")),
+                                "message": "Kakera {} · spheres {}".format(found.group("kakera"), found.group("spheres"))})]
+        found = _GIVE_OK.match(text)
+        if found:
+            kakera = _number(found.group("ka"))
+            return [("kakera_give", {"kakera": kakera, "message": "Gave {} kakera to the main".format(found.group("ka"))})]
         found = _ROLLING.match(text)
         if found:
             rolls = int(found.group("n"))

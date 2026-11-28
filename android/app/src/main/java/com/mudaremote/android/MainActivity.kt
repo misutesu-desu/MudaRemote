@@ -1354,6 +1354,96 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun buildFieldView(key: String, value: Any?, meta: JSONObject?): View {
+        if (meta?.optString("widget", "") == "send_again") return buildSendAgainField(key, value, meta)
+        var shown = value
+        var note: String? = null
+        if (key == "fast_setup" && value == true) {
+            fastSetupSentAt()?.let {
+                shown = false
+                note = "Sent once ($it); it stays off. Use «Send again» to repeat it once."
+            }
+        }
+        val view = buildFieldViewInner(key, shown, meta)
+        if (meta?.optBoolean("side_only", false) == true) {
+            val role = profiles[currentProfile]?.optString("account_role", "main") ?: "main"
+            if (role != "side") {
+                setViewTreeEnabled(view, false)
+                view.alpha = 0.55f
+                note = "Side accounts only: this profile is a Main account, so this setting is disabled."
+            }
+        }
+        note?.let { text ->
+            (view as? LinearLayout)?.addView(TextView(this).apply {
+                this.text = text
+                textSize = 11f
+                setTextColor(UiTheme.TEXT_MUTED)
+            })
+        }
+        return view
+    }
+
+    private fun setViewTreeEnabled(view: View, enabled: Boolean) {
+        view.isEnabled = enabled
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) setViewTreeEnabled(view.getChildAt(index), enabled)
+        }
+    }
+
+    /** When Fast setup was already sent for this profile's first account (runtime state file), else null. */
+    private fun fastSetupSentAt(): String? {
+        val data = profiles[currentProfile] ?: return null
+        val id = data.optString("profile_id", "")
+        if (id.isEmpty()) return null
+        val file = File(filesDir, "mudafork_account_state.json")
+        if (!file.isFile) return null
+        return runCatching {
+            val record = JSONObject(file.readText()).optJSONObject("accounts")
+                ?.optJSONObject("$id#1")?.optJSONObject("fast_setup")
+            if (record != null && record.optInt("round", 0) >= data.optInt("fast_setup_round", 0))
+                record.optString("at", "").take(16).replace('T', ' ').ifEmpty { "date unknown" }
+            else null
+        }.getOrNull()
+    }
+
+    /** «Send again» for Fast setup: raises the stored round and switches Fast setup on. */
+    private fun buildSendAgainField(key: String, value: Any?, meta: JSONObject): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, UiTheme.dp(this@MainActivity, 5), 0, UiTheme.dp(this@MainActivity, 5))
+            tag = "field_container_$key"
+        }
+        val counter = EditText(this).apply {
+            setText(((value as? Number)?.toInt() ?: 0).toString())
+            inputType = InputType.TYPE_CLASS_NUMBER
+            visibility = View.GONE
+            tag = key
+        }
+        fieldViews[key] = counter
+        container.addView(TextView(this).apply {
+            text = meta.optString("label", key)
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        })
+        val description = meta.optString("description", "")
+        if (description.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = description
+                textSize = 11f
+                setTextColor(UiTheme.TEXT_SECONDARY)
+            })
+        }
+        container.addView(createGitHubSmallBtn("Send again") { _ ->
+            val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+            counter.setText(next.toString())
+            (fieldViews["fast_setup"] as? Switch)?.isChecked = true
+            toast("Fast setup will be sent once more after you save.")
+        })
+        container.addView(counter)
+        return container
+    }
+
+    private fun buildFieldViewInner(key: String, value: Any?, meta: JSONObject?): View {
         val labelText = meta?.optString("label", key) ?: key
         val descriptionText = meta?.optString("description", "").orEmpty()
 

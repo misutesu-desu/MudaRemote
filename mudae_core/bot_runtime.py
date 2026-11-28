@@ -495,6 +495,10 @@ class BotInstance:
         """
         with self._client_lock:
             reload = getattr(self._client, "_preset_reload", None) if self._client else None
+            totals_source = getattr(self._client, "account_totals", None) if self._client else None
+            giver = getattr(self._client, "kakera_giver", None) if self._client else None
+            totals = totals_source.snapshot() if hasattr(totals_source, "snapshot") else None
+            give_status = getattr(giver, "status", None)
             active = _redact_credentials(copy.deepcopy(reload.active_preset), self._known_secrets) if reload else {}
             desired = _redact_credentials(copy.deepcopy(reload.desired_preset), self._known_secrets) if reload else {}
 
@@ -508,6 +512,9 @@ class BotInstance:
                 "restart_required": list(self._restart_required),
                 "active_preset": active,
                 "desired_preset": desired,
+                # Live kakera/sphere totals ({kakera, spheres, as_of, source, ...}) or None.
+                "totals": totals,
+                "auto_give_status": give_status if isinstance(give_status, str) else None,
             }
 
     def _run_lifecycle(self):

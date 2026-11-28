@@ -100,7 +100,7 @@ def main(project_root, output_dir):
 
     section_groups = {
         "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
-        "Main & Side Accounts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id"},
+        "Main & Side Accounts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id", "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap"},
         "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
@@ -116,9 +116,21 @@ def main(project_root, output_dir):
     # stores the picked profile's stable id (see MainActivity.buildFieldView).
     settings.setdefault("main_profile_id", {})["picker"] = "profile"
     role_order = ["account_role", "main_profile_id", "side_order", "side_rolls_for_main",
-                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id"]
+                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id",
+                  "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
+                  "give_kakera_extra", "give_kakera_daily_cap"]
     for order, key in enumerate(role_order):
         settings.setdefault(key, {})["order"] = order
+    # «Send again» for Fast setup: the app shows a button that raises this
+    # counter (and switches Fast setup on) instead of a number field.
+    settings.setdefault("fast_setup_round", {}).update({
+        "widget": "send_again",
+        "label": "Fast setup: Send again",
+        "description": "Fast setup is sent once and then stays off. Press to send it once more (save to apply).",
+    })
+    # Shown disabled, with the reason, on a Main account.
+    for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap"):
+        settings.setdefault(key, {})["side_only"] = True
     filter_keys = ["kakera_filter_match_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
     for order, key in enumerate(filter_keys):
         sections[key] = "Kakera Reactions"

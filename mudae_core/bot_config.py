@@ -293,6 +293,15 @@ def configure_client(
         preset_data.get("side_rolls_max_per_reset", 1), 1, 1, 10
     )
     client.side_claim_leftovers = bool(preset_data.get("side_claim_leftovers", False))
+    # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
+    client.fast_setup = bool(preset_data.get("fast_setup", False))
+    client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
+    client.auto_give_kakera = bool(preset_data.get("auto_give_kakera", False))
+    client.give_kakera_threshold = _bounded_int(
+        preset_data.get("give_kakera_threshold", 45000), 45000, 1, 1_000_000_000
+    )
+    client.give_kakera_extra = bool(preset_data.get("give_kakera_extra", True))
+    client.give_kakera_daily_cap = _bounded_int(preset_data.get("give_kakera_daily_cap", 3), 3, 1, 50)
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -688,6 +697,8 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
     "account_role", "main_profile_id", "side_order", "side_rolls_for_main",
     "side_rolls_max_per_reset", "side_claim_leftovers",
+    "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
+    "give_kakera_extra", "give_kakera_daily_cap",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",

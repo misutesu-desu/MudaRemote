@@ -408,6 +408,24 @@ _side_roll_coordinator = SideRollCoordinator()
 SIDE_HANDOFF_TIMEOUT_SECONDS = 600.0
 SIDE_LEFTOVER_DECISION_WAIT_SECONDS = 8.0
 
+# Running kakera/sphere totals, «Fast setup» and auto-give kakera (pure logic
+# in mudae_core.totals / fast_setup / kakera_give; this file only wires it).
+from mudae_core.account_state import AccountStateStore, default_state_path  # noqa: E402
+from mudae_core.fast_setup import FastSetup  # noqa: E402
+from mudae_core.kakera_give import BotReply, GiveSettings, KakeraGiver  # noqa: E402
+from mudae_core.totals import TotalsBook, account_key, parse_sphere_game_result  # noqa: E402
+_totals_book = TotalsBook()
+_account_state_store = None
+_account_state_store_lock = threading.Lock()
+
+
+def _get_account_state_store():
+    global _account_state_store
+    with _account_state_store_lock:
+        if _account_state_store is None:
+            _account_state_store = AccountStateStore(default_state_path(get_base_path()))
+        return _account_state_store
+
 
 def _account_link_key(client):
     link = getattr(client, "_account_link", None)
@@ -1390,6 +1408,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     client._scheduled_roll_task = None
     client._account_link = _AccountLink(client, preset_name, preset_data)
     _side_roll_coordinator.register(client._account_link)
+    client._totals_key = account_key(client._account_link.profile_id, client.account_index)
+    client.account_totals = _totals_book.account(client._totals_key, preset_name)
+    client._own_sphere_result_ids = {}
+    client._auto_give_task = None
+    client._auto_give_last_skip = None
+    client.fast_setup_runner = FastSetup(_get_account_state_store(), client._totals_key)
+    client.kakera_giver = KakeraGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
     client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
     client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
@@ -1406,6 +1436,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         preset_data.update(data)
         if changed:
             update_dynamic_thresholds()
+            if changed & {"fast_setup", "fast_setup_round"} and client._live_preset_ready:
+                client.loop.create_task(run_fast_setup())
+            if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
+                schedule_auto_give("settings changed")
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
                 if task is not None:
@@ -3417,6 +3451,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         runtime_mode = "Android" if IS_TERMUX else ("EXE" if getattr(sys, "frozen", False) else "Python")
         BotLogger.log(f"MudaRemote v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
+        _totals_book.note_user_id(client._totals_key, getattr(client.user, "id", None))
         client.loop.create_task(health_monitor_task())
         if getattr(client, "account_role", "main") == "side":
             client.loop.create_task(report_account_role())
@@ -3495,6 +3530,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 except Exception as e:
                     BotLogger.log(f"Runtime ready callback error: {e}", preset_name, "WARN")
             return
+
+        try:
+            await run_fast_setup()
+        except Exception as e:
+            BotLogger.log(f"Fast setup error: {e}", preset_name, "ERROR")
 
         if client.rolling_enabled:
             if not client.skip_initial_commands:
@@ -5167,6 +5207,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 # Reset skip reason cache after successful physical $tu
                 client._last_tu_skip_reason_key = None
                 c_lower = tu_content.lower()
+                try:
+                    note_tu_totals(tu_content)
+                except Exception as e:
+                    BotLogger.log(f"Totals parse error: {e}", preset_name, "WARN")
 
             sphere_budget_observed = client.sphere_button_budget.observe(tu_content, request_started_at)
             if sphere_budget_observed:
@@ -6266,6 +6310,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             # waits for the status refresh that follows the hand-off.
             BotLogger.log("Own roll batch skipped: this side account is rolling for its main.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="side-handoff-busy")
+            return
+        if client.kakera_giver.active:
+            # A $givek confirmation is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a kakera give to the main is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="kakera-give-busy")
             return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
@@ -7627,6 +7676,133 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 return
             await claim_character(client, message.channel, message, is_kakera=True)
 
+    # ------------------------------------------------------------------
+    # Totals ($tu / game results), Fast setup, auto-give kakera to the main
+    # ------------------------------------------------------------------
+    def bot_message_text(message):
+        parts = [str(getattr(message, "content", "") or "")]
+        for embed in getattr(message, "embeds", ()) or ():
+            parts.append(str(getattr(embed, "description", "") or ""))
+            for embed_field in getattr(embed, "fields", ()) or ():
+                parts.append(str(getattr(embed_field, "value", "") or ""))
+        return "\n".join(part for part in parts if part)
+
+    def log_totals(reason):
+        BotLogger.log(f"Totals: {client.account_totals.describe()} ({reason})", preset_name, "INFO")
+
+    def note_tu_totals(tu_text):
+        """Read kakera/sphere totals from a $tu reply the program already got (no new $tu)."""
+        before = (client.account_totals.kakera, client.account_totals.spheres)
+        client.account_totals.apply_tu(tu_text)
+        if (client.account_totals.kakera, client.account_totals.spheres) != before:
+            log_totals("from $tu")
+        schedule_auto_give("$tu")
+
+    def observe_sphere_game_result(message):
+        """Spheres from this account's own game-result message (new or edited)."""
+        if getattr(getattr(message, "author", None), "id", None) != TARGET_BOT_ID:
+            return
+        message_id = getattr(message, "id", None)
+        tracked = client._own_sphere_result_ids
+        text = bot_message_text(message)
+        if message_id not in tracked:
+            # A new result counts only while this account's own game runs here.
+            kind = getattr(client, "_sphere_game_response_kind", None)
+            game_channel = getattr(client, "_sphere_game_response_channel_id", None)
+            if kind is None or (game_channel is not None and getattr(message.channel, "id", None) != game_channel):
+                return
+            if not parse_sphere_game_result(text).is_result:
+                return
+            tracked[message_id] = True
+            while len(tracked) > 50:
+                tracked.pop(next(iter(tracked)))
+        if client.account_totals.apply_sphere_game_result(message_id, text):
+            log_totals("from the sphere game")
+
+    def auto_give_busy_reason():
+        if client.is_paused or client.key_limit_hit:
+            return "paused"
+        if is_maintenance_active():
+            return "maintenance"
+        if is_inactive_hour():
+            return "inactive hours"
+        if client.loot_automation is not None:
+            return "loot mode"
+        if claim_critical_work_pending():
+            return "rolling or claiming"
+        if client.tu_lock is not None and client.tu_lock.locked():
+            return "reading $tu"
+        if client._sphere_game_lock is not None and client._sphere_game_lock.locked():
+            return "playing a sphere game"
+        if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
+            return "rolling for its main"
+        return None
+
+    def schedule_auto_give(reason):
+        if not (client.auto_give_kakera and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.kakera_giver.active or getattr(client, "_auto_give_task", None) is not None:
+            return
+        client._auto_give_task = client.loop.create_task(run_auto_give(reason))
+
+    async def run_auto_give(reason):
+        try:
+            # Let the $tu handling and any roll/claim it starts settle first.
+            waited = 0.0
+            while auto_give_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            main_id = effective_main_account_id()
+            user = client.user
+            outcome = await client.kakera_giver.maybe_give(
+                channel, GiveSettings.from_preset({
+                    "auto_give_kakera": client.auto_give_kakera,
+                    "give_kakera_threshold": client.give_kakera_threshold,
+                    "give_kakera_extra": client.give_kakera_extra,
+                    "give_kakera_daily_cap": client.give_kakera_daily_cap,
+                }),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(user, "id", "") or ""),
+                own_names=[getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)],
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                busy=auto_give_busy_reason,
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_auto_give_last_skip", None):
+                    client._auto_give_last_skip = outcome.reason
+                    BotLogger.log(f"Auto-give waits: {outcome.reason}.", preset_name, "DEBUG", client)
+            else:
+                client._auto_give_last_skip = None
+                log_totals("after the give")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Auto-give error: {e}", preset_name, "ERROR")
+        finally:
+            client._auto_give_task = None
+
+    async def run_fast_setup():
+        """Send the one-time Fast setup message if it is due for this account."""
+        if not client.fast_setup:
+            return
+        channel = await _resolve_administrative_command_channel()
+        if channel is None:
+            return
+        await client.fast_setup_runner.run(
+            client.fast_setup, client.fast_setup_round, guarded_send, channel,
+            prefix=client.mudae_prefix,
+            log=lambda message, level: BotLogger.log(message, preset_name, level),
+        )
+
     def regular_kakera_filter_reason(client, msg, embed, *, button=None, is_mk_roll=False, is_external_roll=False):
         """Explain why ordinary Kakera is blocked without blocking spheres or purple."""
         chaos_count = count_chaos_keys(embed)
@@ -8506,6 +8682,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if update_event is not None:
             update_event.set()
         client.sphere_runtime.capture_sphere_game_bonus(after)
+        observe_sphere_game_result(after)
         schedule_farm_release_after_other_claim(after, previous_message=before)
         await process_edited_wish(after)
 
@@ -8516,6 +8693,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return
         message_id = getattr(payload, 'message_id', None)
         if mudae_command_rejection_matches(payload, message_id, TARGET_BOT_ID):
+            client.kakera_giver.on_refused(message_id)
             client._recent_mudae_command_rejections[message_id] = time.monotonic()
             while len(client._recent_mudae_command_rejections) > 200:
                 client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
@@ -8583,6 +8761,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         observe_dk_reply(message)
         client.sphere_runtime.capture_sphere_game_response(message)
         client.sphere_runtime.capture_sphere_game_bonus(message)
+        observe_sphere_game_result(message)
+        if client.kakera_giver.active and message.author.id == TARGET_BOT_ID:
+            reference = getattr(message, "reference", None)
+            client.kakera_giver.on_reply(BotReply(
+                message.id, message.channel.id, bot_message_text(message),
+                getattr(reference, "message_id", None),
+            ))
         is_roll = (message.channel.id == client.target_channel_id)
         is_snipe = (client.snipe_mode and message.channel.id in client.snipe_channels)
         is_kakera_snipe_channel = (
@@ -9528,7 +9713,7 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
 
 def reset_mobile_runtime():
     """Reset process-wide mobile state after the previous workers have exited."""
-    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator
+    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator, _totals_book
     with _active_clients_lock:
         _active_clients.clear()
         _mobile_client_close_futures.clear()
@@ -9538,6 +9723,7 @@ def reset_mobile_runtime():
     _server_reset_coordinator = ServerResetCoordinator()
     _tu_interval_coordinator = GlobalIntervalCoordinator()
     _side_roll_coordinator = SideRollCoordinator()
+    _totals_book = TotalsBook()
 
 def parse_args(argv=None):
     import argparse
