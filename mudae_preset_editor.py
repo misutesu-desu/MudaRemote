@@ -3419,8 +3419,15 @@ class PresetEditor:
         self.add_checkbox(
             self.give_fields_frame, "auto_give_spheres", "Give spheres to my main automatically (side accounts)",
             description="Whenever this side has spheres (read from the $tu replies and sphere-game results the app already gets), "
-                        "it sends $givesp to its main and confirms. No minimum. Waits for the sphere games and the "
-                        "perk-10 upgrade first. Off by default.",
+                        "it sends $givesp to its main and confirms. No minimum. Waits for the sphere games first. "
+                        "Has no effect while «Upgrade perk 10 automatically» is on for this account "
+                        "(your saved choice here is kept). Off by default.",
+        )
+        self._sphere_give_checkbox_container = self.give_fields_frame.winfo_children()[-1]
+        self.sphere_give_perk_label = tk.Label(
+            self.give_fields_frame, text="Off while perk-10 upgrade is on for this account.",
+            bg=self._get_parent_bg(self.give_fields_frame), fg=TEXT_MUTED, font=("Segoe UI", 9, "italic"),
+            justify=tk.LEFT, wraplength=600,
         )
         self.add_number_field(
             self.give_fields_frame, "sphere_give_interval_min", "At most one sphere give every N minutes", 30,
@@ -3499,7 +3506,8 @@ class PresetEditor:
         perk_frame.pack(fill=tk.X, pady=(0, 15))
         self.add_checkbox(
             perk_frame.content, "auto_perk10", "Upgrade perk 10 automatically",
-            description="After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
+            description="On a side account: lets it upgrade its own characters. Turns off automatic sphere giving. "
+                        "On a main account it only upgrades. After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
                         "extra $tu), takes names from $mmz- and sends $oic name $ name $ … $ 10, then confirms "
                         "(1,000 spheres per character). Off by default.",
         )
@@ -3520,6 +3528,9 @@ class PresetEditor:
         role_var = self.widgets.get("account_role")
         if role_var is not None:
             role_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
+        perk_var = self.widgets.get("auto_perk10")
+        if perk_var is not None:
+            perk_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
 
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
@@ -3927,6 +3938,7 @@ class PresetEditor:
                 if is_side else
                 "Harem Pages to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
             ))
+        self._refresh_sphere_give_perk_state(is_side)
         label = getattr(self, "give_reason_label", None)
         if label is not None:
             label.configure(text=(
@@ -3934,6 +3946,21 @@ class PresetEditor:
                 if is_side else
                 "Kakera to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
             ))
+
+    def _refresh_sphere_give_perk_state(self, is_side):
+        """On a side account with perk 10 on, show the automatic sphere give as overridden (its saved value is kept)."""
+        perk_var = self.widgets.get("auto_perk10")
+        container = getattr(self, "_sphere_give_checkbox_container", None)
+        label = getattr(self, "sphere_give_perk_label", None)
+        if container is None or label is None:
+            return
+        overridden = bool(is_side and perk_var is not None and perk_var.get())
+        if overridden:
+            self._set_children_enabled(container, False)
+            if not label.winfo_ismapped():
+                label.pack(after=container, anchor=tk.W, padx=20)
+        else:
+            label.pack_forget()
 
     def _set_children_enabled(self, widget, enabled):
         for child in widget.winfo_children():

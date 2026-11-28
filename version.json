@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_bot.py",
-      "sha256": "237ce9dbd06e0a7c1279742e07561f3ca2e5a81e65341494ed97ed861f521868"
+      "sha256": "d444c3b7f876287ff5d5d3d0bd2e6c0bfaec206f143beb2760762b55aefb80e4"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_preset_editor.py",
-      "sha256": "a033b8fe6ad58484a30df9b9ac74a1d9c62bfb2aff26ce58ad80f909e2c77007"
+      "sha256": "8e4263fd68b5ff288b985ecd1efdaf0812b5d2feddc375e349098a9fc275699c"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -73,7 +73,7 @@
     {
       "path": "mudae_core/sphere_give.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/sphere_give.py",
-      "sha256": "a0c5aabfe9ac2fbe3ffc4a846804d16e1924ecc854023eb3700e0a31eab8514c"
+      "sha256": "238c3b8f7f4b614691ea57015cebbbffe61e41b62fa5570f03771bfc713b892e"
     },
     {
       "path": "mudae_core/logs.py",

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from mudae_core.account_state import AccountStateStore
 from mudae_core.kakera_give import BotReply
 from mudae_core.sphere_give import (
-    SphereGiveSettings, SphereGiver, log_reply_text, parse_sphere_question, parse_sphere_success,
+    PERK10_OFF_REASON, SphereGiveSettings, SphereGiver, log_reply_text, parse_sphere_question, parse_sphere_success,
     spheres_to_give, validate_sphere_give_settings,
 )
 from mudae_core.totals import KAKERA, SPHERES, SOURCE_TU, AccountTotals
@@ -188,14 +188,30 @@ class TriggerTests(SphereGiveBase):
         self.assertEqual(bot.sent, [])
         self.assertEqual(self.give(giver, games=lambda: None).status, "given")
 
-    def test_perk10_first_then_remainder_only(self):
-        giver, bot = self.make([[question(250)], [success(250)]])
-        outcome = self.give(giver, perk_first=lambda: "perk 10 upgrade comes first")
-        self.assertEqual(outcome.status, "skipped")
+    def test_perk10_on_disables_automatic_give_at_any_stock(self):
+        giver, bot = self.make([])
+        perk_on = SphereGiveSettings.from_preset({"auto_give_spheres": True, "auto_perk10": True})
+        self.assertTrue(perk_on.perk10_on)
+        for stock in (1, 250, 999, 1000, 5000, 100000):
+            self.side.set_total(SPHERES, stock, SOURCE_TU)
+            outcome = self.give(giver, perk_on)
+            self.assertEqual(outcome.status, "skipped")
+            self.assertEqual(outcome.reason, PERK10_OFF_REASON)
         self.assertEqual(bot.sent, [])
-        self.side.set_total(SPHERES, 250, SOURCE_TU)  # the upgrade spent 1,000
-        self.assertEqual(self.give(giver).status, "given")
-        self.assertEqual(bot.sent[0], "$givesp <@{}> 250".format(MAIN_ID))
+        self.assertEqual(giver.status, "Sphere give is off because perk-10 upgrade is on for this account.")
+        # the saved auto_give_spheres value is not changed by the override
+        self.assertTrue(perk_on.enabled)
+
+    def test_perk10_off_still_gives(self):
+        giver, bot = self.make([[question(1250)], [success(1250)]])
+        settings = SphereGiveSettings.from_preset({"auto_give_spheres": True, "auto_perk10": False})
+        self.assertEqual(self.give(giver, settings).status, "given")
+
+    def test_perk10_reason_only_for_a_side_that_gives(self):
+        giver, _ = self.make([])
+        on = SphereGiveSettings(enabled=True, perk10_on=True)
+        self.assertEqual(self.give(giver, on, role="main").reason, giver._basic_blocker(role="main", own_id=SIDE_ID, main_id=MAIN_ID))
+        self.assertEqual(self.give(giver, SphereGiveSettings(enabled=False, perk10_on=True)).reason, "off")
 
     def test_busy_defers(self):
         giver, bot = self.make([])
@@ -379,6 +395,11 @@ class ButtonTests(SphereGiveBase):
         giver, bot = self.make([[question(1250)], [success(1250)]])
         self.assertEqual(asyncio.run(self.press(giver, busy=busy)).status, "given")
         self.assertIn("deferred", " ".join(text for _, text in self.logs))
+
+    def test_perk10_on_does_not_stop_the_button(self):
+        giver, bot = self.make([[question(1250)], [success(1250)]])
+        self.assertEqual(asyncio.run(self.press(giver)).status, "given")
+        self.assertEqual(bot.sent[0], "$givesp <@{}> 1250".format(MAIN_ID))
 
     def test_games_wait(self):
         giver, bot = self.make([])

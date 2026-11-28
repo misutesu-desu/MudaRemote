@@ -5,9 +5,11 @@ There is NO minimum: once the known sphere stock (read from the ``$tu`` replies
 and sphere-game results the program already gets; never an extra ``$tu``) is
 above what the account keeps (``spheres_keep``, default 0), it is given.
 
-Order of work: every sphere game the automation plays is finished first, then
-the perk-10 upgrade (when ``auto_perk10`` is on for the account) takes what it
-needs, and only the remainder is given. At most one give per
+Order of work: every sphere game the automation plays is finished first. On a
+side account whose perk-10 upgrade (``auto_perk10``) is ON, automatic giving is
+off entirely (the side keeps its spheres for its own upgrades; the saved
+``auto_give_spheres`` value is not changed, it just has no effect). The manual
+«Give all spheres now» button is an explicit request and still works. At most one give per
 ``sphere_give_interval_min`` (default 30), one at a time per account, never
 while the account is busy, growing back-off after a failure.
 
@@ -143,11 +145,15 @@ def log_reply_text(text, limit=200) -> str:
     return shorten_reply(redact_text(text), limit)
 
 
+PERK10_OFF_REASON = "Sphere give is off because perk-10 upgrade is on for this account"
+
+
 @dataclass(frozen=True)
 class SphereGiveSettings:
     enabled: bool = False
     interval_min: int = 30
     keep: int = 0
+    perk10_on: bool = False  # the account's own perk-10 upgrade is on: automatic giving is off
 
     @classmethod
     def from_preset(cls, data):
@@ -158,6 +164,7 @@ class SphereGiveSettings:
             enabled=bool(data.get("auto_give_spheres", False)),
             interval_min=30 if interval is None else interval,
             keep=0 if keep is None else keep,
+            perk10_on=bool(data.get("auto_perk10", False)),
         )
 
 
@@ -258,21 +265,21 @@ class SphereGiver:
         return None
 
     def blocker(self, settings: SphereGiveSettings, *, role, own_id, main_id, stock, games_reason=None,
-                perk_reason=None, busy_reason=None) -> Optional[str]:
+                busy_reason=None) -> Optional[str]:
         """Why no give may start now (None: a give may start)."""
         if not settings.enabled:
             return "off"
         basic = self._basic_blocker(role=role, own_id=own_id, main_id=main_id)
         if basic:
             return basic
+        if settings.perk10_on:
+            return PERK10_OFF_REASON
         if self._attempt is not None:
             return "a give is already in progress"
         if busy_reason:
             return "busy: " + busy_reason
         if games_reason:
             return "sphere games first: " + games_reason
-        if perk_reason:
-            return perk_reason
         if self._retry_at is not None and self._monotonic() < self._retry_at:
             return "backing off for about {} min after the last failed give".format(
                 max(1, int((self._retry_at - self._monotonic()) // 60)))
@@ -290,14 +297,15 @@ class SphereGiver:
     async def maybe_give(self, channel, settings: SphereGiveSettings, *, role, own_id, own_names, main_id,
                          totals, main_totals=None, prefix="$",
                          games: Callable[[], Optional[str]] = lambda: None,
-                         perk_first: Callable[[], Optional[str]] = lambda: None,
                          busy: Callable[[], Optional[str]] = lambda: None) -> GiveOutcome:
         stock = totals.spheres if totals is not None else None
         reason = self.blocker(settings, role=role, own_id=own_id, main_id=main_id, stock=stock,
-                              games_reason=games(), perk_reason=perk_first(), busy_reason=busy())
+                              games_reason=games(), busy_reason=busy())
         if reason is not None:
             if reason == "off":
                 self.status = "Sphere give: off."
+            elif reason == PERK10_OFF_REASON:
+                self.status = PERK10_OFF_REASON + "."
             else:
                 self.status = "Sphere give waits: {}.".format(reason)
             return GiveOutcome("skipped", reason)

@@ -422,7 +422,7 @@ from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_receiving 
 # Automatic perk-10 upgrade ($mmz- names → $oic … $ 10; pure logic in mudae_core.perk_upgrade).
 from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending  # noqa: E402
 # Auto-give spheres to the main ($givesp <@main> AMOUNT then Y; pure logic in mudae_core.sphere_give).
-from mudae_core.sphere_give import SphereGiveSettings, SphereGiver  # noqa: E402
+from mudae_core.sphere_give import PERK10_OFF_REASON, SphereGiveSettings, SphereGiver  # noqa: E402
 _totals_book = TotalsBook()
 _account_state_store = None
 _account_state_store_lock = threading.Lock()
@@ -1551,7 +1551,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 schedule_auto_give("settings changed")
             if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
                 client.loop.create_task(run_give_all_kakera_now())
-            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role"}:
+            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10"}:
                 schedule_sphere_give("settings changed")
             if "give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round:
                 client.loop.create_task(run_give_all_spheres_now())
@@ -8078,17 +8078,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             "auto_give_spheres": client.auto_give_spheres,
             "sphere_give_interval_min": client.sphere_give_interval_min,
             "spheres_keep": client.spheres_keep,
+            "auto_perk10": getattr(client, "auto_perk10", False),
         })
-
-    def sphere_give_perk_first_reason():
-        """Perk 10 goes first: while it would still upgrade now, only the remainder is given later."""
-        if not getattr(client, "auto_perk10", False):
-            return None
-        if client.perk_upgrader.active or getattr(client, "_perk10_task", None) is not None:
-            return "the perk-10 upgrade comes first"
-        upgrade_blocker = client.perk_upgrader.blocker(
-            perk10_settings(), stock=client.account_totals.spheres, games_reason=None, busy_reason=None)
-        return "the perk-10 upgrade comes first" if upgrade_blocker is None else None
 
     def sphere_give_busy_reason():
         return (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
@@ -8126,13 +8117,15 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 prefix=client.mudae_prefix,
                 # Never sends $tu: an unknown stock waits for the next one the program sends.
                 games=perk10_games_reason,
-                perk_first=sphere_give_perk_first_reason,
                 busy=sphere_give_busy_reason,
             )
             if outcome.status == "skipped":
                 if outcome.reason != getattr(client, "_sphere_give_last_skip", None):
                     client._sphere_give_last_skip = outcome.reason
-                    BotLogger.log(f"Sphere give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+                    if outcome.reason == PERK10_OFF_REASON:
+                        BotLogger.log(f"{outcome.reason}.", preset_name, "INFO", client)
+                    else:
+                        BotLogger.log(f"Sphere give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
             else:
                 client._sphere_give_last_skip = None
                 log_totals("after the sphere give")
@@ -8252,8 +8245,6 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if outcome.status == "upgraded":
                     log_totals("after the perk-10 upgrade")
                 wake_status_loop()
-            # Spheres left after the upgrade (or when none was possible) go to the main.
-            client.loop.call_later(1.0, schedule_sphere_give, "perk 10 finished")
         except asyncio.CancelledError:
             raise
         except Exception as e:

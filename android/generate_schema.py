@@ -146,6 +146,15 @@ def main(project_root, output_dir):
         "label": "Give all spheres now",
         "description": "One give of all the spheres (minus «Spheres to keep on this account») to the main. The account must be running.",
     })
+    settings.setdefault("auto_perk10", {}).update({
+        "label": "Upgrade perk 10 automatically",
+        "description": "On a side account: lets it upgrade its own characters. Turns off automatic sphere giving "
+                       "(the saved «Give spheres to my main automatically» value is kept but has no effect). "
+                       "On a main account it only upgrades. Off by default.",
+    })
+    settings.setdefault("auto_give_spheres", {})["description"] = (
+        "Sends the side's spheres to its main automatically. Off while «Upgrade perk 10 automatically» is on "
+        "for this account (your choice here is kept). Waits for the sphere games first. Off by default.")
     for key in ("auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_daily_cap",
                 "give_kakera_button_minimum", "give_kakera_now_round", "auto_give_spheres",
                 "sphere_give_interval_min", "spheres_keep", "give_spheres_now_round",
