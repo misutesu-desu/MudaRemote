@@ -63,7 +63,7 @@ class UpdaterTests(unittest.TestCase):
             "exe_sha256": hashlib.sha256(content).hexdigest(),
         }
         with tempfile.TemporaryDirectory() as directory:
-            executable = os.path.join(directory, "MudaRemote.exe")
+            executable = os.path.join(directory, "MudaFork.exe")
             with mock.patch("mudae_core.updater.subprocess.Popen"), \
                     mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(
@@ -165,7 +165,7 @@ class UpdaterTests(unittest.TestCase):
             "exe_sha256": hashlib.sha256(content).hexdigest(),
         }
         with tempfile.TemporaryDirectory() as directory:
-            executable = os.path.join(directory, "MudaRemote.exe")
+            executable = os.path.join(directory, "MudaFork.exe")
             with mock.patch("mudae_core.updater.subprocess.Popen"), \
                     mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(session, manifest, "4.0.0", directory, frozen=True, executable=executable)
@@ -200,7 +200,7 @@ class UpdaterTests(unittest.TestCase):
             "exe_sha256": hashlib.sha256(content).hexdigest(),
         }
         with tempfile.TemporaryDirectory() as directory:
-            executable = os.path.join(directory, "MudaRemote.exe")
+            executable = os.path.join(directory, "MudaFork.exe")
             install_lock = os.path.join(directory, "update_frozen_install.lock")
             # Hold lock using OS locking to simulate an active helper
             fd = os.open(install_lock, os.O_CREAT | os.O_RDWR)
@@ -453,8 +453,8 @@ class UpdaterTests(unittest.TestCase):
         beta_manifest = json.dumps({"version": "4.9.1-beta.3"}).encode("utf-8")
         main_manifest = json.dumps({"version": "4.8.10"}).encode("utf-8")
         session = _Session({
-            "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/beta/version.json": beta_manifest,
-            "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/version.json": main_manifest,
+            "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/beta/version.json": beta_manifest,
+            "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/main/version.json": main_manifest,
         })
         # Beta user looking for updates discovers 4.9.1-beta.3
         discovered = discover_update_manifest(session, current_version="4.9.1-beta.2", channel="beta")
@@ -469,11 +469,11 @@ class UpdaterTests(unittest.TestCase):
         import json
         pending_manifest = json.dumps({
             "version": "5.0.0",
-            "exe_download_url": "https://example.com/MudaRemote.exe",
+            "exe_download_url": "https://example.com/MudaFork.exe",
             "exe_sha256": "pending-github-actions",
         }).encode("utf-8")
         session = _Session({
-            "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/beta/version.json": pending_manifest,
+            "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/beta/version.json": pending_manifest,
         })
         # Frozen update should skip pending exe checksum
         result = discover_update_manifest(session, current_version="4.9.1-beta.2", channel="beta", frozen=True)
@@ -583,7 +583,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
     def _stage(self, base, payload, staged_content=b"garbage"):
         stage = os.path.join(base, "mudae-frozen-update-test")
         os.makedirs(stage, exist_ok=True)
-        staged_path = os.path.join(stage, "MudaRemote_update.exe")
+        staged_path = os.path.join(stage, "MudaFork_update.exe")
         with open(staged_path, "wb") as handle:
             handle.write(staged_content)
         if payload is not None:
@@ -598,7 +598,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
             with open(os.path.join(base, "update_helper.pid"), "w") as handle:
                 handle.write(str(self.DEAD_PID))
             self._write_json(os.path.join(base, "update_payload.json"), {"pid": self.DEAD_PID})
-            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaRemote.exe"), "expected_hash": "0" * 64})
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaFork.exe"), "expected_hash": "0" * 64})
             actions = cleanup_update_artifacts(base)
             joined = " | ".join(actions)
             self.assertIn("removed stale update_helper.pid", joined)
@@ -613,7 +613,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as base:
             with open(os.path.join(base, "update_helper.pid"), "w") as handle:
                 handle.write(str(os.getpid()))
-            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaRemote.exe")})
+            stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": os.path.join(base, "MudaFork.exe")})
             actions = cleanup_update_artifacts(base)
             self.assertIn("still running", actions[0])
             self.assertTrue(os.path.isdir(stage))
@@ -621,7 +621,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
     def test_missing_executable_is_restored_from_backup(self):
         from mudae_core.updater import cleanup_update_artifacts
         with tempfile.TemporaryDirectory() as base:
-            exe = os.path.join(base, "MudaRemote.exe")
+            exe = os.path.join(base, "MudaFork.exe")
             backup = exe + ".{}.bak".format(self.DEAD_PID)
             with open(backup, "wb") as handle:
                 handle.write(b"old executable")
@@ -635,7 +635,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
     def test_verified_staged_executable_completes_the_swap(self):
         from mudae_core.updater import cleanup_update_artifacts
         with tempfile.TemporaryDirectory() as base:
-            exe = os.path.join(base, "MudaRemote.exe")
+            exe = os.path.join(base, "MudaFork.exe")
             staged_content = b"brand new executable"
             digest = hashlib.sha256(staged_content).hexdigest()
             stage, staged_path = self._stage(base, {"pid": self.DEAD_PID, "current": exe, "expected_hash": digest}, staged_content)
@@ -647,7 +647,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
     def test_unverified_staged_executable_never_becomes_the_app(self):
         from mudae_core.updater import cleanup_update_artifacts
         with tempfile.TemporaryDirectory() as base:
-            exe = os.path.join(base, "MudaRemote.exe")
+            exe = os.path.join(base, "MudaFork.exe")
             stage, _ = self._stage(base, {"pid": self.DEAD_PID, "current": exe, "expected_hash": "f" * 64}, b"corrupted download")
             cleanup_update_artifacts(base)
             self.assertFalse(os.path.exists(exe))
@@ -655,7 +655,7 @@ class FrozenUpdateCleanupTests(unittest.TestCase):
     def test_stale_backup_removed_only_beside_existing_executable(self):
         from mudae_core.updater import cleanup_update_artifacts
         with tempfile.TemporaryDirectory() as base:
-            exe = os.path.join(base, "MudaRemote.exe")
+            exe = os.path.join(base, "MudaFork.exe")
             with open(exe, "wb") as handle:
                 handle.write(b"current install")
             with open(exe + ".4242.bak", "wb") as handle:
@@ -865,7 +865,7 @@ class UpdateProgressAndDiagnosticsTests(unittest.TestCase):
         }
         events = []
         with tempfile.TemporaryDirectory() as directory:
-            executable = os.path.join(directory, "MudaRemote.exe")
+            executable = os.path.join(directory, "MudaFork.exe")
             with mock.patch("mudae_core.updater.subprocess.Popen"), \
                     mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 result = apply_update(
@@ -913,7 +913,7 @@ class UpdateProgressAndDiagnosticsTests(unittest.TestCase):
             "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
         }
         with tempfile.TemporaryDirectory() as directory:
-            executable = os.path.join(directory, "MudaRemote.exe")
+            executable = os.path.join(directory, "MudaFork.exe")
             with mock.patch("mudae_core.updater.subprocess.Popen") as popen, \
                     mock.patch("mudae_core.updater.shutil.which", return_value="powershell"):
                 with self.assertRaises(UpdateError) as ctx:
@@ -973,7 +973,7 @@ class CheckForUpdatesProgressFacadeTests(unittest.TestCase):
         import mudae_bot
         events = []
         failure = UpdateError(
-            "The published download for executable MudaRemote.exe does not match its checksum."
+            "The published download for executable MudaFork.exe does not match its checksum."
         )
         manifest = {"version": "4.6.4", "changelog": "old release"}
         with mock.patch.dict(

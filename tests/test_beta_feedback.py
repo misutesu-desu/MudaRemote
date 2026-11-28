@@ -90,8 +90,8 @@ class StableManifestTests(unittest.TestCase):
         source = b"stable source"
         manifest = {"version": "4.9.0", "exe_sha256": "a" * 64, "source_files": [{
             "path": "mudae_bot.py", "sha256": hashlib.sha256(source).hexdigest(),
-            "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py"}]}
-        release = {"tag_name": "v4.9.0", "assets": [{"name": "MudaRemote.exe", "digest": "sha256:" + "a" * 64}]}
+            "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/beta/mudae_bot.py"}]}
+        release = {"tag_name": "v4.9.0", "assets": [{"name": "MudaFork.exe", "digest": "sha256:" + "a" * 64}]}
         def read_ref(tag, path):
             self.assertEqual(tag, "v4.9.0")
             return json.dumps(manifest).encode() if path == "version.json" else source

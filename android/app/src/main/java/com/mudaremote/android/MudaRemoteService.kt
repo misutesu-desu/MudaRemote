@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -29,8 +30,12 @@ class MudaRemoteService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var lowLatencyWifiLock: WifiManager.WifiLock? = null
     private lateinit var commandExecutor: ScheduledExecutorService
     private var runtimeWatch: ScheduledFuture<*>? = null
+    private var heartbeatTask: ScheduledFuture<*>? = null
+    @Volatile private var workerRestartAttempts = 0
+    @Volatile private var lastWorkerRestartAt = 0L
     @Volatile private var latestCommandStartId = 0
     @Volatile private var latestServiceStartId = 0
     @Volatile private var latestCommandIsStop = false
@@ -43,9 +48,60 @@ class MudaRemoteService : Service() {
     override fun onCreate() {
         super.onCreate()
         commandExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
-            Thread(runnable, "MudaRemote-ServiceCommands")
+            Thread(runnable, "MudaFork-ServiceCommands")
         }
         appendLocalLog("[INFO] [ANDROID] Service created (pid ${android.os.Process.myPid()}).")
+        heartbeatTask = commandExecutor.scheduleWithFixedDelay(
+            { heartbeatTick() },
+            KeepAlive.HEARTBEAT_INTERVAL_SECONDS,
+            KeepAlive.HEARTBEAT_INTERVAL_SECONDS,
+            TimeUnit.SECONDS
+        )
+    }
+
+    /** Every minute while a runtime exists: heartbeat, push the watchdog back, keep the locks held. */
+    private fun heartbeatTick() {
+        if (destroyed) return
+        val state = runtimeState
+        if (state == RuntimeState.STOPPED) return
+        KeepAlive.writeHeartbeat(this)
+        KeepAlive.scheduleWatchdog(this)
+        if (state == RuntimeState.RUNNING) {
+            ensureLocks()
+            if (workerRestartAttempts > 0 &&
+                System.currentTimeMillis() - lastWorkerRestartAt > WORKER_BACKOFF_RESET_MS &&
+                bridgeIsRunning(defaultOnError = false)
+            ) {
+                workerRestartAttempts = 0
+                appendLocalLog("[INFO] [ANDROID] Account workers have been stable for 15 minutes; restart back-off reset.")
+            }
+        }
+    }
+
+    /** Foreground with the declared type; false when Android refuses (background start limits). */
+    private fun enterForeground(status: String): Boolean {
+        val shown = notification(status)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, shown, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, shown)
+            }
+            true
+        } catch (error: Exception) {
+            appendLocalLog("[WARN] [ANDROID] Android refused to put the service in the foreground: ${error.message}")
+            false
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping the app away must not stop the bot. Some phones kill the
+        // process right after this, so ask for a restart check in a few seconds.
+        if (runtimeState != RuntimeState.STOPPED && KeepAlive.shouldBeRunning(this)) {
+            appendLocalLog("[INFO] [ANDROID] App removed from recents; runtime keeps running (restart check scheduled).")
+            KeepAlive.scheduleWatchdog(this, KeepAlive.RESTART_SOON_MS)
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -54,7 +110,7 @@ class MudaRemoteService : Service() {
         createChannel()
         if (intent?.action == ACTION_APPLY) {
             val previousState = runtimeState
-            startForeground(NOTIFICATION_ID, notification(if (previousState == RuntimeState.STOPPING) "Stopping..." else "Running"))
+            enterForeground(if (previousState == RuntimeState.STOPPING) "Stopping..." else "Running")
             if (previousState == RuntimeState.STOPPED) {
                 appendLocalLog("[WARN] [ANDROID] Live apply ignored because the runtime is stopped.")
                 showToast("Profile saved. Start the runtime to use the changes.")
@@ -74,7 +130,19 @@ class MudaRemoteService : Service() {
             return START_STICKY
         }
         val isStop = intent?.action == ACTION_STOP
+        // A null intent is Android's START_STICKY restart; ACTION_RESUME comes from
+        // the watchdog, boot/update receivers or the "Tap to resume" notice.
+        val isResume = !isStop && (intent == null || intent.action == ACTION_RESUME)
+        val resumeReason = if (intent == null) KeepAlive.REASON_STICKY
+            else intent.getStringExtra(EXTRA_RESUME_REASON).orEmpty().ifBlank { KeepAlive.REASON_WATCHDOG }
         val wasActive = runtimeState != RuntimeState.STOPPED
+        if (isResume && wasActive) {
+            // This process still owns a runtime (running, starting or stopping);
+            // a watchdog/boot resume must not disturb it.
+            enterForeground(if (runtimeState == RuntimeState.RUNNING) "Running" else "Working...")
+            appendLocalLog("[INFO] [ANDROID] Resume request ($resumeReason) ignored; the runtime is already active.")
+            return START_STICKY
+        }
         runtimeState = if (isStop) RuntimeState.STOPPING else RuntimeState.STARTING
         latestCommandIsStop = isStop
         latestCommandStartId = startId
@@ -87,8 +155,11 @@ class MudaRemoteService : Service() {
             commandVault.put(DESIRED_RUNNING_KEY, "false")
             commandVault.put(ACTIVE_PROFILES_KEY, "{}")
             commandVault.put(ACTIVE_TOKENS_KEY, "{}")
-        } else if (intent != null) {
+            KeepAlive.cancelWatchdog(this)
+            KeepAlive.clearHeartbeat(this)
+        } else if (!isResume && intent != null) {
             commandVault.put(DESIRED_RUNNING_KEY, "true")
+            workerRestartAttempts = 0
             persistPendingSelection(
                 commandVault,
                 intent.getStringExtra(EXTRA_PROFILES).orEmpty(),
@@ -96,25 +167,42 @@ class MudaRemoteService : Service() {
                 appendToSession = wasActive,
             )
         }
-        startForeground(
-            NOTIFICATION_ID,
-            notification(if (isStop) "Stopping..." else if (wasActive) "Adding profile(s)..." else "Starting...")
+        val inForeground = enterForeground(
+            if (isStop) "Stopping..." else if (wasActive) "Adding profile(s)..." else "Starting..."
         )
+        if (!inForeground && !isStop && !wasActive) {
+            // Android 12+ may refuse a foreground start from the background. Keep
+            // the user's "should be running" choice and offer a one-tap resume.
+            runtimeState = RuntimeState.STOPPED
+            if (isResume) {
+                KeepAlive.showTapToResume(this)
+                KeepAlive.scheduleWatchdog(this)
+            } else {
+                showToast("Android blocked the start. Open MudaFork and press Run again.")
+            }
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+        if (isResume) KeepAlive.clearTapToResume(this)
 
         if (isStop) {
             appendLocalLog("[INFO] [ANDROID] Stop-all requested.")
             commandExecutor.execute { stopRuntime(startId) }
         } else {
-            val stickyRestart = intent == null
-            if (stickyRestart) {
+            val stickyRestart = isResume
+            if (intent == null) {
                 appendLocalLog("[WARN] [ANDROID] System restarted the service (START_STICKY). Restoring the active selection...")
+            } else if (isResume) {
+                appendLocalLog("[INFO] [ANDROID] Resume requested ($resumeReason). Restoring the active selection...")
             } else {
                 appendLocalLog("[INFO] [ANDROID] Start/add requested.")
             }
-            val profilesJson = intent?.getStringExtra(EXTRA_PROFILES).orEmpty()
-            val tokensJson = intent?.getStringExtra(EXTRA_TOKENS).orEmpty()
+            val profilesJson = if (isResume) "" else intent?.getStringExtra(EXTRA_PROFILES).orEmpty()
+            val tokensJson = if (isResume) "" else intent?.getStringExtra(EXTRA_TOKENS).orEmpty()
+            // A resume always starts a fresh runtime here (active ones return above).
+            val reportReason = if (isResume) resumeReason else null
             commandExecutor.execute {
-                startRuntime(profilesJson, tokensJson, stickyRestart, wasActive, startId)
+                startRuntime(profilesJson, tokensJson, stickyRestart, wasActive, startId, reportReason)
             }
         }
         return START_STICKY
@@ -125,7 +213,14 @@ class MudaRemoteService : Service() {
     override fun onDestroy() {
         destroyed = true
         appendLocalLog("[INFO] [ANDROID] Service destroyed.")
+        if (runtimeState != RuntimeState.STOPPED && KeepAlive.shouldBeRunning(this)) {
+            // Destroyed mid-run without a user stop (system or maker cleaner): ask for a restart soon.
+            appendLocalLog("[WARN] [ANDROID] Service destroyed while it should be running; restart check scheduled.")
+            KeepAlive.scheduleWatchdog(this, KeepAlive.RESTART_SOON_MS)
+        }
         stopRuntimeWatch()
+        heartbeatTask?.cancel(false)
+        heartbeatTask = null
         commandExecutor.shutdownNow()
         if (runtimeState != RuntimeState.STOPPED) {
             runCatching { stopPython(timeoutSeconds = 2.0) }
@@ -141,6 +236,7 @@ class MudaRemoteService : Service() {
         stickyRestart: Boolean,
         appendToSession: Boolean,
         startId: Int,
+        resumeReason: String? = null,
     ) {
         var hadActiveRuntime = false
         try {
@@ -218,6 +314,11 @@ class MudaRemoteService : Service() {
                         runtimeState = RuntimeState.RUNNING
                         updateNotification("Running $profileCount profile(s), $accountCount account(s)")
                         ensureRuntimeWatch()
+                        if (resumeReason != null && status == "started") {
+                            KeepAlive.reportResumed(this, resumeReason)
+                        }
+                        KeepAlive.writeHeartbeat(this)
+                        KeepAlive.scheduleWatchdog(this)
                     }
                     val message = when (status) {
                         "added" -> "Added profile(s) to the existing runtime"
@@ -243,6 +344,8 @@ class MudaRemoteService : Service() {
             }
             if (latestCommandStartId == startId) {
                 SecretVault(this).put(DESIRED_RUNNING_KEY, "false")
+                KeepAlive.cancelWatchdog(this)
+                KeepAlive.clearHeartbeat(this)
             }
             val stopped = stopSelfResult(stopDeliveryId(startId))
             if (stopped) {
@@ -358,9 +461,50 @@ class MudaRemoteService : Service() {
                 runtimeState == watchedState &&
                 latestCommandStartId == watchedStartId
             ) {
-                finishStoppedRuntime(watchedStartId, stoppedByUser = watchedState == RuntimeState.STOPPING)
+                if (watchedState == RuntimeState.RUNNING && !latestCommandIsStop && KeepAlive.shouldBeRunning(this)) {
+                    scheduleWorkerRestart(watchedStartId)
+                } else {
+                    finishStoppedRuntime(watchedStartId, stoppedByUser = watchedState == RuntimeState.STOPPING)
+                }
             }
         }, 1, 1, TimeUnit.SECONDS)
+    }
+
+    /**
+     * All account workers ended although the user did not stop them: restart
+     * with back-off (5 s, 30 s, 2 min, 10 min), then give up honestly.
+     */
+    private fun scheduleWorkerRestart(startId: Int) {
+        val attempt = workerRestartAttempts
+        if (attempt >= WORKER_RESTART_BACKOFF_MS.size) {
+            appendLocalLog(
+                "[ERROR] [ANDROID] Account workers stopped again after $attempt restart attempts; giving up. Press Run to start again."
+            )
+            workerRestartAttempts = 0
+            finishStoppedRuntime(startId, stoppedByUser = false)
+            return
+        }
+        val delayMs = WORKER_RESTART_BACKOFF_MS[attempt]
+        workerRestartAttempts = attempt + 1
+        runtimeState = RuntimeState.STARTING  // keeps the 1 s watch from firing again meanwhile
+        val wait = if (delayMs < 60_000L) "${delayMs / 1000L} s" else "${delayMs / 60_000L} min"
+        appendLocalLog(
+            "[WARN] [ANDROID] All account workers stopped while the runtime should run. " +
+                "Restart ${attempt + 1}/${WORKER_RESTART_BACKOFF_MS.size} in $wait."
+        )
+        updateNotification("Workers stopped; restarting in $wait...")
+        commandExecutor.schedule(Runnable {
+            if (destroyed || startWasCancelled(startId) || latestCommandStartId != startId ||
+                runtimeState != RuntimeState.STARTING
+            ) return@Runnable
+            if (!KeepAlive.shouldBeRunning(this)) {
+                finishStoppedRuntime(startId, stoppedByUser = true)
+                return@Runnable
+            }
+            lastWorkerRestartAt = System.currentTimeMillis()
+            appendLocalLog("[INFO] [ANDROID] Restarting account workers (attempt ${attempt + 1}).")
+            startRuntime("", "", stickyRestart = true, appendToSession = false, startId = startId)
+        }, delayMs, TimeUnit.MILLISECONDS)
     }
 
     private fun stopRuntimeWatch() {
@@ -377,6 +521,8 @@ class MudaRemoteService : Service() {
             vault.put(ACTIVE_PROFILES_KEY, "{}")
             vault.put(ACTIVE_TOKENS_KEY, "{}")
             vault.put(DESIRED_RUNNING_KEY, "false")
+            KeepAlive.cancelWatchdog(this)
+            KeepAlive.clearHeartbeat(this)
         }
         releaseLocks()
         val stopped = stopSelfResult(stopDeliveryId(startId))
@@ -406,31 +552,52 @@ class MudaRemoteService : Service() {
     private fun startWasCancelled(startId: Int): Boolean =
         destroyed || lastStopStartId > startId || (latestCommandStartId > startId && latestCommandIsStop)
 
+    // Called on start and by the minute heartbeat, so a lock that timed out
+    // (the wake lock has a 24 h safety timeout) is taken again within a minute.
     private fun ensureLocks() {
         if (wakeLock?.isHeld != true) {
-            val powerManager = getSystemService(PowerManager::class.java)
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaRemote:runtime").also {
-                it.setReferenceCounted(false)
-                it.acquire(WAKE_LOCK_TIMEOUT_MS)
-            }
+            runCatching {
+                val powerManager = getSystemService(PowerManager::class.java)
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaFork:runtime").also {
+                    it.setReferenceCounted(false)
+                    it.acquire(WAKE_LOCK_TIMEOUT_MS)
+                }
+            }.onFailure { error -> appendLocalLog("[WARN] [ANDROID] Wake lock unavailable: ${error.message}") }
         }
+        val wifiManager = runCatching {
+            applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        }.getOrNull() ?: return
+        // High-perf keeps Wi-Fi awake with the screen off (deprecated but still
+        // honoured on many builds); low-latency (API 29+) covers newer builds.
         if (wifiLock?.isHeld != true) {
-            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                WifiManager.WIFI_MODE_FULL_LOW_LATENCY else
-                @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
-            wifiLock = wifiManager.createWifiLock(mode, "MudaRemote:wifi").also {
-                it.setReferenceCounted(false)
-                it.acquire()
+            runCatching {
+                @Suppress("DEPRECATION")
+                val highPerfMode = WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                wifiLock = wifiManager.createWifiLock(highPerfMode, "MudaFork:wifi").also {
+                    it.setReferenceCounted(false)
+                    it.acquire()
+                }
+            }.onFailure { error -> appendLocalLog("[WARN] [ANDROID] Wi-Fi lock unavailable: ${error.message}") }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && lowLatencyWifiLock?.isHeld != true) {
+            runCatching {
+                lowLatencyWifiLock = wifiManager.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "MudaFork:wifi-low-latency"
+                ).also {
+                    it.setReferenceCounted(false)
+                    it.acquire()
+                }
             }
         }
     }
 
     private fun releaseLocks() {
-        wakeLock?.let { if (it.isHeld) it.release() }
+        runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
         wakeLock = null
-        wifiLock?.let { if (it.isHeld) it.release() }
+        runCatching { wifiLock?.let { if (it.isHeld) it.release() } }
         wifiLock = null
+        runCatching { lowLatencyWifiLock?.let { if (it.isHeld) it.release() } }
+        lowLatencyWifiLock = null
     }
 
     private fun mergeInto(target: JSONObject, source: JSONObject) {
@@ -482,9 +649,32 @@ class MudaRemoteService : Service() {
         manager?.notify(NOTIFICATION_ID, notification(status))
     }
 
+    // Same line shape as the Python engine: "YYYY-MM-DD HH:MM:SS | profile | KIND | message".
+    // Callers still pass "[LEVEL] [PROFILE] message"; it is converted here.
     private fun appendLocalLog(line: String) {
         runCatching {
-            File(filesDir, LOG_FILE).appendText(line + "\n")
+            val now = java.util.Date()
+            val parsed = LOCAL_LOG_OLD_SHAPE.matchEntire(line.trim())
+            val level = parsed?.groupValues?.get(1) ?: "INFO"
+            val profile = parsed?.groupValues?.get(2)?.replace("|", "/")?.ifBlank { "ANDROID" } ?: "ANDROID"
+            val message = (parsed?.groupValues?.get(3) ?: line)
+                .replace(Regex("\\s*[\\r\\n]+\\s*"), " / ")
+                .replace(" | ", " / ")
+                .replace(Regex("\\d{15,22}")) { "\u2026" + it.value.takeLast(4) }
+            val kind = when (level) {
+                "ERROR" -> "ERROR"
+                "WARN" -> "WARN"
+                else -> "SYSTEM"
+            }
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(now)
+            val formatted = "$stamp | $profile | $kind | $message"
+            File(filesDir, LOG_FILE).appendText(formatted + "\n")
+            // The daily TXT copy (one file per profile per day, see mudae_core/logs.py).
+            val logsDir = File(filesDir, "logs")
+            logsDir.mkdirs()
+            val day = stamp.substring(0, 10)
+            val safeProfile = profile.replace(Regex("[\\\\/:*?\"<>|]+"), "_").trim(' ', '.', '_').ifBlank { "profile" }
+            File(logsDir, "${safeProfile}_$day.txt").appendText(formatted + "\n")
         }
     }
 
@@ -499,7 +689,7 @@ class MudaRemoteService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
-            .setContentTitle("MudaRemote is active")
+            .setContentTitle("MudaFork is active")
             .setContentText(status)
             .setContentIntent(openIntent)
             .setOngoing(true)
@@ -510,7 +700,7 @@ class MudaRemoteService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "MudaRemote runtime", NotificationManager.IMPORTANCE_LOW).apply {
+            val channel = NotificationChannel(CHANNEL_ID, "MudaFork runtime", NotificationManager.IMPORTANCE_LOW).apply {
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -520,6 +710,8 @@ class MudaRemoteService : Service() {
     companion object {
         const val ACTION_STOP = "com.mudaremote.android.STOP"
         private const val ACTION_APPLY = "com.mudaremote.android.APPLY"
+        private const val ACTION_RESUME = "com.mudaremote.android.RESUME"
+        private const val EXTRA_RESUME_REASON = "com.mudaremote.android.RESUME_REASON"
         private const val EXTRA_PROFILES = "com.mudaremote.android.PROFILES"
         private const val EXTRA_TOKENS = "com.mudaremote.android.TOKENS"
         private const val EXTRA_PROFILE_NAME = "com.mudaremote.android.PROFILE_NAME"
@@ -527,12 +719,15 @@ class MudaRemoteService : Service() {
         private const val EXTRA_ACCOUNT_TOKENS = "com.mudaremote.android.ACCOUNT_TOKENS"
         private const val CHANNEL_ID = "mudaremote_runtime"
         private const val NOTIFICATION_ID = 41
-        private const val LOG_FILE = "mudaremote_android.log"
+        internal const val LOG_FILE = "mudaremote_android.log"
+        private val LOCAL_LOG_OLD_SHAPE = Regex("^\\[([A-Z]+)\\]\\s+\\[([^\\]]*)\\]\\s*(.*)$")
         private const val WAKE_LOCK_TIMEOUT_MS = 24L * 60L * 60L * 1000L
         private const val ACTIVE_PROFILES_KEY = "active_runtime_profiles"
         private const val ACTIVE_TOKENS_KEY = "active_runtime_tokens"
-        private const val DESIRED_RUNNING_KEY = "active_runtime_desired"
+        internal const val DESIRED_RUNNING_KEY = "active_runtime_desired"
         private const val STOP_POLL_INTERVAL_MS = 200L
+        private val WORKER_RESTART_BACKOFF_MS = longArrayOf(5_000L, 30_000L, 120_000L, 600_000L)
+        private const val WORKER_BACKOFF_RESET_MS = 15L * 60L * 1000L
 
         /** Process-local state for Activity status; the encrypted snapshot handles sticky restarts. */
         @Volatile
@@ -547,6 +742,15 @@ class MudaRemoteService : Service() {
                 .putExtra(EXTRA_PROFILES, profilesJson)
                 .putExtra(EXTRA_TOKENS, tokensJson)
             context.startForegroundService(intent)
+        }
+
+        /** Restores the last selection; the service ignores it unless the user left it running. */
+        fun resume(context: Context, reason: String) {
+            context.startForegroundService(
+                Intent(context, MudaRemoteService::class.java)
+                    .setAction(ACTION_RESUME)
+                    .putExtra(EXTRA_RESUME_REASON, reason)
+            )
         }
 
         fun stop(context: Context) {

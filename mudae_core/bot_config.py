@@ -1,4 +1,4 @@
-"""Preset-to-client configuration for MudaRemote.
+"""Preset-to-client configuration for MudaFork.
 
 This module owns the translation from a validated preset dictionary to the
 per-client attributes consumed by the bot lifecycle.  It intentionally does
@@ -10,6 +10,10 @@ import datetime
 from datetime import timezone
 from types import SimpleNamespace
 
+from mudae_core.account_roles import SIDE_KIND_ALT, account_role_for, alt_number, side_kind_for
+from mudae_core.key_limit import normalize_scope as normalize_key_limit_scope
+from mudae_core.alt_roll_claim import normalize_mode as normalize_alt_roll_claim_mode
+from mudae_core.best_roll_claim import normalize_floor as normalize_best_roll_floor, normalize_when as normalize_best_roll_when
 from mudae_core.claiming import expand_claim_emojis
 from mudae_core.filters import CharacterNameSet, split_dollar_names
 from mudae_core.kakera import (
@@ -25,6 +29,16 @@ from mudae_core.runtime import (
 )
 from mudae_core.spheres import SphereButtonBudget
 from mudae_core.status import ResetAnchor, initialize_status_tracking
+
+
+def _bounded_int(value, default, minimum, maximum):
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, number))
 
 
 def configure_client(
@@ -72,6 +86,8 @@ def configure_client(
     client.mudae_prefix = preset_data.get("mudae_prefix", "$")
     client.key_mode = preset_data.get("key_mode", False)
     client.pause_on_key_limit = bool(preset_data.get("pause_on_key_limit", True))
+    # What the key-limit pause stops: "everything" (default) or "rolls only".
+    client.key_limit_pause_scope = normalize_key_limit_scope(preset_data.get("key_limit_pause_scope"))
     client.delay_seconds = preset_data.get("delay_seconds", 0)
     client.rolling_enabled = preset_data.get("rolling", True)
     client.skip_initial_commands = preset_data.get("skip_initial_commands", False)
@@ -270,6 +286,87 @@ def configure_client(
         "randomized_claim_reactions"
     ) or ["💖", "💗", "💘", "❤️", "👍", "🔥"]
     client.main_account_id = str(preset_data.get("main_account_id") or "").strip()
+    # Main / Side accounts (see coordinator.SideRollCoordinator).
+    client.profile_id = str(preset_data.get("profile_id") or "").strip()
+    client.account_index = _bounded_int(preset_data.get("_account_index", 1), 1, 1, 1000)
+    client.account_count = _bounded_int(preset_data.get("_account_count", 1), 1, 1, 1000)
+    # The saved role only matters for the legacy «separate side profile» path;
+    # otherwise the primary token is the main and extra tokens are its alts.
+    client.stored_account_role = (
+        "side" if preset_data.get("account_role") == "side" else "main"
+    )
+    client.main_profile_id = str(preset_data.get("main_profile_id") or "").strip()
+    client.account_role = account_role_for(client)
+    if side_kind_for(client) == SIDE_KIND_ALT:
+        # Alts are asked in the order they are listed under Account Tokens.
+        client.side_order = alt_number(client.account_index)
+    else:
+        client.side_order = _bounded_int(preset_data.get("side_order", 1), 1, 1, 999)
+    client.side_perk10 = bool(preset_data.get("side_perk10", False))
+    client.side_rolls_for_main = bool(preset_data.get("side_rolls_for_main", False))
+    client.side_rolls_max_per_reset = _bounded_int(
+        preset_data.get("side_rolls_max_per_reset", 1), 1, 1, 10
+    )
+    client.side_claim_leftovers = bool(preset_data.get("side_claim_leftovers", False))
+    # «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim), off by default.
+    client.main_claims_alt_rolls = bool(preset_data.get("main_claims_alt_rolls", False))
+    client.main_claims_alt_rolls_mode = normalize_alt_roll_claim_mode(preset_data.get("main_claims_alt_rolls_mode"))
+    # The mirror: «Alts claim good rolls made by the main», off by default.
+    client.alts_claim_main_rolls = bool(preset_data.get("alts_claim_main_rolls", False))
+    # 6.0.2 (mudae_core.main_alt_coop), both off by default: the main keeps rolling
+    # while an alt can claim; the accounts of a profile take each other's kakera.
+    client.main_rolls_while_alt_can_claim = bool(preset_data.get("main_rolls_while_alt_can_claim", False))
+    client.accounts_share_kakera_reacts = bool(preset_data.get("accounts_share_kakera_reacts", False))
+    # «Claim the best roll when nothing meets the minimum» (mudae_core.best_roll_claim), off by default.
+    client.claim_best_when_nothing_qualifies = bool(preset_data.get("claim_best_when_nothing_qualifies", False))
+    client.claim_best_when = normalize_best_roll_when(preset_data.get("claim_best_when"))
+    client.claim_best_min_kakera = normalize_best_roll_floor(preset_data.get("claim_best_min_kakera", 0))
+    # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
+    client.fast_setup = bool(preset_data.get("fast_setup", False))
+    client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
+    client.auto_give_kakera = bool(preset_data.get("auto_give_kakera", False))
+    client.give_kakera_threshold = _bounded_int(
+        preset_data.get("give_kakera_threshold", 45000), 45000, 1, 1_000_000_000
+    )
+    from .kakera_give import AMOUNT_MODE_EVERYTHING, amount_mode_from_preset
+    client.give_kakera_amount_mode = amount_mode_from_preset(preset_data)
+    client.give_kakera_extra = client.give_kakera_amount_mode == AMOUNT_MODE_EVERYTHING
+    client.give_kakera_daily_cap = _bounded_int(preset_data.get("give_kakera_daily_cap", 3), 3, 1, 50)
+    client.give_kakera_button_minimum = _bounded_int(
+        preset_data.get("give_kakera_button_minimum", 1000), 1000, 1, 1_000_000_000
+    )
+    # «Give all kakera now»: a request counter raised by the editor/app button.
+    client.give_kakera_now_round = _bounded_int(preset_data.get("give_kakera_now_round", 0), 0, 0, 1_000_000_000)
+    # Auto-give spheres to the main (side accounts; see sphere_give.py).
+    from .sphere_give import SphereGiveSettings
+    sphere_give = SphereGiveSettings.from_preset(preset_data)
+    client.auto_give_spheres = sphere_give.enabled
+    client.sphere_give_interval_min = sphere_give.interval_min
+    client.spheres_keep = sphere_give.keep
+    # «Give all spheres now»: a request counter raised by the editor/app button.
+    client.give_spheres_now_round = _bounded_int(preset_data.get("give_spheres_now_round", 0), 0, 0, 1_000_000_000)
+    # Auto-give harem pages to the main (side accounts; see harem_give.py).
+    from .harem_give import HAREM_GIVE_DEFAULTS, HaremGiveSettings
+    harem = HaremGiveSettings.from_preset(preset_data)
+    client.auto_give_harem = harem.enabled
+    client.harem_give_trigger = harem.trigger
+    client.harem_give_pages = harem.pages
+    client.harem_give_characters = harem.characters
+    client.harem_give_value = harem.value
+    client.harem_check_hours = harem.check_hours
+    client.harem_give_pages_text = str(preset_data.get("harem_give_pages_text", HAREM_GIVE_DEFAULTS["harem_give_pages_text"]) or "").strip()
+    client.harem_keep_first_pages = harem.keep_first
+    client.harem_give_daily_cap = harem.daily_cap
+    # Automatic perk-10 upgrade (main and side accounts; see perk_upgrade.py).
+    from .perk_upgrade import Perk10Settings
+    perk10 = Perk10Settings.from_preset(preset_data)
+    client.auto_perk10 = perk10.enabled
+    client.perk10_min_spheres = perk10.min_spheres
+    client.perk10_max_characters = perk10.max_characters
+    client.perk10_daily_cap = perk10.daily_cap
+    client.perk10_amount = perk10.amount
+    # «Upgrade perk 10 now»: a request counter raised by the editor/app button.
+    client.perk10_now_round = _bounded_int(preset_data.get("perk10_now_round", 0), 0, 0, 1_000_000_000)
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -609,6 +706,8 @@ def configure_client(
     client.p_available = False
     client.next_p_claim_at_utc = None
     client.key_limit_hit = False
+    client.key_limit_resume_at = None
+    client.key_limit_status = None
     client.is_timing_mode_active = False
     client.kakera_power_thresholds = preset_data.get("kakera_power_thresholds") or {}
     client.debug_mode = preset_data.get("debug_mode", False)
@@ -657,12 +756,23 @@ def configure_client(
 # events, none of which may be replaced while the client is running.
 LIVE_CONFIG_ATTRIBUTES = frozenset({
     "roll_command", "base_min_kakera", "roll_speed", "mudae_prefix",
-    "key_mode", "pause_on_key_limit", "delay_seconds", "use_slash_rolls",
+    "key_mode", "pause_on_key_limit", "key_limit_pause_scope", "delay_seconds", "use_slash_rolls",
     "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes",
     "slash_min_interval", "snipe_mode", "snipe_delay",
     "snipe_ignore_min_kakera_reset", "wishlist", "series_snipe_mode",
     "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
+    "account_role", "stored_account_role", "main_profile_id", "side_order", "side_rolls_for_main",
+    "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode",
+    "alts_claim_main_rolls", "main_rolls_while_alt_can_claim", "accounts_share_kakera_reacts",
+    "claim_best_when_nothing_qualifies", "claim_best_when", "claim_best_min_kakera",
+    "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
+    "give_kakera_extra", "give_kakera_amount_mode", "give_kakera_daily_cap", "give_kakera_button_minimum",
+    "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
+    "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
+    "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages",
+    "harem_give_daily_cap", "auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
+    "perk10_amount", "perk10_now_round",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",
@@ -721,6 +831,11 @@ def apply_live_config(
     handles validation and recalculation of current threshold overrides.
     """
     projected = SimpleNamespace()
+    # A saved profile has no position: keep this account's own place among
+    # the profile's tokens so an alt stays an alt after a live reload.
+    preset_data = dict(preset_data)
+    preset_data["_account_index"] = getattr(client, "account_index", preset_data.get("_account_index", 1))
+    preset_data["_account_count"] = getattr(client, "account_count", preset_data.get("_account_count", 1))
     configure_client(
         projected,
         client.preset_name,

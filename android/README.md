@@ -1,4 +1,4 @@
-# MudaRemote Android
+# MudaFork Android
 
 `app-debug.apk` packages the actual desktop `mudae_bot.py` runtime through
 Chaquopy. The foreground service only stages the selected profiles and invokes
@@ -10,11 +10,11 @@ app from battery optimization.
 
 ## Install and run
 
-1. Download `Mudaremote.apk` from the latest
-   [MudaRemote release](https://github.com/misutesu-desu/MudaRemote/releases/latest)
+1. Download `MudaFork-<version>.apk` from the latest
+   [MudaFork release](https://github.com/YoRu72/MudaPersonalFork/releases/latest)
    (or build it locally as below) on an Android 8.0 or newer device. Android
    will ask you to allow installs from the file manager used to open the APK.
-2. Open MudaRemote and use **Import presets.json**. The app supports:
+2. Open MudaFork and use **Import presets.json**. The app supports:
    - **Flat Single Preset JSON**: Direct output from desktop **Share Preset** or Android **Export** creates a new unique `profile-N` branch without overwriting active profiles. Command prefixes (`prefix`, `mudae_prefix` such as `/` or `$`) and custom/nested settings remain completely intact.
    - **Named Multi-Preset Map**: Standard `presets.json` maps (and `{ "presets": { ... } }` wrapper) import all top-level profiles with same-name replacement and safe existing/imported token merging. Malformed maps with non-object entries are rejected atomically before any state changes.
    Tokens are kept in a separate encrypted store.
@@ -28,9 +28,9 @@ app from battery optimization.
 4. Choose a profile and tap **Save and start selected profile**, or use **Save
    and start all profiles** to launch every saved profile. The **Runtime logs**
    panel updates while the service is running. Accept notification permission
-   and leave the persistent MudaRemote notification enabled. Use **Battery settings** to
+   and leave the persistent MudaFork notification enabled. Use **Battery settings** to
    exempt the app where your phone provides that option.
-5. **Self-Updating Python Engine**: MudaRemote Android includes an automatic
+5. **Self-Updating Python Engine**: MudaFork Android includes an automatic
    self-updater for the Python runtime. When starting or tapping **Check for Python updates**,
    it downloads, SHA-256 verifies, and loads the latest Python scripts directly into app
    storage without requiring a full APK reinstall. Use **Revert Python** to reset back to the
@@ -55,9 +55,13 @@ ARM64 phone, especially through screen-off and battery-optimization behavior.
 
 ## CI releases
 
-`.github/workflows/android-release.yml` builds and tests `Mudaremote.apk` on
+`.github/workflows/android-release.yml` builds and tests `MudaFork-<version>.apk` on
 GitHub runners. Trigger **Android Release → Run workflow** against the release
 tag and use that tag as the input to attach the APK to an existing release.
 The release keeps its stable or pre-release status. A unique Android tag (for
 example `android-pre1`) creates a separate pre-release. Re-running with an
 existing tag replaces its APK asset.
+
+MudaFork installs as `com.mudafork.android`, so it can sit next to the original
+MudaRemote app on the same phone. It is a fork of MudaRemote (MIT); the Kotlin
+package (`com.mudaremote.android`) keeps its old name on purpose.

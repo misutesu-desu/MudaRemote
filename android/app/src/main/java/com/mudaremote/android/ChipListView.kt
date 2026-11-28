@@ -20,7 +20,7 @@ import android.widget.TextView
 import org.json.JSONArray
 
 /**
- * Interactive list and tag editor component for Android styled after GitHub Labels.
+ * Interactive list and tag editor: M3 input chips, an «Add» field and a raw-JSON mode.
  */
 class ChipListView(
     context: Context,
@@ -43,8 +43,8 @@ class ChipListView(
 
     init {
         orientation = VERTICAL
-        setPadding(UiTheme.dp(context, 10), UiTheme.dp(context, 8), UiTheme.dp(context, 10), UiTheme.dp(context, 10))
-        background = UiTheme.cardDrawable(context, UiTheme.BG_INPUT, UiTheme.BORDER_DEFAULT, 6f, 1f)
+        setPaddingRelative(UiTheme.dp(context, 12), UiTheme.dp(context, 10), UiTheme.dp(context, 12), UiTheme.dp(context, 12))
+        background = UiTheme.insetSurface(context)
 
         // Parse initial data
         initialData?.let { array ->
@@ -62,18 +62,14 @@ class ChipListView(
 
         countBadge = TextView(context).apply {
             text = "${items.size} item(s)"
-            textSize = 11.5f
+            textSize = UiTheme.TYPE_LABEL
             setTextColor(UiTheme.TEXT_MUTED)
         }
         headerRow.addView(countBadge, LayoutParams(0, -2, 1f))
 
         modeToggleButton = TextView(context).apply {
-            text = "📝 Raw JSON"
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_BLUE)
-            setPadding(UiTheme.dp(context, 8), UiTheme.dp(context, 3), UiTheme.dp(context, 8), UiTheme.dp(context, 3))
-            background = UiTheme.pillDrawable(context, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 12f, 1f)
+            text = "Raw JSON"
+            UiTheme.styleButton(this, UiTheme.ButtonStyle.TEXT, compact = true)
             setOnClickListener { toggleMode() }
             visibility = if (isSensitive) GONE else VISIBLE
         }
@@ -94,12 +90,13 @@ class ChipListView(
         }
 
         addItemInput = EditText(context).apply {
-            hint = if (isSensitive) "Paste one or more account tokens" else "Add item (e.g. wa, 102938...)"
-            textSize = 13f
+            hint = if (isSensitive) "Paste alt tokens" else "Add item (e.g. wa, 102938...)"
+            textSize = UiTheme.TYPE_BODY
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
-            background = UiTheme.cardDrawable(context, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 6f, 1f)
-            setPadding(UiTheme.dp(context, 10), UiTheme.dp(context, 7), UiTheme.dp(context, 10), UiTheme.dp(context, 7))
+            background = UiTheme.inputDrawable(context, radiusDp = UiTheme.SHAPE_FULL)
+            minHeight = UiTheme.dp(context, 48)
+            setPaddingRelative(UiTheme.dp(context, 16), UiTheme.dp(context, 10), UiTheme.dp(context, 16), UiTheme.dp(context, 10))
             inputType = InputType.TYPE_CLASS_TEXT or if (isSensitive) {
                 InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             } else {
@@ -117,30 +114,25 @@ class ChipListView(
         addRow.addView(addItemInput, LayoutParams(0, -2, 1f))
 
         val addButton = TextView(context).apply {
-            text = "+ Add"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+            text = "Add"
+            UiTheme.styleButton(this, UiTheme.ButtonStyle.FILLED, compact = true)
             minHeight = UiTheme.dp(context, 48)
-            background = UiTheme.buttonDrawable(context, UiTheme.ACCENT_GREEN, radiusDp = 6f)
-            setPadding(UiTheme.dp(context, 14), UiTheme.dp(context, 7), UiTheme.dp(context, 14), UiTheme.dp(context, 7))
             setOnClickListener { addItemFromInput() }
         }
         val addBtnParams = LayoutParams(-2, -2).apply {
-            leftMargin = UiTheme.dp(context, 6)
+            marginStart = UiTheme.dp(context, 8)
         }
         addRow.addView(addButton, addBtnParams)
         addView(addRow)
 
         // Raw JSON Editor
         jsonEditText = EditText(context).apply {
-            textSize = 12f
+            textSize = 12.5f
             typeface = Typeface.MONOSPACE
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
-            background = UiTheme.inputDrawable(context, UiTheme.BG_CARD_LIGHT)
-            setPadding(UiTheme.dp(context, 10), UiTheme.dp(context, 8), UiTheme.dp(context, 10), UiTheme.dp(context, 8))
+            background = UiTheme.inputDrawable(context)
+            setPaddingRelative(UiTheme.dp(context, 14), UiTheme.dp(context, 12), UiTheme.dp(context, 14), UiTheme.dp(context, 12))
             minLines = 3
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             visibility = GONE
@@ -179,6 +171,11 @@ class ChipListView(
             }
         }
         renderChips()
+        if (isJsonMode) {
+            isUpdatingInternal = true
+            jsonEditText.setText(toJsonArray().toString(2))
+            isUpdatingInternal = false
+        }
     }
 
     private fun toJsonArray(): JSONArray {
@@ -191,21 +188,38 @@ class ChipListView(
         val raw = addItemInput.text?.toString()?.trim().orEmpty()
         if (raw.isBlank()) return
         val splitItems = raw.split(',', '\n').map { it.trim().trim('"', '\'') }.filter { it.isNotBlank() }
+        val wasEmpty = items.isEmpty()
+        val added = mutableListOf<String>()
         for (item in splitItems) {
             if (!items.contains(item)) {
                 items.add(item)
+                added.add(item)
             }
         }
         addItemInput.setText("")
-        renderChips()
+        if (wasEmpty) {
+            renderChips()
+        } else {
+            // Only the new chips are added; the existing ones stay as they are.
+            added.forEach { chipsContainer.addView(createChip(it)) }
+            countBadge.text = "${items.size} item(s)"
+        }
         onListChanged(toJsonArray())
     }
 
     private fun removeItem(item: String) {
         items.remove(item)
-        renderChips()
+        val chip = chipsContainer.findViewWithTag<View>(chipTag(item))
+        if (items.isEmpty() || chip == null) {
+            renderChips()
+        } else {
+            chipsContainer.removeView(chip)  // only this chip goes; no rebuild of the list
+            countBadge.text = "${items.size} item(s)"
+        }
         onListChanged(toJsonArray())
     }
+
+    private fun chipTag(item: String): String = "chip:$item"
 
     private fun renderChips() {
         chipsContainer.removeAllViews()
@@ -213,10 +227,10 @@ class ChipListView(
 
         if (items.isEmpty()) {
             val emptyNotice = TextView(context).apply {
-                text = "No items. Type a value and tap + Add."
-                textSize = 11.5f
+                text = "No items. Type a value and tap Add."
+                textSize = UiTheme.TYPE_SUPPORTING
                 setTextColor(UiTheme.TEXT_MUTED)
-                setPadding(0, UiTheme.dp(context, 4), 0, UiTheme.dp(context, 4))
+                setPaddingRelative(UiTheme.dp(context, 4), UiTheme.dp(context, 4), 0, UiTheme.dp(context, 4))
             }
             chipsContainer.addView(emptyNotice)
         } else {
@@ -225,24 +239,24 @@ class ChipListView(
             }
         }
 
-        // Update JSON text if needed
-        isUpdatingInternal = true
-        jsonEditText.setText(if (isSensitive) "[]" else toJsonArray().toString(2))
-        isUpdatingInternal = false
+        // The raw-JSON editor is filled when it is opened (toggleMode), not on every change:
+        // pretty-printing a long list into a hidden field on each add/remove was wasted work, and
+        // rewriting it while the user typed in it moved the cursor.
     }
 
     private fun createChip(item: String): View {
         val chip = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.pillDrawable(context, UiTheme.LABEL_BLUE_BG, UiTheme.BORDER_DEFAULT, 12f, 1f)
-            setPadding(UiTheme.dp(context, 8), UiTheme.dp(context, 3), UiTheme.dp(context, 6), UiTheme.dp(context, 3))
+            background = UiTheme.pillDrawable(context, UiTheme.SECONDARY_CONTAINER, Color.TRANSPARENT, UiTheme.SHAPE_SM, 0f)
+            setPaddingRelative(UiTheme.dp(context, 12), 0, 0, 0)
+            tag = chipTag(item)
         }
 
         val label = TextView(context).apply {
             text = if (isSensitive) maskedTokenLabel(item) else item
-            textSize = 11.5f
-            setTextColor(UiTheme.ACCENT_BLUE)
+            textSize = 13f
+            setTextColor(UiTheme.ON_SECONDARY_CONTAINER)
             maxWidth = UiTheme.dp(context, if (isSensitive) 180 else 260)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
@@ -252,9 +266,10 @@ class ChipListView(
 
         val closeBtn = TextView(context).apply {
             text = if (isSensitive) "Remove" else " ✕"
-            textSize = if (isSensitive) 11f else 10.5f
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(if (isSensitive) UiTheme.ACCENT_RED_BRIGHT else UiTheme.TEXT_MUTED)
+            setTextColor(if (isSensitive) UiTheme.ERROR else UiTheme.ON_SECONDARY_CONTAINER)
+            background = UiTheme.listItemDrawable(context, radiusDp = UiTheme.SHAPE_SM)
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(context, 48)
             minWidth = UiTheme.dp(context, if (isSensitive) 72 else 48)
@@ -280,7 +295,7 @@ class ChipListView(
     private fun toggleMode() {
         isJsonMode = !isJsonMode
         if (isJsonMode) {
-            modeToggleButton.text = "🏷️ Labels View"
+            modeToggleButton.text = "Chips view"
             chipsContainer.visibility = GONE
             addItemInput.parent?.let { (it as View).visibility = GONE }
             jsonEditText.visibility = VISIBLE
@@ -288,7 +303,7 @@ class ChipListView(
             jsonEditText.setText(toJsonArray().toString(2))
             isUpdatingInternal = false
         } else {
-            modeToggleButton.text = "📝 Raw JSON"
+            modeToggleButton.text = "Raw JSON"
             chipsContainer.visibility = VISIBLE
             addItemInput.parent?.let { (it as View).visibility = VISIBLE }
             jsonEditText.visibility = GONE

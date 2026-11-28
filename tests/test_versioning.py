@@ -145,8 +145,8 @@ class _FakeSession:
 
 
 class FetchAvailableReleasesTests(unittest.TestCase):
-    PAGE_ONE = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases?per_page=100&page=1"
-    PAGE_TWO = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases?per_page=100&page=2"
+    PAGE_ONE = "https://api.github.com/repos/YoRu72/MudaPersonalFork/releases?per_page=100&page=1"
+    PAGE_TWO = "https://api.github.com/repos/YoRu72/MudaPersonalFork/releases?per_page=100&page=2"
 
     def test_pagination_survives_android_rows_on_the_first_page(self):
         page_one = [_release("android-pre{}".format(i), prerelease=True) for i in range(97)]
@@ -265,7 +265,7 @@ class ManifestTargetResolutionTests(unittest.TestCase):
             fetch_manifest_for_version(session, "v5.0.0")
 
     def test_terminal_full_page_without_next_link_is_a_complete_catalog(self):
-        base = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases"
+        base = "https://api.github.com/repos/YoRu72/MudaPersonalFork/releases"
         routes = {}
         for p in range(1, 11):
             page = [_release("v2.{}.{}".format(p, i), prerelease=True) for i in range(100)]
@@ -275,7 +275,7 @@ class ManifestTargetResolutionTests(unittest.TestCase):
         self.assertEqual(len(releases), 1000)
 
     def test_history_beyond_the_page_limit_raises_instead_of_truncating(self):
-        base = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases"
+        base = "https://api.github.com/repos/YoRu72/MudaPersonalFork/releases"
         routes = {}
         for p in range(1, 11):
             page = [_release("v3.{}.{}".format(p, i), prerelease=True) for i in range(100)]
@@ -286,28 +286,28 @@ class ManifestTargetResolutionTests(unittest.TestCase):
     def test_tagged_manifest_source_urls_are_pinned_to_the_tag(self):
         manifest = {
             "version": "4.9.0",
-            "download_url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py",
+            "download_url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/beta/mudae_bot.py",
             "source_files": [
-                {"path": "mudae_bot.py", "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py", "sha256": "x"},
-                {"path": "exe", "url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0/MudaRemote.exe", "sha256": "y"},
+                {"path": "mudae_bot.py", "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/beta/mudae_bot.py", "sha256": "x"},
+                {"path": "exe", "url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v4.9.0/MudaFork.exe", "sha256": "y"},
             ],
         }
         routes = {self._manifest_url("v4.9.0"): _FakeResponse(manifest)}
         session = _FakeSession(routes)
         data = fetch_manifest_for_version(session, "v4.9.0")
-        pinned = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/v4.9.0/"
+        pinned = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v4.9.0/"
         self.assertEqual(data["source_files"][0]["url"], pinned + "mudae_bot.py")
         self.assertEqual(data["download_url"], pinned + "mudae_bot.py")
         self.assertEqual(
             data["source_files"][1]["url"],
-            "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0/MudaRemote.exe",
+            "https://github.com/YoRu72/MudaPersonalFork/releases/download/v4.9.0/MudaFork.exe",
         )
 
     def test_branch_manifests_keep_branch_urls(self):
         manifest = {
             "version": "4.9.1-beta.4",
             "source_files": [
-                {"path": "mudae_bot.py", "url": "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/beta/mudae_bot.py", "sha256": "x"},
+                {"path": "mudae_bot.py", "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/beta/mudae_bot.py", "sha256": "x"},
             ],
         }
         routes = {self._manifest_url("beta"): _FakeResponse(manifest)}
@@ -359,7 +359,7 @@ class TargetReleaseIntegrityTests(unittest.TestCase):
         # historical checksum was compared against a NEWER release's bytes.
         manifest = {
             "version": "4.6.4",
-            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
+            "exe_download_url": "https://github.com/YoRu72/MudaPersonalFork/releases/latest/download/MudaFork.exe",
             "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
         }
         routes = {self._manifest_url("v4.6.4"): _FakeResponse(manifest)}
@@ -367,7 +367,7 @@ class TargetReleaseIntegrityTests(unittest.TestCase):
         data = fetch_manifest_for_version(session, "v4.6.4")
         self.assertEqual(
             data["exe_download_url"],
-            "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.6.4/MudaRemote.exe",
+            "https://github.com/YoRu72/MudaPersonalFork/releases/download/v4.6.4/MudaFork.exe",
         )
         self.assertEqual(
             data["exe_sha256"],
@@ -377,7 +377,7 @@ class TargetReleaseIntegrityTests(unittest.TestCase):
     def test_exe_url_naming_a_different_explicit_release_is_refused(self):
         manifest = {
             "version": "4.6.4",
-            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v4.9.0/MudaRemote.exe",
+            "exe_download_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v4.9.0/MudaFork.exe",
             "exe_sha256": "d5b6b900cc1f73a880ae1c8efc8a45d472a1fc8e1a45858d40f82999af517132",
         }
         routes = {self._manifest_url("v4.6.4"): _FakeResponse(manifest)}
@@ -391,12 +391,12 @@ class TargetReleaseIntegrityTests(unittest.TestCase):
         # no pinning may rewrite their mutable artifacts.
         manifest = {
             "version": "4.9.1-beta.5",
-            "exe_download_url": "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/MudaRemote.exe",
+            "exe_download_url": "https://github.com/YoRu72/MudaPersonalFork/releases/latest/download/MudaFork.exe",
         }
         routes = {self._manifest_url("beta"): _FakeResponse(manifest)}
         session = _FakeSession(routes)
         data = fetch_manifest_for_version(session, "beta")
-        self.assertTrue(data["exe_download_url"].endswith("/releases/latest/download/MudaRemote.exe"))
+        self.assertTrue(data["exe_download_url"].endswith("/releases/latest/download/MudaFork.exe"))
 
     def test_android_release_tags_are_not_pc_version_checked(self):
         # Android tracks have their own version numbers; the historical APK

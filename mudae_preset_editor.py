@@ -1,10 +1,10 @@
 """
-MudaRemote Preset Editor
+MudaFork Preset Editor
 A graphical interface for managing mudae_bot.py presets.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import copy
 import json
 import os
@@ -18,7 +18,7 @@ import math
 import re
 import webbrowser
 
-REPO_URL = "https://github.com/misutesu-desu/MudaRemote"
+REPO_URL = "https://github.com/YoRu72/MudaPersonalFork"
 
 try:
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
@@ -29,8 +29,27 @@ try:
         parse_scheduled_times,
         validate_preset,
     )
+    from mudae_core.config import (
+        ACCOUNT_ROLE_MAIN,
+        ACCOUNT_ROLE_SIDE,
+        account_role_errors,
+        ensure_profile_ids,
+        new_profile_id,
+        profile_id_of,
+        profile_name_for_id,
+        rename_profile,
+        resolve_account_roles,
+        side_profiles_for,
+        validate_new_profile_name,
+    )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_roles import ALTS_GROUP_INTRO, NO_ALTS_HINT, TOKENS_FIELD_DESCRIPTION, alt_count, is_legacy_side
+    from mudae_core.account_state import AccountStateStore, default_state_path
+    from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
+    from mudae_core.totals import account_key
+    from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
     from mudae_core.versioning import (
         CURRENT_VERSION,
         load_startup_update_check_setting,
@@ -48,8 +67,27 @@ except (ModuleNotFoundError, ImportError) as core_error:
     import mudae_bot  # noqa: F401
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import atomic_write_json, load_json, parse_inactive_hours, parse_scheduled_times, validate_preset
+    from mudae_core.config import (
+        ACCOUNT_ROLE_MAIN,
+        ACCOUNT_ROLE_SIDE,
+        account_role_errors,
+        ensure_profile_ids,
+        new_profile_id,
+        profile_id_of,
+        profile_name_for_id,
+        rename_profile,
+        resolve_account_roles,
+        side_profiles_for,
+        validate_new_profile_name,
+    )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_roles import ALTS_GROUP_INTRO, NO_ALTS_HINT, TOKENS_FIELD_DESCRIPTION, alt_count, is_legacy_side
+    from mudae_core.account_state import AccountStateStore, default_state_path
+    from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
+    from mudae_core.totals import account_key
+    from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
     from mudae_core.versioning import (
         CURRENT_VERSION,
         load_startup_update_check_setting,
@@ -59,6 +97,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         save_update_channel_setting,
     )
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
 
 def get_base_path():
     """Get the base path for file operations.
@@ -631,6 +670,49 @@ DEFAULTS = {
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
     "main_account_id": "",
+    "account_role": "main",
+    "main_profile_id": "",
+    "side_order": 1,
+    "side_rolls_for_main": False,
+    "side_rolls_max_per_reset": 1,
+    "side_claim_leftovers": False,
+    "main_claims_alt_rolls": False,
+    "main_claims_alt_rolls_mode": "smart",
+    "alts_claim_main_rolls": False,
+    "main_rolls_while_alt_can_claim": False,
+    "accounts_share_kakera_reacts": False,
+    "claim_best_when_nothing_qualifies": False,
+    "claim_best_when": "last round",
+    "claim_best_min_kakera": 0,
+    "fast_setup": False,
+    "fast_setup_round": 0,
+    "auto_give_kakera": False,
+    "give_kakera_threshold": 45000,
+    "give_kakera_extra": True,
+    "give_kakera_amount_mode": "everything",
+    "give_kakera_daily_cap": 3,
+    "give_kakera_button_minimum": 1000,
+    "give_kakera_now_round": 0,
+    "auto_give_spheres": False,
+    "sphere_give_interval_min": 30,
+    "spheres_keep": 0,
+    "give_spheres_now_round": 0,
+    "auto_give_harem": False,
+    "harem_give_trigger": "pages",
+    "harem_give_pages": 2,
+    "harem_give_characters": 150,
+    "harem_give_value": 100000,
+    "harem_check_hours": 6,
+    "harem_give_pages_text": "",
+    "harem_keep_first_pages": 0,
+    "harem_give_daily_cap": 1,
+    "auto_perk10": False,
+    "side_perk10": False,
+    "perk10_min_spheres": 2000,
+    "perk10_max_characters": 100,
+    "perk10_daily_cap": 3,
+    "perk10_amount": 0,
+    "perk10_now_round": 0,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -645,6 +727,7 @@ DEFAULTS = {
     "farm_forcedivorce_after_other_claim": False,
     "op_perk_5_only": False,
     "kakera_filter_match_mode": "all",
+    "key_limit_pause_scope": "everything",
     "auto_divorce_enabled": False,
     "auto_divorce_protect_wishes": True,
     "auto_divorce_max_kakera": 50,
@@ -673,6 +756,9 @@ DEFAULTS = {
     "webhook_url": "",
     "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
     "debug_log_categories": ["all"],
+    "save_logs_txt": True,
+    "logs_keep_days": 14,
+    "logs_max_mb": 50,
     "character_snipe_targets": [],
     "snipe_ignore_users": [],
     "auto_free_claim": True,
@@ -723,6 +809,7 @@ BOOL_SETTINGS = [
     ("auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)", False),
     ("autostart", "Start with Windows", False),
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
+    ("save_logs_txt", "Save logs as TXT files (one file per profile per day, in the logs folder)", True),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("auto_mk_full_power_only", "Use $mk Only at Full Power (Wait for power regeneration/reset checks)", False),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
@@ -766,6 +853,8 @@ NUMERIC_SETTINGS = [
     ("humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5, int),
     ("reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0, float),
     ("claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180, int),
+    ("logs_keep_days", "Keep log files for N days", 14, int),
+    ("logs_max_mb", "Log folder size limit in MB (oldest files are deleted first)", 50, int),
     ("roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60, int),
     ("auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0, int),
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
@@ -859,6 +948,175 @@ RECOMMENDED_PRESET_OVERRIDES = {
 }
 
 
+PROFILE_PICKER_NONE = "(none)"
+
+
+# Tokens are stored under each profile's stable id (see SecretStore.profile_key);
+# stand-in stores without that API keep the older name-keyed calls.
+def _profile_tokens(store, name, data, legacy=None):
+    if isinstance(store, SecretStore):
+        return store.get_profile_tokens(name, data, legacy)
+    return store.get_tokens(name, legacy)
+
+
+def _store_profile_tokens(store, name, data, tokens):
+    if isinstance(store, SecretStore):
+        return store.set_profile_tokens(name, data, tokens)
+    return store.set_tokens(name, tokens)
+
+
+def _delete_profile_tokens(store, name, data):
+    if isinstance(store, SecretStore):
+        return store.delete_profile_tokens(name, data)
+    return store.delete_token(name)
+
+
+def _migrate_profile_tokens(store, name, data):
+    if isinstance(store, SecretStore):
+        return store.migrate_profile_tokens(name, data)
+    return False
+
+
+def collect_account_role_fields(widgets, presets, data):
+    """Read the Main/Side fields of the form into ``data``; return messages."""
+    errors = []
+    if "account_role" in widgets:
+        data["account_role"] = widgets["account_role"].get() or ACCOUNT_ROLE_MAIN
+    for key in ("side_rolls_for_main", "side_claim_leftovers"):
+        if key in widgets:
+            data[key] = bool(widgets[key].get())
+    for key, label in (("side_order", "Side Order"), ("side_rolls_max_per_reset", "Max side accounts per reset")):
+        widget = widgets.get(key)
+        if widget is None:
+            continue
+        value = str(widget.get() or "").strip()
+        if not value:
+            data[key] = DEFAULTS[key]
+        elif re.fullmatch(r"[0-9]+", value):
+            data[key] = int(value)
+        else:
+            errors.append("{} must be a whole number.".format(label))
+    if "main_profile_id" in widgets:
+        picked = widgets["main_profile_id"].get()
+        if picked in ("", PROFILE_PICKER_NONE):
+            data["main_profile_id"] = ""
+        else:
+            data["main_profile_id"] = profile_id_of((presets or {}).get(picked, {}))
+    return errors
+
+
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
+                      "main_claims_alt_rolls", "alts_claim_main_rolls", "main_rolls_while_alt_can_claim",
+                      "accounts_share_kakera_reacts", "claim_best_when_nothing_qualifies")
+# «Main claims good rolls made by its alts»: who gets a good alt roll (mudae_core.alt_roll_claim.MODES).
+ALT_ROLL_CLAIM_MODE_CHOICES = {
+    "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
+    "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+    "smart": "Smart (whoever can claim takes it, whoever rolled it)",
+}
+# «Claim the best roll when nothing meets the minimum»: when (mudae_core.best_roll_claim.WHEN_CHOICES).
+CLAIM_BEST_WHEN_CHOICES = {
+    "last round": "Only the last round before the claim reset",
+    "every round": "Every round",
+}
+GIVE_KAKERA_AMOUNT_MODE_CHOICES = {
+    "everything": "Give everything",
+    "amount": "Give only the amount",
+}
+MUDAFORK_NUMBER_KEYS = (
+    ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
+    ("give_kakera_daily_cap", "At most N gives per day", 1),
+    ("give_kakera_button_minimum", "Minimum for the button", 1),
+    ("sphere_give_interval_min", "At most one sphere give every N minutes", 1),
+    ("spheres_keep", "Spheres to keep on this account", 0),
+    ("harem_give_pages", "Give when my harem reaches X pages", 1),
+    ("harem_give_characters", "Give when my harem reaches X characters", 1),
+    ("harem_give_value", "Give when my harem value reaches X", 1),
+    ("harem_check_hours", "Check every N hours", 1),
+    ("harem_keep_first_pages", "Keep the first N pages", 0),
+    ("harem_give_daily_cap", "At most N harem gives per day", 1),
+    ("perk10_min_spheres", "Upgrade when spheres reach", 1000),
+    ("perk10_max_characters", "Most characters per upgrade (0 = no limit)", 0),
+    ("perk10_daily_cap", "At most N upgrades per day", 1),
+    ("perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0),
+    ("claim_best_min_kakera", "Never take a roll below (kakera, 0 = any value)", 0),
+)
+HAREM_TRIGGER_CHOICES = {
+    "pages": "Pages: when my harem reaches X pages ($mm)",
+    "characters": "Characters: when my harem reaches X characters ($mmi)",
+    "value": "Value: when my harem value reaches X ($mmrk)",
+}
+
+
+def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
+    """Read «Fast setup» and auto-give fields into ``data``; return messages.
+
+    ``fast_setup_round`` is not a form field: it is kept from the saved
+    profile, or raised by «Send again» (``rearm_round``).
+    """
+    errors = []
+    for key in MUDAFORK_BOOL_KEYS:
+        if key in widgets:
+            data[key] = bool(widgets[key].get())
+    for key, label, minimum in MUDAFORK_NUMBER_KEYS:
+        widget = widgets.get(key)
+        if widget is None:
+            continue
+        value = str(widget.get() or "").strip().replace(",", "")
+        if not value:
+            data[key] = DEFAULTS[key]
+        elif re.fullmatch(r"[0-9]+", value) and int(value) >= minimum:
+            data[key] = int(value)
+        else:
+            errors.append("«{}» must be a whole number of at least {}.".format(label, minimum))
+    trigger = widgets.get("harem_give_trigger")
+    if trigger is not None:
+        value = str(trigger.get() or "pages")
+        data["harem_give_trigger"] = value if value in HAREM_TRIGGER_CHOICES else "pages"
+    amount_mode = widgets.get("give_kakera_amount_mode")
+    if amount_mode is not None:
+        value = str(amount_mode.get() or "")
+        value = value if value in GIVE_KAKERA_AMOUNT_MODE_CHOICES else "everything"
+        data["give_kakera_amount_mode"] = value
+        data["give_kakera_extra"] = value == "everything"  # the old switch stays in step (never deleted)
+    alt_mode = widgets.get("main_claims_alt_rolls_mode")
+    if alt_mode is not None:
+        value = str(alt_mode.get() or "")
+        data["main_claims_alt_rolls_mode"] = (
+            value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
+    best_when = widgets.get("claim_best_when")
+    if best_when is not None:
+        value = str(best_when.get() or "")
+        data["claim_best_when"] = value if value in CLAIM_BEST_WHEN_CHOICES else DEFAULTS["claim_best_when"]
+    pages_text = widgets.get("harem_give_pages_text")
+    if pages_text is not None:
+        text = str(pages_text.get() or "").strip()
+        try:
+            parse_page_selection(text)
+            data["harem_give_pages_text"] = text
+        except ValueError as error:
+            errors.append(str(error))
+    try:
+        saved_round = int((previous or {}).get("fast_setup_round", 0) or 0)
+    except (TypeError, ValueError):
+        saved_round = 0
+    data["fast_setup_round"] = rearm_round if rearm_round is not None else max(0, saved_round)
+    # «Give all kakera now» is a request counter, not a form field.
+    try:
+        data["give_kakera_now_round"] = max(0, int((previous or {}).get("give_kakera_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["give_kakera_now_round"] = 0
+    try:
+        data["give_spheres_now_round"] = max(0, int((previous or {}).get("give_spheres_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["give_spheres_now_round"] = 0
+    try:
+        data["perk10_now_round"] = max(0, int((previous or {}).get("perk10_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["perk10_now_round"] = 0
+    return errors
+
+
 def build_recommended_preset():
     """Return a complete, independent preset for the mainstream workflow."""
     data = copy.deepcopy(DEFAULTS)
@@ -877,7 +1135,83 @@ def build_recommended_preset():
     })
     data.pop("additional_tokens", None)
     data["token"] = ""
+    data["profile_id"] = new_profile_id()
     return data
+
+
+class LogViewerWindow:
+    """Reads the daily TXT logs: filters, search, errors only, save, open folder."""
+
+    def __init__(self, parent, logs_folder, profiles, current=None):
+        self.folder = logs_folder
+        self.lines = []
+        self.window = tk.Toplevel(parent)
+        self.window.title("MudaFork - Logs")
+        self.window.geometry("900x560")
+        self.window.configure(bg=BG_DARK)
+        bar = tk.Frame(self.window, bg=BG_DARK)
+        bar.pack(fill=tk.X, padx=10, pady=(10, 4))
+        self.profile_var = tk.StringVar(value=current or "All profiles")
+        self.kind_var = tk.StringVar(value="All kinds")
+        self.search_var = tk.StringVar()
+        self.errors_var = tk.BooleanVar(value=False)
+        names = ["All profiles"] + sorted(set(profiles), key=str.casefold)
+        ttk.Combobox(bar, textvariable=self.profile_var, values=names, state="readonly", width=22).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Combobox(bar, textvariable=self.kind_var, values=["All kinds"] + list(log_tools.KINDS),
+                     state="readonly", width=10).pack(side=tk.LEFT, padx=(0, 6))
+        entry = tk.Entry(bar, textvariable=self.search_var, bg=BG_INPUT, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat", width=24)
+        entry.pack(side=tk.LEFT, padx=(0, 6), ipady=3)
+        ttk.Checkbutton(bar, text="Errors only", variable=self.errors_var, command=self.refresh).pack(side=tk.LEFT, padx=(0, 6))
+        for text, command in (("Refresh", self.reload), ("Save as TXT", self.save_as), ("Open logs folder", self.open_folder)):
+            tk.Button(bar, text=text, command=command, bg=BG_PANEL, fg=TEXT_MAIN, relief="flat").pack(side=tk.LEFT, padx=3)
+        self.text = tk.Text(self.window, bg=BG_INPUT, fg=TEXT_MAIN, relief="flat", wrap="none", font=("Consolas", 10))
+        scroll = ttk.Scrollbar(self.window, command=self.text.yview)
+        self.text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=(10, 0), pady=(0, 10))
+        for variable in (self.profile_var, self.kind_var, self.search_var):
+            variable.trace_add("write", lambda *_: self.refresh())
+        self.reload()
+
+    def reload(self):
+        self.lines = log_tools.read_log_lines(self.folder)
+        self.refresh()
+
+    def visible_lines(self):
+        profile = self.profile_var.get()
+        kind = self.kind_var.get()
+        return log_tools.filter_lines(
+            self.lines,
+            profile=None if profile == "All profiles" else profile,
+            kind=None if kind == "All kinds" else kind,
+            search=self.search_var.get(),
+            errors_only=self.errors_var.get(),
+        )
+
+    def refresh(self):
+        shown = self.visible_lines()[-5000:]
+        self.text.configure(state="normal")
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, "\n".join(shown) if shown else "No log lines match.")
+        self.text.configure(state="disabled")
+        self.text.see(tk.END)
+
+    def save_as(self):
+        path = filedialog.asksaveasfilename(
+            parent=self.window, defaultextension=".txt", filetypes=[("Text file", "*.txt")],
+            initialfile="mudafork_logs.txt")
+        if path and not log_tools.save_export(path, self.visible_lines()):
+            messagebox.showerror("Save as TXT", "The file could not be written.", parent=self.window)
+
+    def open_folder(self):
+        try:
+            os.makedirs(self.folder, exist_ok=True)
+            if hasattr(os, "startfile"):
+                os.startfile(self.folder)  # noqa: S606 - Windows only
+            else:
+                webbrowser.open("file://" + self.folder)
+        except OSError as exc:
+            messagebox.showerror("Open logs folder", str(exc), parent=self.window)
 
 
 class VersionSelectorDialog:
@@ -891,7 +1225,7 @@ class VersionSelectorDialog:
         self._fetch_generation = 0
         self._results = {}
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("MudaRemote - Select Target Version")
+        self.dialog.title("MudaFork - Select Target Version")
         self.dialog.geometry("450x460")
         self.dialog.configure(bg=BG_DARK)
         self.dialog.resizable(False, False)
@@ -1175,7 +1509,7 @@ class PresetEditor:
     def __init__(self, root, extensions=()):
         self.root = root
         self.extensions = list(extensions or ())
-        self.root.title(f"MudaRemote Preset Editor v{CURRENT_VERSION}")
+        self.root.title(f"MudaFork Preset Editor v{CURRENT_VERSION}")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
 
@@ -1623,7 +1957,17 @@ class PresetEditor:
             try:
                 self.presets = load_json(PRESETS_FILE, {})
                 migrated = False
+                # Stable profile ids (renames keep settings, tokens and links)
+                # and the Main/Side roles that replace a bare main_account_id.
+                if ensure_profile_ids(self.presets):
+                    migrated = True
+                    self._backup_presets_before_migration()
                 for preset_name, data in self.presets.items():
+                    try:
+                        if _migrate_profile_tokens(self.secret_store, preset_name, data):
+                            migrated = True
+                    except SecretStoreError:
+                        pass
                     if not data.get("farm_characters") and data.get("farm_character"):
                         data["farm_characters"] = [data["farm_character"]]
                         migrated = True
@@ -1637,7 +1981,7 @@ class PresetEditor:
                     legacy_token = str(data.get("token", "") or "")
                     if legacy_token:
                         try:
-                            self.secret_store.set_token(preset_name, legacy_token)
+                            _store_profile_tokens(self.secret_store, preset_name, data, [legacy_token])
                             data["token"] = ""
                             migrated = True
                         except SecretStoreError:
@@ -1656,6 +2000,17 @@ class PresetEditor:
                 self.presets = {}
         else:
             self.presets = {}
+
+    def _backup_presets_before_migration(self):
+        """Keep the untouched presets.json once before the profile-id migration."""
+        backup_path = PRESETS_FILE + ".before-profile-ids.bak"
+        if os.path.exists(backup_path) or not os.path.exists(PRESETS_FILE):
+            return
+        try:
+            import shutil
+            shutil.copy2(PRESETS_FILE, backup_path)
+        except OSError as exc:
+            print(f"Could not back up presets.json before migrating it: {exc}")
 
     def save_presets(self):
         """Save presets to JSON file."""
@@ -1746,6 +2101,11 @@ class PresetEditor:
             sidebar_btns, "Copy Selected", self.duplicate_preset,
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.create_flat_button(
+            sidebar, "✏ Rename Selected", self.rename_preset,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
+        ).pack(fill=tk.X, pady=(5, 0))
 
         self.create_flat_button(
             sidebar, "📤 Share Preset", self.share_preset,
@@ -2316,8 +2676,9 @@ class PresetEditor:
         primary = self._quick_value("token")
         additional_widget = self.quick_widgets.get("additional_tokens")
         if additional_widget is None and self.current_preset:
-            stored = self.secret_store.get_tokens(
+            stored = _profile_tokens(self.secret_store,
                 self.current_preset,
+                self.presets.get(self.current_preset, {}),
                 self.presets.get(self.current_preset, {}).get("token", ""),
             )
             additional_candidates = stored[1:]
@@ -2547,6 +2908,7 @@ class PresetEditor:
             "additional_tokens",
             "Additional Tokens (Optional, comma-separated; securely encrypted)",
             show="*",
+            description=TOKENS_FIELD_DESCRIPTION,
         )
         self.add_text_field(core_frame.content, "channel_id", "Discord Channel ID (Where the bot should roll)")
         self.add_text_field(core_frame.content, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
@@ -2574,6 +2936,13 @@ class PresetEditor:
         self.add_checkbox(
             roll_sub, "pause_on_key_limit", "Pause on Key Limit",
             description="Pause for 60-70 minutes at the key limit.\nTurn off to keep rolling and collecting Kakera; Mudae's key cap still applies."
+        )
+        self.add_choice_field(
+            roll_sub, "key_limit_pause_scope", "When the key limit is reached, pause", {
+                "everything": "Everything (rolls, $tu, claims from it, gives) — as before",
+                "rolls only": "Rolls only ($tu, claims, snipes, kakera and sphere games go on)",
+            },
+            description="Only matters with «Pause on Key Limit» on. The account that hit the limit says so in the log.",
         )
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
         self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
@@ -2673,6 +3042,25 @@ class PresetEditor:
         hybrid_sub = self.create_subframe(claim_frame.content, hybrid_var, "enable_hybrid_panic_claim")
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300)
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
+
+        # «Claim the best roll when nothing meets the minimum» (mudae_core.best_roll_claim)
+        self.add_checkbox(
+            claim_frame.content, "claim_best_when_nothing_qualifies", "Claim the best roll when nothing meets the minimum",
+            description="When no roll of this profile's accounts (main and alts) met your claim rules in a round, "
+                        "claim the highest-value roll that is still claimable (a roll's button lasts about 45 seconds). "
+                        "The roller claims if it can, else the main, else an alt. One claim, never $rt. Off by default.",
+        )
+        self.add_choice_field(
+            claim_frame.content, "claim_best_when", "When to claim the best roll", {
+                "last round": "Only the last round before the claim reset",
+                "every round": "Every round",
+            },
+            description="«Last round» = no more rolls of any account of this profile will finish before the claim reset.",
+        )
+        self.add_number_field(
+            claim_frame.content, "claim_best_min_kakera", "Never take a roll below (kakera, 0 = any value)", 0,
+            description="Only matters with «Claim the best roll when nothing meets the minimum» on.",
+        )
 
         # claim_rounds_thresholds
         self.rounds_frame = tk.LabelFrame(
@@ -2997,12 +3385,291 @@ class PresetEditor:
             description="Optional extra power requirement for listed Kakera types. Types not listed still follow normal collection rules.",
         )
         self.add_checkbox(power_frame.content, "debug_mode", "Expert Logs (Show technical data for every single roll)")
+        self.add_checkbox(
+            power_frame.content, "save_logs_txt", "Save logs as TXT files",
+            description="One file per profile per day in the logs folder: profile_YYYY-MM-DD.txt. Tokens are never written and ids are shortened.",
+        )
+        self.add_number_field(power_frame.content, "logs_keep_days", "Keep log files for N days", 14)
+        self.add_number_field(
+            power_frame.content, "logs_max_mb", "Log folder size limit in MB", 50,
+            description="When the folder grows past this, the oldest files are deleted first. Changes apply the next time the bot starts.",
+        )
         self.add_list_field(power_frame.content, "debug_log_categories", "Expert Log Categories (all, claim, kakera, roll, status, sphere, coordination, other)")
         self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")
         self.add_list_field(power_frame.content, "webhook_log_types", "Webhook Log Types (ERROR, WARN, CLAIM, KAKERA, INFO, CHECK, RESET, DEBUG or ALL)")
 
-        # [NEW] Task 6: Main account ID for wishlist syncing
-        self.add_text_field(power_frame.content, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
+        # Main & alts: the primary token is the main, extra tokens are its alts.
+        roles_frame = CollapsibleLabelFrame(frame, text="Main & alts", start_open=False)
+        roles_frame.pack(fill=tk.X, pady=(0, 15))
+        tk.Label(
+            roles_frame.content, text=ALTS_GROUP_INTRO, bg=self._get_parent_bg(roles_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        ).pack(anchor=tk.W, pady=(0, 6))
+        self.role_status_label = tk.Label(
+            roles_frame.content, text="", bg=self._get_parent_bg(roles_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.role_status_label.pack(anchor=tk.W, pady=(0, 6))
+        self.add_checkbox(
+            roles_frame.content, "side_rolls_for_main", "Alts roll for the main when it finds nothing",
+            description="When the main's rolls end with its claim unused, an alt in the same channel rolls and the "
+                        "main claims from those rolls with its own wishlist and kakera rules.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "main_rolls_while_alt_can_claim", "Main keeps rolling while an alt can claim",
+            description="When the main has no claim (and no $rt) but an alt in the same channel has a claim or $rt, "
+                        "the main still uses its rolls; a good roll it cannot claim goes to that alt (as with "
+                        "«Alts claim good rolls made by the main»), and an alt whose claim is spent may use its own "
+                        "$rt for it (its $rt settings apply). Off by default.",
+        )
+        self.add_number_field(
+            roles_frame.content, "side_rolls_max_per_reset", "Max alts per reset (1-10)", 1,
+            description="How many alts may roll for the main in one claim reset (in the order of Account Tokens).",
+        )
+        self.add_checkbox(
+            roles_frame.content, "side_claim_leftovers", "Alts may claim leftovers for themselves",
+            description="After the main passes on a card an alt rolled for it, the alt may claim it with its own claim.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "main_claims_alt_rolls", "Main claims good rolls made by its alts",
+            description="When an alt rolls a character the main would claim (its wishlist, ranks and min kakera), "
+                        "the main claims it in the same channel after its snipe delay, and the alt leaves it. "
+                        "Uses the main's normal claim only (never $rt, no extra commands). Off by default.",
+        )
+        self.add_choice_field(
+            roles_frame.content, "main_claims_alt_rolls_mode", "Which good alt rolls the main takes", {
+                "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
+                "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+                "smart": "Smart (whoever can claim takes it, whoever rolled it)",
+            },
+            description="Smart: a roll of the main or of any alt that is good for any account's own rules is claimed by "
+                        "one account that has a claim: the one it is good for (the main first, then the roller, then the "
+                        "alts in order), else another account with a claim so it is not lost. In smart mode «Main claims "
+                        "good rolls made by its alts» and «Alts claim good rolls made by the main» both count as on when "
+                        "either is on. The other two choices only matter with «Main claims good rolls made by its alts» on.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "alts_claim_main_rolls", "Alts claim good rolls made by the main",
+            description="When the main rolls a character it would want (wishlist, ranks, min kakera) but will not or "
+                        "cannot claim it (no claim now, key limit, its claim went to a better card), the first alt in "
+                        "Account Tokens order whose claim is free claims it after its snipe delay. The main always "
+                        "comes first on its own rolls. Off by default.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "accounts_share_kakera_reacts", "Main and alts take each other's kakera",
+            description="When the account that rolled does not take a kakera button (no power, its power rules, "
+                        "the emoji is not in its lists, paused), one other account of this profile that would take "
+                        "it by its own lists and power clicks it (the main first, then the alts in order), after "
+                        "its kakera reaction delay. Off by default.",
+        )
+        self.add_text_field(
+            roles_frame.content, "main_account_id",
+            "Main Account ID (optional override)",
+            description="Normally empty: the main's ID is known from the first token when it runs here. "
+                        "Used as the receiver when the main is not running in this app.",
+        )
+        # The 6.0.0 way (a separate profile marked side): kept for old profiles only.
+        legacy_frame = CollapsibleLabelFrame(roles_frame.content, text="Advanced: separate profiles", start_open=False)
+        legacy_frame.pack(fill=tk.X, pady=(6, 0))
+        self.add_choice_field(
+            legacy_frame.content, "account_role", "Separate-profile role (old way)",
+            {"main": "Normal profile", "side": "Side of another profile"},
+            description="Only for profiles set up before alts lived under Account Tokens. Leave on «Normal profile».",
+        )
+        self.add_profile_picker(
+            legacy_frame.content, "main_profile_id", "Main profile (old way)",
+            description="Used only with «Side of another profile». A side cannot point at itself or at another side.",
+        )
+        self.add_number_field(
+            legacy_frame.content, "side_order", "Side order (old way; 1 = asked first)", 1,
+            description="Old separate side profiles only. Alts are asked in the order of Account Tokens.",
+        )
+
+        # Manual actions: small secondary rows at the end of the group (never hero buttons).
+        actions_frame = tk.Frame(roles_frame.content, bg=self._get_parent_bg(roles_frame.content))
+        actions_frame.pack(fill=tk.X, pady=(10, 0))
+        for text, command, status_attr, hint in (
+            ("Give kakera now", self._request_give_all_kakera, "give_now_status_label",
+             "One give of the whole kakera total to the main (the account must be running)."),
+            ("Give spheres now", self._request_give_all_spheres, "give_spheres_status_label",
+             "One give of all the spheres (minus the amount to keep) to the main."),
+            ("Upgrade perk 10 now", self._request_upgrade_perk10, "perk10_now_status_label",
+             "One upgrade now (needs at least 1,000 spheres known; works with the switch off; "
+             "alts only with «Let side accounts upgrade too»)."),
+        ):
+            action_row = tk.Frame(actions_frame, bg=self._get_parent_bg(actions_frame))
+            action_row.pack(fill=tk.X, pady=(0, 6))
+            self.create_flat_button(
+                action_row, text, command, bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+            ).pack(side=tk.LEFT, padx=(20, 10))
+            label = tk.Label(
+                action_row, text=hint, bg=action_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9),
+                justify=tk.LEFT, wraplength=480,
+            )
+            label.pack(side=tk.LEFT)
+            setattr(self, status_attr, label)
+
+        # «Fast setup» (main and side) and auto-give kakera to the main (side only)
+        fork_frame = CollapsibleLabelFrame(frame, text="Fast Setup & Kakera to the Main", start_open=False)
+        fork_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_checkbox(
+            fork_frame.content, "fast_setup", "Fast setup (send the $ta setup message once)",
+            description="Each account (the main and every alt) sends one $ta message in the command channel so $tu "
+                        "shows kakera and sphere stock, then it turns itself off for good. «Send again» repeats it once.",
+        )
+        fast_row = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
+        fast_row.pack(fill=tk.X, pady=(0, 8))
+        self.create_flat_button(
+            fast_row, "Send again", self._rearm_fast_setup,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+        ).pack(side=tk.LEFT, padx=(20, 10))
+        self.fast_setup_status_label = tk.Label(
+            fast_row, text="", bg=fast_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
+        )
+        self.fast_setup_status_label.pack(side=tk.LEFT)
+        self.give_reason_label = tk.Label(
+            fork_frame.content, text="", bg=self._get_parent_bg(fork_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.give_reason_label.pack(anchor=tk.W, pady=(4, 2))
+        self.give_fields_frame = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
+        self.give_fields_frame.pack(fill=tk.X)
+        self.add_checkbox(
+            self.give_fields_frame, "auto_give_kakera", "Alts give kakera to the main",
+            description="When an alt's kakera (read from the $tu replies the app already gets) reaches the amount "
+                        "below, it sends $givek to its main and confirms. Off by default.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_threshold", "Give kakera to my main when I reach", 45000,
+            description="Whole number, at least 1.",
+        )
+        self.add_choice_field(
+            self.give_fields_frame, "give_kakera_amount_mode", "When kakera reaches the amount",
+            {"everything": "Give everything", "amount": "Give only the amount"},
+            description="Has 45,132 with 45,000 picked: «give everything» gives 45,132; «give only the amount» gives exactly 45,000.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_daily_cap", "At most N gives per day", 3,
+            description="A safety limit. The receiver is the main's Discord ID (Main Profile or Main Account ID above).",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "give_kakera_button_minimum", "Minimum for the button", 1000,
+            description="«Give kakera now» gives the whole kakera total only when it is known and at least this much.",
+        )
+        self.add_checkbox(
+            self.give_fields_frame, "auto_give_spheres", "Alts give spheres to the main",
+            description="Whenever an alt has spheres (read from the $tu replies and sphere-game results the app already gets), "
+                        "it sends $givesp to its main and confirms. No minimum. Waits for the sphere games first. "
+                        "Has no effect on an alt that upgrades perk 10 («Let side accounts upgrade too») "
+                        "(your saved choice here is kept). Off by default.",
+        )
+        self._sphere_give_checkbox_container = self.give_fields_frame.winfo_children()[-1]
+        self.sphere_give_perk_label = tk.Label(
+            self.give_fields_frame, text="Off on the alts while «Let side accounts upgrade too» is on.",
+            bg=self._get_parent_bg(self.give_fields_frame), fg=TEXT_MUTED, font=("Segoe UI", 9, "italic"),
+            justify=tk.LEFT, wraplength=600,
+        )
+        self.add_number_field(
+            self.give_fields_frame, "sphere_give_interval_min", "At most one sphere give every N minutes", 30,
+            description="Whole number, at least 1. Keeps a trickle of small results from spamming the chat.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "spheres_keep", "Spheres to keep on this account", 0,
+            description="0 gives everything. With 250 here and 1,250 in stock it gives 1,000.",
+        )
+
+        # Auto-give harem pages to the main (side only)
+        harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to the Main", start_open=False)
+        harem_frame.pack(fill=tk.X, pady=(0, 15))
+        self.harem_reason_label = tk.Label(
+            harem_frame.content, text="", bg=self._get_parent_bg(harem_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.harem_reason_label.pack(anchor=tk.W, pady=(4, 2))
+        self.harem_fields_frame = tk.Frame(harem_frame.content, bg=self._get_parent_bg(harem_frame.content))
+        self.harem_fields_frame.pack(fill=tk.X)
+        self.add_checkbox(
+            self.harem_fields_frame, "auto_give_harem", "Alts give harem pages to the main",
+            description="Checks each alt's own harem list on its own schedule (never $tu), then sends $give to the main "
+                        "with the pages; the main (running in this app) confirms. Off by default.",
+        )
+        self.add_choice_field(
+            self.harem_fields_frame, "harem_give_trigger", "Give when my harem reaches", {
+                "pages": "Pages: when my harem reaches X pages ($mm)",
+                "characters": "Characters: when my harem reaches X characters ($mmi)",
+                "value": "Value: when my harem value reaches X ($mmrk)",
+            },
+            description="Only the number of the chosen kind below is used.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_pages", "Give when my harem reaches X pages", 2,
+            description="Read from the «Page 1 / N» footer of $mm.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_characters", "Give when my harem reaches X characters", 150,
+            description="Read from the «Belongs to … ~~ 1 / TOTAL» footer of $mmi.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_value", "Give when my harem value reaches X", 100000,
+            description="Read from «Total value» in $mmrk.",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_check_hours", "Check every N hours", 6,
+            description="The check command is sent at most once per interval (also after this account's claims). At least 1.",
+        )
+        self.add_text_field(
+            self.harem_fields_frame, "harem_give_pages_text", "Pages to give",
+            description="Empty: every page. "
+                        "A number like 3: the first 3 pages. A list or range: «1-3», «2 4 5».",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_keep_first_pages", "Keep the first N pages", 0,
+            description="Pages 1..N are never given (0 keeps none).",
+        )
+        self.add_number_field(
+            self.harem_fields_frame, "harem_give_daily_cap", "At most N harem gives per day", 1,
+            description="A safety limit. A long page list given in several rounds counts as one give.",
+        )
+        # Automatic perk-10 upgrade (main and side accounts alike)
+        perk_frame = CollapsibleLabelFrame(frame, text="Perk 10 Upgrade", start_open=False)
+        perk_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_checkbox(
+            perk_frame.content, "auto_perk10", "Upgrade perk 10 automatically",
+            description="Upgrades the main's characters. After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
+                        "extra $tu), takes names from $mmz- and sends $oic name $ name $ … $ 10, then confirms "
+                        "(1,000 spheres per character). Off by default.",
+        )
+        self.add_checkbox(
+            perk_frame.content, "side_perk10", "Let side accounts upgrade too (turns off their automatic sphere giving)",
+            description="With «Upgrade perk 10 automatically» on, each alt also upgrades its own characters and keeps its "
+                        "spheres for that. Off by default: alts give their spheres to the main instead.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_min_spheres", "Upgrade when spheres reach", 2000,
+            description="The minimum sphere stock to start. It then upgrades floor(stock / 1,000) characters "
+                        "(10,000 → 10). At least 1,000.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_max_characters", "Most characters per upgrade (0 = no limit)", 100,
+            description="Caps one upgrade; 0 means as many as the spheres and the $mmz- names allow.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_daily_cap", "At most N upgrades per day", 3,
+            description="A safety limit. A long name list sent in several commands counts as one upgrade.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0,
+            description="Optional. Once the spheres reach the minimum, it upgrades exactly this many (or fewer when the "
+                        "spheres afford fewer); 0 upgrades as many as the spheres allow.",
+        )
+
+        tokens_entry = self.widgets.get("additional_tokens")
+        if tokens_entry is not None:
+            tokens_entry.bind("<KeyRelease>", lambda _event: self._refresh_give_fields_state(), add="+")
+        for trigger_key in ("account_role", "auto_perk10", "side_perk10"):
+            trigger_var = self.widgets.get(trigger_key)
+            if trigger_var is not None:
+                trigger_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
 
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
@@ -3060,6 +3727,16 @@ class PresetEditor:
             self.btn_frame, "Apply to All", self.apply_current_to_all_presets,
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT
         ).pack(side=tk.RIGHT, padx=(0, 10))
+        self.create_flat_button(
+            self.btn_frame, "Logs", self.open_log_viewer,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT
+        ).pack(side=tk.RIGHT, padx=(0, 10))
+
+    def open_log_viewer(self):
+        """Show the daily TXT logs with filters, search, save and open-folder."""
+        LogViewerWindow(
+            self.root, log_tools.logs_dir_for(get_base_path()),
+            list(self.presets.keys()), current=self.current_preset)
 
     def apply_current_to_all_presets(self):
         """Copy the current preset settings to every preset without copying secrets."""
@@ -3084,6 +3761,7 @@ class PresetEditor:
         identity_keys = {
             "channel_id", "command_channel_id", "forcedivorce_channel_id",
             "prefix", "mudae_prefix", "main_account_id", "autostart",
+            "account_role", "main_profile_id", "side_order",
         }
         for preset_name, existing in list(self.presets.items()):
             if preset_name == self.current_preset:
@@ -3091,6 +3769,8 @@ class PresetEditor:
             replacement = copy.deepcopy(source)
             replacement["token"] = ""
             replacement.pop("tokens", None)
+            # A profile's stable id is never copied: it keys its tokens and links.
+            replacement["profile_id"] = existing.get("profile_id") or new_profile_id()
             if preserve_identity:
                 for key in identity_keys:
                     if key in existing:
@@ -3214,6 +3894,280 @@ class PresetEditor:
             Tooltip(entry, tooltip_msg)
 
         return entry
+
+    PROFILE_PICKER_NONE = PROFILE_PICKER_NONE
+
+    def add_profile_picker(self, parent, key, label, description=None):
+        """A drop-down of the other profiles; the stable profile id is stored."""
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
+        container.pack(fill=tk.X, pady=5)
+        tk.Label(container, text=label, bg=container.cget("bg"), fg=TEXT_MAIN, font=("Segoe UI", 10)).pack(anchor=tk.W)
+        if description:
+            tk.Label(
+                container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED,
+                font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+            ).pack(anchor=tk.W)
+        var = tk.StringVar(value=self.PROFILE_PICKER_NONE)
+        combo = ttk.Combobox(container, textvariable=var, state="readonly", width=42)
+        combo.pack(anchor=tk.W, ipady=2)
+        combo.bind("<<ComboboxSelected>>", lambda _event: self.mark_dirty())
+        self.widgets[key] = var
+        if not hasattr(self, "profile_pickers"):
+            self.profile_pickers = {}
+        self.profile_pickers[key] = combo
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        return combo
+
+    def _populate_account_roles(self, preset_name, data):
+        """Show the role fields and why a side would run as an ordinary account."""
+        widgets = self.widgets
+        if "account_role" in widgets:
+            widgets["account_role"].set(data.get("account_role", ACCOUNT_ROLE_MAIN))
+        for key in ("side_rolls_for_main", "side_claim_leftovers"):
+            if key in widgets:
+                widgets[key].set(bool(data.get(key, DEFAULTS[key])))
+        for key in ("side_order", "side_rolls_max_per_reset"):
+            widget = widgets.get(key)
+            if isinstance(widget, (ttk.Entry, tk.Entry)):
+                widget.delete(0, tk.END)
+                widget.insert(0, str(data.get(key, DEFAULTS[key])))
+        combo = getattr(self, "profile_pickers", {}).get("main_profile_id")
+        if combo is not None:
+            choices = [self.PROFILE_PICKER_NONE] + [
+                name for name, other in self.presets.items()
+                if name != preset_name and (other or {}).get("account_role", ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE
+            ]
+            combo.configure(values=choices)
+            current = profile_name_for_id(self.presets, str(data.get("main_profile_id") or ""))
+            if current and current not in choices:
+                choices.append(current)
+                combo.configure(values=choices)
+            widgets["main_profile_id"].set(current or self.PROFILE_PICKER_NONE)
+        label = getattr(self, "role_status_label", None)
+        if label is not None:
+            info = resolve_account_roles(self.presets).get(preset_name) or {}
+            alts = self._current_alt_count()  # the token fields are filled before this runs
+            legacy = is_legacy_side(data.get("account_role"), data.get("main_profile_id"))
+            if legacy and info.get("reason"):
+                text = "⚠ " + info["reason"]
+            elif legacy:
+                text = "Old separate side profile of '{}' (Advanced: separate profiles).".format(info.get("main") or "?")
+            elif alts:
+                text = "Main + {} alt{} (the extra tokens under Account Tokens).".format(alts, "" if alts == 1 else "s")
+            else:
+                text = NO_ALTS_HINT + "."
+            sides = side_profiles_for(self.presets, preset_name)
+            if sides and not legacy:
+                text += " Old separate side profiles: {}.".format(", ".join(sides))
+            label.configure(text=text)
+
+    def _fast_setup_record(self, data):
+        """The «done» mark of this profile's first account, or None."""
+        profile_id = profile_id_of(data or {})
+        if not profile_id:
+            return None
+        try:
+            store = AccountStateStore(default_state_path(get_base_path()))
+            return FastSetup(store, account_key(profile_id, 1))
+        except Exception:
+            return None
+
+    def _populate_mudafork_fields(self, preset_name, data):
+        """Fast setup reads as off once sent; give fields only matter for a side."""
+        self._fast_setup_rearm_round = None
+        widgets = self.widgets
+        for key in MUDAFORK_BOOL_KEYS:
+            if key in widgets:
+                widgets[key].set(bool(data.get(key, DEFAULTS[key])))
+        for key, _label, _minimum in MUDAFORK_NUMBER_KEYS:
+            widget = widgets.get(key)
+            if isinstance(widget, (ttk.Entry, tk.Entry)):
+                widget.delete(0, tk.END)
+                widget.insert(0, str(data.get(key, DEFAULTS[key])))
+        pages_text = widgets.get("harem_give_pages_text")
+        if isinstance(pages_text, (ttk.Entry, tk.Entry)):
+            pages_text.delete(0, tk.END)
+            pages_text.insert(0, str(data.get("harem_give_pages_text", "") or ""))
+        trigger = widgets.get("harem_give_trigger")
+        if trigger is not None:
+            value = str(data.get("harem_give_trigger", "pages") or "pages")
+            trigger.set(value if value in HAREM_TRIGGER_CHOICES else "pages")
+        amount_mode = widgets.get("give_kakera_amount_mode")
+        if amount_mode is not None:
+            value = str(data.get("give_kakera_amount_mode", "") or "")
+            if value not in GIVE_KAKERA_AMOUNT_MODE_CHOICES:  # an older profile: its «give_kakera_extra» switch
+                value = "everything" if data.get("give_kakera_extra", True) else "amount"
+            amount_mode.set(value)
+        alt_mode = widgets.get("main_claims_alt_rolls_mode")
+        if alt_mode is not None:
+            value = str(data.get("main_claims_alt_rolls_mode", "") or "")
+            alt_mode.set(value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
+        best_when = widgets.get("claim_best_when")
+        if best_when is not None:
+            value = str(data.get("claim_best_when", "") or "")
+            best_when.set(value if value in CLAIM_BEST_WHEN_CHOICES else DEFAULTS["claim_best_when"])
+        status = "Not sent yet."
+        setup = self._fast_setup_record(data)
+        round_number = data.get("fast_setup_round", 0)
+        try:
+            record = setup.record() if setup is not None else None
+            if setup is not None and setup.is_done(round_number):
+                if "fast_setup" in widgets:
+                    widgets["fast_setup"].set(False)
+                status = "Sent once ({}). It stays off; «Send again» repeats it once.".format(
+                    str(record.get("at", ""))[:16].replace("T", " ") or "date unknown")
+        except Exception:
+            pass
+        label = getattr(self, "fast_setup_status_label", None)
+        if label is not None:
+            label.configure(text=status)
+        self._refresh_give_fields_state()
+
+    def _rearm_fast_setup(self):
+        if not self.current_preset:
+            return
+        saved = self.presets.get(self.current_preset, {})
+        data = rearm_fast_setup({"fast_setup_round": saved.get("fast_setup_round", 0)})
+        self._fast_setup_rearm_round = data["fast_setup_round"]
+        if "fast_setup" in self.widgets:
+            self.widgets["fast_setup"].set(True)
+        label = getattr(self, "fast_setup_status_label", None)
+        if label is not None:
+            label.configure(text="Will be sent once more after you save.")
+        self.mark_dirty()
+
+    def _current_alt_count(self):
+        """How many alts (extra tokens) the open profile has, from the token fields as typed."""
+        widgets = self.widgets
+        primary = widgets["token"].get().strip() if "token" in widgets else ""
+        extra = widgets["additional_tokens"].get().strip() if "additional_tokens" in widgets else ""
+        if not primary and not extra:
+            saved = self.presets.get(self.current_preset, {}) if self.current_preset else {}
+            return alt_count(saved.get("token", ""), saved.get("tokens") or ())
+        return alt_count(primary, (), extra)
+
+    def _current_uses_alts(self):
+        """Alts under Account Tokens, or an old separate side profile (legacy path)."""
+        if self._current_alt_count() > 0:
+            return True
+        role_var = self.widgets.get("account_role")
+        role = role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN
+        picked = self.widgets.get("main_profile_id")
+        picked_name = picked.get() if picked is not None else ""
+        return is_legacy_side(role, "" if picked_name in ("", self.PROFILE_PICKER_NONE) else picked_name)
+
+    def _request_give_all_kakera(self):
+        """«Give all kakera now»: raise the request counter and save, so the running alts pick it up."""
+        if not self.current_preset:
+            return
+        if not self._current_uses_alts():
+            messagebox.showinfo("Give kakera now", NO_ALTS_HINT + ".", parent=self.root)
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("give_kakera_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["give_kakera_now_round"] = next_round
+        label = getattr(self, "give_now_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: each running alt gives its whole total once (see the log for the result).")
+        else:
+            saved["give_kakera_now_round"] = next_round - 1
+
+    def _request_give_all_spheres(self):
+        """«Give all spheres now»: raise the request counter and save, so the running alts pick it up."""
+        if not self.current_preset:
+            return
+        if not self._current_uses_alts():
+            messagebox.showinfo("Give spheres now", NO_ALTS_HINT + ".", parent=self.root)
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("give_spheres_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["give_spheres_now_round"] = next_round
+        label = getattr(self, "give_spheres_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: each running alt gives its spheres once (see the log for the result).")
+        else:
+            saved["give_spheres_now_round"] = next_round - 1
+
+    def _request_upgrade_perk10(self):
+        """«Upgrade perk 10 now»: raise the request counter and save, so the running account(s) pick it up."""
+        if not self.current_preset:
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("perk10_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["perk10_now_round"] = next_round
+        label = getattr(self, "perk10_now_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: the main upgrades once (alts only with «Let side accounts upgrade too»); "
+                                     "see the log for the result.")
+        else:
+            saved["perk10_now_round"] = next_round - 1
+
+    def _refresh_give_fields_state(self):
+        """The give settings stay editable; without alts they only show a one-line hint."""
+        frame = getattr(self, "give_fields_frame", None)
+        if frame is None:
+            return
+        uses_alts = self._current_uses_alts()
+        self._set_children_enabled(frame, True)
+        harem_frame = getattr(self, "harem_fields_frame", None)
+        if harem_frame is not None:
+            self._set_children_enabled(harem_frame, True)
+        harem_label = getattr(self, "harem_reason_label", None)
+        if harem_label is not None:
+            harem_label.configure(text=(
+                "Each alt gives to the main (the first token); the main must run in this app to confirm."
+                if uses_alts else NO_ALTS_HINT + "."
+            ))
+        self._refresh_sphere_give_perk_state()
+        label = getattr(self, "give_reason_label", None)
+        if label is not None:
+            label.configure(text=(
+                "Set once for all alts. Totals come from the $tu replies the app already gets (see the «Totals:» log lines)."
+                if uses_alts else NO_ALTS_HINT + "."
+            ))
+
+    def _refresh_sphere_give_perk_state(self, is_side=None):
+        """With perk 10 on for the alts, show their automatic sphere give as overridden (its saved value is kept)."""
+        perk_var = self.widgets.get("auto_perk10")
+        side_perk_var = self.widgets.get("side_perk10")
+        container = getattr(self, "_sphere_give_checkbox_container", None)
+        label = getattr(self, "sphere_give_perk_label", None)
+        if container is None or label is None:
+            return
+        perk_on = bool(perk_var is not None and perk_var.get())
+        # An old separate side profile keeps its own perk-10 switch (as in 6.0.0).
+        legacy_side = self._current_alt_count() == 0 and self._current_uses_alts()
+        overridden = perk_on and (bool(side_perk_var is not None and side_perk_var.get()) or legacy_side)
+        if overridden:
+            self._set_children_enabled(container, False)
+            if not label.winfo_ismapped():
+                label.pack(after=container, anchor=tk.W, padx=20)
+        else:
+            self._set_children_enabled(container, True)
+            label.pack_forget()
+
+    def _set_children_enabled(self, widget, enabled):
+        for child in widget.winfo_children():
+            try:
+                if isinstance(child, ttk.Widget):
+                    child.state(["!disabled"] if enabled else ["disabled"])
+                elif isinstance(child, (tk.Entry, tk.Button, tk.Checkbutton)):
+                    child.configure(state=tk.NORMAL if enabled else tk.DISABLED)
+            except tk.TclError:
+                pass
+            self._set_children_enabled(child, enabled)
 
     def add_choice_field(self, parent, key, label, choices, description=None):
         container = ttk.Frame(parent)
@@ -3521,8 +4475,9 @@ class PresetEditor:
 
         # Populate text/number fields
         # [NEW] Include max_dk_power and main_account_id in text/number population
-        stored_tokens = self.secret_store.get_tokens(
+        stored_tokens = _profile_tokens(self.secret_store,
             preset_name,
+            data,
             data.get("tokens") or data.get("token", ""),
         )
         for key in ["token", "additional_tokens", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id",
@@ -3553,6 +4508,9 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
+        if "key_limit_pause_scope" in self.widgets:
+            scope = str(data.get("key_limit_pause_scope", "everything") or "everything")
+            self.widgets["key_limit_pause_scope"].set(scope if scope in ("everything", "rolls only") else "everything")
         if "loot_mode" in self.widgets:
             self.widgets["loot_mode"].set(data.get("loot_mode", "off"))
 
@@ -3698,6 +4656,9 @@ class PresetEditor:
 
         self._populate_quick_setup(data, stored_tokens=stored_tokens)
 
+        self._populate_account_roles(preset_name, data)
+        self._populate_mudafork_fields(preset_name, data)
+
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
             if self.preset_listbox.get(i) == preset_name:
@@ -3712,12 +4673,16 @@ class PresetEditor:
             resolved_token=resolved_tokens,
             require_runtime=require_runtime,
         )
+        if not validation_errors and isinstance(getattr(self, "presets", None), dict):
+            draft = dict(self.presets)
+            draft[self.current_preset] = data
+            validation_errors = account_role_errors(draft, self.current_preset)
         if validation_errors:
             messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
             return False
 
         try:
-            self.secret_store.set_tokens(self.current_preset, resolved_tokens)
+            _store_profile_tokens(self.secret_store, self.current_preset, data, resolved_tokens)
         except SecretStoreError as exc:
             messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
             return False
@@ -3745,7 +4710,7 @@ class PresetEditor:
         try:
             self._populate_quick_setup(
                 data,
-                stored_tokens=self.secret_store.get_tokens(self.current_preset, ""),
+                stored_tokens=_profile_tokens(self.secret_store, self.current_preset, data, ""),
             )
         finally:
             self.loading_preset = was_loading
@@ -3864,6 +4829,8 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
+        if "key_limit_pause_scope" in self.widgets:
+            data["key_limit_pause_scope"] = self.widgets["key_limit_pause_scope"].get() or "everything"
         if "loot_mode" in self.widgets:
             data["loot_mode"] = self.widgets["loot_mode"].get()
 
@@ -4028,6 +4995,21 @@ class PresetEditor:
 
         data["claim_rounds_thresholds"] = claim_rounds_thresholds
 
+        # The stable id is not a form field; keep it so tokens and links follow.
+        known_presets = getattr(self, "presets", None) or {}
+        data["profile_id"] = profile_id_of(known_presets.get(self.current_preset, {})) or new_profile_id()
+        role_errors = collect_account_role_fields(self.widgets, known_presets, data)
+        if role_errors:
+            messagebox.showerror("Validation Error", "\n".join(role_errors), parent=self.root)
+            return False
+        fork_errors = collect_mudafork_fields(
+            self.widgets, data, known_presets.get(self.current_preset, {}),
+            rearm_round=getattr(self, "_fast_setup_rearm_round", None),
+        )
+        if fork_errors:
+            messagebox.showerror("Validation Error", "\n".join(fork_errors), parent=self.root)
+            return False
+
         return self._persist_preset_data(
             data,
             resolved_tokens,
@@ -4041,7 +5023,7 @@ class PresetEditor:
             return
 
         startup_dir = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-        bat_path = os.path.join(startup_dir, f"MudaRemote_{preset_name}.bat")
+        bat_path = os.path.join(startup_dir, f"MudaFork_{preset_name}.bat")
 
         if not enable and os.path.exists(bat_path):
             try:
@@ -4057,7 +5039,7 @@ class PresetEditor:
         cwd = get_base_path()
         active_index = 0
         for active_name in active_names:
-            active_bat_path = os.path.join(startup_dir, f"MudaRemote_{active_name}.bat")
+            active_bat_path = os.path.join(startup_dir, f"MudaFork_{active_name}.bat")
             try:
                 with open(active_bat_path, "w", encoding="utf-8") as f:
                     f.write('@echo off\n')
@@ -4065,20 +5047,21 @@ class PresetEditor:
                     if is_frozen:
                         exe_path = os.path.abspath(sys.executable)
                         f.write(
-                            f'start "{active_name} - MudaRemote" "{exe_path}" --preset "{active_name}" '
+                            f'start "{active_name} - MudaFork" "{exe_path}" --preset "{active_name}" '
                             f'--stagger-index {active_index}\n'
                         )
                     else:
                         python_exe = sys.executable
                         bot_script = os.path.join(cwd, BOT_SCRIPT)
                         f.write(
-                            f'start "{active_name} - MudaRemote" "{python_exe}" "{bot_script}" '
+                            f'start "{active_name} - MudaFork" "{python_exe}" "{bot_script}" '
                             f'--preset "{active_name}" --stagger-index {active_index}\n'
                         )
             except Exception as e:
                 print(f"Failed to create autostart script for '{active_name}': {e}")
-            active_tokens = self.secret_store.get_tokens(
+            active_tokens = _profile_tokens(self.secret_store,
                 active_name,
+                self.presets.get(active_name, {}),
                 self.presets.get(active_name, {}).get("token", ""),
             )
             active_index += max(1, len(active_tokens))
@@ -4089,9 +5072,9 @@ class PresetEditor:
             return
         name = simpledialog.askstring("New Configuration", "What would you like to name this new config?", parent=self.root)
         if name:
-            name = name.strip()
-            if name in self.presets:
-                messagebox.showwarning("Name Taken", f"You already have a config named '{name}'. Please choose a different name.")
+            name, name_error = validate_new_profile_name(self.presets, name)
+            if name_error:
+                messagebox.showwarning("Name Taken", name_error, parent=self.root)
                 return
 
             self.presets[name] = build_recommended_preset()
@@ -4114,30 +5097,33 @@ class PresetEditor:
                                       f"Enter name for copy of '{self.current_preset}':",
                                       parent=self.root)
         if name:
-            name = name.strip()
-            if name in self.presets:
-                messagebox.showwarning("Warning", f"Preset '{name}' already exists.")
+            name, name_error = validate_new_profile_name(self.presets, name)
+            if name_error:
+                messagebox.showwarning("Warning", name_error, parent=self.root)
                 return
 
-            # Deep copy
+            # Deep copy; the copy is a new profile with its own stable id.
             import copy
-            self.presets[name] = copy.deepcopy(self.presets[self.current_preset])
+            source_data = self.presets[self.current_preset]
+            self.presets[name] = copy.deepcopy(source_data)
+            self.presets[name]["profile_id"] = new_profile_id()
             try:
-                source_tokens = self.secret_store.get_tokens(
+                source_tokens = _profile_tokens(self.secret_store,
                     self.current_preset,
-                    self.presets[self.current_preset].get("token", ""),
+                    source_data,
+                    source_data.get("token", ""),
                 )
                 if source_tokens:
-                    self.secret_store.set_tokens(name, source_tokens)
+                    _store_profile_tokens(self.secret_store, name, self.presets[name], source_tokens)
             except SecretStoreError as exc:
                 del self.presets[name]
                 messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
                 return
             self.presets[name]["token"] = ""
             if not self.save_presets():
-                del self.presets[name]
+                copied_data = self.presets.pop(name)
                 try:
-                    self.secret_store.delete_token(name)
+                    _delete_profile_tokens(self.secret_store, name, copied_data)
                 except SecretStoreError:
                     pass
                 return
@@ -4160,6 +5146,9 @@ class PresetEditor:
         clean_data = copy.deepcopy(preset_data)
         clean_data["token"] = ""
         clean_data.pop("tokens", None)
+        # Identity and links to this computer's other profiles mean nothing elsewhere.
+        clean_data.pop("profile_id", None)
+        clean_data["main_profile_id"] = ""
 
         json_str = json.dumps(clean_data, indent=4, ensure_ascii=False)
 
@@ -4170,6 +5159,62 @@ class PresetEditor:
             messagebox.showinfo("Success", "Preset copied to clipboard without token!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to copy preset to clipboard:\n{e}")
+
+    def rename_preset(self):
+        """Rename the current profile; its id, settings, tokens and links stay."""
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No preset selected.")
+            return
+        if not self.prompt_unsaved_changes():
+            return
+        old_name = self.current_preset
+        new_name = simpledialog.askstring(
+            "Rename Profile",
+            f"New name for '{old_name}' (1-40 characters, any language):",
+            initialvalue=old_name,
+            parent=self.root,
+        )
+        if new_name is None:
+            return
+        self._rename_profile_to(old_name, new_name)
+
+    def _rename_profile_to(self, old_name, new_name):
+        """Apply a rename (separate from the dialog so it can be tested)."""
+        clean, error = validate_new_profile_name(self.presets, new_name, current=old_name)
+        if error:
+            messagebox.showwarning("Rename Profile", error, parent=self.root)
+            return False
+        if clean == old_name:
+            return True
+        data = self.presets[old_name]
+        if not profile_id_of(data):
+            data["profile_id"] = new_profile_id()
+        try:
+            # Tokens follow the stable id, never the display name.
+            _migrate_profile_tokens(self.secret_store, old_name, data)
+        except SecretStoreError as exc:
+            messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
+            return False
+        previous = list(self.presets.items())
+        rename_profile(self.presets, old_name, clean)
+        if not self.save_presets():
+            self.presets.clear()
+            self.presets.update(previous)
+            return False
+        # The profile's daily TXT logs follow the new name.
+        try:
+            log_tools.rename_profile_logs(log_tools.logs_dir_for(get_base_path()), old_name, clean)
+        except Exception:
+            pass
+        if old_name in self.bot_processes:
+            self.bot_processes[clean] = self.bot_processes.pop(old_name)
+        if data.get("autostart", False):
+            # Replaces the old Startup script and writes one for the new name.
+            self._manage_autostart(old_name, False)
+        self.current_preset = clean
+        self.refresh_preset_list()
+        self.select_preset(clean)
+        return True
 
     def delete_preset(self):
         """Delete the current preset."""
@@ -4189,7 +5234,7 @@ class PresetEditor:
                 process.terminate()
             self._manage_autostart(preset_name, False)
             try:
-                self.secret_store.delete_token(preset_name)
+                _delete_profile_tokens(self.secret_store, preset_name, deleted_data)
             except SecretStoreError as exc:
                 messagebox.showwarning("Secure Token Storage", f"Preset was deleted, but its stored token could not be removed:\n{exc}")
             self.current_preset = None
@@ -4231,8 +5276,9 @@ class PresetEditor:
             stagger_index = sum(
                 max(
                     1,
-                    len(self.secret_store.get_tokens(
+                    len(_profile_tokens(self.secret_store,
                         name,
+                        self.presets.get(name, {}),
                         self.presets.get(name, {}).get("token", ""),
                     )),
                 )
@@ -4305,7 +5351,7 @@ class PresetEditor:
         elif result == "source":
             messagebox.showinfo(
                 "Update Installed",
-                f"{subject} has been installed. MudaRemote is restarting with the updated files.\n\nYour presets and settings were preserved.",
+                f"{subject} has been installed. MudaFork is restarting with the updated files.\n\nYour presets and settings were preserved.",
                 parent=self.root,
             )
             _relaunch_editor()
@@ -4313,7 +5359,7 @@ class PresetEditor:
         elif result == "git":
             messagebox.showinfo(
                 "Git Checkout Detected",
-                "This MudaRemote installation is managed by Git, so no files were changed.\n\nRun 'git pull' in the project folder to update.",
+                "This MudaFork installation is managed by Git, so no files were changed.\n\nRun 'git pull' in the project folder to update.",
                 parent=self.root,
             )
         # "skipped" means the user cancelled; nothing to do.
@@ -4387,13 +5433,13 @@ class PresetEditor:
                 elif kind == "confirm":
                     _version, _changelog, channel, done, answer = item[1:]
                     answer["value"] = messagebox.askyesno(
-                        "MudaRemote Update Available",
+                        "MudaFork Update Available",
                         (
-                            f"MudaRemote v{_version} is available.\n\n"
+                            f"MudaFork v{_version} is available.\n\n"
                             f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
                             f"Changelog:\n{_changelog}\n\n"
                             "Install this update now?\n\n"
-                            "MudaRemote will close and restart itself once the update is ready.\n"
+                            "MudaFork will close and restart itself once the update is ready.\n"
                             "Your saved presets will be kept."
                         ),
                         parent=self.root,
@@ -4412,7 +5458,7 @@ class PresetEditor:
     def manual_check_updates(self):
         """Check for updates on a worker thread so the GUI stays responsive."""
         if self._update_busy:
-            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            messagebox.showwarning("MudaFork", "An update is already in progress.", parent=self.root)
             return
         try:
             import mudae_bot
@@ -4435,35 +5481,35 @@ class PresetEditor:
             if result == "current":
                 channel_name = "Beta (Previews)" if channel == "beta" else "Stable (Official)"
                 messagebox.showinfo(
-                    "MudaRemote Up to Date",
+                    "MudaFork Up to Date",
                     f"You are running the latest version (v{CURRENT_VERSION}).\n\nActive Channel: {channel_name}",
                     parent=self.root,
                 )
             elif result == "disabled":
-                messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+                messagebox.showwarning("MudaFork", "Update checking is currently disabled.", parent=self.root)
             elif result == "failed":
                 detail = "\n\n" + self._update_last_error if self._update_last_error else " Check console/logs."
                 messagebox.showerror(
-                    "MudaRemote",
+                    "MudaFork",
                     "Update check encountered an error." + detail,
                     parent=self.root,
                 )
             else:
-                self._handle_update_outcome(result, f"MudaRemote v{CURRENT_VERSION}")
+                self._handle_update_outcome(result, f"MudaFork v{CURRENT_VERSION}")
 
         self._run_update_worker(work, on_done)
 
     def open_version_selector(self):
         """Open the version selector dialog to install any target release."""
         if self._update_busy:
-            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            messagebox.showwarning("MudaFork", "An update is already in progress.", parent=self.root)
             return
         channel = "beta" if self.beta_channel_var.get() else "main"
 
         def on_install(target_version, selected_channel="main"):
             confirm = messagebox.askyesno(
                 "Confirm Version Switch",
-                f"Switch MudaRemote installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
+                f"Switch MudaFork installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
                 parent=self.root,
             )
             if not confirm:
@@ -4485,7 +5531,7 @@ class PresetEditor:
 
             def on_done(res):
                 if res == "current":
-                    messagebox.showinfo("MudaRemote", f"Already running {target_version}.", parent=self.root)
+                    messagebox.showinfo("MudaFork", f"Already running {target_version}.", parent=self.root)
                 elif res == "failed":
                     detail = self._update_last_error or "Check logs."
                     messagebox.showerror(
@@ -4494,7 +5540,7 @@ class PresetEditor:
                         parent=self.root,
                     )
                 elif res == "disabled":
-                    messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+                    messagebox.showwarning("MudaFork", "Update checking is currently disabled.", parent=self.root)
                 else:
                     self._handle_update_outcome(res, target_version)
 
@@ -4508,7 +5554,7 @@ def _relaunch_editor():
     try:
         subprocess.Popen([sys.executable] + sys.argv, cwd=get_base_path())
     except Exception as e:
-        print(f"[MudaRemote] Relaunch failed after update: {e}. Start MudaRemote manually.")
+        print(f"[MudaFork] Relaunch failed after update: {e}. Start MudaFork manually.")
 
 
 class _UpdatesDisabled(Exception):
@@ -4545,12 +5591,12 @@ def launch_gui(extensions=None, check_updates=True):
 
         def confirm_update(latest_version, changelog):
             return messagebox.askyesno(
-                "MudaRemote Update Available",
+                "MudaFork Update Available",
                 (
-                    f"MudaRemote v{latest_version} is available.\n\n"
+                    f"MudaFork v{latest_version} is available.\n\n"
                     f"Changelog:\n{changelog}\n\n"
                     "Install this update now?\n\n"
-                    "MudaRemote will close and restart itself once the update is ready.\n"
+                    "MudaFork will close and restart itself once the update is ready.\n"
                     "Your saved presets will be kept."
                 ),
                 parent=root,
@@ -4565,18 +5611,18 @@ def launch_gui(extensions=None, check_updates=True):
         if startup_result == "source":
             messagebox.showinfo(
                 "Update Installed",
-                "MudaRemote was updated. Restarting with the new files...",
+                "MudaFork was updated. Restarting with the new files...",
                 parent=root,
             )
             _relaunch_editor()
             root.destroy()
             return
         if startup_result == "git":
-            print("[MudaRemote] This install is managed by Git; run 'git pull' to update.")
+            print("[MudaFork] This install is managed by Git; run 'git pull' to update.")
     except _UpdatesDisabled:
         pass
     except Exception as e:
-        print(f"[MudaRemote] Update check failed: {e}")
+        print(f"[MudaFork] Update check failed: {e}")
 
     app = PresetEditor(root, extensions=extensions)
     root.deiconify()
@@ -4594,23 +5640,24 @@ def run_headless(preset_names, start_index=0):
     try:
         all_presets = load_json(PRESETS_FILE, {})
     except (json.JSONDecodeError, Exception) as e:
-        print(f"[MudaRemote] Failed to load {PRESETS_FILE}: {e}")
+        print(f"[MudaFork] Failed to load {PRESETS_FILE}: {e}")
         sys.exit(1)
 
     requested_names = []
     resolved_presets = {}
     for name in preset_names:
         if name not in all_presets:
-            print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
+            print(f"[MudaFork] Preset '{name}' not found. Skipping.")
             continue
         preset_data = dict(all_presets[name])
-        preset_data["tokens"] = SecretStore(get_base_path()).get_tokens(
+        preset_data["tokens"] = SecretStore(get_base_path()).get_profile_tokens(
             name,
+            preset_data,
             preset_data.get("tokens") or preset_data.get("token", ""),
         )
         preset_data["token"] = preset_data["tokens"][0] if preset_data["tokens"] else ""
         if not preset_data["tokens"]:
-            print(f"[MudaRemote] Preset '{name}' has no token. Skipping.")
+            print(f"[MudaFork] Preset '{name}' has no token. Skipping.")
             continue
         requested_names.append(name)
         resolved_presets[name] = preset_data
@@ -4622,28 +5669,28 @@ def run_headless(preset_names, start_index=0):
         start_index=start_index,
     ):
         active_index = int(preset_data["persistent_stagger_seconds"] // active_stagger_seconds(1))
-        print(f"[MudaRemote] Starting active preset #{active_index + 1}: {name}")
+        print(f"[MudaFork] Starting active preset #{active_index + 1}: {name}")
         t = mudae_bot.start_preset_thread(name, preset_data)
         if t:
             threads.append(t)
 
     if not threads:
-        print("[MudaRemote] No valid presets to run.")
+        print("[MudaFork] No valid presets to run.")
         sys.exit(1)
 
     # Keep the main thread alive so daemon threads don't die
-    print(f"[MudaRemote] {len(threads)} preset(s) running. Press Ctrl+C to stop.")
+    print(f"[MudaFork] {len(threads)} preset(s) running. Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[MudaRemote] Shutting down...")
+        print("\n[MudaFork] Shutting down...")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="MudaRemote - Mudae Bot Manager & Preset Editor",
-        prog="MudaRemote"
+        description="MudaFork - Mudae Bot Manager & Preset Editor",
+        prog="MudaFork"
     )
     parser.add_argument(
         "--preset",
@@ -4672,19 +5719,19 @@ def main():
                 all_presets = json.load(f)
             preset_names = list(all_presets.keys())
         except Exception as e:
-            print(f"[MudaRemote] Failed to load presets: {e}")
+            print(f"[MudaFork] Failed to load presets: {e}")
             sys.exit(1)
 
         if not preset_names:
-            print("[MudaRemote] No presets found in presets.json.")
+            print("[MudaFork] No presets found in presets.json.")
             sys.exit(1)
 
-        print(f"[MudaRemote] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
+        print(f"[MudaFork] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
         run_headless(preset_names, start_index=args.stagger_index)
 
     elif args.preset:
         # Run specific preset(s) in headless mode
-        print(f"[MudaRemote] Running preset(s): {', '.join(args.preset)}")
+        print(f"[MudaFork] Running preset(s): {', '.join(args.preset)}")
         run_headless(args.preset, start_index=args.stagger_index)
 
     else:

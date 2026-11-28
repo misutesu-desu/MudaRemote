@@ -7,11 +7,12 @@ import android.view.ViewGroup
 /**
  * Minimal flow layout that wraps children onto new lines when the row runs out
  * of width. Used for button/toolbars so nothing is ever clipped or pushed off
- * screen on narrow displays. No external dependencies.
+ * screen on narrow displays. Rows run from the start edge, so right-to-left layouts mirror.
+ * No external dependencies.
  */
 class FlowLayout(context: Context) : ViewGroup(context) {
-    private val horizontalGap = UiTheme.dp(context, 6)
-    private val verticalGap = UiTheme.dp(context, 6)
+    private val horizontalGap = UiTheme.dp(context, 8)
+    private val verticalGap = UiTheme.dp(context, 8)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val widthSize = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
@@ -48,6 +49,8 @@ class FlowLayout(context: Context) : ViewGroup(context) {
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val widthSize = r - l - paddingLeft - paddingRight
+        val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val totalWidth = r - l
         var x = paddingLeft
         var y = paddingTop
         var lineHeight = 0
@@ -64,7 +67,9 @@ class FlowLayout(context: Context) : ViewGroup(context) {
                 lineHeight = 0
             }
 
-            child.layout(x, y, x + childWidth, y + childHeight)
+            // In RTL the same row is mirrored: x measured from the right edge instead of the left.
+            val left = if (rtl) totalWidth - paddingRight - (x - paddingLeft) - childWidth else x
+            child.layout(left, y, left + childWidth, y + childHeight)
             x += childWidth + horizontalGap
             lineHeight = maxOf(lineHeight, childHeight)
         }

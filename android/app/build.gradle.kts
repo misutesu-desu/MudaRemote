@@ -17,6 +17,14 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 val hasReleaseSigning = keystoreProperties.isNotEmpty()
+
+// ABIs packaged into the APK (Chaquopy takes them from ndk.abiFilters). The default keeps both the
+// phone ABI and x86_64 so the debug build runs in the CI emulator; the release workflow passes
+// -PmudaAbis=arm64-v8a to ship a phone-only APK (the x86_64 Python runtime is the bulk of the saving).
+val mudaAbis: List<String> = (findProperty("mudaAbis") as String?)
+    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+    ?.takeIf { it.isNotEmpty() }
+    ?: listOf("arm64-v8a", "x86_64")
 val preparePythonRuntime by tasks.registering(Sync::class) {
     from(projectDir.parentFile.parentFile) {
         include("mudae_bot.py", "mudae_core/**/*.py")
@@ -38,14 +46,14 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mudaremote.android"
+        applicationId = "com.mudafork.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 45
-        versionName = "1.2.37"
+        versionCode = 5
+        versionName = "6.0.4"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += mudaAbis
         }
     }
 
@@ -90,10 +98,17 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.11"
+        // Only what the Android engine imports (the desktop-only inquirer and keyring packages of
+        // requirements.txt are imported lazily by desktop code paths and are not needed here).
         pip {
             install("discord.py-self==2.0.1")
             install("requests>=2.31,<3")
         }
+        // NOTE for the release manager (size work, not enabled): Chaquopy 16.0.0 may offer a
+        // `pyc { src = ...; pip = ...; stdlib = ... }` block that controls build-time bytecode
+        // compilation. Its exact options and defaults were NOT verified here (no plugin docs or
+        // network in the editing environment), so nothing was added. Check the plugin's documentation
+        // for 16.0.0, try it on a branch, and compare apk-breakdown.txt (assets/chaquopy/*) before/after.
     }
     // Package the proven desktop engine directly. Android-only glue lives in
     // src/main/python, while this directory supplies mudae_bot.py and mudae_core.

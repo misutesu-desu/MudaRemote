@@ -1,5 +1,5 @@
 """
-MudaRemote Build Script
+MudaFork Build Script
 Compiles mudae_preset_editor.py into a standalone .exe using PyInstaller.
 
 Usage:
@@ -32,7 +32,7 @@ def update_source_manifest(script_dir):
 
 
 def build(onefile=False, console=False, update_manifest=False):
-    """Run PyInstaller to compile MudaRemote."""
+    """Run PyInstaller to compile MudaFork."""
     try:
         import PyInstaller.__main__
     except ImportError:
@@ -45,7 +45,7 @@ def build(onefile=False, console=False, update_manifest=False):
     entry_point = os.path.join(script_dir, "mudae_preset_editor.py")
     icon_path = os.path.join(script_dir, "icon.png")
     emoji_assets_path = os.path.join(script_dir, "mudae_emoji_assets")
-    release_spec = os.path.join(script_dir, "MudaRemote.spec")
+    release_spec = os.path.join(script_dir, "MudaFork.spec")
     version_file = os.path.join(script_dir, "packaging", "windows_version_info.txt")
     spec_dir = os.path.join(script_dir, "build", "spec")
     os.makedirs(spec_dir, exist_ok=True)
@@ -66,7 +66,7 @@ def build(onefile=False, console=False, update_manifest=False):
             "--noconfirm",
             "--clean",
             "--noupx",
-            "--name=MudaRemote",
+            "--name=MudaFork",
             f"--specpath={spec_dir}",
             "--onedir",
             # Include mudae_bot.py as hidden import so the bundle contains all bot logic.
@@ -85,7 +85,7 @@ def build(onefile=False, console=False, update_manifest=False):
         print("[BUILD] Mode: Directory (faster startup)")
 
     if onefile:
-        print("[BUILD] Window and icon settings: MudaRemote.spec")
+        print("[BUILD] Window and icon settings: MudaFork.spec")
     else:
         # IMPORTANT: We MUST use --console (not --windowed) because the exe needs to
         # spawn visible console windows for headless bot mode (--preset).
@@ -110,9 +110,9 @@ def build(onefile=False, console=False, update_manifest=False):
     print(f"\n{'='*60}")
     print("[BUILD] Build complete!")
     if onefile:
-        output_path = os.path.join(script_dir, "dist", "MudaRemote.exe")
+        output_path = os.path.join(script_dir, "dist", "MudaFork.exe")
     else:
-        output_path = os.path.join(script_dir, "dist", "MudaRemote", "MudaRemote.exe")
+        output_path = os.path.join(script_dir, "dist", "MudaFork", "MudaFork.exe")
     print(f"[BUILD] Output: {output_path}")
     if os.path.isfile(output_path):
         with open(output_path, "rb") as executable:
@@ -135,7 +135,7 @@ def build(onefile=False, console=False, update_manifest=False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build MudaRemote into a standalone .exe")
+    parser = argparse.ArgumentParser(description="Build MudaFork into a standalone .exe")
     parser.add_argument("--onefile", action="store_true", help="Build as a single .exe file (slower startup)")
     parser.add_argument("--console", action="store_true", help="Show console window (useful for debugging)")
     parser.add_argument("--update-manifest", action="store_true", help="Write the exact one-file EXE checksum to version.json")

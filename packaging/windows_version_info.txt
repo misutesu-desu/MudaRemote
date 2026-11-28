@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(5, 3, 9, 0),
-    prodvers=(5, 3, 9, 0),
+    filevers=(6, 0, 4, 0),
+    prodvers=(6, 0, 4, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -13,14 +13,14 @@ VSVersionInfo(
     StringFileInfo([
       StringTable(
         '040904B0',
-        [StringStruct('CompanyName', 'MudaRemote'),
-         StringStruct('FileDescription', 'MudaRemote - Mudae Bot Manager'),
-         StringStruct('FileVersion', '5.3.9.0'),
-         StringStruct('InternalName', 'MudaRemote'),
-         StringStruct('LegalCopyright', 'Copyright (c) MudaRemote contributors'),
-         StringStruct('OriginalFilename', 'MudaRemote.exe'),
-         StringStruct('ProductName', 'MudaRemote'),
-         StringStruct('ProductVersion', '5.3.9')]
+        [StringStruct('CompanyName', 'MudaFork'),
+         StringStruct('FileDescription', 'MudaFork - Mudae Bot Manager'),
+         StringStruct('FileVersion', '6.0.4.0'),
+         StringStruct('InternalName', 'MudaFork'),
+         StringStruct('LegalCopyright', 'Fork of MudaRemote (MIT); Copyright (c) 2025 Mystes'),
+         StringStruct('OriginalFilename', 'MudaFork.exe'),
+         StringStruct('ProductName', 'MudaFork'),
+         StringStruct('ProductVersion', '6.0.4')]
       )
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

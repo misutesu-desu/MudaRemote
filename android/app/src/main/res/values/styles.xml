@@ -1,19 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Dark Material 3 Expressive roles; the same values as UiTheme.kt. -->
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:colorAccent">#58a6ff</item>
-        <item name="android:colorPrimary">#238636</item>
-        <item name="android:colorPrimaryDark">#0d1117</item>
-        <item name="android:windowBackground">#0d1117</item>
-        <item name="android:colorBackground">#0d1117</item>
-        <item name="android:textColorPrimary">#e6edf3</item>
-        <item name="android:textColorSecondary">#8d96a0</item>
-        <item name="android:editTextColor">#e6edf3</item>
-        <item name="android:textColorHint">#6e7681</item>
-        <item name="android:navigationBarColor">#0d1117</item>
-        <item name="android:statusBarColor">#0d1117</item>
+        <item name="android:colorAccent">@color/m3_primary</item>
+        <item name="android:colorPrimary">@color/m3_primary</item>
+        <item name="android:colorPrimaryDark">@color/m3_surface</item>
+        <item name="android:colorControlActivated">@color/m3_primary</item>
+        <item name="android:colorControlNormal">@color/m3_outline</item>
+        <item name="android:colorControlHighlight">@color/m3_ripple</item>
+        <item name="android:windowBackground">@color/m3_surface</item>
+        <item name="android:colorBackground">@color/m3_surface</item>
+        <item name="android:textColorPrimary">@color/m3_on_surface</item>
+        <item name="android:textColorSecondary">@color/m3_on_surface_variant</item>
+        <item name="android:editTextColor">@color/m3_on_surface</item>
+        <item name="android:textColorHint">@color/m3_on_surface_dim</item>
+        <item name="android:textColorHighlight">@color/m3_primary_container</item>
+        <item name="android:navigationBarColor">@color/m3_surface</item>
+        <item name="android:statusBarColor">@color/m3_surface</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
+    </style>
+
+    <!-- Every AlertDialog (including the update dialog): rounded 28dp surface, sentence-case pill buttons. -->
+    <style name="AppDialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowBackground">@drawable/dialog_surface</item>
+        <item name="android:colorBackground">@color/m3_surface_container_high</item>
+        <item name="android:colorAccent">@color/m3_primary</item>
+        <item name="android:colorPrimary">@color/m3_primary</item>
+        <item name="android:colorControlActivated">@color/m3_primary</item>
+        <item name="android:colorControlNormal">@color/m3_outline</item>
+        <item name="android:colorControlHighlight">@color/m3_ripple</item>
+        <item name="android:textColorPrimary">@color/m3_on_surface</item>
+        <item name="android:textColorSecondary">@color/m3_on_surface_variant</item>
+        <item name="android:textColorAlertDialogListItem">@color/m3_on_surface</item>
+        <item name="android:editTextColor">@color/m3_on_surface</item>
+        <item name="android:textColorHint">@color/m3_on_surface_dim</item>
+        <item name="android:buttonBarButtonStyle">@style/AppDialogButton</item>
+    </style>
+
+    <style name="AppDialogButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/m3_primary</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:background">@drawable/dialog_button</item>
     </style>
 </resources>

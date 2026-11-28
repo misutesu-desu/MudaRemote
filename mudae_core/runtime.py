@@ -61,8 +61,14 @@ def normal_roll_behavior_flags(
     pending_us=False,
     claim_reset_minutes=None,
     roll_reset_minutes=None,
+    alt_can_claim=False,
 ):
-    """Return behavior-gated immediate/evaluation decisions for normal rolls."""
+    """Return behavior-gated immediate/evaluation decisions for normal rolls.
+
+    ``alt_can_claim``: «Main keeps rolling while an alt can claim» found a
+    running alt with a claim or $rt (mudae_core.main_alt_coop); it counts
+    like the main's own claim.
+    """
     if not rolling_enabled or not proceed_to_rolls:
         return False, False
     if is_lurking and not scheduled_roll_due:
@@ -81,6 +87,7 @@ def normal_roll_behavior_flags(
     immediate = bool(
         scheduled_roll_due
         or (can_claim and not is_lurking)
+        or (alt_can_claim and not is_lurking)
         or key_mode
         or rt_available
         or is_timing_window
@@ -1753,8 +1760,12 @@ def active_stagger_seconds(active_index, interval=AUTOMATED_STAGGER_INTERVAL_SEC
     return max(0, int(active_index or 0)) * max(0.0, float(interval or 0.0))
 
 
-def can_resume_claim_interrupted_rolls(client) -> bool:
-    """Return whether a deliberate claim pause can keep using its known rolls."""
+def can_resume_claim_interrupted_rolls(client, alt_can_claim=False) -> bool:
+    """Return whether a deliberate claim pause can keep using its known rolls.
+
+    ``alt_can_claim``: a running alt of this main can still take a roll
+    («Main keeps rolling while an alt can claim»).
+    """
     return bool(
         getattr(client, "rolling_enabled", False)
         and not getattr(client, "is_paused", False)
@@ -1766,6 +1777,7 @@ def can_resume_claim_interrupted_rolls(client) -> bool:
             or getattr(client, "claim_right_available", False)
             or getattr(client, "rt_available", False)
             or getattr(client, "is_timing_mode_active", False)
+            or alt_can_claim
         )
     )
 
@@ -1792,6 +1804,9 @@ def prepare_active_presets(preset_names, preset_mapping, start_index=0):
         for token_index, token in enumerate(tokens, 1):
             account_data = dict(data)
             account_data["_source_preset_name"] = name
+            # Token 1 is the profile's main; tokens 2.. are its alts (account_roles).
+            account_data["_account_index"] = token_index
+            account_data["_account_count"] = len(tokens)
             account_data.pop("tokens", None)
             account_data["token"] = token
             active_index = max(0, int(start_index or 0)) + len(prepared)

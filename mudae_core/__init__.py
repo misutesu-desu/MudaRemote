@@ -1,4 +1,4 @@
-"""Shared, testable infrastructure for MudaRemote."""
+"""Shared, testable infrastructure for MudaFork."""
 
 from .config import atomic_write_json, load_json, validate_preset
 from .claiming import (

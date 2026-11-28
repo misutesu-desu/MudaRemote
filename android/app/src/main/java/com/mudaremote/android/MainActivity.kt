@@ -1,6 +1,7 @@
 package com.mudaremote.android
 
 import android.Manifest
+import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -43,6 +44,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -54,7 +56,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * MudaRemote Android application styled after GitHub Dark & Primer design system.
+ * MudaFork Android application in a dark Material 3 Expressive style (see UiTheme).
  */
 class MainActivity : ComponentActivity() {
 
@@ -73,6 +75,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var logScroll: ScrollView
     private lateinit var logStatusDot: TextView
     private lateinit var vault: SecretVault
+    private lateinit var rootScroll: ScrollView
+    private lateinit var keepRunningCard: LinearLayout
+    private lateinit var keepRunningStatus: LinearLayout
+    private lateinit var profileSummaryTitle: TextView
+    private lateinit var profileRoleChip: TextView
+    private lateinit var profileRunChip: TextView
+    private var pendingNoticeResume = false
 
     private var schemaFields = JSONObject()
     private val profiles = linkedMapOf<String, JSONObject>()
@@ -82,9 +91,11 @@ class MainActivity : ComponentActivity() {
     private var inheritedKakeraAtRender = "[]"
     private val sectionContainers = linkedMapOf<String, LinearLayout>()
     private val sectionHeaders = linkedMapOf<String, TextView>()
+    private val sectionChevrons = linkedMapOf<String, TextView>()
     private val collapsedSections = mutableMapOf<String, Boolean>()
 
     private var currentProfile = ""
+    private val profileIdPattern = Regex("^[A-Za-z0-9_-]{1,64}$")
     private var storageHealthy = true
     private var isTokenVisible = false
     private var activeCategoryFilter = "All"
@@ -92,9 +103,15 @@ class MainActivity : ComponentActivity() {
     private var logsVisibleForSession = false
     private var logSessionStartBytes = 0L
     private var displayedLogText = ""
+    // Log filters (profile, kind, errors only, search text); empty = no filter.
+    private var logFilterProfile = ""
+    private var logFilterKind = ""
+    private var logFilterErrorsOnly = false
+    private var logFilterSearch = ""
     private var isAutoScrollEnabled = true
     private var isLogsExpanded = false
     private var isUpdateInFlight = false
+    private lateinit var appUpdateUi: AppUpdateUi
     private var engineInfoInFlight = false
     private var lastEngineLabel = ""
 
@@ -108,10 +125,24 @@ class MainActivity : ComponentActivity() {
     private val logHandler = Handler(Looper.getMainLooper())
     private val logRefresh = object : Runnable {
         override fun run() {
+            syncRuntimeStateIfChanged()
             refreshLogs()
             logHandler.postDelayed(this, 1000)
         }
     }
+
+    // Log pipeline: the file read, parsing, filtering and highlighting run on this one background
+    // thread; the main thread only checks the file's size/time and sets the finished text.
+    private val logExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "mudafork-log").apply { isDaemon = true }
+    }
+    private var logJobInFlight = false
+    private var logGeneration = 0
+    private var lastLogSignature = ""
+    private var lastSeenRuntimeState: MudaRemoteService.RuntimeState? = null
+
+    /** The log filters as one immutable value, so the background thread never reads Activity fields. */
+    private data class LogFilters(val profile: String, val kind: String, val errorsOnly: Boolean, val search: String)
 
     private val presetsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importPresets(it) }
@@ -119,11 +150,16 @@ class MainActivity : ComponentActivity() {
     private val secretsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importSecrets(it) }
     }
+    // "Save as TXT": the system "create document" picker; the filtered lines are written to the chosen file.
+    private val logExportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let { writeLogExport(it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         vault = SecretVault(this)
+        appUpdateUi = AppUpdateUi(this)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
@@ -131,10 +167,17 @@ class MainActivity : ComponentActivity() {
         loadSchema()
         restore()
         loadEngineVersion()
+        AppUpdater.cleanup(applicationContext)
+        appUpdateUi.autoCheck()
+        if (savedInstanceState == null && intent?.action == KeepAlive.ACTION_RESUME_FROM_NOTICE) {
+            intent?.action = null
+            pendingNoticeResume = true  // started from onResume, when the app is in the foreground
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        appUpdateUi.onResume()
         logHandler.post(logRefresh)
         if (lastEngineLabel.isNotEmpty()) {
             // Instant paint from cache; refresh in background afterwards.
@@ -143,6 +186,28 @@ class MainActivity : ComponentActivity() {
         loadEngineVersion()
         syncRuntimeStatusBadge()
         adoptLiveLogsIfRunning()
+        if (::keepRunningStatus.isInitialized) refreshKeepRunningStatus()
+        if (pendingNoticeResume) {
+            pendingNoticeResume = false
+            resumeFromNotice()
+        }
+    }
+
+    /** "Tap to resume": the app is in the foreground now, so Android allows the start. */
+    private fun resumeFromNotice() {
+        KeepAlive.clearTapToResume(this)
+        if (MudaRemoteService.runtimeState != MudaRemoteService.RuntimeState.STOPPED) return
+        if (!KeepAlive.shouldBeRunning(this)) {
+            toast("Nothing to resume: the bot was stopped.")
+            return
+        }
+        runCatching { MudaRemoteService.resume(this, KeepAlive.REASON_NOTICE) }
+            .onSuccess {
+                beginLogSession()
+                updateStatusBadge("● Resuming...", UiTheme.ACCENT_YELLOW)
+                toast("Resuming the bot...")
+            }
+            .onFailure { error -> toast("Could not resume: ${error.message}") }
     }
 
     /**
@@ -158,7 +223,22 @@ class MainActivity : ComponentActivity() {
         refreshLogs()
     }
 
+    override fun onDestroy() {
+        logExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    /** Runs on each tick but touches views only when the service's state really changed. */
+    private fun syncRuntimeStateIfChanged() {
+        val state = MudaRemoteService.runtimeState
+        if (state == lastSeenRuntimeState) return
+        lastSeenRuntimeState = state
+        syncRuntimeStatusBadge()
+        refreshProfileSummary()
+    }
+
     override fun onPause() {
+        appUpdateUi.onPause()
         logHandler.removeCallbacks(logRefresh)
         searchHandler.removeCallbacks(searchDebounce)
         if (storageHealthy) {
@@ -171,20 +251,20 @@ class MainActivity : ComponentActivity() {
         when (MudaRemoteService.runtimeState) {
             MudaRemoteService.RuntimeState.STARTING -> {
                 updateStatusBadge("● Starting...", UiTheme.ACCENT_YELLOW)
-                logStatusDot.text = "🟡 "
+                setLogDot(UiTheme.TERTIARY)
             }
             MudaRemoteService.RuntimeState.RUNNING -> {
                 updateStatusBadge("● Runtime active", UiTheme.ACCENT_GREEN_BRIGHT)
-                logStatusDot.text = "🟢 "
+                setLogDot(UiTheme.PRIMARY)
             }
             MudaRemoteService.RuntimeState.STOPPING -> {
                 updateStatusBadge("● Stopping all...", UiTheme.ACCENT_YELLOW)
-                logStatusDot.text = "🟡 "
+                setLogDot(UiTheme.TERTIARY)
             }
             MudaRemoteService.RuntimeState.STOPPED -> {
                 if (statusBadge.text?.startsWith("●") == true) {
                     updateStatusBadge("● Stopped", UiTheme.TEXT_MUTED)
-                    logStatusDot.text = "⚪ "
+                    setLogDot(UiTheme.TEXT_MUTED)
                 }
             }
         }
@@ -201,7 +281,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // =========================================================================
-    // UI BUILDER (GITHUB PRIMER DARK SYSTEM)
+    // UI BUILDER (DARK MATERIAL 3 EXPRESSIVE, SEE UiTheme)
     // =========================================================================
 
     private fun buildRootUi(): View {
@@ -212,9 +292,9 @@ class MainActivity : ComponentActivity() {
         val scrollContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
-                UiTheme.dp(this@MainActivity, 14),
+                UiTheme.dp(this@MainActivity, 16),
                 UiTheme.dp(this@MainActivity, 28),
-                UiTheme.dp(this@MainActivity, 14),
+                UiTheme.dp(this@MainActivity, 16),
                 UiTheme.dp(this@MainActivity, 120)
             )
         }
@@ -222,7 +302,7 @@ class MainActivity : ComponentActivity() {
         // 1. GitHub Repository Header Card
         scrollContent.addView(buildHeaderCard())
 
-        // 2. Branch & Profile Hub Card
+        // 2. Profiles card
         scrollContent.addView(buildProfileHubCard())
 
         // 3. Secrets / Discord Token Card
@@ -237,6 +317,10 @@ class MainActivity : ComponentActivity() {
         }
         scrollContent.addView(fieldsContainer)
 
+        // 6a. Keep running (phones that close background apps)
+        keepRunningCard = buildKeepRunningCard()
+        scrollContent.addView(keepRunningCard)
+
         // 6. Python Engine & Releases Card
         scrollContent.addView(buildEngineManagerCard())
 
@@ -248,11 +332,26 @@ class MainActivity : ComponentActivity() {
             isVerticalScrollBarEnabled = false
             addView(scrollContent)
         }
+        rootScroll = scrollView
         root.addView(scrollView, FrameLayout.LayoutParams(-1, -1))
 
         // 8. Sticky Bottom Action Bar (GitHub PR / Workflow Action Dock)
         val bottomBarView = buildStickyBottomBar()
         root.addView(bottomBarView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+
+        // The scroll content ends above the dock: bottom padding = the dock's measured height
+        // (it already includes the system-bar inset) + a gap, kept in step with every layout change.
+        var keyboardExtra = 0
+        fun syncContentBottomPadding() {
+            val dockHeight = if (bottomBarView.height > 0) bottomBarView.height else UiTheme.dp(this, 96)
+            val wanted = dockHeight + keyboardExtra + UiTheme.dp(this, 16)
+            if (scrollContent.paddingBottom != wanted) {
+                scrollContent.setPadding(scrollContent.paddingLeft, scrollContent.paddingTop, scrollContent.paddingRight, wanted)
+            }
+        }
+        bottomBarView.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) syncContentBottomPadding()
+        }
 
         // Window Insets listener to safely avoid status bar, notch, and navigation buttons
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -260,19 +359,25 @@ class MainActivity : ComponentActivity() {
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
 
+            // The keyboard (adjustResize) is in the ime inset; the dock stays above the system bars.
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            keyboardExtra = maxOf(0, imeBottom - sysInsets.bottom)
             scrollContent.setPadding(
-                UiTheme.dp(this@MainActivity, 14) + sysInsets.left,
-                sysInsets.top + UiTheme.dp(this@MainActivity, 10),
-                UiTheme.dp(this@MainActivity, 14) + sysInsets.right,
-                sysInsets.bottom + UiTheme.dp(this@MainActivity, 120)
+                UiTheme.dp(this@MainActivity, 16) + sysInsets.left,
+                sysInsets.top + UiTheme.dp(this@MainActivity, 12),
+                UiTheme.dp(this@MainActivity, 16) + sysInsets.right,
+                scrollContent.paddingBottom
             )
 
             bottomBarView.setPadding(
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.left,
-                0,
+                UiTheme.dp(this@MainActivity, 8),
                 UiTheme.dp(this@MainActivity, 12) + sysInsets.right,
                 sysInsets.bottom + UiTheme.dp(this@MainActivity, 10)
             )
+            // The dock's padding just changed; its height follows on the next layout pass, which
+            // re-syncs through the layout listener. Sync now too for the keyboard part.
+            syncContentBottomPadding()
 
             insets
         }
@@ -280,12 +385,12 @@ class MainActivity : ComponentActivity() {
         return root
     }
 
-    // --- 1. GitHub Repository Header Card ---
+    // --- 1. App header card ---
     private fun buildHeaderCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18))
         }
 
         val topRow = LinearLayout(this).apply {
@@ -297,100 +402,64 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
         }
 
-        // Repository breadcrumb
-        val repoBreadcrumb = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val octocat = TextView(this).apply {
-            text = "🐙 "
-            textSize = 16f
-        }
-        repoBreadcrumb.addView(octocat)
-
-        val ownerText = TextView(this).apply {
-            text = "misutesu-desu / "
-            textSize = 14.5f
-            setTextColor(UiTheme.ACCENT_BLUE)
-        }
-        repoBreadcrumb.addView(ownerText)
-
-        val repoText = TextView(this).apply {
-            text = "MudaRemote"
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_BLUE)
-        }
-        repoBreadcrumb.addView(repoText)
-
-        val publicPill = TextView(this).apply {
-            text = "Public"
-            textSize = 10f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_MUTED)
-            background = UiTheme.pillDrawable(this@MainActivity, Color.TRANSPARENT, UiTheme.BORDER_DEFAULT, 10f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 1), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 1))
-        }
-        val pillParams = LinearLayout.LayoutParams(-2, -2).apply { leftMargin = UiTheme.dp(this@MainActivity, 6) }
-        repoBreadcrumb.addView(publicPill, pillParams)
-        titleCol.addView(repoBreadcrumb)
+        titleCol.addView(TextView(this).apply {
+            text = "MudaFork"
+            UiTheme.styleTitle(this, large = true)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
 
         engineVersionText = TextView(this).apply {
-            text = "🐍 Python Engine: Loading..."
-            textSize = 11f
+            text = "Python engine: loading..."
+            textSize = UiTheme.TYPE_LABEL
             setTextColor(UiTheme.TEXT_MUTED)
-            setPadding(0, UiTheme.dp(this@MainActivity, 2), 0, 0)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 2), 0, 0)
         }
         titleCol.addView(engineVersionText)
         topRow.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
 
         statusBadge = TextView(this).apply {
             text = "● Idle"
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_MUTED)
-            background = UiTheme.pillDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 12f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 4), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 4))
+            UiTheme.styleStatusChip(this, UiTheme.TEXT_MUTED)
+            maxWidth = UiTheme.dp(this@MainActivity, 180)
         }
-        topRow.addView(statusBadge)
+        topRow.addView(statusBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) })
         card.addView(topRow)
 
         val desc = TextView(this).apply {
-            text = "Self-updating Mudae Discord automation engine with Android Keystore security."
-            textSize = 12f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, UiTheme.dp(this@MainActivity, 6), 0, UiTheme.dp(this@MainActivity, 8))
+            text = "Mudae automation for your own Discord accounts. Tokens stay encrypted on this phone."
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 12))
         }
         card.addView(desc)
 
-        // Action Toolbar (GitHub Repo Action style)
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Three actions at their natural width on a wrapping row: short one-line labels, so nothing
+        // is cut at a large font size; a button that does not fit moves to the next line whole.
+        val actionsRow = FlowLayout(this)
+        fun oneLine(button: TextView): TextView = button.apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-
-        val btnBattery = createGitHubButton("🔋 Battery Guide") { promptBatteryOptimization() }
-        val btnCheckUpdates = createGitHubButton("🔄 Fetch Updates") { checkPythonUpdates(force = true) }
-        val btnImportPresets = createGitHubButton("📥 Import Presets") { presetsPicker.launch(arrayOf("application/json", "text/plain")) }
-
-        actionsRow.addView(btnBattery, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = UiTheme.dp(this@MainActivity, 4) })
-        actionsRow.addView(btnCheckUpdates, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = UiTheme.dp(this@MainActivity, 4) })
-        actionsRow.addView(btnImportPresets, LinearLayout.LayoutParams(0, -2, 1f))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Keep running", UiTheme.ButtonStyle.TONAL) { _ -> scrollToKeepRunning() }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Check updates", UiTheme.ButtonStyle.TONAL) { _ -> checkPythonUpdates(force = true) }))
+        actionsRow.addView(oneLine(createGitHubSmallBtn("Import", UiTheme.ButtonStyle.TONAL) { _ -> presetsPicker.launch(arrayOf("application/json", "text/plain")) }))
         card.addView(actionsRow)
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
             }
         }
     }
 
-    // --- 2. Branch & Profile Selector Card ---
+    // --- 2. Profiles card: tabs, the open profile's role and state, quick actions ---
     private fun buildProfileHubCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18))
         }
 
         val headerRow = LinearLayout(this).apply {
@@ -399,58 +468,120 @@ class MainActivity : ComponentActivity() {
         }
 
         val cardTitle = TextView(this).apply {
-            text = "🌿 Branches & Profiles"
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            text = "Profiles"
+            UiTheme.styleTitle(this)
         }
         headerRow.addView(cardTitle, LinearLayout.LayoutParams(0, -2, 1f))
 
         val profileCountBadge = TextView(this).apply {
             text = "${profiles.size}"
-            textSize = 10f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_BLUE)
-            background = UiTheme.pillDrawable(this@MainActivity, UiTheme.LABEL_BLUE_BG, UiTheme.ACCENT_BLUE, 10f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 2), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 2))
+            UiTheme.styleStatusChip(this, UiTheme.PRIMARY)
         }
         this.profileCountBadge = profileCountBadge
         headerRow.addView(profileCountBadge)
         card.addView(headerRow)
 
-        // Action toolbar on its own wrapping row so nothing clips on narrow screens.
-        val actionsRow = FlowLayout(this).apply {
-            setPadding(0, UiTheme.dp(this@MainActivity, 8), 0, 0)
-        }
-        actionsRow.addView(createGitHubSmallBtn("➕ New") { _ -> promptCreateProfile() })
-        actionsRow.addView(createGitHubSmallBtn("📋 Fork") { _ -> duplicateCurrentProfile() })
-        actionsRow.addView(createGitHubSmallBtn("🗑️ Delete") { _ -> promptDeleteCurrentProfile() })
-        actionsRow.addView(createGitHubSmallBtn("📦 Export") { _ -> shareCurrentProfile() })
-        card.addView(actionsRow)
+        card.addView(TextView(this).apply {
+            text = "Pick a profile to edit it. Run (at the bottom) starts the open profile; hold Run to pick several."
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, 0)
+        })
 
-        // Horizontal Profile Tabs ScrollView
+        // Horizontal profile tabs
         profileTabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 2))
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, UiTheme.dp(this@MainActivity, 4))
         }
         card.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(profileTabs, FrameLayout.LayoutParams(-2, -2))
         })
 
+        // The open profile: role (Main/Side) and the runtime state
+        val summaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.rowSurface(this@MainActivity)
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+        }
+        profileSummaryTitle = TextView(this).apply {
+            UiTheme.styleLabel(this)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        profileRoleChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.SECONDARY) }
+        profileRunChip = TextView(this).apply { UiTheme.styleStatusChip(this, UiTheme.TEXT_MUTED) }
+        // Name on the whole first line; role and runtime chips wrap on the line under it.
+        summaryRow.addView(profileSummaryTitle, LinearLayout.LayoutParams(-1, -2))
+        val summaryChips = FlowLayout(this).apply {
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+        }
+        summaryChips.addView(profileRoleChip)
+        summaryChips.addView(profileRunChip)
+        summaryRow.addView(summaryChips, LinearLayout.LayoutParams(-1, -2))
+        card.addView(summaryRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
+
+        // Profile management on its own wrapping row so nothing clips on narrow screens.
+        val actionsRow = FlowLayout(this).apply {
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, 0)
+        }
+        actionsRow.addView(createGitHubSmallBtn("New") { _ -> promptCreateProfile() })
+        actionsRow.addView(createGitHubSmallBtn("Duplicate") { _ -> duplicateCurrentProfile() })
+        actionsRow.addView(createGitHubSmallBtn("Rename") { _ -> promptRenameProfile() })
+        actionsRow.addView(createGitHubSmallBtn("Export") { _ -> shareCurrentProfile() })
+        actionsRow.addView(createGitHubSmallBtn("Delete", UiTheme.ButtonStyle.DANGER) { _ -> promptDeleteCurrentProfile() })
+        card.addView(actionsRow)
+
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
             }
         }
+    }
+
+    /** Role and runtime state of the open profile; changes only what differs. */
+    private fun refreshProfileSummary() {
+        if (!::profileSummaryTitle.isInitialized) return
+        val data = profiles[currentProfile]
+        val isLegacySide = data != null && isLegacySideProfile(data)
+        val alts = if (currentProfile.isBlank()) 0 else altCount(currentProfile)
+        val hasToken = currentProfile.isNotBlank() && allTokensForProfile(currentProfile).isNotEmpty()
+        setTextIfChanged(profileSummaryTitle, if (hasToken) currentProfile else "$currentProfile · no token")
+        setTextIfChanged(profileRoleChip, when {
+            isLegacySide -> "Side"
+            alts > 0 -> "Main + $alts alt" + (if (alts == 1) "" else "s")
+            else -> "Main"
+        })
+        val (runText, runColor) = when (MudaRemoteService.runtimeState) {
+            MudaRemoteService.RuntimeState.RUNNING -> "Bot running" to UiTheme.PRIMARY
+            MudaRemoteService.RuntimeState.STARTING -> "Starting" to UiTheme.TERTIARY
+            MudaRemoteService.RuntimeState.STOPPING -> "Stopping" to UiTheme.TERTIARY
+            MudaRemoteService.RuntimeState.STOPPED -> "Bot stopped" to UiTheme.TEXT_MUTED
+        }
+        if (profileRunChip.text?.toString() != runText) {
+            profileRunChip.text = runText
+            UiTheme.styleStatusChip(profileRunChip, runColor)
+        }
+    }
+
+    private fun setTextIfChanged(view: TextView, value: String) {
+        if (view.text?.toString() != value) view.text = value
+    }
+
+    private fun doStopAll() {
+        beginLogSession()
+        MudaRemoteService.stop(this@MainActivity)
+        updateStatusBadge("● Stopping all...", UiTheme.ACCENT_YELLOW)
+        setLogDot(UiTheme.TERTIARY)
+        toast("Stop requested for all running profiles.")
     }
 
     // --- 3. Repository Secrets / Token Card ---
     private fun buildTokenCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18))
         }
 
         val titleRow = LinearLayout(this).apply {
@@ -459,29 +590,22 @@ class MainActivity : ComponentActivity() {
         }
 
         val title = TextView(this).apply {
-            text = "🔑 Repository Secrets / Token"
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            text = "Account token"
+            UiTheme.styleTitle(this)
         }
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
         val securityBadge = TextView(this).apply {
-            text = "🔒 AES-256-GCM"
-            textSize = 10f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_GREEN_BRIGHT)
-            background = UiTheme.pillDrawable(this@MainActivity, UiTheme.LABEL_GREEN_BG, UiTheme.BORDER_DEFAULT, 10f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 7), UiTheme.dp(this@MainActivity, 2), UiTheme.dp(this@MainActivity, 7), UiTheme.dp(this@MainActivity, 2))
+            text = "AES-256-GCM"
+            UiTheme.styleStatusChip(this, UiTheme.TERTIARY)
         }
         titleRow.addView(securityBadge)
         card.addView(titleRow)
 
         val desc = TextView(this).apply {
-            text = "Encrypted in Android Keystore. Tokens are never committed to exported presets."
-            textSize = 11.5f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, UiTheme.dp(this@MainActivity, 3), 0, UiTheme.dp(this@MainActivity, 8))
+            text = "Encrypted with the Android Keystore. Tokens are never written into exported presets."
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, UiTheme.dp(this@MainActivity, 12))
         }
         card.addView(desc)
 
@@ -489,13 +613,15 @@ class MainActivity : ComponentActivity() {
         val inputContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.inputDrawable(this@MainActivity, UiTheme.BG_INPUT)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 2), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 2))
+            background = UiTheme.inputDrawable(this@MainActivity, radiusDp = UiTheme.SHAPE_FULL)
+            setAddStatesFromChildren(true)  // the focus ring follows the field inside
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), 0, UiTheme.dp(this@MainActivity, 4), 0)
         }
 
         tokenInput = EditText(this).apply {
-            hint = "Paste your Discord token here"
-            textSize = 12.5f
+            hint = "Paste token"
+            textSize = UiTheme.TYPE_BODY
             typeface = Typeface.MONOSPACE
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
@@ -507,57 +633,69 @@ class MainActivity : ComponentActivity() {
         inputContainer.addView(tokenInput, LinearLayout.LayoutParams(0, -2, 1f))
 
         tokenShowHideBtn = TextView(this).apply {
-            text = "👁️"
-            textSize = 14f
+            text = "Show"
+            UiTheme.styleButton(this, UiTheme.ButtonStyle.TEXT, compact = true)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8), 0)
             contentDescription = "Toggle token visibility"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { toggleTokenVisibility() }
         }
-        inputContainer.addView(tokenShowHideBtn)
+        // Show / Paste / ✕ sit on their own row under the field so they never take its width.
+        val tokenActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        tokenActions.addView(tokenShowHideBtn)
 
         val pasteBtn = TextView(this).apply {
-            text = "📋"
-            textSize = 14f
+            text = "Paste"
+            UiTheme.styleButton(this, UiTheme.ButtonStyle.TEXT, compact = true)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8), 0)
             contentDescription = "Paste token from clipboard"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener { pasteTokenFromClipboard() }
         }
-        inputContainer.addView(pasteBtn)
+        tokenActions.addView(pasteBtn)
 
         val clearBtn = TextView(this).apply {
             text = "✕"
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_RED_BRIGHT)
+            textSize = 16f
+            setTextColor(UiTheme.ERROR)
+            background = UiTheme.listItemDrawable(this@MainActivity, radiusDp = UiTheme.SHAPE_FULL)
             contentDescription = "Clear token"
             gravity = Gravity.CENTER
             minHeight = UiTheme.dp(this@MainActivity, 48)
             minWidth = UiTheme.dp(this@MainActivity, 48)
             setOnClickListener {
-                tokenInput.setText("")
-                tokens.remove(currentProfile)
-                toast("Token cleared for $currentProfile")
+                // Destructive (the next save drops the token), so it asks first.
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Clear the token?")
+                    .setMessage("The token of '$currentProfile' is removed from this phone when the profile is saved.")
+                    .setPositiveButton("Clear") { _, _ ->
+                        tokenInput.setText("")
+                        tokens.remove(currentProfile)
+                        toast("Token cleared for $currentProfile")
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
         }
-        inputContainer.addView(clearBtn)
+        tokenActions.addView(clearBtn)
         card.addView(inputContainer)
+        card.addView(tokenActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 4) })
 
-        val importSecretsBtn = TextView(this).apply {
-            text = "📂 Import secrets file (.mudae-secrets.json)"
-            textSize = 11f
-            setTextColor(UiTheme.ACCENT_BLUE)
-            setPadding(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
-            setOnClickListener { secretsPicker.launch(arrayOf("application/json", "text/plain")) }
+        val importSecretsBtn = createGitHubButton("Import secrets file (.mudae-secrets.json)", UiTheme.ButtonStyle.TEXT) {
+            secretsPicker.launch(arrayOf("application/json", "text/plain"))
         }
-        card.addView(importSecretsBtn)
+        card.addView(importSecretsBtn, LinearLayout.LayoutParams(-2, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
             }
         }
     }
@@ -572,20 +710,17 @@ class MainActivity : ComponentActivity() {
         val searchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.inputDrawable(this@MainActivity, UiTheme.BG_INPUT)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 4), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 4))
+            background = UiTheme.inputDrawable(this@MainActivity, radiusDp = UiTheme.SHAPE_FULL)
+            setAddStatesFromChildren(true)  // the focus ring follows the field inside
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), 0, UiTheme.dp(this@MainActivity, 4), 0)
         }
-
-        val searchIcon = TextView(this).apply {
-            text = "🔍 "
-            textSize = 13f
-            setTextColor(UiTheme.TEXT_MUTED)
-        }
-        searchBox.addView(searchIcon)
 
         searchInput = EditText(this).apply {
-            hint = "Type \"/\" to search settings (e.g. snipe, kakera, speed)..."
-            textSize = 12.5f
+            hint = "Search settings"
+            textSize = UiTheme.TYPE_BODY
+            maxLines = 1
+            setSingleLine(true)
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
             background = null
@@ -603,10 +738,13 @@ class MainActivity : ComponentActivity() {
 
         searchClearBtn = TextView(this).apply {
             text = "✕"
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_MUTED)
-            setPadding(UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 6), UiTheme.dp(this@MainActivity, 6))
+            textSize = 16f
+            setTextColor(UiTheme.ON_SURFACE_VARIANT)
+            gravity = Gravity.CENTER
+            minHeight = UiTheme.dp(this@MainActivity, 48)
+            minWidth = UiTheme.dp(this@MainActivity, 48)
+            background = UiTheme.listItemDrawable(this@MainActivity, radiusDp = UiTheme.SHAPE_FULL)
+            contentDescription = "Clear search"
             visibility = View.GONE
             setOnClickListener { searchInput.setText("") }
         }
@@ -615,17 +753,17 @@ class MainActivity : ComponentActivity() {
 
         // Result Count Text
         searchResultCountText = TextView(this).apply {
-            textSize = 11f
-            setTextColor(UiTheme.ACCENT_BLUE)
+            textSize = UiTheme.TYPE_LABEL
+            setTextColor(UiTheme.PRIMARY)
             visibility = View.GONE
-            setPadding(UiTheme.dp(this@MainActivity, 4), UiTheme.dp(this@MainActivity, 4), 0, 0)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 6), 0, 0)
         }
         container.addView(searchResultCountText)
 
         // Category Subnav Tabs
         categoryTabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8))
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, UiTheme.dp(this@MainActivity, 8))
         }
         container.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -641,61 +779,58 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- 5. Python Engine Releases & Packages Card ---
+    // --- 5. Releases and Python runtime card ---
     private fun buildEngineManagerCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18))
         }
 
-        val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+        card.addView(TextView(this).apply {
+            text = "Releases and Python runtime"
+            UiTheme.styleTitle(this)
+        })
 
-        val title = TextView(this).apply {
-            text = "📦 Releases & Python Runtime"
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
-        }
-        headerRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(headerRow)
+        card.addView(TextView(this).apply {
+            text = "Verified updates of the bot's scripts from the GitHub releases, applied without reinstalling the app."
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, UiTheme.dp(this@MainActivity, 12))
+        })
 
-        val desc = TextView(this).apply {
-            text = "Cryptographically verified hot-patching. Pull latest scripts from GitHub Releases on the fly."
-            textSize = 11.5f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, UiTheme.dp(this@MainActivity, 3), 0, UiTheme.dp(this@MainActivity, 8))
-        }
-        card.addView(desc)
-
-        val channelRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 8))
-        }
         val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
         val isBeta = prefs.getBoolean("pref_beta_channel", true)
 
-        val channelLabel = TextView(this).apply {
-            text = if (isBeta) "Channel: Beta (Previews)" else "Channel: Stable (Official)"
-            textSize = 11.5f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(if (isBeta) UiTheme.ACCENT_PURPLE else UiTheme.TEXT_MUTED)
+        // Beta channel: an M3 switch row
+        val channelRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
         }
+        val channelText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        channelText.addView(TextView(this).apply {
+            text = "Beta runtime updates"
+            UiTheme.styleLabel(this)
+        })
+        val channelLabel = TextView(this).apply {
+            text = if (isBeta) "Channel: beta (previews)" else "Channel: stable (official)"
+            UiTheme.styleSupporting(this)
+            setTextColor(if (isBeta) UiTheme.TERTIARY else UiTheme.TEXT_MUTED)
+        }
+        channelText.addView(channelLabel)
+        channelRow.addView(channelText, LinearLayout.LayoutParams(0, -2, 1f))
 
         val betaSwitch = Switch(this).apply {
-            text = "🧪 Beta Updates"
-            textSize = 12f
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            UiTheme.styleSwitch(this)
+            contentDescription = "Beta runtime updates"
             isChecked = isBeta
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("pref_beta_channel", checked).apply()
                 val ch = if (checked) "beta" else "main"
-                channelLabel.text = if (checked) "Channel: Beta (Previews)" else "Channel: Stable (Official)"
-                channelLabel.setTextColor(if (checked) UiTheme.ACCENT_PURPLE else UiTheme.TEXT_MUTED)
+                channelLabel.text = if (checked) "Channel: beta (previews)" else "Channel: stable (official)"
+                channelLabel.setTextColor(if (checked) UiTheme.TERTIARY else UiTheme.TEXT_MUTED)
                 Thread {
                     try {
                         PythonRuntime.ensureStarted(applicationContext)
@@ -708,71 +843,46 @@ class MainActivity : ComponentActivity() {
                 loadEngineVersion()
             }
         }
-        channelRow.addView(betaSwitch, LinearLayout.LayoutParams(0, -2, 1f))
-        channelRow.addView(channelLabel, LinearLayout.LayoutParams(-2, -2))
+        channelRow.addView(betaSwitch, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+        channelRow.setOnClickListener { betaSwitch.isChecked = !betaSwitch.isChecked }
         card.addView(channelRow)
+
+        // Two equal-width actions, then the version picker
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        val btnUpdate = TextView(this).apply {
-            text = "🔄 Pull & Apply Updates"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.ACCENT_GREEN, radiusDp = 6f)
-            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
-            setOnClickListener { checkPythonUpdates(force = true) }
-        }
-        actionRow.addView(btnUpdate, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = UiTheme.dp(this@MainActivity, 6) })
-
-        val btnRevert = TextView(this).apply {
-            text = "⏪ Restore Bundled"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
-            setOnClickListener { promptRevertPython() }
-        }
+        val btnUpdate = createGitHubButton("Pull and apply updates", UiTheme.ButtonStyle.FILLED) { checkPythonUpdates(force = true) }
+        actionRow.addView(btnUpdate, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
+        val btnRevert = createGitHubButton("Restore bundled", UiTheme.ButtonStyle.OUTLINED) { promptRevertPython() }
         actionRow.addView(btnRevert, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(actionRow)
+        card.addView(actionRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 12) })
 
-        val selectVersionBtn = TextView(this).apply {
-            text = "🎯 Switch / Pick Version..."
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
-            setOnClickListener { promptSelectVersion() }
-        }
-        card.addView(selectVersionBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 6) })
+        val selectVersionBtn = createGitHubButton("Pick a version...", UiTheme.ButtonStyle.TONAL) { promptSelectVersion() }
+        card.addView(selectVersionBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
+
+        // The app's own updater (MudaFork releases only): switches and "Check now".
+        card.addView(appUpdateUi.buildSection(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 16) })
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = UiTheme.dp(this@MainActivity, 8)
-                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+                topMargin = UiTheme.dp(this@MainActivity, 0)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
             }
         }
     }
 
-    // --- 6. GitHub Actions Workflow Run Terminal / Console ---
+    // --- 6. Live log card ---
     private fun buildLogConsoleCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_TERMINAL, UiTheme.BORDER_DEFAULT, 8f, 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 12))
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16))
         }
 
-        // Terminal Top Bar (GitHub Actions step style) — two rows so nothing
-        // is clipped on narrow screens: row 1 = status + title + expand,
-        // row 2 = wrapping tool pills.
+        // Row 1 = status dot + title + expand; row 2 = wrapping tool buttons, so nothing clips.
         val terminalTopBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 8))
+            setPaddingRelative(0, 0, 0, UiTheme.dp(this@MainActivity, 8))
         }
 
         val terminalTitleRow = LinearLayout(this).apply {
@@ -781,55 +891,64 @@ class MainActivity : ComponentActivity() {
         }
 
         logStatusDot = TextView(this).apply {
-            text = "⚪ "
-            textSize = 11f
+            text = "●"
+            textSize = 14f
+            setTextColor(UiTheme.TEXT_MUTED)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 4), 0, UiTheme.dp(this@MainActivity, 8), 0)
         }
         terminalTitleRow.addView(logStatusDot)
 
         val terminalTitle = TextView(this).apply {
-            text = "⚡ Actions Workflow: mudae-runtime"
-            textSize = 12.5f
-            setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            text = "Live log"
+            UiTheme.styleTitle(this)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         terminalTitleRow.addView(terminalTitle, LinearLayout.LayoutParams(0, -2, 1f))
 
-        val sizeToggleBtn = createGitHubSmallBtn("⤢ Expand") { btn ->
+        val sizeToggleBtn = createGitHubSmallBtn("Expand", UiTheme.ButtonStyle.TEXT) { btn ->
             isLogsExpanded = !isLogsExpanded
             val target = if (isLogsExpanded) 560 else 280
             TransitionManager.beginDelayedTransition(card, ChangeBounds().setDuration(220))
             logScroll.layoutParams = logScroll.layoutParams.apply { height = UiTheme.dp(this@MainActivity, target) }
             logScroll.requestLayout()
-            btn.text = if (isLogsExpanded) "⤡ Collapse" else "⤢ Expand"
+            btn.text = if (isLogsExpanded) "Collapse" else "Expand"
         }
-        sizeToggleBtn.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { leftMargin = UiTheme.dp(this@MainActivity, 6) }
+        sizeToggleBtn.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) }
         terminalTitleRow.addView(sizeToggleBtn)
         terminalTopBar.addView(terminalTitleRow)
 
         val toolRow = FlowLayout(this).apply {
-            setPadding(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 8), 0, 0)
         }
-        toolRow.addView(createGitHubSmallBtn("📋 Raw logs") { _ -> copyLogsToClipboard() })
-        toolRow.addView(createGitHubSmallBtn("🗑️ Clear logs") { _ -> clearRuntimeLogs() })
-        val scrollToggleBtn = createGitHubSmallBtn("📜 Auto-scroll: on") { btn ->
+        toolRow.addView(createGitHubSmallBtn("Copy") { _ -> copyLogsToClipboard() })
+        toolRow.addView(createGitHubSmallBtn("Save as TXT") { _ -> exportLogsAsTxt() })
+        toolRow.addView(createGitHubSmallBtn("Share") { _ -> shareLogs() })
+        toolRow.addView(createGitHubSmallBtn("Profile: all") { btn -> pickLogProfile(btn) })
+        toolRow.addView(createGitHubSmallBtn("Kind: all") { btn -> pickLogKind(btn) })
+        toolRow.addView(createGitHubSmallBtn("Errors only: off") { btn ->
+            logFilterErrorsOnly = !logFilterErrorsOnly
+            btn.text = if (logFilterErrorsOnly) "Errors only: on" else "Errors only: off"
+            refreshLogs(force = true)
+        })
+        toolRow.addView(createGitHubSmallBtn("Search") { btn -> askLogSearch(btn) })
+        val scrollToggleBtn = createGitHubSmallBtn("Auto-scroll: on") { btn ->
             isAutoScrollEnabled = !isAutoScrollEnabled
-            btn.text = if (isAutoScrollEnabled) "📜 Auto-scroll: on" else "📜 Auto-scroll: off"
+            btn.text = if (isAutoScrollEnabled) "Auto-scroll: on" else "Auto-scroll: off"
             toast(if (isAutoScrollEnabled) "Auto-scroll enabled" else "Auto-scroll paused")
         }
         toolRow.addView(scrollToggleBtn)
+        toolRow.addView(createGitHubSmallBtn("Clear", UiTheme.ButtonStyle.DANGER) { _ -> clearRuntimeLogs() })
         terminalTopBar.addView(toolRow)
         card.addView(terminalTopBar)
 
         val subtitle = TextView(this).apply {
-            text = "Job: mudae_bot.run_cli(['--all']) · Live output"
-            textSize = 10.5f
-            setTypeface(Typeface.MONOSPACE, Typeface.NORMAL)
+            text = "Newest first · the last 200 entries of this launch"
+            UiTheme.styleSupporting(this)
             setTextColor(UiTheme.TEXT_MUTED)
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 6))
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 4), 0, 0, UiTheme.dp(this@MainActivity, 8))
         }
         card.addView(subtitle)
 
@@ -844,7 +963,8 @@ class MainActivity : ComponentActivity() {
             typeface = Typeface.MONOSPACE
             textSize = 11.5f
             setTextColor(UiTheme.TEXT_PRIMARY)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8))
+            textDirection = View.TEXT_DIRECTION_LOCALE
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 14), UiTheme.dp(this@MainActivity, 12))
             text = "No logs for this launch yet."
         }
 
@@ -852,7 +972,8 @@ class MainActivity : ComponentActivity() {
             isFillViewport = true
             isVerticalScrollBarEnabled = true
             scrollBarStyle = View.SCROLLBARS_INSIDE_INSET
-            background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_INPUT, UiTheme.BORDER_DEFAULT, 6f, 1f)
+            background = UiTheme.insetSurface(this@MainActivity)
+            clipToOutline = true
             addView(logView, FrameLayout.LayoutParams(-1, -2))
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -866,87 +987,53 @@ class MainActivity : ComponentActivity() {
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = UiTheme.dp(this@MainActivity, 12)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
             }
         }
     }
 
-    // --- 7. Sticky Bottom Action Dock (GitHub PR / Actions Control Dock) ---
+    private fun setLogDot(color: Int) {
+        if (::logStatusDot.isInitialized) logStatusDot.setTextColor(color)
+    }
+
+    // --- 7. Bottom dock: Save / Run / Stop all, three equal widths ---
     private fun buildStickyBottomBar(): View {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            // Fully opaque: nothing of the scrolled content shows through behind the dock.
             background = UiTheme.cardDrawable(
                 this@MainActivity,
-                Color.parseColor("#FA161b22"),
-                UiTheme.BORDER_DEFAULT,
-                radiusDp = 12f,
-                strokeWidthDp = 1.5f
+                UiTheme.SURFACE_CONTAINER_HIGH,
+                Color.TRANSPARENT,
+                radiusDp = UiTheme.SHAPE_XL,
+                strokeWidthDp = 0f
             )
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8))
-            elevation = UiTheme.dp(this@MainActivity, 10).toFloat()
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+            elevation = UiTheme.dp(this@MainActivity, 6).toFloat()
         }
 
-        // 1. Commit Changes Button (GitHub Primary Green)
-        val btnSave = TextView(this).apply {
-            text = "💾 Save"
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12))
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                saveCurrentProfile(showStatus = true)
-            }
-        }
-        dock.addView(btnSave, LinearLayout.LayoutParams(0, -2, 1.0f).apply { rightMargin = UiTheme.dp(this@MainActivity, 8) })
+        val btnSave = createGitHubButton("Save", UiTheme.ButtonStyle.TONAL) { saveCurrentProfile(showStatus = true) }
+        dock.addView(btnSave, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
 
-        // 2. Run Workflow Button (Primary Action; long-press opens multi-select dispatch)
-        val btnStart = TextView(this).apply {
-            text = "▶️ Run"
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        // Primary action; long-press opens the multi-profile dispatch
+        val btnStart = createGitHubButton("Run", UiTheme.ButtonStyle.FILLED, HapticFeedbackConstants.CONFIRM) { startRuntime(listOf(currentProfile)) }.apply {
             contentDescription = "Start the selected profile. Hold to pick multiple profiles."
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.ACCENT_GREEN, radiusDp = 6f)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12))
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                startRuntime(listOf(currentProfile))
-            }
             setOnLongClickListener {
                 performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 showStartOptionsDialog()
                 true
             }
         }
-        dock.addView(btnStart, LinearLayout.LayoutParams(0, -2, 1.3f).apply { rightMargin = UiTheme.dp(this@MainActivity, 8) })
+        dock.addView(btnStart, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = UiTheme.dp(this@MainActivity, 8) })
 
-        // 3. Cancel / Stop Workflow Button (GitHub Danger Button)
-        val btnStop = TextView(this).apply {
-            text = "⏹ Stop all"
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ACCENT_RED_BRIGHT)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.LABEL_RED_BG, radiusDp = 6f, borderColor = UiTheme.ACCENT_RED, strokeWidthDp = 1f)
-            setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12))
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.REJECT)
-                beginLogSession()
-                MudaRemoteService.stop(this@MainActivity)
-                updateStatusBadge("● Stopping all...", UiTheme.ACCENT_YELLOW)
-                logStatusDot.text = "🟡 "
-                toast("Stop requested for all running profiles.")
-            }
-        }
-        dock.addView(btnStop, LinearLayout.LayoutParams(0, -2, 1.0f))
+        val btnStop = createGitHubButton("Stop all", UiTheme.ButtonStyle.DANGER, HapticFeedbackConstants.REJECT) { doStopAll() }
+        dock.addView(btnStop, LinearLayout.LayoutParams(0, -2, 1f))
 
         return FrameLayout(this).apply {
-            setPadding(UiTheme.dp(this@MainActivity, 12), 0, UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+            // Opaque strip behind the dock (and the system navigation area under it).
+            setBackgroundColor(UiTheme.BG_APP)
+            setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
             addView(dock)
         }
     }
@@ -962,37 +1049,26 @@ class MainActivity : ComponentActivity() {
             profileCountBadge.text = "${profiles.size}"
         }
 
-        profiles.keys.forEach { name ->
+        profiles.forEach { (name, data) ->
             val isSelected = (name == currentProfile)
             val hasToken = allTokensForProfile(name).isNotEmpty()
-            val missingMarker = if (hasToken) "" else " ⚠"
+            val isSide = isLegacySideProfile(data)
             val pill = TextView(this).apply {
-                text = "🌿 $name$missingMarker"
-                textSize = 12f
-                setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(
-                    when {
-                        isSelected -> UiTheme.ACCENT_BLUE
-                        !hasToken -> UiTheme.ACCENT_YELLOW
-                        else -> UiTheme.TEXT_SECONDARY
-                    }
-                )
-                gravity = Gravity.CENTER
-                contentDescription = "Open profile $name" + if (hasToken) "" else " (token missing)"
-                background = if (isSelected) {
-                    UiTheme.pressablePillDrawable(this@MainActivity, UiTheme.LABEL_BLUE_BG, UiTheme.ACCENT_BLUE, 6f, 1f)
-                } else {
-                    UiTheme.pressablePillDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 6f, 1f)
-                }
-                setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
+                text = name + (if (isSide) " · Side" else "") + (if (hasToken) "" else " · no token")
+                UiTheme.styleChip(this, isSelected)
+                maxWidth = UiTheme.dp(this@MainActivity, 240)
+                if (!hasToken && !isSelected) setTextColor(UiTheme.TERTIARY)
+                contentDescription = "Open profile $name" + (if (isSide) ", side account" else ", main account") +
+                    if (hasToken) "" else " (token missing)"
                 setOnClickListener { openProfile(name) }
             }
 
             val params = LinearLayout.LayoutParams(-2, -2).apply {
-                rightMargin = UiTheme.dp(this@MainActivity, 6)
+                marginEnd = UiTheme.dp(this@MainActivity, 8)
             }
             profileTabs.addView(pill, params)
         }
+        refreshProfileSummary()
     }
 
     private fun openProfile(name: String) {
@@ -1003,35 +1079,37 @@ class MainActivity : ComponentActivity() {
         currentProfile = name
         renderCurrentProfile()
         refreshProfileTabs()
-        updateStatusBadge("● branch: $name", UiTheme.ACCENT_BLUE)
+        updateStatusBadge("● Profile: $name", UiTheme.ACCENT_BLUE)
     }
 
     private fun promptCreateProfile() {
         val input = EditText(this).apply {
-            hint = "branch-name (e.g. alt-worker)"
+            hint = "Profile name (e.g. alt-worker)"
             setText("profile-${profiles.size + 1}")
             setTextColor(UiTheme.TEXT_PRIMARY)
             setHintTextColor(UiTheme.TEXT_MUTED)
         }
         AlertDialog.Builder(this)
-            .setTitle("Create New Branch Profile")
-            .setMessage("Enter a branch name for the configuration:")
-            .setView(input)
-            .setPositiveButton("Create branch") { _, _ ->
+            .setTitle("New profile")
+            .setMessage("Name the new profile:")
+            .setView(wrapForDialog(input))
+            .setPositiveButton("Create") { _, _ ->
                 if (!ensureWritableStorage()) return@setPositiveButton
                 val name = input.text.toString().trim()
                 if (name.isNotBlank()) {
-                    if (profiles.containsKey(name)) {
-                        toast("Branch '$name' already exists!")
+                    val nameError = profileNameError(name, null)
+                    if (nameError != null) {
+                        toast(nameError)
                     } else {
                         saveCurrentProfile(showStatus = false)
                         val newObj = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
+                            .put("profile_id", newProfileId())
                         profiles[name] = newObj
                         currentProfile = name
                         persist()
                         refreshProfileTabs()
                         renderCurrentProfile()
-                        toast("Created branch '$name'")
+                        toast("Created profile '$name'")
                     }
                 }
             }
@@ -1046,12 +1124,14 @@ class MainActivity : ComponentActivity() {
         val copyName = "${currentProfile}_patch"
         var targetName = copyName
         var counter = 2
-        while (profiles.containsKey(targetName)) {
+        while (profiles.keys.any { it.equals(targetName, ignoreCase = true) }) {
             targetName = "${copyName}_$counter"
             counter++
         }
         val currentJson = profiles[currentProfile] ?: JSONObject()
         val clonedJson = JSONObject(currentJson.toString())
+        // A fork is a new profile: it never shares the stable id of its source.
+        clonedJson.put("profile_id", newProfileId())
         profiles[targetName] = clonedJson
         tokens[currentProfile]?.let { tokens[targetName] = it }
         currentProfile = targetName
@@ -1061,15 +1141,95 @@ class MainActivity : ComponentActivity() {
         toast("Forked to '$targetName'")
     }
 
+    private fun newProfileId(): String =
+        "p" + java.util.UUID.randomUUID().toString().replace("-", "").take(15)
+
+    /**
+     * Every profile gets a stable id (tokens, side-account links and runtime
+     * keys follow the id, so a rename loses nothing). Profiles saved before
+     * roles existed and carrying a Main Account ID become Side accounts.
+     */
+    private fun ensureProfileIdentity(): Boolean {
+        var changed = false
+        val seen = HashSet<String>()
+        profiles.values.forEach { data ->
+            var id = data.optString("profile_id", "").trim()
+            if (!profileIdPattern.matches(id) || !seen.add(id)) {
+                do { id = newProfileId() } while (!seen.add(id))
+                data.put("profile_id", id)
+                changed = true
+            }
+            if (!data.has("account_role")) {
+                val legacyMain = data.optString("main_account_id", "").trim()
+                data.put("account_role", if (legacyMain.isNotEmpty()) "side" else "main")
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /** Same rules as the desktop editor: trimmed, 1-40 characters, unique ignoring case. */
+    private fun profileNameError(name: String, ignore: String?): String? {
+        if (name.isEmpty()) return "Profile name cannot be empty."
+        if (name.codePointCount(0, name.length) > 40) return "Profile name must be at most 40 characters."
+        if (name.any { it.code < 32 }) return "Profile name cannot contain control characters."
+        val clash = profiles.keys.firstOrNull { existing ->
+            existing.equals(name, ignoreCase = true) && (ignore == null || !existing.equals(ignore, ignoreCase = true))
+        }
+        return clash?.let { "A profile named '$it' already exists." }
+    }
+
+    private fun promptRenameProfile() {
+        if (currentProfile.isBlank() || !profiles.containsKey(currentProfile)) return
+        val oldName = currentProfile
+        val input = EditText(this).apply {
+            hint = "1-40 characters, any language"
+            setText(oldName)
+            setSelection(oldName.length)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename profile")
+            .setMessage("The profile keeps its settings, tokens, schedule and side-account links.")
+            .setView(wrapForDialog(input))
+            .setPositiveButton("Rename") { _, _ -> renameProfile(oldName, input.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun renameProfile(oldName: String, rawName: String) {
+        if (!ensureWritableStorage()) return
+        if (!profiles.containsKey(oldName)) return
+        val newName = rawName.trim()
+        if (newName == oldName) return
+        profileNameError(newName, oldName)?.let { toast(it); return }
+        if (oldName == currentProfile) saveCurrentProfile(showStatus = false)
+        // Re-key both maps in place so the tab order stays the same.
+        val renamedProfiles = LinkedHashMap<String, JSONObject>()
+        profiles.forEach { (name, data) -> renamedProfiles[if (name == oldName) newName else name] = data }
+        val renamedTokens = LinkedHashMap<String, String>()
+        tokens.forEach { (name, value) -> renamedTokens[if (name == oldName) newName else name] = value }
+        profiles.clear(); profiles.putAll(renamedProfiles)
+        tokens.clear(); tokens.putAll(renamedTokens)
+        if (currentProfile == oldName) currentProfile = newName
+        persist()
+        refreshProfileTabs()
+        renderCurrentProfile()
+        val running = MudaRemoteService.runtimeState != MudaRemoteService.RuntimeState.STOPPED
+        toast(if (running) "Renamed to '$newName'. Restart the runtime to see the new name in logs."
+              else "Renamed to '$newName'")
+    }
+
     private fun promptDeleteCurrentProfile() {
         if (profiles.size <= 1) {
-            toast("Cannot delete the default branch.")
+            toast("The last profile cannot be deleted.")
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Delete Branch")
-            .setMessage("Are you sure you want to delete branch '$currentProfile'?")
-            .setPositiveButton("Delete branch") { _, _ ->
+            .setTitle("Delete profile?")
+            .setMessage("Profile '$currentProfile', its settings and its token are deleted from this phone. This cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
                 if (!ensureWritableStorage()) return@setPositiveButton
                 val toDelete = currentProfile
                 profiles.remove(toDelete)
@@ -1078,7 +1238,7 @@ class MainActivity : ComponentActivity() {
                 persist()
                 refreshProfileTabs()
                 renderCurrentProfile()
-                toast("Deleted branch '$toDelete'")
+                toast("Deleted profile '$toDelete'")
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -1094,9 +1254,9 @@ class MainActivity : ComponentActivity() {
         val formatted = exportJson.toString(2)
 
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("MudaRemote Preset $currentProfile", formatted)
+        val clip = ClipData.newPlainText("MudaFork Preset $currentProfile", formatted)
         clipboard.setPrimaryClip(clip)
-        toast("Copied '$currentProfile' JSON to clipboard! 📋")
+        toast("Copied '$currentProfile' JSON to the clipboard.")
     }
 
     // =========================================================================
@@ -1111,9 +1271,10 @@ class MainActivity : ComponentActivity() {
         fieldViews.clear()
         sectionContainers.clear()
         sectionHeaders.clear()
+        sectionChevrons.clear()
 
         val keys = (data.keys().asSequence().toList() + inheritedKakeraFields).distinct().asSequence()
-            .filter { it != "token" && it != "additional_tokens" }
+            .filter { it != "token" && it != "additional_tokens" && it != "profile_id" }
             .toList().sortedWith(
             compareBy<String> { sectionRank(schemaFields.optJSONObject(it)?.optString("section", "Advanced") ?: "Advanced") }
                 .thenBy { schemaFields.optJSONObject(it)?.optInt("order", 100) ?: 100 }.thenBy { it }
@@ -1124,7 +1285,10 @@ class MainActivity : ComponentActivity() {
         var sectionBody: LinearLayout? = null
 
         for (key in keys) {
-            val value = data.opt(key) ?: if (key in inheritedKakeraFields) {
+            val value = data.opt(key) ?: if (key == "give_kakera_amount_mode") {
+                // A profile saved before the choice existed keeps its old «give_kakera_extra» switch.
+                if (data.optBoolean("give_kakera_extra", true)) "everything" else "amount"
+            } else if (key in inheritedKakeraFields) {
                 JSONArray(inheritedKakeraAtRender)
             } else null
             val meta = schemaFields.optJSONObject(key)
@@ -1134,34 +1298,58 @@ class MainActivity : ComponentActivity() {
                 val collapsed = collapsedSections.getOrPut(section) { sectionIndex > 0 }
                 val sectionCard = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_CARD, UiTheme.BORDER_DEFAULT, 8f, 1f)
-                    setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+                    background = UiTheme.surfaceCard(this@MainActivity)
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8))
                 }
 
+                // Child 0 = the pressable header (title, one-line description, chevron); child 1 = the body.
                 val headerLayout = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f)
-                    setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 9), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 9))
+                    background = UiTheme.listItemDrawable(this@MainActivity, radiusDp = 22f)
+                    minimumHeight = UiTheme.dp(this@MainActivity, 64)
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 10))
                 }
 
+                val headerText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
                 val headerTitle = TextView(this).apply {
-                    textSize = 13.5f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(UiTheme.TEXT_PRIMARY)
+                    UiTheme.styleTitle(this)
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                 }
-                headerLayout.addView(headerTitle, LinearLayout.LayoutParams(0, -2, 1f))
+                headerText.addView(headerTitle)
+                val headerDescription = TextView(this).apply {
+                    text = getSectionDescription(section)
+                    UiTheme.styleSupporting(this)
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                headerText.addView(headerDescription)
+                headerLayout.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
+
+                val chevron = TextView(this).apply {
+                    textSize = 14f
+                    setTextColor(UiTheme.ON_SURFACE_VARIANT)
+                    gravity = Gravity.CENTER
+                    minWidth = UiTheme.dp(this@MainActivity, 40)
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
+                headerLayout.addView(chevron)
 
                 val newBody = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    setPadding(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 4), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
                     visibility = if (collapsed) View.GONE else View.VISIBLE
                 }
 
                 fun updateHeader() {
-                    val icon = if (newBody.visibility == View.VISIBLE) "▼" else "▶"
-                    val sectionEmoji = getSectionEmoji(section)
-                    headerTitle.text = "$icon  $sectionEmoji $section"
+                    val open = newBody.visibility == View.VISIBLE
+                    chevron.text = if (open) "▲" else "▼"
+                    headerTitle.text = section
+                    // Expanded: the whole description; collapsed: at most two lines.
+                    headerDescription.maxLines = if (open) Int.MAX_VALUE else 2
+                    headerDescription.ellipsize = if (open) null else android.text.TextUtils.TruncateAt.END
+                    headerLayout.contentDescription = "$section, " + if (open) "expanded" else "collapsed"
                 }
                 updateHeader()
 
@@ -1179,13 +1367,14 @@ class MainActivity : ComponentActivity() {
                 sectionCard.addView(newBody)
 
                 val cardParams = LinearLayout.LayoutParams(-1, -2).apply {
-                    topMargin = if (sectionIndex == 0) 0 else UiTheme.dp(this@MainActivity, 10)
+                    topMargin = if (sectionIndex == 0) 0 else UiTheme.dp(this@MainActivity, 12)
                     bottomMargin = UiTheme.dp(this@MainActivity, 4)
                 }
                 fieldsContainer.addView(sectionCard, cardParams)
 
                 sectionContainers[section] = sectionCard
                 sectionHeaders[section] = headerTitle
+                sectionChevrons[section] = chevron
                 sectionBody = newBody
                 sectionIndex++
                 previousSection = section
@@ -1198,7 +1387,7 @@ class MainActivity : ComponentActivity() {
 
         if (keys.isEmpty()) {
             fieldsContainer.addView(TextView(this).apply {
-                text = "No configurations found in this branch."
+                text = "No settings found in this profile."
                 setTextColor(UiTheme.TEXT_MUTED)
                 setPadding(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 16))
             })
@@ -1207,93 +1396,335 @@ class MainActivity : ComponentActivity() {
         filterSettings()
     }
 
+    /** Pick another profile by name; the stable profile id is what gets stored. */
+    private fun buildProfilePicker(key: String, value: Any?, labelText: String, descriptionText: String, container: LinearLayout): View {
+        container.addView(TextView(this).apply {
+            text = labelText
+            UiTheme.styleLabel(this)
+        })
+        val ownId = profiles[currentProfile]?.optString("profile_id", "").orEmpty()
+        val current = (value as? String).orEmpty()
+        val group = RadioGroup(this)
+        fun addChoice(tagValue: String, label: String) {
+            val radio = RadioButton(this).apply {
+                id = View.generateViewId()
+                tag = tagValue
+                text = label
+                textSize = UiTheme.TYPE_BODY
+                setTextColor(UiTheme.TEXT_PRIMARY)
+                minHeight = UiTheme.dp(this@MainActivity, 48)
+                buttonTintList = ColorStateList.valueOf(UiTheme.PRIMARY)
+            }
+            group.addView(radio)
+            if (tagValue == current) group.check(radio.id)
+        }
+        addChoice("", "(none)")
+        profiles.forEach { (name, data) ->
+            val id = data.optString("profile_id", "")
+            val isSide = data.optString("account_role", "main") == "side"
+            if (id.isNotEmpty() && id != ownId && (!isSide || id == current)) {
+                addChoice(id, if (isSide) "$name (a side account: pick a main instead)" else name)
+            }
+        }
+        if (current.isNotEmpty() && profiles.values.none { it.optString("profile_id", "") == current }) {
+            addChoice(current, "(deleted profile: runs as an ordinary account)")
+        }
+        fieldViews[key] = group
+        container.addView(group)
+        if (descriptionText.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = descriptionText
+                UiTheme.styleSupporting(this)
+            })
+        }
+        return container
+    }
+
+    /** The 6.0.0 way: a separate profile saved as a side of another profile. */
+    private fun isLegacySideProfile(data: JSONObject): Boolean =
+        data.optString("account_role", "main") == "side" && data.optString("main_profile_id", "").isNotBlank()
+
+    /** Extra tokens of a profile: its alts (the first token is the main). */
+    private fun altCount(name: String): Int = (allTokensForProfile(name).size - 1).coerceAtLeast(0)
+
+    private fun profileUsesAlts(name: String): Boolean {
+        val data = profiles[name] ?: return false
+        return altCount(name) > 0 || isLegacySideProfile(data)
+    }
+
+    private fun sideRoleWarning(data: JSONObject): String? {
+        if (data.optString("account_role", "main") != "side") return null
+        val mainId = data.optString("main_profile_id", "")
+        if (mainId.isEmpty()) {
+            return if (data.optString("main_account_id", "").isBlank())
+                "No main profile is picked; this side runs as an ordinary account." else null
+        }
+        if (mainId == data.optString("profile_id", "")) return "A side account cannot be its own main."
+        val main = profiles.values.firstOrNull { it.optString("profile_id", "") == mainId }
+            ?: return "Its main profile no longer exists; this side runs as an ordinary account."
+        if (main.optString("account_role", "main") == "side") return "Its main is itself a side account; pick a main account."
+        return null
+    }
+
     private fun buildFieldView(key: String, value: Any?, meta: JSONObject?): View {
+        if (meta?.optString("widget", "") == "send_again") return buildSendAgainField(key, value, meta)
+        if (meta?.optString("widget", "") == "request_now") return buildRequestNowField(key, value, meta)
+        var shown = value
+        var note: String? = null
+        if (key == "fast_setup" && value == true) {
+            fastSetupSentAt()?.let {
+                shown = false
+                note = "Sent once ($it); it stays off. Use «Send again» to repeat it once."
+            }
+        }
+        val view = buildFieldViewInner(key, shown, meta)
+        if (meta?.optBoolean("side_only", false) == true && !profileUsesAlts(currentProfile)) {
+            // Still editable: the alts added later under Account Tokens pick it up.
+            note = NO_ALTS_HINT
+        }
+        note?.let { text ->
+            // A switch row keeps its note inside the row surface; other fields put it underneath.
+            val target = (view.findViewWithTag<View>("switch_row") as? LinearLayout) ?: (view as? LinearLayout)
+            target?.addView(TextView(this).apply {
+                this.text = text
+                UiTheme.styleRowDescription(this)
+                setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+            })
+        }
+        return view
+    }
+
+    private fun setViewTreeEnabled(view: View, enabled: Boolean) {
+        view.isEnabled = enabled
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) setViewTreeEnabled(view.getChildAt(index), enabled)
+        }
+    }
+
+    /** When Fast setup was already sent for this profile's first account (runtime state file), else null. */
+    private fun fastSetupSentAt(): String? {
+        val data = profiles[currentProfile] ?: return null
+        val id = data.optString("profile_id", "")
+        if (id.isEmpty()) return null
+        val file = File(filesDir, "mudafork_account_state.json")
+        if (!file.isFile) return null
+        return runCatching {
+            val record = JSONObject(file.readText()).optJSONObject("accounts")
+                ?.optJSONObject("$id#1")?.optJSONObject("fast_setup")
+            if (record != null && record.optInt("round", 0) >= data.optInt("fast_setup_round", 0))
+                record.optString("at", "").take(16).replace('T', ' ').ifEmpty { "date unknown" }
+            else null
+        }.getOrNull()
+    }
+
+    /** «Send again» for Fast setup: raises the stored round and switches Fast setup on. */
+    private fun buildSendAgainField(key: String, value: Any?, meta: JSONObject): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8))
+            tag = "field_container_$key"
+        }
+        val counter = EditText(this).apply {
+            setText(((value as? Number)?.toInt() ?: 0).toString())
+            inputType = InputType.TYPE_CLASS_NUMBER
+            visibility = View.GONE
+            tag = key
+        }
+        fieldViews[key] = counter
+        container.addView(TextView(this).apply {
+            text = meta.optString("label", key)
+            UiTheme.styleLabel(this)
+        })
+        val description = meta.optString("description", "")
+        if (description.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = description
+                UiTheme.styleSupporting(this)
+            })
+        }
+        container.addView(createGitHubSmallBtn("Send again", UiTheme.ButtonStyle.TONAL) { _ ->
+            val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+            counter.setText(next.toString())
+            (fieldViews["fast_setup"] as? Switch)?.isChecked = true
+            toast("Fast setup will be sent once more after you save.")
+        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) })
+        container.addView(counter)
+        return container
+    }
+
+    /** «Give all kakera now»: a hidden request counter and a button that raises it and saves (live apply). */
+    private fun buildRequestNowField(key: String, value: Any?, meta: JSONObject): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8))
+            tag = "field_container_$key"
+        }
+        val counter = EditText(this).apply {
+            setText(((value as? Number)?.toInt() ?: 0).toString())
+            inputType = InputType.TYPE_CLASS_NUMBER
+            visibility = View.GONE
+            tag = key
+        }
+        fieldViews[key] = counter
+        val description = meta.optString("description", "")
+        if (description.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = description
+                UiTheme.styleSupporting(this)
+            })
+        }
+        container.addView(
+            createGitHubSmallBtn(meta.optString("label", "Give kakera now"), UiTheme.ButtonStyle.TONAL) { _ ->
+                when (key) {
+                    "give_spheres_now_round" -> requestGiveAllSpheres()
+                    "perk10_now_round" -> requestUpgradePerk10()
+                    else -> requestGiveAllKakera()
+                }
+            },
+            LinearLayout.LayoutParams(-2, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) }
+        )
+        container.addView(counter)
+        return container
+    }
+
+    /** Raise the profile's «Give all kakera now» counter and save; the running side gives its whole total once. */
+    private fun requestGiveAllKakera() {
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give kakera now: $NO_ALTS_HINT.")
+            return
+        }
+        val counter = fieldViews["give_kakera_now_round"] as? EditText
+        if (counter == null) {
+            toast("Give kakera now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Give kakera requested; the result appears in the logs and the account's status.")
+    }
+
+    /** Raise the profile's «Give all spheres now» counter and save; the running side gives its spheres once. */
+    private fun requestGiveAllSpheres() {
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give spheres now: $NO_ALTS_HINT.")
+            return
+        }
+        val counter = fieldViews["give_spheres_now_round"] as? EditText
+        if (counter == null) {
+            toast("Give spheres now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Give spheres requested; the result appears in the logs and the account's status.")
+    }
+
+    /** Raise the profile's «Upgrade perk 10 now» counter and save; the running main (and alts with «side_perk10») upgrade once. */
+    private fun requestUpgradePerk10() {
+        if (profiles[currentProfile] == null) return
+        val counter = fieldViews["perk10_now_round"] as? EditText
+        if (counter == null) {
+            toast("Upgrade perk 10 now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Upgrade perk 10 requested; the result appears in the logs and the account's status.")
+    }
+
+    private fun buildFieldViewInner(key: String, value: Any?, meta: JSONObject?): View {
         val labelText = meta?.optString("label", key) ?: key
         val descriptionText = meta?.optString("description", "").orEmpty()
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, UiTheme.dp(this@MainActivity, 5), 0, UiTheme.dp(this@MainActivity, 5))
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 8), 0, UiTheme.dp(this@MainActivity, 8))
             tag = "field_container_$key"
+        }
+
+        if (meta?.optString("picker", "") == "profile") {
+            return buildProfilePicker(key, value, labelText, descriptionText, container)
         }
 
         val choices = meta?.optJSONObject("choices")
         if (choices != null) {
-            container.addView(TextView(this).apply {
-                text = labelText
-                setTextColor(UiTheme.TEXT_PRIMARY)
-            })
-            val group = RadioGroup(this)
-            choices.keys().asSequence().sorted().forEach { choice ->
-                val radio = RadioButton(this).apply {
-                    id = View.generateViewId()
-                    tag = choice
-                    text = choices.getString(choice)
-                    textSize = 13f
-                    setTextColor(UiTheme.TEXT_PRIMARY)
-                    buttonTintList = ColorStateList.valueOf(UiTheme.ACCENT_BLUE)
-                }
-                group.addView(radio)
-                if (choice == value) group.check(radio.id)
+            val options = LinkedHashMap<String, String>()
+            choices.keys().forEach { choice -> options[choice] = choices.optString(choice, choice) }
+            val list = ChoiceListView(this, labelText, options, value as? String) { onFieldChanged(key) }
+            fieldViews[key] = list
+            container.addView(list, LinearLayout.LayoutParams(-1, -2))
+            if (descriptionText.isNotBlank()) {
+                container.addView(TextView(this).apply {
+                    text = descriptionText
+                    UiTheme.styleSupporting(this)
+                    setPaddingRelative(0, UiTheme.dp(this@MainActivity, 6), 0, 0)
+                })
             }
-            fieldViews[key] = group
-            container.addView(group)
-            container.addView(TextView(this).apply {
-                text = descriptionText
-                textSize = 11f
-                setTextColor(UiTheme.TEXT_SECONDARY)
-            })
             return container
         }
 
         when (value) {
             is Boolean -> {
-                // Switch Card
+                // Switch row: title and switch on the first line (switch at the top end), the
+                // description full width under them, notes inside the same row surface.
                 val switchCard = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.cardDrawable(this@MainActivity, UiTheme.BG_INPUT, UiTheme.BORDER_DEFAULT, 6f, 1f)
-                    setPadding(UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 8))
+                    orientation = LinearLayout.VERTICAL
+                    background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH, UiTheme.SHAPE_LG)
+                    minimumHeight = UiTheme.dp(this@MainActivity, 56)
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12))
+                    tag = "switch_row"
                 }
 
-                val textCol = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
+                val topLine = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.TOP
+                    // Baseline alignment with the switch shifts a wrapped title up and clips its last line.
+                    isBaselineAligned = false
                 }
+                // The title takes the width left of the switch and grows downward as far as it needs:
+                // no line limit, no ellipsis, no fixed height, no top margin.
                 val label = TextView(this).apply {
                     text = labelText
-                    textSize = 13f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(UiTheme.TEXT_PRIMARY)
+                    UiTheme.styleLabel(this)
+                    maxLines = Int.MAX_VALUE
+                    ellipsize = null
+                    setSingleLine(false)
                 }
-                textCol.addView(label)
+                topLine.addView(label, LinearLayout.LayoutParams(0, -2, 1f))
+
+                val switchView = Switch(this).apply {
+                    UiTheme.styleSwitch(this)
+                    // The row is the touch target; the switch must not force a 48dp first line.
+                    minHeight = 0
+                    minimumHeight = 0
+                    isChecked = value
+                    tag = key
+                    contentDescription = labelText
+                }
+                topLine.addView(switchView, LinearLayout.LayoutParams(-2, -2).apply {
+                    marginStart = UiTheme.dp(this@MainActivity, 12)
+                    gravity = Gravity.TOP or Gravity.END
+                })
+                switchCard.addView(topLine, LinearLayout.LayoutParams(-1, -2))
 
                 if (descriptionText.isNotBlank()) {
                     val desc = TextView(this).apply {
                         text = descriptionText
-                        textSize = 11f
-                        setTextColor(UiTheme.TEXT_SECONDARY)
-                        setPadding(0, UiTheme.dp(this@MainActivity, 2), 0, 0)
+                        UiTheme.styleRowDescription(this)
                     }
-                    textCol.addView(desc)
+                    switchCard.addView(desc, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 5) })
                 }
-                switchCard.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
-
-                val switchView = Switch(this).apply {
-                    isChecked = value
-                    tag = key
-                    thumbTintList = ColorStateList.valueOf(if (value) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
-                    trackTintList = ColorStateList.valueOf(if (value) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
-                    setOnCheckedChangeListener { _, isChecked ->
-                        thumbTintList = ColorStateList.valueOf(if (isChecked) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
-                        trackTintList = ColorStateList.valueOf(if (isChecked) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
-                    }
-                }
-                switchCard.addView(switchView)
 
                 switchCard.setOnClickListener {
                     switchView.isChecked = !switchView.isChecked
                 }
 
+                switchView.setOnCheckedChangeListener { _, _ -> onFieldChanged(key) }
                 fieldViews[key] = switchView
                 container.addView(switchCard)
             }
@@ -1301,9 +1732,7 @@ class MainActivity : ComponentActivity() {
                 // GitHub Labels Chip View
                 val label = TextView(this).apply {
                     text = labelText
-                    textSize = 13f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(UiTheme.TEXT_PRIMARY)
+                    UiTheme.styleLabel(this)
                     setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 2))
                 }
                 container.addView(label)
@@ -1311,8 +1740,7 @@ class MainActivity : ComponentActivity() {
                 if (descriptionText.isNotBlank()) {
                     val desc = TextView(this).apply {
                         text = descriptionText
-                        textSize = 11f
-                        setTextColor(UiTheme.TEXT_SECONDARY)
+                        UiTheme.styleSupporting(this)
                         setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 4))
                     }
                     container.addView(desc)
@@ -1330,9 +1758,7 @@ class MainActivity : ComponentActivity() {
                 // Text or Numeric Field
                 val label = TextView(this).apply {
                     text = labelText
-                    textSize = 13f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(UiTheme.TEXT_PRIMARY)
+                    UiTheme.styleLabel(this)
                     setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 2))
                 }
                 container.addView(label)
@@ -1340,8 +1766,7 @@ class MainActivity : ComponentActivity() {
                 if (descriptionText.isNotBlank()) {
                     val desc = TextView(this).apply {
                         text = descriptionText
-                        textSize = 11f
-                        setTextColor(UiTheme.TEXT_SECONDARY)
+                        UiTheme.styleSupporting(this)
                         setPadding(0, 0, 0, UiTheme.dp(this@MainActivity, 4))
                     }
                     container.addView(desc)
@@ -1349,11 +1774,12 @@ class MainActivity : ComponentActivity() {
 
                 val input = EditText(this).apply {
                     setText(stringifyValue(value))
-                    textSize = 12.5f
+                    textSize = UiTheme.TYPE_BODY
                     setTextColor(UiTheme.TEXT_PRIMARY)
                     setHintTextColor(UiTheme.TEXT_MUTED)
                     background = UiTheme.inputDrawable(this@MainActivity)
-                    setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 7), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 7))
+                    minHeight = UiTheme.dp(this@MainActivity, 52)
+                    setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 12))
                     tag = key
 
                     if (value is Int || value is Long || value is Double || value is Float) {
@@ -1378,43 +1804,71 @@ class MainActivity : ComponentActivity() {
     // SEARCH & SUBNAV NAVIGATION
     // =========================================================================
 
+    /** Builds the filter chips once; a tap only restyles the two chips that change. */
     private fun populateCategoryTabs() {
         if (!::categoryTabs.isInitialized) return
         categoryTabs.removeAllViews()
 
         val categories = listOf(
-            "All", "Connection", "Rolling", "Claiming", "Character Sniping",
+            "All", "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping",
             "Kakera Reactions", "Kakera Loot", "Wishlist and Farming", "Spheres and Emoji",
             "Timing and Humanization", "Advanced"
         )
 
         categories.forEach { cat ->
-            val isSelected = (cat == activeCategoryFilter)
             val pill = TextView(this).apply {
-                val emoji = getSectionEmoji(cat)
-                text = "$emoji $cat"
-                textSize = 11.5f
-                setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (isSelected) UiTheme.ACCENT_BLUE else UiTheme.TEXT_SECONDARY)
-                background = if (isSelected) {
-                    UiTheme.pressablePillDrawable(this@MainActivity, UiTheme.LABEL_BLUE_BG, UiTheme.ACCENT_BLUE, 14f, 1f)
-                } else {
-                    UiTheme.pressablePillDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 14f, 1f)
-                }
-                setPadding(UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 7), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 7))
+                text = cat
+                tag = cat
+                UiTheme.styleChip(this, cat == activeCategoryFilter)
                 contentDescription = "Filter settings by $cat"
                 setOnClickListener {
+                    if (activeCategoryFilter == cat) return@setOnClickListener
                     activeCategoryFilter = cat
-                    populateCategoryTabs()
+                    restyleCategoryTabs()
                     filterSettings()
                 }
             }
 
             val params = LinearLayout.LayoutParams(-2, -2).apply {
-                rightMargin = UiTheme.dp(this@MainActivity, 6)
+                marginEnd = UiTheme.dp(this@MainActivity, 8)
             }
             categoryTabs.addView(pill, params)
         }
+    }
+
+    private fun restyleCategoryTabs() {
+        for (i in 0 until categoryTabs.childCount) {
+            val chip = categoryTabs.getChildAt(i) as? TextView ?: continue
+            UiTheme.styleChip(chip, chip.tag == activeCategoryFilter)
+        }
+    }
+
+    /** The value a field has on screen right now (a view the user may have changed), else stored, else the schema default. */
+    private fun currentFieldValue(field: String): Any? {
+        when (val view = fieldViews[field]) {
+            is Switch -> return view.isChecked
+            is ChoiceListView -> view.selected?.let { return it }
+            is EditText -> return parseValue(view.text.toString(), profiles[currentProfile]?.opt(field))
+        }
+        return profiles[currentProfile]?.opt(field) ?: schemaFields.optJSONObject(field)?.opt("default")
+    }
+
+    /** True when the field's «visible_when» (if any) holds; a hidden field keeps its value and is still saved. */
+    private fun conditionHolds(key: String): Boolean =
+        VisibleWhen.isVisible(schemaFields.optJSONObject(key)?.opt("visible_when")) { currentFieldValue(it) }
+
+    /** A switch or choice changed: fields that depend on it appear or disappear at once. */
+    private fun onFieldChanged(key: String) {
+        if (!::fieldsContainer.isInitialized || fieldViews.isEmpty()) return
+        val controlsSomething = schemaFields.keys().asSequence().any { other ->
+            VisibleWhen.controllers(schemaFields.optJSONObject(other)?.opt("visible_when")).contains(key)
+        }
+        if (!controlsSomething) return
+        TransitionManager.beginDelayedTransition(
+            fieldsContainer,
+            ChangeBounds().setDuration(180).setInterpolator(android.view.animation.DecelerateInterpolator())
+        )
+        filterSettings()
     }
 
     private fun filterSettings() {
@@ -1437,7 +1891,7 @@ class MainActivity : ComponentActivity() {
 
                 val queryMatches = (query.isBlank() || key.lowercase().contains(query) || label.contains(query) || desc.contains(query))
 
-                if (categoryMatches && queryMatches) {
+                if (categoryMatches && queryMatches && conditionHolds(key)) {
                     fieldContainer.visibility = View.VISIBLE
                     visibleFieldsCount++
                     matchCount++
@@ -1451,7 +1905,11 @@ class MainActivity : ComponentActivity() {
                 if (query.isNotBlank()) {
                     body.visibility = View.VISIBLE
                     collapsedSections[sectionName] = false
-                    sectionHeaders[sectionName]?.text = "▼  ${getSectionEmoji(sectionName)} $sectionName ($visibleFieldsCount)"
+                    sectionHeaders[sectionName]?.text = "$sectionName ($visibleFieldsCount)"
+                    sectionChevrons[sectionName]?.text = "▲"
+                } else {
+                    sectionHeaders[sectionName]?.let { setTextIfChanged(it, sectionName) }
+                    sectionChevrons[sectionName]?.let { setTextIfChanged(it, if (body.visibility == View.VISIBLE) "▲" else "▼") }
                 }
             } else {
                 sectionCard.visibility = View.GONE
@@ -1460,29 +1918,30 @@ class MainActivity : ComponentActivity() {
 
         if (query.isNotBlank()) {
             searchResultCountText.visibility = View.VISIBLE
-            searchResultCountText.text = "🔍 Found $matchCount matching setting(s)"
+            searchResultCountText.text = "Found $matchCount matching setting(s)"
         } else {
             searchResultCountText.visibility = View.GONE
         }
     }
 
-    private fun getSectionEmoji(section: String): String = when (section) {
-        "Connection" -> "⚡"
-        "Rolling" -> "🎲"
-        "Claiming" -> "💖"
-        "Character Sniping" -> "🎯"
-        "Kakera Reactions" -> "💎"
-        "Kakera Loot" -> "🪙"
-        "Wishlist and Farming" -> "🌾"
-        "Spheres and Emoji" -> "🔮"
-        "Timing and Humanization" -> "⏱️"
-        "Advanced" -> "🛠️"
-        "All" -> "🐙"
-        else -> "⚙️"
+    /** One line under each settings card's title. */
+    private fun getSectionDescription(section: String): String = when (section) {
+        "Connection" -> "Channel, commands and how the bot connects."
+        "Main & alts" -> "The first token is the main; extra tokens are its alts. Set once here, the alts act on it."
+        "Rolling" -> "When and how the bot rolls."
+        "Claiming" -> "Which characters to claim and when."
+        "Character Sniping" -> "Catching wished characters from other rolls."
+        "Kakera Reactions" -> "Which kakera to react to."
+        "Kakera Loot" -> "Collecting and giving kakera."
+        "Wishlist and Farming" -> "Wishes, series and farming rules."
+        "Spheres and Emoji" -> "Spheres, perks and the emoji the bot reads."
+        "Timing and Humanization" -> "Delays and pacing that look human."
+        "Advanced" -> "Everything else. Change with care."
+        else -> "More settings."
     }
 
     private fun sectionRank(section: String): Int = listOf(
-        "Connection", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
+        "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
         "Wishlist and Farming", "Spheres and Emoji", "Timing and Humanization", "Advanced"
     ).indexOf(section).let { if (it < 0) 99 else it }
 
@@ -1498,13 +1957,15 @@ class MainActivity : ComponentActivity() {
         if (!::fieldsContainer.isInitialized || currentProfile.isBlank()) return
         val data = profiles[currentProfile] ?: JSONObject()
         val oldKeys = data.keys().asSequence().toList()
-        oldKeys.filter { it != "token" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
+        oldKeys.filter { it != "token" && it != "profile_id" && it != "give_kakera_extra" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
+        if (!profileIdPattern.matches(data.optString("profile_id", ""))) data.put("profile_id", newProfileId())
 
         for ((key, view) in fieldViews) {
             val oldValue = data.opt(key)
             val value = when (view) {
                 is Switch -> view.isChecked
                 is RadioGroup -> view.findViewById<RadioButton>(view.checkedRadioButtonId)?.tag ?: oldValue
+                is ChoiceListView -> view.selected ?: oldValue
                 is ChipListView -> view.getJsonArray()
                 is EditText -> parseValue(view.text.toString(), oldValue)
                 else -> view.toString()
@@ -1517,10 +1978,12 @@ class MainActivity : ComponentActivity() {
         normalizeProfileTokens(currentProfile, data)
         profiles[currentProfile] = data
         persist()
+        if (showStatus) refreshProfileTabs() else refreshProfileSummary()  // role / token marks follow the saved values
         if (showStatus) {
             val applying = MudaRemoteService.applySavedProfile(this, currentProfile, data, allTokensForProfile(currentProfile))
-            toast(if (applying) "Saved '$currentProfile'. Live update requested; see logs for the result."
-                  else "Committed changes to '$currentProfile' 💾")
+            val roleNote = sideRoleWarning(data)?.let { " Note: $it" }.orEmpty()
+            toast((if (applying) "Saved '$currentProfile'. Live update requested; see logs for the result."
+                  else "Saved '$currentProfile'.") + roleNote)
         }
     }
 
@@ -1664,7 +2127,7 @@ class MainActivity : ComponentActivity() {
             if (addingToRuntime) "● Adding profile(s)..." else "● Starting profile(s)...",
             UiTheme.ACCENT_YELLOW
         )
-        logStatusDot.text = "🟡 "
+        setLogDot(UiTheme.TERTIARY)
         val action = if (addingToRuntime) "Add request sent" else "Start request sent"
         val skipped = if (skippedCount > 0) " ($skippedCount without tokens skipped)" else ""
         toast("$action for ${selectedProfiles.length()} profile(s)$skipped.")
@@ -1675,7 +2138,7 @@ class MainActivity : ComponentActivity() {
         if (names.isEmpty()) return
         val checked = BooleanArray(names.size) { names[it] == currentProfile }
         AlertDialog.Builder(this)
-            .setTitle("Dispatch Workflow")
+            .setTitle("Run profiles")
             .setMultiChoiceItems(names.toTypedArray(), checked) { _, which, isChecked ->
                 checked[which] = isChecked
             }
@@ -1696,33 +2159,73 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    private var statusBadgeColor = 0
+
+    /** Changes the header's status chip only when its text or colour differs (no relayout per tick). */
     private fun updateStatusBadge(text: String, color: Int) {
-        if (::statusBadge.isInitialized) {
-            statusBadge.text = text
-            statusBadge.setTextColor(color)
+        if (!::statusBadge.isInitialized) return
+        if (statusBadge.text?.toString() != text) statusBadge.text = text
+        if (statusBadgeColor != color) {
+            statusBadgeColor = color
+            UiTheme.styleStatusChip(statusBadge, color)
         }
     }
 
     // =========================================================================
-    // LOGS CONSOLE HUB (ACTIONS VIEWER)
+    // LIVE LOG (read and highlighted off the main thread)
     // =========================================================================
 
-    private fun refreshLogs() {
+    private fun refreshLogs(force: Boolean = false) {
         if (!::logView.isInitialized) return
         if (!logsVisibleForSession) return
+        if (logJobInFlight && !force) return  // one read at a time; the next tick catches up
 
-        val rawText = formatSessionLogs(readSessionLog()).ifBlank { "Waiting for workflow output..." }
-        if (rawText != displayedLogText) {
-            displayedLogText = rawText
+        val logFile = File(filesDir, "mudaremote_android.log")
+        val filters = currentLogFilters()
+        val startBytes = logSessionStartBytes
+        // Two cheap stats instead of reading 512 KB every second: nothing changed, nothing to do.
+        val signature = "${logFile.length()}|${logFile.lastModified()}|$startBytes|$filters"
+        if (!force && signature == lastLogSignature) return
+        lastLogSignature = signature
+
+        val generation = ++logGeneration
+        logJobInFlight = true
+        val job = Runnable {
+            val read = readSessionLog(startBytes)
+            val rawText = formatSessionLogs(read.first, filters).ifBlank {
+                if (filtersActive(filters)) "No log lines match the filters." else "Waiting for workflow output..."
+            }
             val highlighted = UiTheme.highlightLogs(rawText)
-            logView.text = highlighted
-            if (::logScroll.isInitialized && isAutoScrollEnabled) {
-                logScroll.post { logScroll.scrollTo(0, 0) }
+            runOnUiThread {
+                logJobInFlight = false
+                if (generation != logGeneration || isFinishing || isDestroyed || !logsVisibleForSession) return@runOnUiThread
+                // The file was truncated or rotated: read from its start from now on.
+                if (read.second && logSessionStartBytes == startBytes) logSessionStartBytes = 0L
+                if (force || rawText != displayedLogText) {
+                    displayedLogText = rawText
+                    logView.text = highlighted
+                    if (::logScroll.isInitialized && isAutoScrollEnabled) {
+                        logScroll.post { logScroll.scrollTo(0, 0) }
+                    }
+                }
             }
         }
+        try {
+            logExecutor.execute(job)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            logJobInFlight = false  // the Activity is being destroyed
+        }
+    }
+
+    /** Drops any result still being computed (the console was cleared or a new session began). */
+    private fun cancelPendingLogResult() {
+        logGeneration++
+        logJobInFlight = false
+        lastLogSignature = ""
     }
 
     private fun clearRuntimeLogs() {
+        cancelPendingLogResult()
         logsVisibleForSession = false
         displayedLogText = "No logs for this launch yet."
         if (::logView.isInitialized) logView.text = displayedLogText
@@ -1732,40 +2235,61 @@ class MainActivity : ComponentActivity() {
 
     private fun copyLogsToClipboard() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("MudaRemote Console Logs", displayedLogText)
+        val clip = ClipData.newPlainText("MudaFork Console Logs", displayedLogText)
         clipboard.setPrimaryClip(clip)
-        toast("Copied raw logs to clipboard! 📋")
+        toast("Copied raw logs to the clipboard.")
     }
 
     private fun beginLogSession() {
         val logFile = File(filesDir, "mudaremote_android.log")
         logSessionStartBytes = if (logFile.exists()) logFile.length() else 0L
+        cancelPendingLogResult()
         logsVisibleForSession = true
         displayedLogText = "Waiting for workflow output..."
         if (::logView.isInitialized) logView.text = displayedLogText
         if (::logScroll.isInitialized) logScroll.scrollTo(0, 0)
     }
 
-    private fun readSessionLog(): String = runCatching {
-        val logFile = File(filesDir, "mudaremote_android.log")
-        if (!logFile.exists()) return@runCatching ""
-        val fileLength = logFile.length()
-        if (fileLength < logSessionStartBytes) logSessionStartBytes = 0L
-        if (fileLength <= logSessionStartBytes) return@runCatching ""
+    /** The current session's log text (at most the last 512 KB). */
+    private fun readSessionLog(): String {
+        val read = readSessionLog(logSessionStartBytes)
+        if (read.second) logSessionStartBytes = 0L
+        return read.first
+    }
 
-        val maximumBytes = 512L * 1024L
-        val readFrom = maxOf(logSessionStartBytes, fileLength - maximumBytes)
-        val bytes = ByteArray((fileLength - readFrom).toInt())
-        RandomAccessFile(logFile, "r").use { file ->
-            file.seek(readFrom)
-            file.readFully(bytes)
-        }
-        var result = String(bytes, Charsets.UTF_8)
-        if (readFrom > logSessionStartBytes) result = result.substringAfter('\n', "")
-        result
-    }.getOrDefault("")
+    /**
+     * Thread-safe read from [startBytes]: returns the text and whether the file was shorter than
+     * [startBytes] (truncated or rotated), in which case it is read from its start.
+     */
+    private fun readSessionLog(startBytes: Long): Pair<String, Boolean> {
+        var reset = false
+        val text = runCatching {
+            val logFile = File(filesDir, "mudaremote_android.log")
+            if (!logFile.exists()) return@runCatching ""
+            val fileLength = logFile.length()
+            var start = startBytes
+            if (fileLength < start) {
+                start = 0L
+                reset = true
+            }
+            if (fileLength <= start) return@runCatching ""
 
-    private fun formatSessionLogs(raw: String): String {
+            val maximumBytes = 512L * 1024L
+            val readFrom = maxOf(start, fileLength - maximumBytes)
+            val bytes = ByteArray((fileLength - readFrom).toInt())
+            RandomAccessFile(logFile, "r").use { file ->
+                file.seek(readFrom)
+                file.readFully(bytes)
+            }
+            var result = String(bytes, Charsets.UTF_8)
+            if (readFrom > start) result = result.substringAfter('\n', "")
+            result
+        }.getOrDefault("")
+        return text to reset
+    }
+
+    /** Pure (no Activity state): the newest 200 matching entries, newest first. */
+    private fun formatSessionLogs(raw: String, filters: LogFilters): String {
         if (raw.isBlank()) return ""
         val entries = mutableListOf<MutableList<String>>()
         LOG_ANSI_REGEX.replace(raw, "").replace("\r", "").lineSequence().forEach { line ->
@@ -1776,9 +2300,126 @@ class MainActivity : ComponentActivity() {
                 entries.last().add(line)
             }
         }
-        return entries.takeLast(200).asReversed().joinToString("\n\n") { entry ->
+        return entries.filter { entryMatchesLogFilters(it, filters) }.takeLast(200).asReversed().joinToString("\n\n") { entry ->
             entry.joinToString("\n")
         }
+    }
+
+    private fun currentLogFilters(): LogFilters =
+        LogFilters(logFilterProfile, logFilterKind, logFilterErrorsOnly, logFilterSearch)
+
+    private fun filtersActive(filters: LogFilters): Boolean =
+        filters.profile.isNotEmpty() || filters.kind.isNotEmpty() || filters.errorsOnly || filters.search.isNotEmpty()
+
+    // One entry = its first line plus any continuation lines. A line that is not in the shared
+    // "date | profile | KIND | message" shape is kept only while no profile/kind/errors filter is set.
+    private fun entryMatchesLogFilters(entry: List<String>, filters: LogFilters = currentLogFilters()): Boolean {
+        val first = entry.firstOrNull() ?: return false
+        val parsed = LOG_LINE_SHAPE.matchEntire(first)
+        if (parsed == null) {
+            if (filters.profile.isNotEmpty() || filters.kind.isNotEmpty() || filters.errorsOnly) return false
+        } else {
+            val profile = parsed.groupValues[2]
+            val kind = parsed.groupValues[3]
+            if (filters.profile.isNotEmpty() && !profile.equals(filters.profile, ignoreCase = true)) return false
+            if (filters.errorsOnly && kind != "ERROR") return false
+            if (filters.kind.isNotEmpty() && kind != filters.kind) return false
+        }
+        if (filters.search.isNotEmpty() && entry.none { it.contains(filters.search, ignoreCase = true) }) return false
+        return true
+    }
+
+    // The session's lines, oldest first, with the current filters applied (what is saved or shared).
+    private fun filteredLogLines(): List<String> {
+        val raw = LOG_ANSI_REGEX.replace(readSessionLog(), "").replace("\r", "")
+        val entries = mutableListOf<MutableList<String>>()
+        raw.lineSequence().forEach { line ->
+            if (line.isBlank()) return@forEach
+            if (entries.isEmpty() || LOG_ENTRY_START.containsMatchIn(line)) entries.add(mutableListOf(line))
+            else entries.last().add(line)
+        }
+        return entries.filter { entryMatchesLogFilters(it) }.flatten()
+    }
+
+    private fun pickLogProfile(btn: TextView) {
+        val names = LOG_ANSI_REGEX.replace(readSessionLog(), "").lineSequence()
+            .mapNotNull { LOG_LINE_SHAPE.matchEntire(it)?.groupValues?.get(2) }
+            .distinct().sortedBy { it.lowercase() }.toList()
+        val choices = (listOf("All profiles") + names).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Show one profile")
+            .setItems(choices) { _, which ->
+                logFilterProfile = if (which == 0) "" else choices[which]
+                btn.text = if (which == 0) "Profile: all" else "Profile: ${choices[which]}"
+                refreshLogs(force = true)
+            }
+            .show()
+    }
+
+    private fun pickLogKind(btn: TextView) {
+        val choices = (listOf("All kinds") + LOG_KINDS).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Show one kind")
+            .setItems(choices) { _, which ->
+                logFilterKind = if (which == 0) "" else choices[which]
+                btn.text = if (which == 0) "Kind: all" else "Kind: ${choices[which]}"
+                refreshLogs(force = true)
+            }
+            .show()
+    }
+
+    private fun askLogSearch(btn: TextView) {
+        val input = EditText(this).apply {
+            setText(logFilterSearch)
+            setSingleLine(true)
+            hint = "Text to find (empty = show all)"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Search the logs")
+            .setView(wrapForDialog(input))
+            .setPositiveButton("Search") { _, _ ->
+                logFilterSearch = input.text?.toString()?.trim().orEmpty()
+                btn.text = if (logFilterSearch.isEmpty()) "Search" else "Search: \"$logFilterSearch\""
+                refreshLogs(force = true)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun exportLogsAsTxt() {
+        if (filteredLogLines().isEmpty()) {
+            toast("No log lines to save.")
+            return
+        }
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        logExportPicker.launch("mudaremote_logs_$day.txt")
+    }
+
+    private fun writeLogExport(uri: Uri) {
+        val lines = filteredLogLines()
+        val ok = runCatching {
+            contentResolver.openOutputStream(uri)?.use { out ->
+                out.write((lines.joinToString("\n") + "\n").toByteArray(Charsets.UTF_8))
+            } != null
+        }.getOrDefault(false)
+        toast(if (ok) "Saved ${lines.size} log lines." else "Could not save the log file.")
+    }
+
+    private fun shareLogs() {
+        val lines = filteredLogLines()
+        if (lines.isEmpty()) {
+            toast("No log lines to share.")
+            return
+        }
+        // Keep the newest part so the text stays within what an intent can carry.
+        var text = lines.joinToString("\n")
+        if (text.length > 200_000) text = text.takeLast(200_000).substringAfter('\n', "")
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "MudaFork logs")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, "Share logs"))
     }
 
     // =========================================================================
@@ -1789,10 +2430,10 @@ class MainActivity : ComponentActivity() {
         isTokenVisible = !isTokenVisible
         if (isTokenVisible) {
             tokenInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            tokenShowHideBtn.text = "🙈"
+            tokenShowHideBtn.text = "Hide"
         } else {
             tokenInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            tokenShowHideBtn.text = "👁️"
+            tokenShowHideBtn.text = "Show"
         }
         tokenInput.setSelection(tokenInput.text.length)
     }
@@ -1823,16 +2464,26 @@ class MainActivity : ComponentActivity() {
                     .callAttr("get_runtime_info", filesDir.absolutePath)
                     .toString()
                 val info = JSONObject(infoJson)
-                val installed = info.optString("installed_version", info.optString("current_version", "4.9.1-beta.2"))
-                val live = info.optString("live_version", "")
+                // A JSON null must read as "unknown": optString turns it into the text "null".
+                fun versionOf(key: String): String {
+                    if (info.isNull(key)) return ""
+                    val text = info.optString(key, "").trim()
+                    return if (text.equals("null", ignoreCase = true)) "" else text
+                }
+                val installed = versionOf("installed_version").ifBlank { versionOf("current_version") }
+                val live = versionOf("live_version")
                 val isUpdated = info.optBoolean("is_updated", false)
                 val isStaged = info.optBoolean("is_staged", false)
-                val displayVer = if (live.isNotBlank()) live else installed
-                val statusTag = if (isStaged) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
+                val displayVer = live.ifBlank { installed }
+                val statusTag = if (isStaged && installed.isNotBlank()) "(v$installed staged)" else if (isUpdated) "(Live Release)" else "(Bundled)"
                 val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
                 val isBeta = prefs.getBoolean("pref_beta_channel", true)
                 val channelBadge = if (isBeta) "[Beta]" else "[Stable]"
-                val label = "🐍 Python Engine: v$displayVer $statusTag $channelBadge"
+                val label = if (displayVer.isBlank()) {
+                    "Python engine (bundled) $channelBadge"
+                } else {
+                    "Python engine v$displayVer $statusTag $channelBadge"
+                }
                 lastEngineLabel = label
                 runOnUiThread {
                     if (::engineVersionText.isInitialized) {
@@ -1843,7 +2494,7 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) {
                 runOnUiThread {
                     if (::engineVersionText.isInitialized && lastEngineLabel.isEmpty()) {
-                        engineVersionText.text = "🐍 Python Engine: Ready"
+                        engineVersionText.text = "Python engine: ready"
                     }
                 }
             } finally {
@@ -1866,8 +2517,6 @@ class MainActivity : ComponentActivity() {
             var badgeText = "● Fetch failed"
             var badgeColor = UiTheme.ACCENT_RED_BRIGHT
             var message = ""
-            var apkNoticeUrl = ""
-            var apkNoticeVer = ""
             try {
                 PythonRuntime.ensureStarted(applicationContext)
                 val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
@@ -1880,35 +2529,10 @@ class MainActivity : ComponentActivity() {
                 val resStatus = result.optString("status", "")
                 val version = result.optString("version", "")
                 val error = result.optString("error", "")
-                val apkObj = result.optJSONObject("apk_update")
-                if (apkObj != null) {
-                    val rawUrl = apkObj.optString("url", "")
-                    val rawVer = apkObj.optString("version", "")
-                    val rawCode = apkObj.optLong("version_code", 0L)
-                    var isEligible = false
-                    if (rawCode > 0L && rawUrl.isNotBlank()) {
-                        try {
-                            val pInfo = packageManager.getPackageInfo(packageName, 0)
-                            val installedCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                pInfo.longVersionCode
-                            } else {
-                                @Suppress("DEPRECATION")
-                                pInfo.versionCode.toLong()
-                            }
-                            isEligible = rawCode > installedCode
-                        } catch (_: Exception) {
-                            isEligible = false
-                        }
-                    }
-                    if (isEligible) {
-                        apkNoticeUrl = rawUrl
-                        apkNoticeVer = rawVer
-                    }
-                }
                 when (resStatus) {
                     "updated" -> {
                         badgeText = "● Updated v$version"; badgeColor = UiTheme.ACCENT_GREEN_BRIGHT
-                        message = "Updated runtime to v$version! 🌟"
+                        message = "Updated the runtime to v$version."
                     }
                     "staged" -> {
                         // Runtime busy: files verified and staged; activation deferred to next start.
@@ -1917,7 +2541,7 @@ class MainActivity : ComponentActivity() {
                     }
                     "current" -> {
                         badgeText = "● Up to date"; badgeColor = UiTheme.ACCENT_BLUE
-                        message = "Runtime is up to date (v$version). ✨"
+                        message = "The runtime is up to date (v$version)."
                     }
                     else -> {
                         message = if (error.isNotBlank()) "Update error: $error" else "Update check complete."
@@ -1930,16 +2554,10 @@ class MainActivity : ComponentActivity() {
             val finalBadge = badgeText
             val finalColor = badgeColor
             val finalMessage = message
-            val finalApkUrl = apkNoticeUrl
-            val finalApkVer = apkNoticeVer
             runOnUiThread {
                 updateStatusBadge(finalBadge, finalColor)
                 if (finalMessage.isNotBlank()) toast(finalMessage)
-                // Updates arrive as Python files; an APK is only downloaded on
-                // purpose from the version picker, so this is just a hint.
-                if (finalApkUrl.isNotBlank() && !isFinishing) {
-                    toast("Android APK v$finalApkVer is available under Switch Version.")
-                }
+                // The app (APK) itself is updated by AppUpdater, not here.
                 isUpdateInFlight = false
                 loadEngineVersion()
             }
@@ -1948,7 +2566,7 @@ class MainActivity : ComponentActivity() {
 
     private fun promptRevertPython() {
         AlertDialog.Builder(this)
-            .setTitle("Restore Bundled Version")
+            .setTitle("Restore the bundled version?")
             .setMessage("Restore Python runtime to the bundled APK version? Staged update cache will be cleared.")
             .setPositiveButton("Restore") { _, _ -> resetPythonRuntime() }
             .setNegativeButton("Cancel", null)
@@ -1999,25 +2617,16 @@ class MainActivity : ComponentActivity() {
                     if (isFinishing) return@runOnUiThread
                     val displayNames = items.map { it.second }.toTypedArray()
                     AlertDialog.Builder(this)
-                        .setTitle(if (isBeta) "🎯 Switch Target Version (Beta)" else "🎯 Switch Target Version (Stable)")
+                        .setTitle(if (isBeta) "Pick a version (beta)" else "Pick a version (stable)")
                         .setItems(displayNames) { _, which ->
-                            val (selectedTag, _, apkUrl) = items[which]
+                            val (selectedTag, _, _) = items[which]
                             if (selectedTag.startsWith("android-")) {
-                                if (apkUrl.isNotBlank()) {
-                                    toast("Opening APK download for $selectedTag...")
-                                    try {
-                                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
-                                    } catch (e: Exception) {
-                                        toast("Could not open browser: ${e.message}")
-                                    }
-                                } else {
-                                    toast("No APK file was published for $selectedTag.")
-                                }
+                                toast("The app is updated from App updates in this card.")
                             } else {
-                                promptConfirmInstallVersion(selectedTag, apkUrl)
+                                promptConfirmInstallVersion(selectedTag)
                             }
                         }
-                        .setNeutralButton("Custom Tag") { _, _ ->
+                        .setNeutralButton("Custom tag") { _, _ ->
                             promptCustomVersionInput()
                         }
                         .setNegativeButton("Cancel", null)
@@ -2031,27 +2640,15 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun promptConfirmInstallVersion(tag: String, apkUrl: String = "") {
-        val apkNote = if (apkUrl.isNotBlank()) {
-            "\n\nThis release also has an Android APK. Download it only if you want the newer app itself; the bot code updates without it."
-        } else ""
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Confirm Version Switch")
-            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.$apkNote")
+    private fun promptConfirmInstallVersion(tag: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Switch the version?")
+            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.")
             .setPositiveButton("Install") { _, _ ->
                 installSpecificPythonVersion(tag)
             }
             .setNegativeButton("Cancel", null)
-        if (apkUrl.isNotBlank()) {
-            dialog.setNeutralButton("Download APK") { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
-                } catch (e: Exception) {
-                    toast("Could not open browser: ${e.message}")
-                }
-            }
-        }
-        dialog.show()
+            .show()
     }
 
     private fun promptCustomVersionInput() {
@@ -2060,8 +2657,8 @@ class MainActivity : ComponentActivity() {
             setSingleLine()
         }
         AlertDialog.Builder(this)
-            .setTitle("Enter Version Tag")
-            .setView(input)
+            .setTitle("Version tag")
+            .setView(wrapForDialog(input))
             .setPositiveButton("Install") { _, _ ->
                 val tag = input.text.toString().trim()
                 if (tag.isNotBlank()) {
@@ -2097,7 +2694,7 @@ class MainActivity : ComponentActivity() {
                     when (status) {
                         "updated" -> {
                             updateStatusBadge("● Updated v$ver", UiTheme.ACCENT_GREEN_BRIGHT)
-                            toast("Successfully updated to v$ver! 🌟")
+                            toast("Updated to v$ver.")
                         }
                         "staged" -> {
                             updateStatusBadge("● Staged v$ver", UiTheme.ACCENT_YELLOW)
@@ -2160,14 +2757,205 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    // =========================================================================
+    // KEEP RUNNING (phones that close background apps)
+    // =========================================================================
+
+    private fun scrollToKeepRunning() {
+        if (!::rootScroll.isInitialized || !::keepRunningCard.isInitialized) return
+        refreshKeepRunningStatus()
+        rootScroll.post { rootScroll.smoothScrollTo(0, keepRunningCard.top) }
+    }
+
+    private fun buildKeepRunningCard(): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.surfaceCard(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18), UiTheme.dp(this@MainActivity, 20), UiTheme.dp(this@MainActivity, 18))
+        }
+        card.addView(TextView(this).apply {
+            text = "Keep running"
+            UiTheme.styleTitle(this)
+        })
+        card.addView(TextView(this).apply {
+            text = "Some phones close background apps even when battery optimisation is off. " +
+                "Check each row, then follow the steps for your phone."
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 4), 0, UiTheme.dp(this@MainActivity, 12))
+        })
+
+        keepRunningStatus = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        card.addView(keepRunningStatus)
+        refreshKeepRunningStatus()
+
+        // Start again after reboot (switch, default on)
+        val bootRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            background = UiTheme.listItemDrawable(this@MainActivity, UiTheme.SURFACE_CONTAINER_HIGH)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 12), UiTheme.dp(this@MainActivity, 10))
+        }
+        val bootText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        bootText.addView(TextView(this).apply {
+            text = "Start again after reboot"
+            UiTheme.styleLabel(this)
+        })
+        bootText.addView(TextView(this).apply {
+            text = "If the bot was running when the phone turned off, start it again after the phone starts."
+            UiTheme.styleSupporting(this)
+        })
+        bootRow.addView(bootText, LinearLayout.LayoutParams(0, -2, 1f))
+        val initialBoot = KeepAlive.resumeAfterBoot(this)
+        val bootSwitch = Switch(this).apply {
+            UiTheme.styleSwitch(this)
+            isChecked = initialBoot
+            contentDescription = "Start again after reboot"
+            setOnCheckedChangeListener { _, checked ->
+                KeepAlive.setResumeAfterBoot(this@MainActivity, checked)
+            }
+        }
+        bootRow.addView(bootSwitch, LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 12) })
+        bootRow.setOnClickListener { bootSwitch.isChecked = !bootSwitch.isChecked }
+        card.addView(bootRow, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = UiTheme.dp(this@MainActivity, 0)
+            bottomMargin = UiTheme.dp(this@MainActivity, 16)
+        })
+
+        // Phone maker steps
+        val maker = KeepAlive.maker()
+        card.addView(TextView(this).apply {
+            text = "Steps for ${KeepAlive.makerTitle(maker)}"
+            UiTheme.styleLabel(this)
+            setPaddingRelative(0, 0, 0, UiTheme.dp(this@MainActivity, 6))
+        })
+        KeepAlive.makerSteps(maker).forEachIndexed { index, step ->
+            card.addView(TextView(this).apply {
+                text = "${index + 1}. $step"
+                UiTheme.styleSupporting(this)
+                setPaddingRelative(0, 0, 0, UiTheme.dp(this@MainActivity, 4))
+            })
+        }
+
+        // The two buttons wrap onto a second line instead of squeezing their labels.
+        val actions = FlowLayout(this).apply {
+            setPaddingRelative(0, UiTheme.dp(this@MainActivity, 12), 0, 0)
+        }
+        actions.addView(createGitHubButton("Auto-start settings") { openAutoStartSettings() }.apply {
+            maxLines = 1
+        })
+        actions.addView(createGitHubButton("App info", UiTheme.ButtonStyle.OUTLINED) { openAppDetails() }.apply {
+            maxLines = 1
+        })
+        card.addView(actions, LinearLayout.LayoutParams(-1, -2))
+
+        return card.apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = UiTheme.dp(this@MainActivity, 4)
+                bottomMargin = UiTheme.dp(this@MainActivity, 16)
+            }
+        }
+    }
+
+    private fun refreshKeepRunningStatus() {
+        if (!::keepRunningStatus.isInitialized) return
+        keepRunningStatus.removeAllViews()
+
+        val pm = getSystemService(PowerManager::class.java)
+        val batteryExempt = runCatching { pm.isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
+        addKeepRunningRow(
+            "Battery optimisation",
+            batteryExempt,
+            if (batteryExempt) "Off for MudaFork (good)" else "On: Android may stop the bot"
+        ) { promptBatteryOptimization() }
+
+        val notificationsOn = runCatching { NotificationManagerCompat.from(this).areNotificationsEnabled() }.getOrDefault(true)
+        addKeepRunningRow(
+            "Notifications",
+            notificationsOn,
+            if (notificationsOn) "Allowed (good)" else "Blocked: you will not see stop or resume notices"
+        ) { openNotificationSettings() }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val restricted = runCatching {
+                getSystemService(ActivityManager::class.java).isBackgroundRestricted
+            }.getOrDefault(false)
+            addKeepRunningRow(
+                "Background activity",
+                !restricted,
+                if (restricted) "Restricted: Android will stop the bot in the background" else "Allowed (good)"
+            ) { openAppDetails() }
+        }
+    }
+
+    private fun addKeepRunningRow(label: String, ok: Boolean, state: String, onOpen: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = UiTheme.dp(this@MainActivity, 56)
+            background = UiTheme.rowSurface(this@MainActivity)
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 16), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8))
+        }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = (if (ok) "✓ " else "! ") + label
+            UiTheme.styleLabel(this)
+        })
+        texts.addView(TextView(this).apply {
+            text = state
+            UiTheme.styleSupporting(this)
+            setTextColor(if (ok) UiTheme.PRIMARY else UiTheme.TERTIARY)
+        })
+        row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(
+            createGitHubSmallBtn("Open", if (ok) UiTheme.ButtonStyle.OUTLINED else UiTheme.ButtonStyle.TONAL) { onOpen() },
+            LinearLayout.LayoutParams(-2, -2).apply { marginStart = UiTheme.dp(this@MainActivity, 8) }
+        )
+        keepRunningStatus.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = UiTheme.dp(this@MainActivity, 8)
+        })
+    }
+
+    private fun openNotificationSettings() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        }.onFailure { openAppDetails() }
+    }
+
+    private fun openAppDetails() {
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+    }
+
+    /** Tries the maker's known auto-start pages; falls back to this app's details page. */
+    private fun openAutoStartSettings() {
+        for (component in KeepAlive.autoStartComponents(KeepAlive.maker())) {
+            val candidate = Intent().setComponent(component)
+            val resolvable = runCatching { candidate.resolveActivity(packageManager) != null }.getOrDefault(false)
+            if (!resolvable) continue
+            if (runCatching { startActivity(candidate) }.isSuccess) return
+        }
+        toast("No auto-start page found on this phone. Opening app info instead.")
+        openAppDetails()
+    }
+
     private fun promptBatteryOptimization() {
         val pm = getSystemService(PowerManager::class.java)
         val directlyExemptable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
             !pm.isIgnoringBatteryOptimizations(packageName)
         AlertDialog.Builder(this)
-            .setTitle("Background Execution")
+            .setTitle("Running in the background")
             .setMessage(
-                "To keep MudaRemote active when your screen is off or another app is open, " +
+                "To keep MudaFork active when your screen is off or another app is open, " +
                     "please disable battery optimizations for this application."
             )
             .setPositiveButton("Allow") { _, _ ->
@@ -2225,11 +3013,12 @@ class MainActivity : ComponentActivity() {
                 importedNames += name
             }
             if (importedNames.isNotEmpty()) {
+                ensureProfileIdentity()
                 currentProfile = importedNames.first()
                 persist()
                 refreshProfileTabs()
                 renderCurrentProfile()
-                toast("Imported ${importedNames.size} branch preset(s)! 🌟")
+                toast("Imported ${importedNames.size} preset(s).")
             }
         }.onFailure { toast("Presets error: ${it.message}") }
     }
@@ -2255,8 +3044,13 @@ class MainActivity : ComponentActivity() {
                     it.startsWith("AQAAANCMnd8BFdER", ignoreCase = true)
                 }
                 encrypted += values.size - portable.size
+                // Desktop now stores tokens under "profile:<stable id>".
+                val targetName = if (name.startsWith("profile:")) {
+                    val wantedId = name.removePrefix("profile:")
+                    profiles.entries.firstOrNull { it.value.optString("profile_id", "") == wantedId }?.key ?: name
+                } else name
                 if (portable.isNotEmpty()) {
-                    setCanonicalTokens(name, portable)
+                    setCanonicalTokens(targetName, portable)
                     imported += portable.size
                 }
             }
@@ -2267,7 +3061,7 @@ class MainActivity : ComponentActivity() {
                 if (invalid > 0) warnings += "$invalid invalid non-text value(s) were ignored"
                 toast("Imported $imported secret(s). ${warnings.joinToString("; ")}.")
             } else {
-                toast("Imported $imported secret(s) to Keystore! 🔒")
+                toast("Imported $imported secret(s) into the Keystore.")
             }
             refreshProfileTabs()
             renderCurrentProfile()
@@ -2342,6 +3136,8 @@ class MainActivity : ComponentActivity() {
             }.onFailure { storageHealthy = false }
         }
         if (profiles.isEmpty()) profiles["MAIN"] = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
+        // Before defaults are merged, so an old Main Account ID still marks a side.
+        ensureProfileIdentity()
         profiles.forEach { (name, data) ->
             mergeSchemaDefaults(data)
             normalizeProfileTokens(name, data)
@@ -2365,41 +3161,50 @@ class MainActivity : ComponentActivity() {
     }
 
     // =========================================================================
-    // GITHUB BUTTON & BADGE HELPERS
+    // BUTTON & DIALOG HELPERS (styles come from UiTheme)
     // =========================================================================
 
-    private fun createGitHubButton(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
+    /** A full-size M3 button (48dp, pill with pressed morph); tonal unless told otherwise. */
+    private fun createGitHubButton(
+        text: String,
+        style: UiTheme.ButtonStyle = UiTheme.ButtonStyle.TONAL,
+        haptic: Int = HapticFeedbackConstants.VIRTUAL_KEY,
+        onClick: () -> Unit
+    ): TextView = TextView(this).apply {
         this.text = text
-        textSize = 11f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(UiTheme.TEXT_PRIMARY)
-        gravity = Gravity.CENTER
-        background = UiTheme.buttonDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
-        minHeight = UiTheme.dp(this@MainActivity, 44)
-        setPadding(UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 10), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 10))
+        UiTheme.styleButton(this, style)
         setOnClickListener { view ->
-            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            view.performHapticFeedback(haptic)
             onClick()
         }
     }
 
-    private fun createGitHubSmallBtn(text: String, onClick: (TextView) -> Unit): TextView = TextView(this).apply {
+    /** A compact M3 button for toolbars (still a 48dp touch target); outlined unless told otherwise. */
+    private fun createGitHubSmallBtn(
+        text: String,
+        style: UiTheme.ButtonStyle = UiTheme.ButtonStyle.OUTLINED,
+        onClick: (TextView) -> Unit
+    ): TextView = TextView(this).apply {
         this.text = text
-        textSize = 11f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(UiTheme.TEXT_PRIMARY)
-        gravity = Gravity.CENTER
-        minHeight = UiTheme.dp(this@MainActivity, 40)
-        background = UiTheme.pressablePillDrawable(this@MainActivity, UiTheme.BG_CARD_LIGHT, UiTheme.BORDER_DEFAULT, 6f, 1f)
-        setPadding(UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 8))
-        val params = LinearLayout.LayoutParams(-2, -2).apply {
-            leftMargin = UiTheme.dp(this@MainActivity, 4)
-        }
-        layoutParams = params
+        UiTheme.styleButton(this, style, compact = true)
+        layoutParams = LinearLayout.LayoutParams(-2, -2)
         setOnClickListener { view ->
             view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            @Suppress("UNCHECKED_CAST")
             onClick(view as TextView)
+        }
+    }
+
+    /** Styles a dialog's text field as a filled M3 field with the dialog's side padding. */
+    private fun wrapForDialog(input: EditText): View {
+        input.background = UiTheme.inputDrawable(this)
+        input.textSize = UiTheme.TYPE_BODY
+        input.setTextColor(UiTheme.TEXT_PRIMARY)
+        input.setHintTextColor(UiTheme.TEXT_MUTED)
+        input.minHeight = UiTheme.dp(this, 52)
+        input.setPaddingRelative(UiTheme.dp(this, 16), UiTheme.dp(this, 12), UiTheme.dp(this, 16), UiTheme.dp(this, 12))
+        return FrameLayout(this).apply {
+            setPaddingRelative(UiTheme.dp(this@MainActivity, 24), UiTheme.dp(this@MainActivity, 8), UiTheme.dp(this@MainActivity, 24), 0)
+            addView(input, FrameLayout.LayoutParams(-1, -2))
         }
     }
 
@@ -2413,6 +3218,10 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         val LOG_ANSI_REGEX = Regex("\u001B\\[[;\\d]*m")
-        val LOG_ENTRY_START = Regex("^\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG)")
+        val LOG_ENTRY_START = Regex("^(?:\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} \\||\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG))")
+        val LOG_LINE_SHAPE = Regex("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) \\| (.*?) \\| ([A-Z]+) \\| (.*)$")
+        val LOG_KINDS = listOf("ROLL", "CLAIM", "KAKERA", "GIVE", "PERK", "SIDE", "SETUP", "SPHERE", "STATUS", "SYSTEM", "WARN", "ERROR")
+        // Same text as mudae_core.account_roles.NO_ALTS_HINT.
+        const val NO_ALTS_HINT = "Add alt tokens under Account Tokens to use this"
     }
 }

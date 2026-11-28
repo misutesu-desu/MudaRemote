@@ -345,7 +345,7 @@ class BotInstance:
         if event_type == "watchdog_recovered":
             message = "Connection restored"
         elif stage == "hard":
-            message = f"Discord connection could not be repaired ({reason}); restarting MudaRemote"
+            message = f"Discord connection could not be repaired ({reason}); restarting MudaFork"
         else:
             message = f"Discord connection stalled ({reason}); reconnecting"
         self._emit_event(event_type, {"message": message, "reason": reason, "stage": stage})
@@ -495,6 +495,16 @@ class BotInstance:
         """
         with self._client_lock:
             reload = getattr(self._client, "_preset_reload", None) if self._client else None
+            totals_source = getattr(self._client, "account_totals", None) if self._client else None
+            giver = getattr(self._client, "kakera_giver", None) if self._client else None
+            totals = totals_source.snapshot() if hasattr(totals_source, "snapshot") else None
+            give_status = getattr(giver, "status", None)
+            harem_giver = getattr(self._client, "harem_giver", None) if self._client else None
+            harem_status = getattr(harem_giver, "status", None)
+            sphere_giver = getattr(self._client, "sphere_giver", None) if self._client else None
+            sphere_give_status = getattr(sphere_giver, "status", None)
+            perk_upgrader = getattr(self._client, "perk_upgrader", None) if self._client else None
+            perk10_status = getattr(perk_upgrader, "status", None)
             active = _redact_credentials(copy.deepcopy(reload.active_preset), self._known_secrets) if reload else {}
             desired = _redact_credentials(copy.deepcopy(reload.desired_preset), self._known_secrets) if reload else {}
 
@@ -508,6 +518,21 @@ class BotInstance:
                 "restart_required": list(self._restart_required),
                 "active_preset": active,
                 "desired_preset": desired,
+                # Live kakera/sphere totals ({kakera, spheres, as_of, source, ...}) or None.
+                "totals": totals,
+                "auto_give_status": give_status if isinstance(give_status, str) else None,
+                "harem_give_status": harem_status if isinstance(harem_status, str) else None,
+                "sphere_give_status": sphere_give_status if isinstance(sphere_give_status, str) else None,
+                "give_all_spheres_status": (getattr(sphere_giver, "manual_status", None)
+                                            if isinstance(getattr(sphere_giver, "manual_status", None), str) else None),
+                "perk10_status": perk10_status if isinstance(perk10_status, str) else None,
+                # «paused for about 1 h — the key limit was reached (resumes about HH:MM)…» or None.
+                "pause_status": (getattr(self._client, "key_limit_status", None)
+                                 if self._client is not None
+                                 and getattr(self._client, "key_limit_hit", False)
+                                 and isinstance(getattr(self._client, "key_limit_status", None), str) else None),
+                "give_all_kakera_status": (getattr(giver, "manual_status", None)
+                                           if isinstance(getattr(giver, "manual_status", None), str) else None),
             }
 
     def _run_lifecycle(self):
@@ -847,8 +872,12 @@ class RuntimeManager:
             raise ValueError("duplicate account tokens are not allowed")
 
         from .runtime import active_stagger_seconds
+        from .config import profile_id_of
+        # A profile's stable id keys its instances, so a rename keeps them;
+        # profiles saved before ids existed still use the display name.
+        id_prefix = profile_id_of(preset_data) or preset_name.replace(' ', '-')
         with self._lock:
-            if any(f"{preset_name.replace(' ', '-')}-{idx}" in self._instances
+            if any(f"{id_prefix}-{idx}" in self._instances
                    for idx in range(1, len(tokens) + 1)):
                 raise ValueError("an account instance ID already exists")
             start_index = len(self._instances)
@@ -860,9 +889,10 @@ class RuntimeManager:
             instance_id = self.start_instance(
                 preset_name=account_name,
                 preset_data={**copy.deepcopy(preset_data), "_source_preset_name": preset_name,
+                             "_account_index": idx, "_account_count": len(tokens),
                              "persistent_stagger_seconds": active_stagger_seconds(start_index + idx - 1)},
                 credentials={"token": token},
-                instance_id=f"{preset_name.replace(' ', '-')}-{idx}",
+                instance_id=f"{id_prefix}-{idx}",
                 block=block,
             )
             instance_ids.append(instance_id)

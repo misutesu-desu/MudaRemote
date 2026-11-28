@@ -165,7 +165,7 @@ class WorkerSupervisor:
         slot.process = self.context.Process(
             target=self.process_target,
             args=(child, slot.events, slot.heartbeat, slot.dropped, key[1]),
-            name="MudaRemote-instance",
+            name="MudaFork-instance",
         )
         try:
             slot.process.start()
@@ -237,7 +237,7 @@ class WorkerSupervisor:
                 raise ValueError("Invalid runtime response")
             return _safe(response, slot.secrets)
         except (OSError, EOFError, queue.Empty, ValueError):
-            self._mark_crashed(slot, "MudaRemote stopped unexpectedly.")
+            self._mark_crashed(slot, "MudaFork stopped unexpectedly.")
             self._dispose(slot)
             thread.join(1)
             return {"success": False, "error": "runtime_unresponsive"}
@@ -332,7 +332,7 @@ class WorkerSupervisor:
             try:
                 if (slot.process is not None and not slot.process.is_alive()
                         and slot.state != "stopped" and not slot.crash_reported):
-                    self._mark_crashed(slot, "MudaRemote stopped unexpectedly.")
+                    self._mark_crashed(slot, "MudaFork stopped unexpectedly.")
                     self._salvage_events(slot)
                 pending = slot.backlog + slot.synthetic
                 slot.backlog, slot.synthetic = [], []

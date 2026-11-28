@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0D1117</color>
+
+    <!-- Dark Material 3 Expressive roles (mirrors UiTheme.kt). -->
+    <color name="m3_surface">#121314</color>
+    <color name="m3_surface_container_high">#282a2d</color>
+    <color name="m3_on_surface">#e4e4e6</color>
+    <color name="m3_on_surface_variant">#c6c8cc</color>
+    <color name="m3_on_surface_dim">#9a9ca1</color>
+    <color name="m3_outline">#8e9196</color>
+    <color name="m3_primary">#8fd0f0</color>
+    <color name="m3_primary_container">#1f4b5e</color>
+    <color name="m3_ripple">#298fd0f0</color>
 </resources>

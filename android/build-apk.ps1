@@ -9,5 +9,5 @@ if (-not (Test-Path (Join-Path $sdkPath 'platforms\android-35'))) {
 $env:ANDROID_HOME = $sdkPath
 $gradlePath = Get-ChildItem (Join-Path $env:USERPROFILE '.gradle\wrapper\dists\gradle-8.11-bin') -Recurse -Filter gradle.bat -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 if (-not $gradlePath) { throw "Gradle 8.11 was not found in the local wrapper cache." }
-& $gradlePath ':app:assembleUx'
+& $gradlePath ':app:assembleUx' '-PmudaAbis=arm64-v8a'
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
