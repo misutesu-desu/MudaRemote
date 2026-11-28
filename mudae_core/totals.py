@@ -29,6 +29,7 @@ SOURCE_GAME_GAINS = "game result (+N lines)"
 SOURCE_GIVE = "give"
 SOURCE_GIFT_RECEIVED = "gift received"
 SOURCE_UPGRADE = "upgrade"
+SOURCE_MANUAL = "your own command"
 
 # 159,247 / 159.247 / 159 247 (also no-break and narrow no-break spaces) / 905
 NUMBER = r"\d{1,3}(?:[,.   ]\d{3})+(?!\d)|\d+"
