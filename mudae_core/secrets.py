@@ -226,7 +226,7 @@ class SecretStore:
             atomic_write_json(self.path, values)
         except OSError as exc:
             raise SecretStoreError(
-                "The token store could not be written to {}. MudaRemote needs a folder you can write to.".format(self.path)
+                "The token store could not be written to {}. MudaFork needs a folder you can write to.".format(self.path)
             ) from exc
 
     def _load_dpapi_values(self):

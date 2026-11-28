@@ -56,7 +56,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * MudaRemote Android application styled after GitHub Dark & Primer design system.
+ * MudaFork Android application styled after GitHub Dark & Primer design system.
  */
 class MainActivity : ComponentActivity() {
 
@@ -357,14 +357,14 @@ class MainActivity : ComponentActivity() {
         repoBreadcrumb.addView(octocat)
 
         val ownerText = TextView(this).apply {
-            text = "misutesu-desu / "
+            text = "YoRu72 / "
             textSize = 14.5f
             setTextColor(UiTheme.ACCENT_BLUE)
         }
         repoBreadcrumb.addView(ownerText)
 
         val repoText = TextView(this).apply {
-            text = "MudaRemote"
+            text = "MudaFork"
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(UiTheme.ACCENT_BLUE)
@@ -1237,7 +1237,7 @@ class MainActivity : ComponentActivity() {
         val formatted = exportJson.toString(2)
 
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("MudaRemote Preset $currentProfile", formatted)
+        val clip = ClipData.newPlainText("MudaFork Preset $currentProfile", formatted)
         clipboard.setPrimaryClip(clip)
         toast("Copied '$currentProfile' JSON to clipboard! 📋")
     }
@@ -2080,7 +2080,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyLogsToClipboard() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("MudaRemote Console Logs", displayedLogText)
+        val clip = ClipData.newPlainText("MudaFork Console Logs", displayedLogText)
         clipboard.setPrimaryClip(clip)
         toast("Copied raw logs to clipboard! 📋")
     }
@@ -2237,7 +2237,7 @@ class MainActivity : ComponentActivity() {
         if (text.length > 200_000) text = text.takeLast(200_000).substringAfter('\n', "")
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "MudaRemote logs")
+            putExtra(Intent.EXTRA_SUBJECT, "MudaFork logs")
             putExtra(Intent.EXTRA_TEXT, text)
         }
         startActivity(Intent.createChooser(send, "Share logs"))
@@ -2745,7 +2745,7 @@ class MainActivity : ComponentActivity() {
         addKeepRunningRow(
             "Battery optimisation",
             batteryExempt,
-            if (batteryExempt) "Off for MudaRemote (good)" else "On: Android may stop the bot"
+            if (batteryExempt) "Off for MudaFork (good)" else "On: Android may stop the bot"
         ) { promptBatteryOptimization() }
 
         val notificationsOn = runCatching { NotificationManagerCompat.from(this).areNotificationsEnabled() }.getOrDefault(true)
@@ -2833,7 +2833,7 @@ class MainActivity : ComponentActivity() {
         AlertDialog.Builder(this)
             .setTitle("Background Execution")
             .setMessage(
-                "To keep MudaRemote active when your screen is off or another app is open, " +
+                "To keep MudaFork active when your screen is off or another app is open, " +
                     "please disable battery optimizations for this application."
             )
             .setPositiveButton("Allow") { _, _ ->

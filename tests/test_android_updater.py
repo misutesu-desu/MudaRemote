@@ -209,7 +209,7 @@ class AndroidUpdaterTests(unittest.TestCase):
         manifest = {
             "version": "9.9.9",
             "apk_version": "1.3.0",
-            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.3.0/Mudaremote.apk",
+            "apk_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v1.3.0/Mudaremote.apk",
             "apk_version_code": 15,
             "source_files": [
                 {
@@ -366,7 +366,7 @@ class AndroidUpdaterTests(unittest.TestCase):
         manifest = {
             "version": "1.0.0",  # older or equal
             "apk_version": "1.4.0",
-            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.4.0/Mudaremote.apk",
+            "apk_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v1.4.0/Mudaremote.apk",
             "apk_version_code": 16,
         }
         with mock.patch("android_bridge._download_manifest", return_value=manifest), \
@@ -381,7 +381,7 @@ class AndroidUpdaterTests(unittest.TestCase):
         manifest = {
             "version": "1.0.0",
             "apk_version": "1.4.0",
-            "apk_url": "https://github.com/misutesu-desu/MudaRemote/releases/download/v1.4.0/Mudaremote.apk",
+            "apk_url": "https://github.com/YoRu72/MudaPersonalFork/releases/download/v1.4.0/Mudaremote.apk",
             "apk_version_code": 16,
         }
         missing = mock.Mock(status_code=404)

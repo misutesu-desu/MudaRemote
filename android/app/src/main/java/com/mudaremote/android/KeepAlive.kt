@@ -129,7 +129,7 @@ object KeepAlive {
 
     private fun ensureNoticeChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(NOTICE_CHANNEL_ID, "MudaRemote notices", NotificationManager.IMPORTANCE_DEFAULT)
+            val channel = NotificationChannel(NOTICE_CHANNEL_ID, "MudaFork notices", NotificationManager.IMPORTANCE_DEFAULT)
             context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
@@ -159,7 +159,7 @@ object KeepAlive {
     fun showTapToResume(context: Context) {
         showNotice(
             context, RESUME_NOTICE_ID,
-            "MudaRemote stopped",
+            "MudaFork stopped",
             "Android stopped the bot and did not allow it to restart in the background. Tap to resume.",
             resumeOnTap = true
         )
@@ -220,7 +220,7 @@ object KeepAlive {
                 val why = exit?.second?.let { " Android's reason: $it." }.orEmpty()
                 val text = "Stopped by the system at ${clock(stoppedAt)}, resumed at ${clock(now)}.$why"
                 log(context, "[WARN] [ANDROID] $text")
-                showNotice(context, REPORT_NOTICE_ID, "MudaRemote resumed", text, resumeOnTap = false)
+                showNotice(context, REPORT_NOTICE_ID, "MudaFork resumed", text, resumeOnTap = false)
             }
         }
     }
@@ -254,46 +254,46 @@ object KeepAlive {
 
     fun makerSteps(maker: Maker): List<String> = when (maker) {
         Maker.TRANSSION -> listOf(
-            "Phone Master (or Settings > Apps) > Auto-start: turn MudaRemote on.",
-            "Settings > Battery > App battery management (or Power saving): set MudaRemote to Unrestricted / No restrictions.",
-            "Open recents, pull down (or long-press) the MudaRemote card and lock it.",
-            "Phone Master > Accelerate / cleaner: add MudaRemote to the whitelist so cleaning does not close it.",
+            "Phone Master (or Settings > Apps) > Auto-start: turn MudaFork on.",
+            "Settings > Battery > App battery management (or Power saving): set MudaFork to Unrestricted / No restrictions.",
+            "Open recents, pull down (or long-press) the MudaFork card and lock it.",
+            "Phone Master > Accelerate / cleaner: add MudaFork to the whitelist so cleaning does not close it.",
         )
         Maker.XIAOMI -> listOf(
-            "Settings > Apps > MudaRemote > Autostart: on.",
-            "Settings > Apps > MudaRemote > Battery saver: No restrictions.",
-            "Open recents, long-press the MudaRemote card and tap the lock.",
-            "Security app > Cleaner: do not let it clean MudaRemote.",
+            "Settings > Apps > MudaFork > Autostart: on.",
+            "Settings > Apps > MudaFork > Battery saver: No restrictions.",
+            "Open recents, long-press the MudaFork card and tap the lock.",
+            "Security app > Cleaner: do not let it clean MudaFork.",
         )
         Maker.OPPO -> listOf(
-            "Settings > Apps > MudaRemote: allow Auto launch / Auto-start.",
-            "Settings > Apps > MudaRemote > Battery: Allow background activity (Unrestricted).",
-            "Open recents, tap the menu on the MudaRemote card and choose Lock.",
-            "Phone Manager / cleaner: exclude MudaRemote.",
+            "Settings > Apps > MudaFork: allow Auto launch / Auto-start.",
+            "Settings > Apps > MudaFork > Battery: Allow background activity (Unrestricted).",
+            "Open recents, tap the menu on the MudaFork card and choose Lock.",
+            "Phone Manager / cleaner: exclude MudaFork.",
         )
         Maker.VIVO -> listOf(
-            "i Manager > App manager > Autostart manager: turn MudaRemote on.",
-            "Settings > Battery > Background power consumption: allow MudaRemote (High background power use).",
-            "Open recents, pull the MudaRemote card down to lock it.",
-            "i Manager cleaner: exclude MudaRemote.",
+            "i Manager > App manager > Autostart manager: turn MudaFork on.",
+            "Settings > Battery > Background power consumption: allow MudaFork (High background power use).",
+            "Open recents, pull the MudaFork card down to lock it.",
+            "i Manager cleaner: exclude MudaFork.",
         )
         Maker.HUAWEI -> listOf(
-            "Settings > Battery > App launch: turn off Manage automatically for MudaRemote and allow all three options.",
-            "Settings > Apps > MudaRemote > Battery: no restrictions.",
-            "Open recents, pull the MudaRemote card down to lock it.",
-            "Phone Manager cleaner: exclude MudaRemote.",
+            "Settings > Battery > App launch: turn off Manage automatically for MudaFork and allow all three options.",
+            "Settings > Apps > MudaFork > Battery: no restrictions.",
+            "Open recents, pull the MudaFork card down to lock it.",
+            "Phone Manager cleaner: exclude MudaFork.",
         )
         Maker.SAMSUNG -> listOf(
-            "Settings > Apps > MudaRemote > Battery: Unrestricted.",
-            "Settings > Battery > Background usage limits: make sure MudaRemote is not in Sleeping or Deep sleeping apps; add it to Never sleeping apps.",
-            "Open recents, tap the MudaRemote icon and choose Keep open.",
-            "Device care: do not let it optimise MudaRemote.",
+            "Settings > Apps > MudaFork > Battery: Unrestricted.",
+            "Settings > Battery > Background usage limits: make sure MudaFork is not in Sleeping or Deep sleeping apps; add it to Never sleeping apps.",
+            "Open recents, tap the MudaFork icon and choose Keep open.",
+            "Device care: do not let it optimise MudaFork.",
         )
         Maker.OTHER -> listOf(
-            "Allow MudaRemote to auto-start, if your phone has that option.",
-            "Set MudaRemote's battery use to Unrestricted.",
-            "Lock MudaRemote in the recent apps screen, if your phone allows it.",
-            "Exclude MudaRemote from any cleaner or booster app.",
+            "Allow MudaFork to auto-start, if your phone has that option.",
+            "Set MudaFork's battery use to Unrestricted.",
+            "Lock MudaFork in the recent apps screen, if your phone allows it.",
+            "Exclude MudaFork from any cleaner or booster app.",
         )
     }
 

@@ -1,4 +1,4 @@
-"""Android lifecycle adapter and self-updating runtime for MudaRemote."""
+"""Android lifecycle adapter and self-updating runtime for MudaFork."""
 
 import asyncio
 import hashlib
@@ -478,7 +478,7 @@ def _download_file(url, timeout_seconds=15.0):
         return resp.content
     except Exception:
         import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "MudaRemote-Android"})
+        req = urllib.request.Request(url, headers={"User-Agent": "MudaFork-Android"})
         with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
             return resp.read()
 
@@ -501,7 +501,7 @@ def _apk_download_available(url, timeout_seconds=5.0):
     except ImportError:
         try:
             import urllib.request
-            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "MudaRemote-Android"})
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "MudaFork-Android"})
             with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
                 available = 200 <= resp.status < 300
         except Exception:
@@ -1126,7 +1126,7 @@ def start(profiles_json, tokens_json, files_dir):
             _runtime_thread = threading.Thread(
                 target=_monitor_workers,
                 args=(session_id,),
-                name="MudaRemote-Supervisor",
+                name="MudaFork-Supervisor",
                 daemon=True,
             )
             _runtime_thread.start()

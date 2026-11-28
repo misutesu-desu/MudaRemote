@@ -14,7 +14,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 
 /**
- * GitHub Primer Dark design system tokens and UI helper utilities for MudaRemote.
+ * GitHub Primer Dark design system tokens and UI helper utilities for MudaFork.
  */
 object UiTheme {
     // GitHub Dark Canvas / Surfaces

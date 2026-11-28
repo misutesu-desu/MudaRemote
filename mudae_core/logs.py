@@ -132,7 +132,7 @@ class LogEntry(NamedTuple):
 
 def clean_profile(name) -> str:
     text = single_line(name, 60).replace("|", "/").strip()
-    return text or "MudaRemote"
+    return text or "MudaFork"
 
 
 def format_line(when, profile, kind, message) -> str:

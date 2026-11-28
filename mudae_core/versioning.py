@@ -6,10 +6,10 @@ import re
 import sys
 import urllib.request
 from itertools import zip_longest
-CURRENT_VERSION = "5.3.9"
-UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/{branch}/version.json"
-STABLE_RELEASE_MANIFEST_URL = "https://github.com/misutesu-desu/MudaRemote/releases/latest/download/version.json"
-MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/{ref}/version.json"
+CURRENT_VERSION = "6.0.0"
+UPDATE_BRANCH_URL_TEMPLATE = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/{branch}/version.json"
+STABLE_RELEASE_MANIFEST_URL = "https://github.com/YoRu72/MudaPersonalFork/releases/latest/download/version.json"
+MANIFEST_REF_URL_TEMPLATE = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/{ref}/version.json"
 
 _VERSION_RE = re.compile(
     r"^\s*[vV]?(?P<release>\d+(?:\.\d+)*)"
@@ -179,14 +179,14 @@ class ReleaseDiscoveryError(RuntimeError):
     """Raised when the GitHub release catalog or a release manifest cannot be fetched."""
 
 
-RELEASES_API_URL = "https://api.github.com/repos/misutesu-desu/MudaRemote/releases"
+RELEASES_API_URL = "https://api.github.com/repos/YoRu72/MudaPersonalFork/releases"
 RELEASES_PAGE_SIZE = 100
 RELEASES_MAX_PAGES = 10
 
 
 def _release_request_headers():
     return {
-        "User-Agent": "MudaRemote",
+        "User-Agent": "MudaFork",
         "Accept": "application/vnd.github+json",
     }
 
@@ -333,7 +333,7 @@ def _align_manifest_to_ref(manifest, ref):
     weakening verification; an executable that names a *different* explicit
     release is a broken publication and is refused before any download.
     """
-    base = "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/"
+    base = "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/"
 
     def _pin(url):
         text = str(url or "")

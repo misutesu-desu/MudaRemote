@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
+    branches:
+      - work-mudafork
+      - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,13 +48,52 @@ jobs:
         shell: pwsh
         run: |
           $expectedVersion = (Get-Content -LiteralPath .\version.json | ConvertFrom-Json).version
-          $versionInfo = (Get-Item -LiteralPath .\dist\MudaRemote.exe).VersionInfo
+          $versionInfo = (Get-Item -LiteralPath .\dist\MudaFork.exe).VersionInfo
           if ($versionInfo.ProductVersion -ne $expectedVersion) {
             throw "ProductVersion mismatch: expected $expectedVersion, got $($versionInfo.ProductVersion)"
           }
-          if ($versionInfo.OriginalFilename -ne "MudaRemote.exe") {
+          if ($versionInfo.OriginalFilename -ne "MudaFork.exe") {
             throw "Unexpected OriginalFilename: $($versionInfo.OriginalFilename)"
           }
       - name: Smoke-test packaged CLI
         shell: pwsh
-        run: .\dist\MudaRemote.exe --help
+        run: .\dist\MudaFork.exe --help
+
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11"
+
+      - name: Compile the Android app and run its unit tests
+        working-directory: android
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Check the debug APK
+        run: |
+          SRC="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC" || { echo "::error::Debug APK missing at $SRC"; exit 1; }
+          cp "$SRC" MudaFork-debug.apk
+          ls -lh MudaFork-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MudaFork-debug-apk
+          path: MudaFork-debug.apk
+          if-no-files-found: error

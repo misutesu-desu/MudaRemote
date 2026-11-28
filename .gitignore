@@ -14,8 +14,8 @@ __pycache__/
 build/
 dist/
 *.spec.bak
-MudaRemote.exe
-MudaRemote_update*.exe
+MudaFork.exe
+MudaFork_update*.exe
 update.bat
 
 # Local environments and editors

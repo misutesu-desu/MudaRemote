@@ -175,7 +175,7 @@ def _bootstrap_modular_core():
     """Bridge legacy two-file updaters to the first modular release."""
     base_path = os.path.dirname(os.path.abspath(__file__))
     manifest_response = requests.get(
-        "https://raw.githubusercontent.com/misutesu-desu/MudaRemote/refs/heads/main/version.json",
+        "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/refs/heads/main/version.json",
         timeout=15,
     )
     manifest_response.raise_for_status()
@@ -369,7 +369,7 @@ except ImportError:
     Route = None
 
 # Bot Identification
-BOT_NAME = "MudaRemote"
+BOT_NAME = "MudaFork"
 from mudae_core.versioning import (
     CURRENT_VERSION,
     load_startup_update_check_setting,
@@ -763,7 +763,7 @@ class BotLogger:
             writer.write(preset_name, line, when)
 
     @classmethod
-    def log(cls, message, preset_name="MudaRemote", log_type="INFO", client=None):
+    def log(cls, message, preset_name="MudaFork", log_type="INFO", client=None):
         original_log_type = str(log_type or "INFO").upper()
         if original_log_type == "DEBUG" and not getattr(client, 'debug_mode', False):
             return
@@ -1075,7 +1075,7 @@ except Exception:
 UPDATE_URL = get_update_manifest_url()
 
 def _confirm_update_in_console(latest_version, changelog):
-    print(f"\nMudaRemote v{latest_version} is available.\n")
+    print(f"\nMudaFork v{latest_version} is available.\n")
     print("Changelog:")
     print(changelog)
     print()
@@ -1200,7 +1200,7 @@ def check_for_updates(confirm_update=None, channel=None, target_version=None, pr
             progress=progress,
         )
         if result == "frozen":
-            print_system_log("Verified update staged. The updater helper replaces MudaRemote and relaunches it once this process exits.", "RESET")
+            print_system_log("Verified update staged. The updater helper replaces MudaFork and relaunches it once this process exits.", "RESET")
             return "frozen"
         if result == "git":
             print_system_log("This installation is managed by Git. No files were changed; run 'git pull' to update.", "INFO")
@@ -1907,7 +1907,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     def process_claim_cooldown_message(message):
         if not getattr(message, 'content', None) or getattr(message, 'embeds', None):
             return False
-        # A manual /tu (or another MudaRemote instance's /tu) is already an
+        # A manual /tu (or another MudaFork instance's /tu) is already an
         # authoritative status snapshot, not a rejected claim. Refreshing in
         # response makes two running instances trigger each other forever.
         if is_tu_status_snapshot_for_self(message):
@@ -3554,7 +3554,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         client._runtime_state_event = asyncio.Event()
         client._claim_evidence_event = asyncio.Event()
         runtime_mode = "Android" if IS_TERMUX else ("EXE" if getattr(sys, "frozen", False) else "Python")
-        BotLogger.log(f"MudaRemote v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
+        BotLogger.log(f"MudaFork v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
         _totals_book.note_user_id(client._totals_key, getattr(client.user, "id", None))
         client.loop.create_task(health_monitor_task())
@@ -9858,7 +9858,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         threading.Thread(
             target=_close_client_on_mobile_stop,
             args=(client,),
-            name=f"MudaRemote-StopWatcher-{preset_name}",
+            name=f"MudaFork-StopWatcher-{preset_name}",
             daemon=True,
         ).start()
 
@@ -10112,7 +10112,7 @@ def run_cli(argv=None):
         update_result = None
         print_system_log("Update check at startup is off.", "INFO")
     if update_result == "frozen":
-        print_system_log("Exiting so the updater helper can replace MudaRemote and relaunch it.", "RESET")
+        print_system_log("Exiting so the updater helper can replace MudaFork and relaunch it.", "RESET")
         sys.exit(0)
     if update_result == "source" and not (
         os.environ.get("TERMUX_VERSION") == "MudaRemote-Android"
@@ -10153,7 +10153,7 @@ def run_cli(argv=None):
         try:
             while True: time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[MudaRemote] Shutting down...")
+            print("\n[MudaFork] Shutting down...")
 
 if __name__ == "__main__":
     run_cli()

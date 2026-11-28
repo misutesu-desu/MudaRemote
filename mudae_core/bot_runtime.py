@@ -345,7 +345,7 @@ class BotInstance:
         if event_type == "watchdog_recovered":
             message = "Connection restored"
         elif stage == "hard":
-            message = f"Discord connection could not be repaired ({reason}); restarting MudaRemote"
+            message = f"Discord connection could not be repaired ({reason}); restarting MudaFork"
         else:
             message = f"Discord connection stalled ({reason}); reconnecting"
         self._emit_event(event_type, {"message": message, "reason": reason, "stage": stage})

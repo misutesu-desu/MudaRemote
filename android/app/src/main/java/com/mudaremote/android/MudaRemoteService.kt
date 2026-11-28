@@ -48,7 +48,7 @@ class MudaRemoteService : Service() {
     override fun onCreate() {
         super.onCreate()
         commandExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
-            Thread(runnable, "MudaRemote-ServiceCommands")
+            Thread(runnable, "MudaFork-ServiceCommands")
         }
         appendLocalLog("[INFO] [ANDROID] Service created (pid ${android.os.Process.myPid()}).")
         heartbeatTask = commandExecutor.scheduleWithFixedDelay(
@@ -178,7 +178,7 @@ class MudaRemoteService : Service() {
                 KeepAlive.showTapToResume(this)
                 KeepAlive.scheduleWatchdog(this)
             } else {
-                showToast("Android blocked the start. Open MudaRemote and press Run again.")
+                showToast("Android blocked the start. Open MudaFork and press Run again.")
             }
             stopSelfResult(startId)
             return START_NOT_STICKY
@@ -558,7 +558,7 @@ class MudaRemoteService : Service() {
         if (wakeLock?.isHeld != true) {
             runCatching {
                 val powerManager = getSystemService(PowerManager::class.java)
-                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaRemote:runtime").also {
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MudaFork:runtime").also {
                     it.setReferenceCounted(false)
                     it.acquire(WAKE_LOCK_TIMEOUT_MS)
                 }
@@ -573,7 +573,7 @@ class MudaRemoteService : Service() {
             runCatching {
                 @Suppress("DEPRECATION")
                 val highPerfMode = WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                wifiLock = wifiManager.createWifiLock(highPerfMode, "MudaRemote:wifi").also {
+                wifiLock = wifiManager.createWifiLock(highPerfMode, "MudaFork:wifi").also {
                     it.setReferenceCounted(false)
                     it.acquire()
                 }
@@ -582,7 +582,7 @@ class MudaRemoteService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && lowLatencyWifiLock?.isHeld != true) {
             runCatching {
                 lowLatencyWifiLock = wifiManager.createWifiLock(
-                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "MudaRemote:wifi-low-latency"
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "MudaFork:wifi-low-latency"
                 ).also {
                     it.setReferenceCounted(false)
                     it.acquire()
@@ -689,7 +689,7 @@ class MudaRemoteService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
-            .setContentTitle("MudaRemote is active")
+            .setContentTitle("MudaFork is active")
             .setContentText(status)
             .setContentIntent(openIntent)
             .setOngoing(true)
@@ -700,7 +700,7 @@ class MudaRemoteService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "MudaRemote runtime", NotificationManager.IMPORTANCE_LOW).apply {
+            val channel = NotificationChannel(CHANNEL_ID, "MudaFork runtime", NotificationManager.IMPORTANCE_LOW).apply {
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)

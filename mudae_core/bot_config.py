@@ -1,4 +1,4 @@
-"""Preset-to-client configuration for MudaRemote.
+"""Preset-to-client configuration for MudaFork.
 
 This module owns the translation from a validated preset dictionary to the
 per-client attributes consumed by the bot lifecycle.  It intentionally does

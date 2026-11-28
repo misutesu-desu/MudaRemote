@@ -1,5 +1,5 @@
 """
-MudaRemote Preset Editor
+MudaFork Preset Editor
 A graphical interface for managing mudae_bot.py presets.
 """
 
@@ -18,7 +18,7 @@ import math
 import re
 import webbrowser
 
-REPO_URL = "https://github.com/misutesu-desu/MudaRemote"
+REPO_URL = "https://github.com/YoRu72/MudaPersonalFork"
 
 try:
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
@@ -1083,7 +1083,7 @@ class LogViewerWindow:
         self.folder = logs_folder
         self.lines = []
         self.window = tk.Toplevel(parent)
-        self.window.title("MudaRemote - Logs")
+        self.window.title("MudaFork - Logs")
         self.window.geometry("900x560")
         self.window.configure(bg=BG_DARK)
         bar = tk.Frame(self.window, bg=BG_DARK)
@@ -1136,7 +1136,7 @@ class LogViewerWindow:
     def save_as(self):
         path = filedialog.asksaveasfilename(
             parent=self.window, defaultextension=".txt", filetypes=[("Text file", "*.txt")],
-            initialfile="mudaremote_logs.txt")
+            initialfile="mudafork_logs.txt")
         if path and not log_tools.save_export(path, self.visible_lines()):
             messagebox.showerror("Save as TXT", "The file could not be written.", parent=self.window)
 
@@ -1162,7 +1162,7 @@ class VersionSelectorDialog:
         self._fetch_generation = 0
         self._results = {}
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("MudaRemote - Select Target Version")
+        self.dialog.title("MudaFork - Select Target Version")
         self.dialog.geometry("450x460")
         self.dialog.configure(bg=BG_DARK)
         self.dialog.resizable(False, False)
@@ -1446,7 +1446,7 @@ class PresetEditor:
     def __init__(self, root, extensions=()):
         self.root = root
         self.extensions = list(extensions or ())
-        self.root.title(f"MudaRemote Preset Editor v{CURRENT_VERSION}")
+        self.root.title(f"MudaFork Preset Editor v{CURRENT_VERSION}")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
 
@@ -4739,7 +4739,7 @@ class PresetEditor:
             return
 
         startup_dir = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-        bat_path = os.path.join(startup_dir, f"MudaRemote_{preset_name}.bat")
+        bat_path = os.path.join(startup_dir, f"MudaFork_{preset_name}.bat")
 
         if not enable and os.path.exists(bat_path):
             try:
@@ -4755,7 +4755,7 @@ class PresetEditor:
         cwd = get_base_path()
         active_index = 0
         for active_name in active_names:
-            active_bat_path = os.path.join(startup_dir, f"MudaRemote_{active_name}.bat")
+            active_bat_path = os.path.join(startup_dir, f"MudaFork_{active_name}.bat")
             try:
                 with open(active_bat_path, "w", encoding="utf-8") as f:
                     f.write('@echo off\n')
@@ -4763,14 +4763,14 @@ class PresetEditor:
                     if is_frozen:
                         exe_path = os.path.abspath(sys.executable)
                         f.write(
-                            f'start "{active_name} - MudaRemote" "{exe_path}" --preset "{active_name}" '
+                            f'start "{active_name} - MudaFork" "{exe_path}" --preset "{active_name}" '
                             f'--stagger-index {active_index}\n'
                         )
                     else:
                         python_exe = sys.executable
                         bot_script = os.path.join(cwd, BOT_SCRIPT)
                         f.write(
-                            f'start "{active_name} - MudaRemote" "{python_exe}" "{bot_script}" '
+                            f'start "{active_name} - MudaFork" "{python_exe}" "{bot_script}" '
                             f'--preset "{active_name}" --stagger-index {active_index}\n'
                         )
             except Exception as e:
@@ -5067,7 +5067,7 @@ class PresetEditor:
         elif result == "source":
             messagebox.showinfo(
                 "Update Installed",
-                f"{subject} has been installed. MudaRemote is restarting with the updated files.\n\nYour presets and settings were preserved.",
+                f"{subject} has been installed. MudaFork is restarting with the updated files.\n\nYour presets and settings were preserved.",
                 parent=self.root,
             )
             _relaunch_editor()
@@ -5075,7 +5075,7 @@ class PresetEditor:
         elif result == "git":
             messagebox.showinfo(
                 "Git Checkout Detected",
-                "This MudaRemote installation is managed by Git, so no files were changed.\n\nRun 'git pull' in the project folder to update.",
+                "This MudaFork installation is managed by Git, so no files were changed.\n\nRun 'git pull' in the project folder to update.",
                 parent=self.root,
             )
         # "skipped" means the user cancelled; nothing to do.
@@ -5149,13 +5149,13 @@ class PresetEditor:
                 elif kind == "confirm":
                     _version, _changelog, channel, done, answer = item[1:]
                     answer["value"] = messagebox.askyesno(
-                        "MudaRemote Update Available",
+                        "MudaFork Update Available",
                         (
-                            f"MudaRemote v{_version} is available.\n\n"
+                            f"MudaFork v{_version} is available.\n\n"
                             f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n\n"
                             f"Changelog:\n{_changelog}\n\n"
                             "Install this update now?\n\n"
-                            "MudaRemote will close and restart itself once the update is ready.\n"
+                            "MudaFork will close and restart itself once the update is ready.\n"
                             "Your saved presets will be kept."
                         ),
                         parent=self.root,
@@ -5174,7 +5174,7 @@ class PresetEditor:
     def manual_check_updates(self):
         """Check for updates on a worker thread so the GUI stays responsive."""
         if self._update_busy:
-            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            messagebox.showwarning("MudaFork", "An update is already in progress.", parent=self.root)
             return
         try:
             import mudae_bot
@@ -5197,35 +5197,35 @@ class PresetEditor:
             if result == "current":
                 channel_name = "Beta (Previews)" if channel == "beta" else "Stable (Official)"
                 messagebox.showinfo(
-                    "MudaRemote Up to Date",
+                    "MudaFork Up to Date",
                     f"You are running the latest version (v{CURRENT_VERSION}).\n\nActive Channel: {channel_name}",
                     parent=self.root,
                 )
             elif result == "disabled":
-                messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+                messagebox.showwarning("MudaFork", "Update checking is currently disabled.", parent=self.root)
             elif result == "failed":
                 detail = "\n\n" + self._update_last_error if self._update_last_error else " Check console/logs."
                 messagebox.showerror(
-                    "MudaRemote",
+                    "MudaFork",
                     "Update check encountered an error." + detail,
                     parent=self.root,
                 )
             else:
-                self._handle_update_outcome(result, f"MudaRemote v{CURRENT_VERSION}")
+                self._handle_update_outcome(result, f"MudaFork v{CURRENT_VERSION}")
 
         self._run_update_worker(work, on_done)
 
     def open_version_selector(self):
         """Open the version selector dialog to install any target release."""
         if self._update_busy:
-            messagebox.showwarning("MudaRemote", "An update is already in progress.", parent=self.root)
+            messagebox.showwarning("MudaFork", "An update is already in progress.", parent=self.root)
             return
         channel = "beta" if self.beta_channel_var.get() else "main"
 
         def on_install(target_version, selected_channel="main"):
             confirm = messagebox.askyesno(
                 "Confirm Version Switch",
-                f"Switch MudaRemote installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
+                f"Switch MudaFork installation to {target_version}?\n\nYour presets and settings will be kept untouched.",
                 parent=self.root,
             )
             if not confirm:
@@ -5247,7 +5247,7 @@ class PresetEditor:
 
             def on_done(res):
                 if res == "current":
-                    messagebox.showinfo("MudaRemote", f"Already running {target_version}.", parent=self.root)
+                    messagebox.showinfo("MudaFork", f"Already running {target_version}.", parent=self.root)
                 elif res == "failed":
                     detail = self._update_last_error or "Check logs."
                     messagebox.showerror(
@@ -5256,7 +5256,7 @@ class PresetEditor:
                         parent=self.root,
                     )
                 elif res == "disabled":
-                    messagebox.showwarning("MudaRemote", "Update checking is currently disabled.", parent=self.root)
+                    messagebox.showwarning("MudaFork", "Update checking is currently disabled.", parent=self.root)
                 else:
                     self._handle_update_outcome(res, target_version)
 
@@ -5270,7 +5270,7 @@ def _relaunch_editor():
     try:
         subprocess.Popen([sys.executable] + sys.argv, cwd=get_base_path())
     except Exception as e:
-        print(f"[MudaRemote] Relaunch failed after update: {e}. Start MudaRemote manually.")
+        print(f"[MudaFork] Relaunch failed after update: {e}. Start MudaFork manually.")
 
 
 class _UpdatesDisabled(Exception):
@@ -5307,12 +5307,12 @@ def launch_gui(extensions=None, check_updates=True):
 
         def confirm_update(latest_version, changelog):
             return messagebox.askyesno(
-                "MudaRemote Update Available",
+                "MudaFork Update Available",
                 (
-                    f"MudaRemote v{latest_version} is available.\n\n"
+                    f"MudaFork v{latest_version} is available.\n\n"
                     f"Changelog:\n{changelog}\n\n"
                     "Install this update now?\n\n"
-                    "MudaRemote will close and restart itself once the update is ready.\n"
+                    "MudaFork will close and restart itself once the update is ready.\n"
                     "Your saved presets will be kept."
                 ),
                 parent=root,
@@ -5327,18 +5327,18 @@ def launch_gui(extensions=None, check_updates=True):
         if startup_result == "source":
             messagebox.showinfo(
                 "Update Installed",
-                "MudaRemote was updated. Restarting with the new files...",
+                "MudaFork was updated. Restarting with the new files...",
                 parent=root,
             )
             _relaunch_editor()
             root.destroy()
             return
         if startup_result == "git":
-            print("[MudaRemote] This install is managed by Git; run 'git pull' to update.")
+            print("[MudaFork] This install is managed by Git; run 'git pull' to update.")
     except _UpdatesDisabled:
         pass
     except Exception as e:
-        print(f"[MudaRemote] Update check failed: {e}")
+        print(f"[MudaFork] Update check failed: {e}")
 
     app = PresetEditor(root, extensions=extensions)
     root.deiconify()
@@ -5356,14 +5356,14 @@ def run_headless(preset_names, start_index=0):
     try:
         all_presets = load_json(PRESETS_FILE, {})
     except (json.JSONDecodeError, Exception) as e:
-        print(f"[MudaRemote] Failed to load {PRESETS_FILE}: {e}")
+        print(f"[MudaFork] Failed to load {PRESETS_FILE}: {e}")
         sys.exit(1)
 
     requested_names = []
     resolved_presets = {}
     for name in preset_names:
         if name not in all_presets:
-            print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
+            print(f"[MudaFork] Preset '{name}' not found. Skipping.")
             continue
         preset_data = dict(all_presets[name])
         preset_data["tokens"] = SecretStore(get_base_path()).get_profile_tokens(
@@ -5373,7 +5373,7 @@ def run_headless(preset_names, start_index=0):
         )
         preset_data["token"] = preset_data["tokens"][0] if preset_data["tokens"] else ""
         if not preset_data["tokens"]:
-            print(f"[MudaRemote] Preset '{name}' has no token. Skipping.")
+            print(f"[MudaFork] Preset '{name}' has no token. Skipping.")
             continue
         requested_names.append(name)
         resolved_presets[name] = preset_data
@@ -5385,28 +5385,28 @@ def run_headless(preset_names, start_index=0):
         start_index=start_index,
     ):
         active_index = int(preset_data["persistent_stagger_seconds"] // active_stagger_seconds(1))
-        print(f"[MudaRemote] Starting active preset #{active_index + 1}: {name}")
+        print(f"[MudaFork] Starting active preset #{active_index + 1}: {name}")
         t = mudae_bot.start_preset_thread(name, preset_data)
         if t:
             threads.append(t)
 
     if not threads:
-        print("[MudaRemote] No valid presets to run.")
+        print("[MudaFork] No valid presets to run.")
         sys.exit(1)
 
     # Keep the main thread alive so daemon threads don't die
-    print(f"[MudaRemote] {len(threads)} preset(s) running. Press Ctrl+C to stop.")
+    print(f"[MudaFork] {len(threads)} preset(s) running. Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[MudaRemote] Shutting down...")
+        print("\n[MudaFork] Shutting down...")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="MudaRemote - Mudae Bot Manager & Preset Editor",
-        prog="MudaRemote"
+        description="MudaFork - Mudae Bot Manager & Preset Editor",
+        prog="MudaFork"
     )
     parser.add_argument(
         "--preset",
@@ -5435,19 +5435,19 @@ def main():
                 all_presets = json.load(f)
             preset_names = list(all_presets.keys())
         except Exception as e:
-            print(f"[MudaRemote] Failed to load presets: {e}")
+            print(f"[MudaFork] Failed to load presets: {e}")
             sys.exit(1)
 
         if not preset_names:
-            print("[MudaRemote] No presets found in presets.json.")
+            print("[MudaFork] No presets found in presets.json.")
             sys.exit(1)
 
-        print(f"[MudaRemote] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
+        print(f"[MudaFork] Running ALL {len(preset_names)} preset(s): {', '.join(preset_names)}")
         run_headless(preset_names, start_index=args.stagger_index)
 
     elif args.preset:
         # Run specific preset(s) in headless mode
-        print(f"[MudaRemote] Running preset(s): {', '.join(args.preset)}")
+        print(f"[MudaFork] Running preset(s): {', '.join(args.preset)}")
         run_headless(args.preset, start_index=args.stagger_index)
 
     else:
