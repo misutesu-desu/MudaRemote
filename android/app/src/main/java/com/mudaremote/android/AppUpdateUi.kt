@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.graphics.Typeface
 import android.net.Uri
 import android.provider.Settings
 import android.view.Gravity
@@ -106,37 +105,29 @@ class AppUpdateUi(private val activity: Activity) {
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(48)
-            background = UiTheme.cardDrawable(activity, UiTheme.BG_SURFACE, UiTheme.BORDER_SUBTLE, 6f, 1f)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            minimumHeight = dp(56)
+            background = UiTheme.listItemDrawable(activity, UiTheme.SURFACE_CONTAINER_HIGH)
+            setPaddingRelative(dp(16), dp(10), dp(12), dp(10))
         }
         val text = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         text.addView(TextView(activity).apply {
             this.text = title
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            UiTheme.styleLabel(this)
         })
         text.addView(TextView(activity).apply {
             this.text = hint
-            textSize = 11f
-            setTextColor(UiTheme.TEXT_SECONDARY)
+            UiTheme.styleSupporting(this)
         })
         row.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
         val sw = Switch(activity).apply {
+            UiTheme.styleSwitch(this)
             isChecked = initial
-            minimumHeight = dp(40)
-            thumbTintList = ColorStateList.valueOf(if (initial) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
-            trackTintList = ColorStateList.valueOf(if (initial) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
-            setOnCheckedChangeListener { _, checked ->
-                thumbTintList = ColorStateList.valueOf(if (checked) UiTheme.ACCENT_GREEN_BRIGHT else UiTheme.TEXT_MUTED)
-                trackTintList = ColorStateList.valueOf(if (checked) UiTheme.ACCENT_GREEN else UiTheme.BORDER_DEFAULT)
-                onChange(checked)
-            }
+            contentDescription = title
+            setOnCheckedChangeListener { _, checked -> onChange(checked) }
         }
-        row.addView(sw)
+        row.addView(sw, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
         row.setOnClickListener { sw.isChecked = !sw.isChecked }
-        row.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) }
+        row.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
         return row
     }
 
@@ -146,25 +137,22 @@ class AppUpdateUi(private val activity: Activity) {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(12), 0, 0)
         }
-        box.addView(View(activity).apply { setBackgroundColor(UiTheme.BORDER_SUBTLE) }, LinearLayout.LayoutParams(-1, dp(1)))
+        box.addView(View(activity).apply { setBackgroundColor(UiTheme.OUTLINE_VARIANT) }, LinearLayout.LayoutParams(-1, dp(1)))
         box.addView(TextView(activity).apply {
-            text = "📲 App updates"
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            setPadding(0, dp(10), 0, 0)
+            text = "App updates"
+            UiTheme.styleTitle(this)
+            setPaddingRelative(0, dp(16), 0, 0)
         })
         box.addView(TextView(activity).apply {
             text = "Updates the app itself, only from the MudaFork releases on GitHub. " +
                 "The file is checked (size, checksum, app name and signature) before Android installs it."
-            textSize = 11.5f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, dp(3), 0, dp(4))
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, dp(4), 0, dp(4))
         })
         statusLine = TextView(activity).apply {
-            textSize = 11.5f
+            textSize = UiTheme.TYPE_LABEL
             setTextColor(UiTheme.TEXT_MUTED)
-            setPadding(0, 0, 0, dp(2))
+            setPaddingRelative(0, 0, 0, dp(4))
         }
         box.addView(statusLine)
         refreshStatusLine()
@@ -177,26 +165,20 @@ class AppUpdateUi(private val activity: Activity) {
         )
         box.addView(
             switchRow(
-                "🧪 Beta app updates",
+                "Beta app updates",
                 "Also offer pre-releases of the app itself (not the Python runtime channel above). Off by default.",
                 AppUpdater.betaEnabled(activity)
             ) { checked -> AppUpdater.prefs(activity).edit().putBoolean(AppUpdater.PREF_BETA, checked).apply() }
         )
         val btn = TextView(activity).apply {
-            text = "🔄 Check now"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            gravity = Gravity.CENTER
-            background = UiTheme.buttonDrawable(activity, UiTheme.BG_CARD_LIGHT, radiusDp = 6f, borderColor = UiTheme.BORDER_DEFAULT, strokeWidthDp = 1f)
-            minHeight = dp(44)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            text = "Check now"
+            UiTheme.styleButton(this, UiTheme.ButtonStyle.TONAL)
             setOnClickListener { view ->
                 view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 checkNow()
             }
         }
-        box.addView(btn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        box.addView(btn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         return box
     }
 
@@ -218,48 +200,48 @@ class AppUpdateUi(private val activity: Activity) {
     private fun buildDialog(release: AppUpdateCore.ReleaseInfo) {
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(4))
+            setPaddingRelative(dp(24), dp(8), dp(24), dp(4))
         }
         val title = TextView(activity).apply {
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            UiTheme.styleTitle(this)
         }
         val meta = TextView(activity).apply {
-            textSize = 12f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, dp(2), 0, dp(8))
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, dp(4), 0, dp(12))
         }
         val bot = TextView(activity).apply {
             text = "The bot will stop during the update and resume after it."
-            textSize = 12f
-            setTextColor(UiTheme.ACCENT_YELLOW)
-            setPadding(0, 0, 0, dp(8))
+            UiTheme.styleSupporting(this)
+            setTextColor(UiTheme.TERTIARY)
+            setPaddingRelative(0, 0, 0, dp(12))
             visibility = View.GONE
         }
         val notes = TextView(activity).apply {
-            textSize = 12f
+            textSize = 13f
             setTextColor(UiTheme.TEXT_PRIMARY)
             setTextIsSelectable(true)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = UiTheme.cardDrawable(activity, UiTheme.BG_INPUT, UiTheme.BORDER_DEFAULT, 6f, 1f)
+            setLineSpacing(0f, 1.2f)
+            setPaddingRelative(dp(16), dp(12), dp(16), dp(12))
+            background = UiTheme.insetSurface(activity)
         }
         val scroll = ScrollView(activity).apply { addView(notes) }
         val progress = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 1000
+            progressTintList = ColorStateList.valueOf(UiTheme.PRIMARY)
+            progressBackgroundTintList = ColorStateList.valueOf(UiTheme.SURFACE_CONTAINER_HIGHEST)
+            indeterminateTintList = ColorStateList.valueOf(UiTheme.PRIMARY)
             visibility = View.GONE
         }
         val status = TextView(activity).apply {
-            textSize = 12f
-            setTextColor(UiTheme.TEXT_SECONDARY)
-            setPadding(0, dp(6), 0, 0)
+            UiTheme.styleSupporting(this)
+            setPaddingRelative(0, dp(8), 0, 0)
             visibility = View.GONE
         }
         body.addView(title)
         body.addView(meta)
         body.addView(bot)
         body.addView(scroll, LinearLayout.LayoutParams(-1, -2))
-        body.addView(progress, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        body.addView(progress, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         body.addView(status)
 
         val d = AlertDialog.Builder(activity)
