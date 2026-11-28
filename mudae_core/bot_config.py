@@ -23,6 +23,7 @@ from mudae_core.runtime import (
     RollActionTiming,
     RollCommandCorrelation,
 )
+from mudae_core.perk_upgrade import Perk10Settings
 from mudae_core.spheres import SphereButtonBudget
 from mudae_core.status import ResetAnchor, initialize_status_tracking
 
@@ -347,6 +348,12 @@ def configure_client(
     client.oc_collect_after_red = bool(
         preset_data.get("oc_collect_after_red", True)
     )
+    perk10 = Perk10Settings.from_preset(preset_data)
+    client.auto_perk10 = perk10.enabled
+    client.perk10_min_spheres = perk10.min_spheres
+    client.perk10_max_characters = perk10.max_characters
+    client.perk10_amount = perk10.amount
+    client.perk10_daily_cap = perk10.daily_cap
     client.sphere_game_counts = {"oh": 0, "oc": 0, "oq": 0, "ot": 0}
     client.sphere_button_budget = SphereButtonBudget()
     client._sphere_quota_recheck_requested = False
@@ -692,6 +699,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only",
     "oh_use_individually", "oh_priority_order", "oh_unknown_explore_clicks",
     "oc_reward_priority_order", "oc_collect_after_red",
+    "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap",
     "enable_snipe_chat_reactions", "snipe_chat_messages",
     "enable_kakera_snipe_chat_reactions", "kakera_snipe_chat_messages",
     "farm_characters", "farm_character", "farm_character_enabled",

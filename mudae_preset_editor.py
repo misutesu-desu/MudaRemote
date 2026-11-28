@@ -670,6 +670,11 @@ DEFAULTS = {
     "sphere_collect_any_last": 0,
     "oc_reward_priority_order": [],
     "oc_collect_after_red": True,
+    "auto_perk10": False,
+    "perk10_min_spheres": 2000,
+    "perk10_max_characters": 100,
+    "perk10_amount": 0,
+    "perk10_daily_cap": 3,
     "webhook_url": "",
     "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
     "debug_log_categories": ["all"],
@@ -749,6 +754,7 @@ BOOL_SETTINGS = [
     ("auto_oq_enabled", "Auto $oq (Automatically play Sphere Quest when available)", False),
     ("auto_ot_enabled", "Auto $ot (Automatically play Sphere Trace when available)", False),
     ("sphere_games_daily_only", "Sphere Games: Daily Uses Only (Leave stored $oh/$oc/$oq/$ot uses for you to play)", False),
+    ("auto_perk10", "Auto Perk 10 Upgrade (Spend spheres on $oic for the characters $mmz- lists)", False),
     ("wish_starwish_kakera_only", "Wish/Starwish Only (Either wish or starwish)", False),
 ]
 
@@ -778,6 +784,10 @@ NUMERIC_SETTINGS = [
     ("hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200, int),
     ("oh_unknown_explore_clicks", "$oh Unknown Exploration Clicks (only with a custom $oh priority)", 3, int),
     ("sphere_collect_any_last", "Collect Any Sphere Near the Daily Limit (Last N sphere buttons, 0 = off)", 0, int),
+    ("perk10_min_spheres", "Perk 10: Upgrade When Spheres Reach", 2000, int),
+    ("perk10_max_characters", "Perk 10: Most Characters per Upgrade (0 = no limit)", 100, int),
+    ("perk10_amount", "Perk 10: Characters per Upgrade (0 = as many as the spheres allow)", 0, int),
+    ("perk10_daily_cap", "Perk 10: Upgrades per Day", 3, int),
     ("kl_amount", "$kl Spend Amount", 1000, int),
     ("kl_arlp_every", "Send $arlp After Every N $kl (0 = only after a too many pins error)", 0, int),
     ("scrap_amount", "$givescrap Amount", 500000000, int),
@@ -2973,6 +2983,18 @@ class PresetEditor:
         self.add_checkbox(power_frame.content, "auto_oq_enabled", "Auto $oq (Automatically play Sphere Quest when available)")
         self.add_checkbox(power_frame.content, "auto_ot_enabled", "Auto $ot (Automatically play Sphere Trace when available)")
         self.add_checkbox(power_frame.content, "sphere_games_daily_only", "Sphere Games: Daily Uses Only (Leave stored $oh/$oc/$oq/$ot uses for you to play)")
+        self.add_checkbox(
+            power_frame.content,
+            "auto_perk10",
+            "Auto Perk 10 Upgrade (Spend spheres on $oic for the characters $mmz- lists)",
+            description="After the sphere games are played, reads $mmz- and upgrades perk 10 with "
+                        "$oic Name $ Name $ 10 (1,000 spheres per character). The sphere count comes from "
+                        "the $tu the bot already sends and from sphere game results; no extra $tu is sent.",
+        )
+        self.add_number_field(power_frame.content, "perk10_min_spheres", "Perk 10: Upgrade When Spheres Reach", 2000)
+        self.add_number_field(power_frame.content, "perk10_max_characters", "Perk 10: Most Characters per Upgrade (0 = no limit)", 100)
+        self.add_number_field(power_frame.content, "perk10_amount", "Perk 10: Characters per Upgrade (0 = as many as the spheres allow)", 0)
+        self.add_number_field(power_frame.content, "perk10_daily_cap", "Perk 10: Upgrades per Day", 3)
         self.add_checkbox(power_frame.content, "dk_power_management", "Smart Power Refill (Auto-use $dk when low on energy)")
         self.add_text_field(
             power_frame.content, "dk_schedule_time",
@@ -3536,6 +3558,7 @@ class PresetEditor:
                     "main_account_id", "webhook_url", "dk_schedule_time", "auto_divorce_max_kakera", "rt_min_kakera",
                     "max_claim_rank", "max_like_rank", "hybrid_panic_instant_claim_min_kakera",
                     "hybrid_panic_instant_claim_max_rank", "oh_unknown_explore_clicks", "sphere_collect_any_last",
+                    "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap",
                     "scrap_target_id", "slash_claim_target", "kl_amount", "kl_arlp_every", "scrap_amount",
                     "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]:
             if key in self.widgets:
@@ -3569,7 +3592,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 var = self.widgets[key]
@@ -3798,13 +3821,15 @@ class PresetEditor:
                     "auto_divorce_max_kakera", "rt_min_kakera", "max_claim_rank", "max_like_rank",
                     "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank",
                     "oh_unknown_explore_clicks", "sphere_collect_any_last", "kl_amount", "kl_arlp_every", "scrap_amount",
-                    "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes"]
+                    "loot_min_cooldown", "loot_max_cooldown", "slash_claim_limit", "slash_claim_window_minutes",
+                    "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap"]
         for key in numeric_keys:
             if key in self.widgets:
                 value = self.widgets[key].get().strip()
                 if value:
                     try:
-                        if key in {"kl_amount", "kl_arlp_every", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes"}:
+                        if key in {"kl_amount", "kl_arlp_every", "scrap_amount", "slash_claim_limit", "slash_claim_window_minutes",
+                                   "perk10_min_spheres", "perk10_max_characters", "perk10_amount", "perk10_daily_cap"}:
                             data[key] = int(value) if re.fullmatch(r"[0-9]+", value) else value
                             continue
                         # Determine type
@@ -3880,7 +3905,7 @@ class PresetEditor:
                     "autostart", "debug_mode", "auto_mk_enabled", "auto_mk_full_power_only", "lurker_mode", "lurker_final_round_only",
                     "auto_rt_enabled", "auto_rt_after_claim", "mk_only", "auto_dk_enabled",
                     "enable_snipe_chat_reactions", "enable_kakera_snipe_chat_reactions", "op_perk_5_only", "farm_character_enabled", "farm_forcedivorce_before_roll", "farm_forcedivorce_after_claim", "farm_forcedivorce_after_other_claim",
-                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only",
+                    "auto_divorce_enabled", "auto_divorce_protect_wishes", "mk_bypass_power_check", "auto_p_enabled", "auto_oh_enabled", "oh_use_individually", "hourly_tu_refresh", "auto_oc_enabled", "oc_collect_after_red", "auto_oq_enabled", "auto_ot_enabled", "sphere_games_daily_only", "auto_perk10",
                     "enable_hybrid_panic_claim", "immediate_kakera_click", "collect_purple_kakera", "wish_starwish_kakera_only"]:
             if key in self.widgets:
                 data[key] = self.widgets[key].get()
