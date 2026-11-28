@@ -84,14 +84,20 @@ scroll_top() {
 # Print "x y" of the visible node whose text is exactly $1 (topmost one, never under the dock).
 find_text() {
   ui_dump | python3 -I -c '
-import re, sys
+import html, re, sys
 xml = sys.stdin.read()
 want, height = sys.argv[1], int(sys.argv[2])
 best = None
 for m in re.finditer(r"<node [^>]*>", xml):
     node = m.group(0)
     t = re.search(r" text=\"([^\"]*)\"", node)
-    if not t or t.group(1) != want:
+    if not t:
+        continue
+    got = html.unescape(t.group(1))
+    if want.endswith("*"):
+        if not got.startswith(want[:-1]):
+            continue
+    elif got != want:
         continue
     b = re.search(r"bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"", node)
     if not b:
@@ -151,7 +157,8 @@ walk() {
 walk_expanded() {
   # $1 = file prefix
   scroll_top
-  if tap_text "Main & alts"; then
+  # the header is found by the start of its description (the name alone also matches the filter chip)
+  if tap_text "The first token is the main*"; then
     walk "$1" 24
   else
     log "could not expand Main & alts for $1"
