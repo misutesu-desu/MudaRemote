@@ -8,7 +8,11 @@ rolls, claims or gives. Then the FINAL sphere stock is the running total (the
 no extra ``$tu`` is ever sent; an unknown stock waits for the next one. With a
 final stock of at least the minimum (default 2,000), floor(stock / 1,000)
 characters are upgraded (10,000 → 10), capped by the user's maximum and by the
-names ``$mmz-`` lists (the characters without the upgrade).
+names ``$mmz-`` lists (the characters without the upgrade). An optional amount
+(``perk10_amount``, 0 = off) upgrades exactly that many once the minimum is
+reached, or what the stock affords when that is fewer. «Upgrade perk 10 now»
+(``upgrade_now``) runs one pass on request: no switch, minimum or daily cap,
+but at least 1,000 spheres known and the same waiting and verification rules.
 
 Flow (game bot replies as transcribed from the owner's recordings):
 
@@ -46,6 +50,7 @@ PERK10_DEFAULTS = {
     "perk10_min_spheres": 2000,
     "perk10_max_characters": 100,
     "perk10_daily_cap": 3,
+    "perk10_amount": 0,  # 0: as many characters as the spheres allow
 }
 PERK10_COST = 1000  # spheres per character for perk 10
 PERK_NUMBER = 10
@@ -53,6 +58,12 @@ MIN_SPHERES_MIN = PERK10_COST
 MIN_SPHERES_MAX = 1_000_000_000
 MAX_CHARACTERS_MAX = 10_000
 DAILY_CAP_MAX = 50
+AMOUNT_MAX = 10_000
+# «Upgrade perk 10 now» (a button, started by hand): same numbers as the give-now buttons.
+MANUAL_COOLDOWN_SECONDS = 60.0
+MANUAL_BUSY_WAIT_SECONDS = 600.0
+MANUAL_POLL_SECONDS = 3.0
+MANUAL_STOCK_WAIT_SECONDS = 3600.0
 # A Discord message holds 2,000 characters; every command stays under this.
 COMMAND_LENGTH_LIMIT = 1900
 # At most this many $mmz- pages are read in one upgrade.
@@ -108,6 +119,7 @@ class Perk10Settings:
     min_spheres: int = 2000
     max_characters: int = 100  # 0: no limit
     daily_cap: int = 3
+    amount: int = 0  # 0: as many as the spheres allow
 
     @classmethod
     def from_preset(cls, data):
@@ -122,6 +134,7 @@ class Perk10Settings:
             min_spheres=number("perk10_min_spheres", MIN_SPHERES_MIN, MIN_SPHERES_MAX),
             max_characters=number("perk10_max_characters", 0, MAX_CHARACTERS_MAX),
             daily_cap=number("perk10_daily_cap", 1, DAILY_CAP_MAX),
+            amount=number("perk10_amount", 0, AMOUNT_MAX),
         )
 
 
@@ -132,6 +145,7 @@ def validate_perk10_settings(data):
         ("perk10_min_spheres", "Upgrade when spheres reach", MIN_SPHERES_MIN, MIN_SPHERES_MAX),
         ("perk10_max_characters", "Most characters per upgrade (0 = no limit)", 0, MAX_CHARACTERS_MAX),
         ("perk10_daily_cap", "At most N upgrades per day", 1, DAILY_CAP_MAX),
+        ("perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0, AMOUNT_MAX),
     )
     for key, label, minimum, maximum in checks:
         if _whole(data.get(key, PERK10_DEFAULTS[key]), PERK10_DEFAULTS[key], minimum, maximum) is None:
@@ -143,14 +157,19 @@ def validate_perk10_settings(data):
 # Decisions (pure)
 # ---------------------------------------------------------------------------
 
-def upgrade_count(stock, minimum, maximum=0, names_available=None) -> int:
-    """How many characters to upgrade: floor(stock / 1000) once stock ≥ minimum, capped.
+def upgrade_count(stock, minimum, maximum=0, names_available=None, amount=0) -> int:
+    """How many characters to upgrade once ``stock`` ≥ ``minimum`` (never more than the stock pays for).
 
-    1999 → 0, 2000 → 2, 10000 → 10; ``maximum`` 0 means no limit.
+    Without ``amount``: floor(stock / 1000), capped by ``maximum`` (0 = no limit)
+    and the names available: 1999 → 0, 2000 → 2, 10000 → 10. With ``amount`` above 0:
+    exactly that many, but never more than the stock affords (minimum 2000,
+    amount 5, stock 2300 → 2): it never waits for more spheres.
     """
     if stock is None or minimum is None or stock < max(minimum, PERK10_COST):
         return 0
     count = int(stock) // PERK10_COST
+    if amount and amount > 0:
+        count = min(count, int(amount))
     if maximum and maximum > 0:
         count = min(count, int(maximum))
     if names_available is not None:
@@ -311,6 +330,8 @@ class PerkUpgrader:
         self._retry_at = None  # monotonic seconds
         self._attempt: Optional[_Attempt] = None
         self._queue: Optional[asyncio.Queue] = None
+        self._manual_in_flight = False
+        self._manual_pressed_at = None
 
     # -- feeding events --------------------------------------------------
     @property
@@ -421,13 +442,16 @@ class PerkUpgrader:
             elif reason == "off":
                 self.status = "Perk 10: off."
             return UpgradeOutcome("skipped", reason)
+        return await self._start(channel, settings, own_id, own_names, totals, prefix, games, busy, manual=False)
+
+    async def _start(self, channel, settings, own_id, own_names, totals, prefix, games, busy, *, manual) -> UpgradeOutcome:
         self._attempt = _Attempt(
             channel_id=getattr(channel, "id", None), own_id=str(own_id or ""),
             own_names=tuple(str(name) for name in own_names or () if name),
         )
         self._queue = asyncio.Queue()
         try:
-            outcome = await self._run(channel, settings, prefix, totals, games, busy)
+            outcome = await self._run(channel, settings, prefix, totals, games, busy, manual)
         except asyncio.CancelledError:
             await self._answer_no_if_open(channel)
             raise
@@ -440,6 +464,86 @@ class PerkUpgrader:
             self.state = IDLE
         self._finish(outcome)
         return outcome
+
+    # -- «Upgrade perk 10 now» ----------------------------------------------
+    def _manual_note(self, text, level="INFO"):
+        self.status = "Perk 10 (now): " + text
+        self._log("Perk 10 «Upgrade perk 10 now»: " + text, level)
+
+    async def upgrade_now(self, channel, settings: Perk10Settings, *, own_id, own_names, totals, prefix="$",
+                          allowed_reason: Optional[str] = None,
+                          games: Callable[[], Optional[str]] = lambda: None,
+                          busy: Callable[[], Optional[str]] = lambda: None,
+                          total_wait_seconds=MANUAL_STOCK_WAIT_SECONDS, busy_wait_seconds=MANUAL_BUSY_WAIT_SECONDS,
+                          poll_seconds=MANUAL_POLL_SECONDS) -> UpgradeOutcome:
+        """One upgrade pass started by hand.
+
+        Ignores the switch, the minimum-spheres trigger and the daily cap; still
+        needs at least 1,000 spheres known (never sends ``$tu``: an unknown stock
+        waits up to ``total_wait_seconds`` for the next one), waits for sphere
+        games and busy work, keeps the failure back-off and the 6-hour
+        «$mmz- listed nothing» memory (fewer messages), one at a time, at most
+        one press per minute. ``allowed_reason`` (not None) refuses with that text.
+        """
+        if allowed_reason:
+            self._manual_note("not run — {}.".format(allowed_reason))
+            return UpgradeOutcome("skipped", allowed_reason)
+        now = self._monotonic()
+        if self._manual_in_flight:
+            return UpgradeOutcome("ignored", "an «Upgrade perk 10 now» request is already running")
+        if self._manual_pressed_at is not None and now - self._manual_pressed_at < MANUAL_COOLDOWN_SECONDS:
+            return UpgradeOutcome("ignored", "pressed again too soon; wait {} s".format(
+                int(MANUAL_COOLDOWN_SECONDS - (now - self._manual_pressed_at)) + 1))
+        self._manual_pressed_at = now
+        self._manual_in_flight = True
+        try:
+            if totals is None or totals.spheres is None:
+                self._manual_note("the sphere stock is unknown; waiting for the next $tu (up to {} min).".format(
+                    max(1, int(total_wait_seconds // 60))))
+                deadline = self._monotonic() + total_wait_seconds
+                while totals is None or totals.spheres is None:
+                    if self._monotonic() >= deadline:
+                        return self._manual_stop("the sphere stock is still unknown (no $tu reply read in time)")
+                    if not await self._wait(poll_seconds):
+                        return self._manual_stop("paused or stopping")
+            deadline = self._monotonic() + busy_wait_seconds
+            announced = False
+            while True:
+                reason = (busy() or games()
+                          or ("an upgrade is already in progress" if self._attempt is not None or self.state != IDLE else None))
+                if reason is None:
+                    break
+                if not announced:
+                    announced = True
+                    self._manual_note("deferred while {}; it runs right after.".format(reason))
+                if self._monotonic() >= deadline:
+                    return self._manual_stop("still busy ({})".format(reason))
+                if not await self._wait(poll_seconds):
+                    return self._manual_stop("paused or stopping")
+            stock = totals.spheres
+            if stock is None:
+                return self._manual_stop("the sphere stock became unknown")
+            if stock < PERK10_COST:
+                self._manual_note("not run — only {:,} spheres; perk 10 needs at least {:,}.".format(stock, PERK10_COST))
+                return UpgradeOutcome("skipped", "only {:,} spheres".format(stock))
+            if self._retry_at is not None and self._monotonic() < self._retry_at:
+                minutes = max(1, int((self._retry_at - self._monotonic()) // 60))
+                self._manual_note("not run — backing off for about {} min after the last failed upgrade.".format(minutes))
+                return UpgradeOutcome("skipped", "backing off")
+            empty_at = self.empty_since()
+            if empty_at is not None and self._clock() < empty_at + datetime.timedelta(seconds=EMPTY_RECHECK_SECONDS):
+                self._manual_note("not run — $mmz- listed nothing to upgrade less than 6 hours ago.")
+                return UpgradeOutcome("skipped", "$mmz- listed nothing recently")
+            outcome = await self._start(channel, settings, own_id, own_names, totals, prefix, games, busy, manual=True)
+            if outcome.status == "skipped":
+                self._manual_note("not run — {}.".format(outcome.reason))
+            return outcome
+        finally:
+            self._manual_in_flight = False
+
+    def _manual_stop(self, reason) -> UpgradeOutcome:
+        self._manual_note("not run — {}.".format(reason), "WARN")
+        return UpgradeOutcome("stopped", reason)
 
     # -- the flow --------------------------------------------------------
     async def _collect_names(self, channel, count, prefix) -> Tuple[Optional[List[str]], Optional[UpgradeOutcome]]:
@@ -480,9 +584,11 @@ class PerkUpgrader:
             return None, UpgradeOutcome("empty", reason)
         return names[:count], None
 
-    async def _run(self, channel, settings, prefix, totals, games, busy):
+    async def _run(self, channel, settings, prefix, totals, games, busy, manual=False):
         stock = totals.spheres
-        count = upgrade_count(stock, settings.min_spheres, settings.max_characters)
+        # A button press ignores the minimum-spheres trigger (one character is 1,000 spheres).
+        count = upgrade_count(stock, PERK10_COST if manual else settings.min_spheres, settings.max_characters,
+                              amount=settings.amount)
         if count <= 0:
             return UpgradeOutcome("skipped", "spheres {:,} buy no upgrade".format(stock or 0))
         names, failed = await self._collect_names(channel, count, prefix)

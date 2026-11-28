@@ -29,7 +29,8 @@ from .totals import KAKERA, NUMBER, SOURCE_GIFT_RECEIVED, SOURCE_GIVE, emoji_kin
 GIVE_DEFAULTS = {
     "auto_give_kakera": False,
     "give_kakera_threshold": 45000,
-    "give_kakera_extra": True,
+    "give_kakera_extra": True,  # the 6.0.x switch; read only when ``give_kakera_amount_mode`` is absent
+    "give_kakera_amount_mode": "everything",
     "give_kakera_daily_cap": 3,
     "give_kakera_button_minimum": 1000,
 }
@@ -129,6 +130,25 @@ def _whole(value, default, minimum, maximum):
     return number if minimum <= number <= maximum else None
 
 
+AMOUNT_MODE_EVERYTHING = "everything"
+AMOUNT_MODE_AMOUNT = "amount"
+AMOUNT_MODES = (AMOUNT_MODE_EVERYTHING, AMOUNT_MODE_AMOUNT)
+
+
+def amount_mode_from_preset(data) -> str:
+    """«give everything» or «give only the amount».
+
+    ``give_kakera_amount_mode`` wins when it holds a valid choice; a stored
+    profile without it keeps its old ``give_kakera_extra`` switch (on →
+    everything, off → only the amount). Nothing is ever deleted.
+    """
+    data = data or {}
+    mode = str(data.get("give_kakera_amount_mode", "") or "").strip().casefold()
+    if mode in AMOUNT_MODES:
+        return mode
+    return AMOUNT_MODE_EVERYTHING if bool(data.get("give_kakera_extra", True)) else AMOUNT_MODE_AMOUNT
+
+
 @dataclass(frozen=True)
 class GiveSettings:
     enabled: bool = False
@@ -144,7 +164,7 @@ class GiveSettings:
         return cls(
             enabled=bool(data.get("auto_give_kakera", False)),
             threshold=45000 if threshold is None else threshold,
-            give_extra=bool(data.get("give_kakera_extra", True)),
+            give_extra=amount_mode_from_preset(data) == AMOUNT_MODE_EVERYTHING,
             daily_cap=3 if cap is None else cap,
         )
 
@@ -154,6 +174,9 @@ def validate_give_settings(data):
     data = data or {}
     if _whole(data.get("give_kakera_threshold", 45000), 45000, 1, GIVE_THRESHOLD_MAX) is None:
         errors.append("«Give kakera to my main when I reach» must be a whole number from 1 to {:,}.".format(GIVE_THRESHOLD_MAX))
+    mode = str(data.get("give_kakera_amount_mode", "") or "").strip().casefold()
+    if mode and mode not in AMOUNT_MODES:
+        errors.append("«When kakera reaches the amount» must be «everything» or «amount».")
     if _whole(data.get("give_kakera_daily_cap", 3), 3, 1, GIVE_DAILY_CAP_MAX) is None:
         errors.append("«At most N gives per day» must be a whole number from 1 to {}.".format(GIVE_DAILY_CAP_MAX))
     if _whole(data.get("give_kakera_button_minimum", 1000), 1000, 1, GIVE_THRESHOLD_MAX) is None:

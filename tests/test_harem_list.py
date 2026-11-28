@@ -137,7 +137,7 @@ class ReaderTests(unittest.TestCase):
             return True
 
         reader = HaremListReader(send=fake.send, click=fake.click, wait=wait, reply_timeout=0.4,
-                                 edit_timeout=0.4, click_delay=(0, 0))
+                                 edit_timeout=0.4, click_delay=(0, 0), retry_delay=(0, 0))
         ref[0] = reader
         return reader, fake
 
@@ -170,7 +170,8 @@ class ReaderTests(unittest.TestCase):
             return await result.pager.next()
 
         self.assertIsNone(asyncio.run(run()))
-        self.assertIn("not edited", reader.last_error)
+        self.assertIn("did not appear", reader.last_error)
+        self.assertEqual(fake.clicks, ["➡️", "➡️"])  # one retry, no loop
 
     def test_foreign_list_ignored(self):
         foreign = [lambda mid, ref: list_message(mid, owner="OtherUser"),

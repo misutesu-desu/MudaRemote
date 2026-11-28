@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_bot.py",
-      "sha256": "0e3705dd1f8330d6bdc328aa64c62c254fdd4733a65ab4a6252ac5bb948898eb"
+      "sha256": "ff5791e205de13e923047ca7ea1fc45eb282e5af6919a15c205cef7be49d048e"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_preset_editor.py",
-      "sha256": "aba0dc936862b4c9c0ea0a309ead40f421c50c1411b8784f73e00365a5ce2d74"
+      "sha256": "e5341111c541c4410fa48f9a42a79378c7f076445f1f7aacd6e1ef143e55493e"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -53,12 +53,12 @@
     {
       "path": "mudae_core/kakera_give.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/kakera_give.py",
-      "sha256": "56171f13388d9de7a8fcba8cb20f9b76a533674fd773ea645fc8eaeb3b4aef69"
+      "sha256": "86a48d1b1c612c658513bbe80006d2b80888aa6a0a3e20a094078e5c68ad41af"
     },
     {
       "path": "mudae_core/harem_list.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/harem_list.py",
-      "sha256": "804ff529234ee4626ece9951788c344fe7e2a1d1c78ff28d21b20af96c6be7aa"
+      "sha256": "cd47f7973b0bd1a69887999ab7ee9aa76bbabc3cac41bf3a44898b8f5210d650"
     },
     {
       "path": "mudae_core/harem_give.py",
@@ -68,7 +68,7 @@
     {
       "path": "mudae_core/perk_upgrade.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/perk_upgrade.py",
-      "sha256": "54a60a10d1389a9af0fe59aff30a282815b22a5df8ededd9d5f463d5e450bc08"
+      "sha256": "594b06a083a0bcedaba2eb0f778e0f71dac6e30e9d749ad2bfc6a363acad117a"
     },
     {
       "path": "mudae_core/sphere_give.py",
@@ -143,7 +143,7 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/bot_config.py",
-      "sha256": "461451e2d85b6ed206bfcabdebe235fe7a1a2ab01f5c11bd68c3b131aaa691f5"
+      "sha256": "2d7fa2f3106b9c737aa784b31e43721bbb754e4389e95a82b081af1296d90978"
     },
     {
       "path": "mudae_core/activity_events.py",

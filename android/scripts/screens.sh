@@ -129,9 +129,9 @@ tap_text() {
 
 walk() {
   # $1 = file prefix (fs100, fs130, rtl)
-  local prefix="$1" i file sum prev=""
+  local prefix="$1" limit="${2:-$MAX_SHOTS}" i file sum prev=""
   scroll_top
-  for i in $(seq 1 "$MAX_SHOTS"); do
+  for i in $(seq 1 "$limit"); do
     file="$(printf '%s/%s-%02d.png' "$OUT" "$prefix" "$i")"
     shot "$file" || break
     sum="$(md5sum < "$file" | cut -d' ' -f1)"
@@ -144,6 +144,18 @@ walk() {
     sleep 0.8
   done
   log "walk $prefix done: $(ls "$OUT" | grep -c "^$prefix-") shots"
+}
+
+# Expand the «Main & alts» group (tap its header), then walk with it open, so long switch titles and
+# descriptions are on the shots (the group starts collapsed after every launch).
+walk_expanded() {
+  # $1 = file prefix
+  scroll_top
+  if tap_text "Main & alts"; then
+    walk "$1" 24
+  else
+    log "could not expand Main & alts for $1"
+  fi
 }
 
 # ---------------------------------------------------------------- main
@@ -199,6 +211,15 @@ scroll_top
 if tap_text "Keep running"; then
   shot "$OUT/fs130-keep-running-tap.png" || true
 fi
+walk_expanded fs130-open
+adb shell settings put system font_scale 1.0 >/dev/null 2>&1
+
+# 4b) a larger font still (1.5): long titles must wrap, never clip, with the group closed and open
+adb shell settings put system font_scale 1.5 >/dev/null 2>&1
+sleep 2
+launch_app
+walk fs150
+walk_expanded fs150-open
 adb shell settings put system font_scale 1.0 >/dev/null 2>&1
 
 # 5) right-to-left layout

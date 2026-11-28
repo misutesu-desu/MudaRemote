@@ -411,7 +411,7 @@ from mudae_core.key_limit import (  # noqa: E402
 )
 # Main = the profile's primary token, alts = its extra tokens (mudae_core.account_roles).
 from mudae_core.account_roles import (  # noqa: E402
-    IdleNote, account_label_for, account_role_for, labelled_message, perk10_enabled_for,
+    IdleNote, account_label_for, account_role_for, labelled_message, perk10_enabled, perk10_enabled_for,
     roll_batch_blocker, side_kind_for,
 )
 # Main/Side accounts running in this process (Android, Run All, multi-token).
@@ -1633,6 +1633,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     def apply_saved_settings(data):
         previous_give_now_round = getattr(client, "give_kakera_now_round", 0)
         previous_sphere_now_round = getattr(client, "give_spheres_now_round", 0)
+        previous_perk10_now_round = getattr(client, "perk10_now_round", 0)
         changed = apply_live_config(
             client, data, bot_name=BOT_NAME, claim_emojis=CLAIM_EMOJIS,
             kakera_emojis=KAKERA_EMOJIS, sphere_emojis=SPHERE_EMOJIS,
@@ -1651,7 +1652,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.key_limit_status = key_limit_pause_text(client.key_limit_resume_at, client.key_limit_pause_scope)
             if changed & {"fast_setup", "fast_setup_round"} and client._live_preset_ready:
                 client.loop.create_task(run_fast_setup())
-            if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
+            if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "give_kakera_amount_mode", "account_role"}:
                 schedule_auto_give("settings changed")
             # One profile holds the main and its alts: a «Give all … now» press
             # reaches every account of it, and only the alts act on it.
@@ -1666,8 +1667,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
                           "harem_give_value", "account_role"}:
                 schedule_harem_give("settings changed")
-            if changed & {"auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
+            if changed & {"auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
+                          "perk10_amount"}:
                 schedule_perk10("settings changed")
+            # «Upgrade perk 10 now»: every account of the profile sees the press; each decides for itself
+            # (the main always; an alt only with «Let side accounts upgrade too»).
+            if "perk10_now_round" in changed and client.perk10_now_round > previous_perk10_now_round:
+                client.loop.create_task(run_perk10_now())
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
                 if task is not None:
@@ -8693,6 +8699,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             "perk10_min_spheres": client.perk10_min_spheres,
             "perk10_max_characters": client.perk10_max_characters,
             "perk10_daily_cap": client.perk10_daily_cap,
+            "perk10_amount": client.perk10_amount,
         })
 
     def perk10_games_reason():
@@ -8759,6 +8766,41 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"Perk 10 error: {e}", preset_name, "ERROR")
         finally:
             client._perk10_task = None
+
+    async def run_perk10_now():
+        """«Upgrade perk 10 now» (button): one upgrade pass on request for this account."""
+        try:
+            # An explicit request works with «Upgrade perk 10 automatically» off, but an alt needs «side_perk10».
+            allowed = perk10_enabled(account_role_for(client), side_kind_for(client), True,
+                                     bool(getattr(client, "side_perk10", False)))
+            channel = None
+            if allowed:
+                channel = await _resolve_administrative_command_channel()
+                if channel is None:
+                    BotLogger.log("Upgrade perk 10 now: not run \u2014 no command channel.", preset_name, "WARN", client)
+                    return
+            outcome = await client.perk_upgrader.upgrade_now(
+                channel, perk10_settings(),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                totals=client.account_totals,
+                prefix=client.mudae_prefix,
+                allowed_reason=(None if allowed else
+                                "this alt does not upgrade perk 10 (turn on \u00abLet side accounts upgrade too\u00bb)"),
+                # Waits for the next $tu the program already sends; never sends one.
+                games=perk10_games_reason,
+                busy=perk10_busy_reason,
+            )
+            if outcome.status == "ignored":
+                BotLogger.log(f"Upgrade perk 10 now: press ignored \u2014 {outcome.reason}.", preset_name, "INFO", client)
+                return
+            if outcome.status == "upgraded":
+                log_totals("after the perk-10 upgrade")
+            wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Upgrade perk 10 now error: {e}", preset_name, "ERROR")
 
     async def perk10_schedule_task():
         """Wake every few minutes so a deferred upgrade runs once the games and busy work are done."""
