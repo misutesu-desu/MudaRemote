@@ -201,6 +201,19 @@ object KeepAlive {
         else -> "unknown"
     }
 
+    /** Exit reasons caused by a phone restriction, a cleaner or resource pressure: the "Keep running" card helps. */
+    private val RESTRICTION_REASONS = setOf("low memory", "killed by the system", "too much battery/CPU use", "force-stopped or cleaned")
+
+    /** «Android closed MudaFork at HH:MM. It started again at HH:MM.» plus the reason and, for restriction kinds, a hint. */
+    internal fun restartedText(stoppedAt: String, resumedAt: String, reason: String?): String {
+        val sb = StringBuilder("Android closed MudaFork at $stoppedAt. It started again at $resumedAt.")
+        if (!reason.isNullOrBlank()) {
+            sb.append(" Reason: ").append(reason).append('.')
+            if (reason in RESTRICTION_REASONS) sb.append(" Open \"Keep running\" to stop this.")
+        }
+        return sb.toString()
+    }
+
     /**
      * Called once the runtime is running again after a resume. Logs, and for
      * a system kill also shows one notice, at most once per lost heartbeat.
@@ -217,10 +230,10 @@ object KeepAlive {
             else -> {
                 val exit = lastExit(context)?.takeIf { it.first >= beat }
                 val stoppedAt = exit?.first ?: beat
-                val why = exit?.second?.let { " Android's reason: $it." }.orEmpty()
-                val text = "Stopped by the system at ${clock(stoppedAt)}, resumed at ${clock(now)}.$why"
+                val reasonText = exit?.second
+                val text = restartedText(clock(stoppedAt), clock(now), reasonText)
                 log(context, "[WARN] [ANDROID] $text")
-                showNotice(context, REPORT_NOTICE_ID, "MudaFork resumed", text, resumeOnTap = false)
+                showNotice(context, REPORT_NOTICE_ID, "MudaFork was restarted", text, resumeOnTap = false)
             }
         }
     }

@@ -40,7 +40,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from .harem_list import LIST_MMZ, HaremListReader
+from .harem_list import LIST_MMZ, HaremListReader, has_visible_text, strip_invisible
 from .kakera_give import BACKOFF_STEPS_SECONDS, BotReply
 from .spheres import SPHERE_GAME_KINDS
 from .totals import NUMBER, SOURCE_UPGRADE, SPHERES, emoji_kind, parse_amount
@@ -96,6 +96,7 @@ _NOT_FOUND_RE = re.compile(r"characters?\s+not\s+found\s*:\s*(?P<names>[^\n]*)",
 _REFUSAL_WORDS = (
     "not enough", "don't have enough", "do not have enough", "you don't have", "you do not have",
     "can't", "cannot", "not allowed", "procedure has been stopped", "invalid", "insuficiente", "no tienes",
+    "no character found", "syntax:",
 )
 
 
@@ -205,28 +206,58 @@ def normalize_name(name) -> str:
 
 
 def usable_name(name) -> bool:
-    """A listed name can go into the command whole (no «$», which separates names)."""
-    text = str(name or "").strip()
-    return bool(text) and "$" not in text and "\n" not in text and len(text) < COMMAND_LENGTH_LIMIT - 20
+    """A listed name can go into the command whole (no «$», which separates names; something visible in it)."""
+    text = strip_invisible(name)
+    return (bool(text) and has_visible_text(text) and "$" not in text and "\n" not in text
+            and len(text) < COMMAND_LENGTH_LIMIT - 20)
+
+
+def names_problem(names) -> Optional[str]:
+    """Why a command with these names must not be sent (None: fine): none, or one that prints as nothing."""
+    names = list(names or ())
+    if not names:
+        return "the command would carry no name"
+    for name in names:
+        if not isinstance(name, str) or not name.strip() or not usable_name(name):
+            return "a name is empty or prints as nothing ({!r})".format(name)
+    return None
+
+
+def command_for(chunk: Sequence[str], prefix="$") -> str:
+    """One name: «$oi Name $ 10» (the owner's rule for a single character); two or more: «$oic A $ B $ 10»."""
+    prefix = prefix or "$"
+    names = [strip_invisible(name) for name in chunk]
+    problem = names_problem(names)
+    if problem:
+        raise ValueError(problem)
+    verb = "oi" if len(names) == 1 else "oic"
+    return "{}{} {} $ {}".format(prefix, verb, " $ ".join(names), PERK_NUMBER)
 
 
 def build_commands(names: Sequence[str], prefix="$", limit=COMMAND_LENGTH_LIMIT) -> List[Tuple[str, Tuple[str, ...]]]:
-    """``[(command, names_in_it), …]``: «$oic a $ b $ … $ 10», each shorter than ``limit``."""
+    """``[(command, names_in_it), …]``: «$oic a $ b $ … $ 10» (one name: «$oi a $ 10»), each shorter than ``limit``.
+
+    Raises ValueError when any name is empty or prints as nothing (never builds «$oic  $ 10»).
+    """
     prefix = prefix or "$"
+    clean = [strip_invisible(name) for name in names]
+    problem = names_problem(clean) if clean else None
+    if problem:
+        raise ValueError(problem)
     head = "{}oic ".format(prefix)
     tail = " $ {}".format(PERK_NUMBER)
-    commands = []
+    chunks: List[List[str]] = []
     chunk: List[str] = []
-    for name in names:
-        name = str(name).strip()
+    for name in clean:
         trial = head + " $ ".join(chunk + [name]) + tail
         if chunk and len(trial) >= limit:
-            commands.append((head + " $ ".join(chunk) + tail, tuple(chunk)))
+            chunks.append(chunk)
             chunk = [name]
         else:
             chunk.append(name)
     if chunk:
-        commands.append((head + " $ ".join(chunk) + tail, tuple(chunk)))
+        chunks.append(chunk)
+    commands = [(command_for(item, prefix), tuple(item)) for item in chunks]
     return [item for item in commands if len(item[0]) < limit]
 
 
@@ -254,6 +285,38 @@ def parse_oic_question(text) -> Optional[OicQuestion]:
     return OicQuestion(cost=cost, count=count)
 
 
+_YES_NO = re.compile(r"y\s*/\s*n|yes\s*/\s*no", re.IGNORECASE)
+_SPEND_RE = re.compile(r"\bspend\s+\**\s*(?P<cost>" + NUMBER + r")", re.IGNORECASE)
+_COST_EMOJI_RE = re.compile(r"\**(?P<cost>" + NUMBER + r")\**\s*" + _EMOJI)
+_COUNT_RE = re.compile(r"\bfor\s+\**\s*(?P<count>" + NUMBER + r")\s*\**\s*characters?", re.IGNORECASE)
+
+
+def parse_oi_question(text, name="", own_names=()) -> Optional[OicQuestion]:
+    """The bot's y/n question for ONE character (``$oi``). ASSUMED shape: its wording is not in the samples.
+
+    Accepted when the text is a y/n question that states a cost of exactly 1,000, says «1 character» when
+    it states a count, and, when it names a character in bold, names ours (normalised). Else None.
+    """
+    folded = str(text or "")
+    if not _YES_NO.search(folded):
+        return None
+    found = _SPEND_RE.search(folded) or _COST_EMOJI_RE.search(folded)
+    if not found or parse_amount(found.group("cost")) != PERK10_COST:
+        return None
+    counted = _COUNT_RE.search(folded)
+    if counted and parse_amount(counted.group("count")) != 1:
+        return None
+    ours = normalize_name(name)
+    mine = {normalize_name(item) for item in own_names or ()}
+    for bold in re.findall(r"\*\*([^*\n]+)\*\*", folded):
+        said = normalize_name(bold)
+        if not said or re.fullmatch(r"[\d.,\s]+", said) or said in mine or said in ("y", "n", "yes", "no"):
+            continue
+        if ours and said != ours:
+            return None
+    return OicQuestion(cost=PERK10_COST, count=1)
+
+
 def parse_not_found(text) -> Tuple[str, ...]:
     """«Characters not found: satanichia mcdowell, kurumizawa» → the names as printed."""
     found = []
@@ -263,6 +326,12 @@ def parse_not_found(text) -> Tuple[str, ...]:
             if part:
                 found.append(part)
     return tuple(found)
+
+
+def looks_like_oi_syntax_error(text) -> bool:
+    """«No character found!  Syntax: $oi <character> $ <perk(s) number to upgrade>»."""
+    folded = str(text or "").casefold()
+    return "no character found" in folded or "syntax: $oi" in folded
 
 
 def looks_like_refusal(text) -> bool:
@@ -292,6 +361,7 @@ class _Attempt:
     sent_ids: set = field(default_factory=set)
     question_open: bool = False
     counted: bool = False
+    listed: str = ""  # what $mmz- returned (shortened), for the ERROR log of a refused command
 
 
 def _now():
@@ -558,6 +628,8 @@ class PerkUpgrader:
         page = read.page
         pages_read = 1
         while True:
+            if not self._attempt.listed:
+                self._attempt.listed = ", ".join(repr(item) for item in page.names[:20])[:600]
             for name in page.names:
                 listed += 1
                 folded = normalize_name(name)
@@ -594,7 +666,12 @@ class PerkUpgrader:
         names, failed = await self._collect_names(channel, count, prefix)
         if failed is not None:
             return failed
-        commands = build_commands(names, prefix)
+        try:
+            commands = build_commands(names, prefix)
+        except ValueError as exc:
+            self._log("Perk 10: refused to build a command: {}. The list returned: {}.".format(
+                exc, self._attempt.listed or "nothing"), "ERROR")
+            return UpgradeOutcome("stopped", "no command built: {}".format(exc))
         if not commands:
             return UpgradeOutcome("stopped", "no command could be built from the listed names")
         self._log("Perk 10: spheres {:,} → upgrading {} character(s) in {} command(s).".format(
@@ -643,9 +720,21 @@ class PerkUpgrader:
     async def _one_command(self, channel, command, chunk, totals, busy) -> UpgradeOutcome:
         attempt = self._attempt
         attempt.sent_ids.clear()
+        # Last check before anything is sent: every name prints as something and the command matches them.
+        problem = names_problem(chunk)
+        if problem is None and command != command_for(chunk, command.split("oi", 1)[0] or "$"):
+            problem = "the command does not match its names"
+        if problem is not None:
+            self._log("Perk 10: refused to send {!r}: {}. The list returned: {}.".format(
+                command, problem, attempt.listed or "nothing"), "ERROR")
+            return UpgradeOutcome("stopped", "not sent: " + problem)
+        single = len(chunk) == 1
+        verb = "$oi" if single else "$oic"
         self.state = SENDING
-        if not await self._send_tracked(channel, command):
-            return UpgradeOutcome("stopped", "the $oic command could not be sent")
+        sent_command = await self._send_tracked(channel, command)
+        if not sent_command:
+            return UpgradeOutcome("stopped", "the {} command could not be sent".format(verb))
+        command_id = getattr(sent_command, "id", None)
 
         self.state = AWAITING_QUESTION
         not_found: List[str] = []
@@ -667,10 +756,20 @@ class PerkUpgrader:
             text = reply.text
             missing = parse_not_found(text)
             not_found.extend(name for name in missing if name not in not_found)
-            question = parse_oic_question(text)
+            question = parse_oic_question(text)  # the same question for one or many characters
+            if question is None and single:
+                question = parse_oi_question(text, chunk[0], attempt.own_names)  # tolerant fallback
             if question is not None:
                 question_text = text
                 break
+            if single and not missing and _YES_NO.search(str(text or "")):
+                # A question for one character that does not state exactly 1,000 for ours: never answered Y.
+                attempt.question_open = True
+                await self._answer_no_if_open(channel)
+                self._log("Perk 10: the $oi question was not recognised ({}); answered n. Bot said: «{}»".format(
+                    chunk[0], str(text).strip()[:300]), "ERROR")
+                return UpgradeOutcome("stopped", "the question for one character was not recognised; answered n",
+                                      bot_text=text)
             if missing:
                 timeout = self.followup_timeout  # the question may still follow
                 continue
@@ -707,6 +806,7 @@ class PerkUpgrader:
         if still_busy:
             await self._answer_no_if_open(channel)
             return UpgradeOutcome("stopped", "became busy ({}); answered n".format(still_busy))
+        self._drop_queued_acks()
         answer = await self._send_tracked(channel, "Y")
         if not answer:
             await self._answer_no_if_open(channel)
@@ -723,7 +823,9 @@ class PerkUpgrader:
         deadline = self._monotonic() + self.ack_timeout
         while True:
             kind, reply = await self._next(max(0.0, deadline - self._monotonic()))
-            if kind == "ack" and (answer_id is None or reply == answer_id):
+            # The live run put the ✅ on the $oic COMMAND message; a ✅ on our Y counts too. This loop starts
+            # only after Y was answered, so an earlier ✅ (dropped in the question loop) never counts.
+            if kind == "ack" and (answer_id is None or reply in (answer_id, command_id)):
                 totals.add(SPHERES, -question.cost, SOURCE_UPGRADE)
                 return UpgradeOutcome("upgraded", "", question.count, question.cost, upgraded, question_text)
             if kind == "ack":
@@ -732,7 +834,7 @@ class PerkUpgrader:
             # until the next $tu or game result.
             totals.set_total(SPHERES, None, SOURCE_UPGRADE)
             if kind == "timeout":
-                return UpgradeOutcome("stopped", "no ✅ on the Y in time")
+                return UpgradeOutcome("stopped", "no ✅ on the command or the Y in time")
             if kind == "refused":
                 return UpgradeOutcome("stopped", "the game bot refused the answer (⛔)")
             if looks_like_refusal(reply.text):
@@ -748,7 +850,8 @@ class PerkUpgrader:
         lead = re.match(r"^\s*(?:\*\*)?<@!?(\d+)>", text)
         if lead:
             return lead.group(1) == attempt.own_id
-        if parse_oic_question(text) is not None or parse_not_found(text):
+        if parse_oic_question(text) is not None or parse_not_found(text) or looks_like_oi_syntax_error(text) \
+                or re.search(r"do you really want to spend", text, re.IGNORECASE):
             return True
         bold = re.match(r"^\s*\*\*([^*]+)\*\*\s*,", text)
         named = bold.group(1) if bold else None
@@ -780,6 +883,22 @@ class PerkUpgrader:
             if not self._is_after_our_messages(reply) or not self._addressed_to_self(reply):
                 continue
             return "reply", reply
+
+    def _drop_queued_acks(self):
+        """Forget ✅ events that arrived before we answered (they cannot be the result of the answer)."""
+        queue = self._queue
+        if queue is None:
+            return
+        kept = []
+        while True:
+            try:
+                item = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item[0] != "ack":
+                kept.append(item)
+        for item in kept:
+            queue.put_nowait(item)
 
     async def _answer_no_if_open(self, channel):
         attempt = self._attempt

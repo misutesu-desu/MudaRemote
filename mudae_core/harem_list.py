@@ -30,6 +30,7 @@ import asyncio
 import random
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
@@ -98,7 +99,31 @@ def clean_line(line) -> str:
     text = _CUSTOM_EMOJI.sub("", _text(line))
     text = text.replace("**", "").replace("__", "")
     text = re.sub(r"\\([\\*_~`|>()\[\].-])", r"\1", text)  # Discord's markdown escapes
-    return re.sub(r"[ \t ]+", " ", text).strip()
+    return strip_invisible(re.sub(r"[ \t ]+", " ", text))
+
+
+# Characters that print as nothing (zero-width, directional marks, Braille blank, Hangul fillers, ...).
+_BLANK_CHARS = {"\u2800", "\u3164", "\u115f", "\u1160", "\uffa0", "\u180e", "\u034f"}
+
+
+def is_invisible_char(ch) -> bool:
+    return ch in _BLANK_CHARS or unicodedata.category(ch) in ("Cf", "Cc", "Cs", "Co", "Cn", "Zs", "Zl", "Zp")
+
+
+def strip_invisible(text) -> str:
+    """Whitespace and invisible characters removed from both ends (a line of only those becomes empty)."""
+    text = str(text or "")
+    start, end = 0, len(text)
+    while start < end and is_invisible_char(text[start]):
+        start += 1
+    while end > start and is_invisible_char(text[end - 1]):
+        end -= 1
+    return text[start:end]
+
+
+def has_visible_text(text) -> bool:
+    """True when the text holds at least one letter or digit (a name that prints as nothing is not a name)."""
+    return any(unicodedata.category(ch)[0] in ("L", "N") for ch in str(text or "") if not is_invisible_char(ch))
 
 
 def owner_from_author(author_text) -> Optional[str]:
@@ -205,7 +230,7 @@ def parse_harem_page(message, kind) -> Optional[HaremPage]:
             return None
         return HaremPage(kind, owner, page, pages, names=tuple(item.name for item in ranked),
                          ranked=tuple(ranked), total_value=total, message_id=message_id, channel_id=channel_id)
-    names = tuple(line for line in lines if line and not _HEADER_LINE.match(line))
+    names = tuple(line for line in lines if line and has_visible_text(line) and not _HEADER_LINE.match(line))
     return HaremPage(kind, owner, page, pages, names=names, message_id=message_id, channel_id=channel_id)
 
 

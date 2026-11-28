@@ -10167,8 +10167,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if not mudae_command_ack_matches(payload, message_id, TARGET_BOT_ID):
             return
         client._recent_mudae_command_acks[message_id] = time.monotonic()
-        client.perk_upgrader.on_ack(message_id)  # ✅ on the account's «Y» to $oic
-        client.sphere_giver.on_ack(message_id)  # ✅ on the account's «Y» to $givesp
+        client.perk_upgrader.on_ack(message_id)  # ✅ on the account's $oic command or its «Y»
+        client.kakera_giver.on_ack(message_id)  # ✅ on the account's $givek command or its «y»
+        client.sphere_giver.on_ack(message_id)  # ✅ on the account's $givesp command or its «Y»
         while len(client._recent_mudae_command_acks) > 500:
             client._recent_mudae_command_acks.pop(next(iter(client._recent_mudae_command_acks)))
         operation = getattr(client, '_rt_command_in_flight', None)

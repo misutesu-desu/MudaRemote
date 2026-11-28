@@ -98,6 +98,24 @@ jobs:
           path: MudaFork-debug.apk
           if-no-files-found: error
 
+      - name: APK size breakdown
+        run: |
+          set -euo pipefail
+          python android/scripts/apk_breakdown.py MudaFork-debug.apk > apk-breakdown.txt
+          cat apk-breakdown.txt
+          {
+            echo '### APK size breakdown (debug build, both ABIs)'
+            echo '```'
+            cat apk-breakdown.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MudaFork-apk-breakdown
+          path: apk-breakdown.txt
+          if-no-files-found: error
+
   android-screens:
     # Runs the debug APK in an emulator and saves what the app looks like, so the screen can be
     # reviewed without a phone. Best effort per tap; fails only when no screenshot was produced.

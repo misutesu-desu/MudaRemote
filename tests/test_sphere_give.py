@@ -38,11 +38,14 @@ class FakeBot:
         self.script = list(script)
         self.sent = []
         self.next_id = 1000
+        self.first_id = None
 
     async def send(self, channel, text):
         self.sent.append(text)
         self.next_id += 1
         my_id = self.next_id
+        if self.first_id is None:
+            self.first_id = my_id
         replies = self.script.pop(0) if self.script else None
         loop = asyncio.get_running_loop()
         for reply in replies or ():
@@ -50,6 +53,8 @@ class FakeBot:
                 loop.call_soon(self.ref[0].on_refused, my_id)
             elif reply == "ACK":
                 loop.call_soon(self.ref[0].on_ack, my_id)
+            elif reply == "ACK_COMMAND":
+                loop.call_soon(self.ref[0].on_ack, self.first_id)
             else:
                 self.next_id += 1
                 loop.call_soon(self.ref[0].on_reply, BotReply(self.next_id, channel.id, reply))
@@ -290,6 +295,19 @@ class FlowTests(SphereGiveBase):
         self.assertEqual(outcome.status, "given", outcome)
         self.assertEqual(self.side.spheres, 0)
         self.assertEqual(bot.sent, ["$givesp <@{}> 1250".format(MAIN_ID), "Y"])
+
+    def test_success_by_check_reaction_on_the_command_after_Y(self):
+        giver, bot = self.make([[question(1250)], ["ACK_COMMAND"]])
+        outcome = self.give(giver)
+        self.assertEqual(outcome.status, "given", outcome)
+        self.assertEqual(self.side.spheres, 0)
+        self.assertEqual(self.main.spheres, 1350)
+
+    def test_check_reaction_on_the_command_before_Y_is_not_success(self):
+        giver, bot = self.make([[question(1250), "ACK_COMMAND"], None])
+        outcome = self.give(giver)
+        self.assertEqual(outcome.status, "stopped")
+        self.assertEqual(self.side.spheres, None)
 
     def test_check_reaction_on_the_command_alone_is_not_success(self):
         giver, bot = self.make([["ACK"], None])

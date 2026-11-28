@@ -4,8 +4,10 @@
 #
 # Usage: bash android/scripts/screens.sh <apk path> [package]
 #
-# Best effort: a missed tap or a failed walk never fails the run; the run fails only when no
-# screenshot at all was produced. It never needs a Discord token (the app shows "no token").
+# Best effort: a missed tap or a failed walk never fails the run; the run fails when no screenshot
+# at all was produced, and when the header never shows a real Python engine version («Python engine v»
+# and a digit): that means the bundled Python runtime did not start, so a size trim (or any change)
+# that broke it cannot pass. It never needs a Discord token (the app shows "no token").
 set -u
 
 APK="${1:?apk path required}"
@@ -131,6 +133,24 @@ tap_text() {
   return 1
 }
 
+# The header shows «Python engine v<digit>...» once the bundled Python runtime has started and answered;
+# «Python engine: loading...», «Python engine: ready» or «Python engine (bundled)» mean it did not.
+ENGINE_OK=0
+check_engine() {
+  local i
+  for i in $(seq 1 45); do
+    if ui_dump | grep -Eq 'text="Python engine v[0-9]'; then
+      ENGINE_OK=1
+      log "Python engine started: $(ui_dump | grep -Eo 'text="Python engine v[^"]*"' | head -n 1)"
+      return 0
+    fi
+    sleep 2
+  done
+  log "ERROR: the header never showed a Python engine version; the Python runtime did not start"
+  shot "$OUT/engine-not-started.png" || true
+  return 1
+}
+
 # ---------------------------------------------------------------- the walk
 
 walk() {
@@ -185,6 +205,7 @@ fi
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
 
 launch_app
+check_engine || true
 
 # 1) normal font
 walk fs100
@@ -245,6 +266,10 @@ log "$COUNT screenshots in $OUT"
 ls -l "$OUT"
 if [ "$COUNT" -eq 0 ]; then
   log "no screenshot was produced"
+  exit 1
+fi
+if [ "$ENGINE_OK" -ne 1 ]; then
+  log "FAILED: the Python engine did not start (no «Python engine v<number>» in the header)"
   exit 1
 fi
 exit 0

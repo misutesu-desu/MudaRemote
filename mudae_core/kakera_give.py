@@ -209,6 +209,8 @@ class _Attempt:
     own_id: str
     own_names: Tuple[str, ...]
     sent_ids: set = field(default_factory=set)
+    command_id: object = None
+    answer_id: object = None
     question_open: bool = False
     manual: bool = False  # «Give all kakera now»: not counted toward the automatic daily cap
 
@@ -239,6 +241,7 @@ class KakeraGiver:
         self._failures = 0
         self._retry_at = None  # monotonic seconds
         self._attempt: Optional[_Attempt] = None
+        self._last_sent_id = None
         self._queue: Optional[asyncio.Queue] = None
         self.manual_status = "Give all kakera: not used yet."
         self._manual_in_flight = False
@@ -254,6 +257,11 @@ class KakeraGiver:
         if attempt is None or self._queue is None or reply.channel_id != attempt.channel_id:
             return
         self._queue.put_nowait(("reply", reply))
+
+    def on_ack(self, message_id):
+        """The game bot put ✅ on one of this account's messages."""
+        if self._attempt is not None and self._queue is not None:
+            self._queue.put_nowait(("ack", message_id))
 
     def on_refused(self, message_id):
         """Mudae put ⛔ on one of this account's messages."""
@@ -413,6 +421,7 @@ class KakeraGiver:
         message_id = getattr(receipt, "id", None)
         if message_id is not None and self._attempt is not None:
             self._attempt.sent_ids.add(message_id)
+        self._last_sent_id = message_id
         return True
 
     async def _run(self, channel, prefix, totals, main_totals, busy):
@@ -424,6 +433,7 @@ class KakeraGiver:
             "Give all kakera" if attempt.manual else "Auto-give", amount), "INFO")
         if not await self._send_tracked(channel, command):
             return GiveOutcome("stopped", "the $givek command could not be sent", amount)
+        attempt.command_id = self._last_sent_id
 
         self.state = AWAITING_QUESTION
         kind, reply = await self._next(self.question_timeout)
@@ -453,14 +463,16 @@ class KakeraGiver:
         if still_busy:
             await self._answer_no_if_open(channel)
             return GiveOutcome("stopped", "became busy ({}); answered n".format(still_busy), amount)
+        self._drop_queued_acks()
         if not await self._send_tracked(channel, "y"):
             await self._answer_no_if_open(channel)
             return GiveOutcome("stopped", "could not answer y", amount)
+        attempt.answer_id = self._last_sent_id
         attempt.question_open = False
 
         self.state = AWAITING_RESULT
-        kind, reply = await self._next(self.result_timeout)
-        if kind == "success":
+        kind, reply = await self._next(self.result_timeout, accept_ack=True)
+        if kind in ("success", "ack"):
             return self._given(reply, totals, main_totals)
         # The give may or may not have happened: the total is unknown until the
         # next $tu, and the attempt counts toward the daily limit.
@@ -478,12 +490,13 @@ class KakeraGiver:
 
     def _given(self, reply, totals, main_totals):
         attempt = self._attempt
-        gift = parse_give_success(reply.text)
+        gift = parse_give_success(reply.text) if isinstance(reply, BotReply) else None
         amount = gift.amount if gift else attempt.amount
         if totals is not None:
             totals.add(KAKERA, -amount, SOURCE_GIVE)
         if main_totals is not None:
             main_totals.add(KAKERA, amount, SOURCE_GIFT_RECEIVED)
+        text = reply.text if isinstance(reply, BotReply) else ""
         count = self.store.gives_today(self.key, self.today()) if attempt.manual else self.store.count_give(self.key, self.today())
         note = ""
         if gift and gift.receiver_id and gift.receiver_id != attempt.main_id:
@@ -491,9 +504,9 @@ class KakeraGiver:
         if amount != attempt.amount:
             note += " (confirmed {:,}, intended {:,})".format(amount, attempt.amount)
         if attempt.manual:
-            return GiveOutcome("given", "gave {:,} kakera to the main{}".format(amount, note), amount, reply.text)
+            return GiveOutcome("given", "gave {:,} kakera to the main{}".format(amount, note), amount, text)
         return GiveOutcome("given", "gave {:,} kakera to the main (give {} today){}".format(amount, count, note),
-                           amount, reply.text)
+                           amount, text)
 
     def _addressed_to_self(self, reply: BotReply) -> bool:
         attempt = self._attempt
@@ -511,8 +524,8 @@ class KakeraGiver:
         sent = [value for value in self._attempt.sent_ids if isinstance(value, int)]
         return not (isinstance(reply.message_id, int) and sent and reply.message_id <= max(sent))
 
-    async def _next(self, timeout):
-        """The next relevant event: question/success/refusal/other, or a timeout."""
+    async def _next(self, timeout, accept_ack=False):
+        """The next relevant event: question/success/refusal/other/ack, or a timeout."""
         deadline = self._monotonic() + timeout
         while True:
             remaining = deadline - self._monotonic()
@@ -525,6 +538,13 @@ class KakeraGiver:
             if kind == "refused":
                 if payload in self._attempt.sent_ids:
                     return "refused", None
+                continue
+            if kind == "ack":
+                # A ✅ counts on our own command or our «y», and only once y has been answered.
+                attempt = self._attempt
+                if (accept_ack and payload is not None and attempt.answer_id is not None
+                        and payload in (attempt.answer_id, attempt.command_id)):
+                    return "ack", None
                 continue
             reply = payload
             if not self._is_after_our_messages(reply):
@@ -540,6 +560,22 @@ class KakeraGiver:
             if parse_give_question(reply.text) is not None:
                 return "question", reply
             return ("refusal" if looks_like_refusal(reply.text) else "other"), reply
+
+    def _drop_queued_acks(self):
+        """Forget ✅ events that arrived before we answered (they cannot be the result of the answer)."""
+        queue = self._queue
+        if queue is None:
+            return
+        kept = []
+        while True:
+            try:
+                item = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item[0] != "ack":
+                kept.append(item)
+        for item in kept:
+            queue.put_nowait(item)
 
     async def _answer_no_if_open(self, channel):
         attempt = self._attempt
