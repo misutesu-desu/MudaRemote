@@ -268,6 +268,16 @@ class KakeraGiver:
         if self._attempt is not None and self._queue is not None:
             self._queue.put_nowait(("refused", message_id))
 
+    def user_answered(self) -> bool:
+        """The player answered the game bot's open question by hand: this flow never
+        answers or cancels it itself (it stops at its next busy check). True when a
+        question of ours was open."""
+        attempt = self._attempt
+        if attempt is None or not attempt.question_open:
+            return False
+        attempt.question_open = False
+        return True
+
     # -- decisions -------------------------------------------------------
     def today(self):
         return self._clock().date()

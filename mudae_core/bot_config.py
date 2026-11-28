@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from mudae_core.account_roles import SIDE_KIND_ALT, account_role_for, alt_number, side_kind_for
 from mudae_core.key_limit import normalize_scope as normalize_key_limit_scope
 from mudae_core.alt_roll_claim import normalize_mode as normalize_alt_roll_claim_mode
+from mudae_core.best_roll_claim import normalize_floor as normalize_best_roll_floor, normalize_when as normalize_best_roll_when
 from mudae_core.claiming import expand_claim_emojis
 from mudae_core.filters import CharacterNameSet, split_dollar_names
 from mudae_core.kakera import (
@@ -316,6 +317,10 @@ def configure_client(
     # while an alt can claim; the accounts of a profile take each other's kakera.
     client.main_rolls_while_alt_can_claim = bool(preset_data.get("main_rolls_while_alt_can_claim", False))
     client.accounts_share_kakera_reacts = bool(preset_data.get("accounts_share_kakera_reacts", False))
+    # «Claim the best roll when nothing meets the minimum» (mudae_core.best_roll_claim), off by default.
+    client.claim_best_when_nothing_qualifies = bool(preset_data.get("claim_best_when_nothing_qualifies", False))
+    client.claim_best_when = normalize_best_roll_when(preset_data.get("claim_best_when"))
+    client.claim_best_min_kakera = normalize_best_roll_floor(preset_data.get("claim_best_min_kakera", 0))
     # «Fast setup» (one-time $ta message) and auto-give kakera to the main.
     client.fast_setup = bool(preset_data.get("fast_setup", False))
     client.fast_setup_round = _bounded_int(preset_data.get("fast_setup_round", 0), 0, 0, 1_000_000)
@@ -760,6 +765,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "account_role", "stored_account_role", "main_profile_id", "side_order", "side_rolls_for_main",
     "side_rolls_max_per_reset", "side_claim_leftovers", "main_claims_alt_rolls", "main_claims_alt_rolls_mode",
     "alts_claim_main_rolls", "main_rolls_while_alt_can_claim", "accounts_share_kakera_reacts",
+    "claim_best_when_nothing_qualifies", "claim_best_when", "claim_best_min_kakera",
     "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
     "give_kakera_extra", "give_kakera_amount_mode", "give_kakera_daily_cap", "give_kakera_button_minimum",
     "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",

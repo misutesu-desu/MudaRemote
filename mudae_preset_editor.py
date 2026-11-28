@@ -681,6 +681,9 @@ DEFAULTS = {
     "alts_claim_main_rolls": False,
     "main_rolls_while_alt_can_claim": False,
     "accounts_share_kakera_reacts": False,
+    "claim_best_when_nothing_qualifies": False,
+    "claim_best_when": "last round",
+    "claim_best_min_kakera": 0,
     "fast_setup": False,
     "fast_setup_round": 0,
     "auto_give_kakera": False,
@@ -1004,11 +1007,16 @@ def collect_account_role_fields(widgets, presets, data):
 
 MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
                       "main_claims_alt_rolls", "alts_claim_main_rolls", "main_rolls_while_alt_can_claim",
-                      "accounts_share_kakera_reacts")
+                      "accounts_share_kakera_reacts", "claim_best_when_nothing_qualifies")
 # «Main claims good rolls made by its alts»: who gets a good alt roll (mudae_core.alt_roll_claim.MODES).
 ALT_ROLL_CLAIM_MODE_CHOICES = {
     "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
     "prefer the main": "Prefer the main (the main takes anything good for it; alts keep their claims)",
+}
+# «Claim the best roll when nothing meets the minimum»: when (mudae_core.best_roll_claim.WHEN_CHOICES).
+CLAIM_BEST_WHEN_CHOICES = {
+    "last round": "Only the last round before the claim reset",
+    "every round": "Every round",
 }
 GIVE_KAKERA_AMOUNT_MODE_CHOICES = {
     "everything": "Give everything",
@@ -1030,6 +1038,7 @@ MUDAFORK_NUMBER_KEYS = (
     ("perk10_max_characters", "Most characters per upgrade (0 = no limit)", 0),
     ("perk10_daily_cap", "At most N upgrades per day", 1),
     ("perk10_amount", "Characters to upgrade each time (0 = as many as the spheres allow)", 0),
+    ("claim_best_min_kakera", "Never take a roll below (kakera, 0 = any value)", 0),
 )
 HAREM_TRIGGER_CHOICES = {
     "pages": "Pages: when my harem reaches X pages ($mm)",
@@ -1074,6 +1083,10 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
         value = str(alt_mode.get() or "")
         data["main_claims_alt_rolls_mode"] = (
             value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
+    best_when = widgets.get("claim_best_when")
+    if best_when is not None:
+        value = str(best_when.get() or "")
+        data["claim_best_when"] = value if value in CLAIM_BEST_WHEN_CHOICES else DEFAULTS["claim_best_when"]
     pages_text = widgets.get("harem_give_pages_text")
     if pages_text is not None:
         text = str(pages_text.get() or "").strip()
@@ -3029,6 +3042,25 @@ class PresetEditor:
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_min_kakera", "Hybrid Instant Claim Min Kakera (Minimum value to claim instantly in panic hour)", 300)
         self.add_number_field(hybrid_sub, "hybrid_panic_instant_claim_max_rank", "Hybrid Instant Claim Max Rank Limit (Rank <= this to claim instantly in panic hour)", 200)
 
+        # «Claim the best roll when nothing meets the minimum» (mudae_core.best_roll_claim)
+        self.add_checkbox(
+            claim_frame.content, "claim_best_when_nothing_qualifies", "Claim the best roll when nothing meets the minimum",
+            description="When no roll of this profile's accounts (main and alts) met your claim rules in a round, "
+                        "claim the highest-value roll that is still claimable (a roll's button lasts about 45 seconds). "
+                        "The roller claims if it can, else the main, else an alt. One claim, never $rt. Off by default.",
+        )
+        self.add_choice_field(
+            claim_frame.content, "claim_best_when", "When to claim the best roll", {
+                "last round": "Only the last round before the claim reset",
+                "every round": "Every round",
+            },
+            description="«Last round» = no more rolls of any account of this profile will finish before the claim reset.",
+        )
+        self.add_number_field(
+            claim_frame.content, "claim_best_min_kakera", "Never take a roll below (kakera, 0 = any value)", 0,
+            description="Only matters with «Claim the best roll when nothing meets the minimum» on.",
+        )
+
         # claim_rounds_thresholds
         self.rounds_frame = tk.LabelFrame(
             claim_frame.content,
@@ -3964,6 +3996,10 @@ class PresetEditor:
         if alt_mode is not None:
             value = str(data.get("main_claims_alt_rolls_mode", "") or "")
             alt_mode.set(value if value in ALT_ROLL_CLAIM_MODE_CHOICES else DEFAULTS["main_claims_alt_rolls_mode"])
+        best_when = widgets.get("claim_best_when")
+        if best_when is not None:
+            value = str(data.get("claim_best_when", "") or "")
+            best_when.set(value if value in CLAIM_BEST_WHEN_CHOICES else DEFAULTS["claim_best_when"])
         status = "Not sent yet."
         setup = self._fast_setup_record(data)
         round_number = data.get("fast_setup_round", 0)

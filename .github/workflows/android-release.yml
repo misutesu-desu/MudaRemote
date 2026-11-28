@@ -9,11 +9,11 @@ on:
       tag:
         description: "Existing release tag, or a unique tag for an Android pre-release"
         required: true
-        default: "v6.0.2"
+        default: "v6.0.3"
       title:
         description: "Release title"
         required: false
-        default: "MudaFork v6.0.2"
+        default: "MudaFork v6.0.3"
 
 permissions:
   contents: write
