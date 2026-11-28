@@ -107,6 +107,7 @@ class MainActivity : ComponentActivity() {
     private var isAutoScrollEnabled = true
     private var isLogsExpanded = false
     private var isUpdateInFlight = false
+    private lateinit var appUpdateUi: AppUpdateUi
     private var engineInfoInFlight = false
     private var lastEngineLabel = ""
 
@@ -140,6 +141,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         vault = SecretVault(this)
+        appUpdateUi = AppUpdateUi(this)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
@@ -147,6 +149,8 @@ class MainActivity : ComponentActivity() {
         loadSchema()
         restore()
         loadEngineVersion()
+        AppUpdater.cleanup(applicationContext)
+        appUpdateUi.autoCheck()
         if (savedInstanceState == null && intent?.action == KeepAlive.ACTION_RESUME_FROM_NOTICE) {
             intent?.action = null
             pendingNoticeResume = true  // started from onResume, when the app is in the foreground
@@ -155,6 +159,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        appUpdateUi.onResume()
         logHandler.post(logRefresh)
         if (lastEngineLabel.isNotEmpty()) {
             // Instant paint from cache; refresh in background afterwards.
@@ -201,6 +206,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        appUpdateUi.onPause()
         logHandler.removeCallbacks(logRefresh)
         searchHandler.removeCallbacks(searchDebounce)
         if (storageHealthy) {
@@ -799,6 +805,9 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { promptSelectVersion() }
         }
         card.addView(selectVersionBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 6) })
+
+        // The app's own updater (MudaFork releases only): switches and "Check now".
+        card.addView(appUpdateUi.buildSection(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 12) })
 
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
@@ -2328,8 +2337,6 @@ class MainActivity : ComponentActivity() {
             var badgeText = "● Fetch failed"
             var badgeColor = UiTheme.ACCENT_RED_BRIGHT
             var message = ""
-            var apkNoticeUrl = ""
-            var apkNoticeVer = ""
             try {
                 PythonRuntime.ensureStarted(applicationContext)
                 val prefs = getSharedPreferences("mudaremote_prefs", Context.MODE_PRIVATE)
@@ -2342,31 +2349,6 @@ class MainActivity : ComponentActivity() {
                 val resStatus = result.optString("status", "")
                 val version = result.optString("version", "")
                 val error = result.optString("error", "")
-                val apkObj = result.optJSONObject("apk_update")
-                if (apkObj != null) {
-                    val rawUrl = apkObj.optString("url", "")
-                    val rawVer = apkObj.optString("version", "")
-                    val rawCode = apkObj.optLong("version_code", 0L)
-                    var isEligible = false
-                    if (rawCode > 0L && rawUrl.isNotBlank()) {
-                        try {
-                            val pInfo = packageManager.getPackageInfo(packageName, 0)
-                            val installedCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                pInfo.longVersionCode
-                            } else {
-                                @Suppress("DEPRECATION")
-                                pInfo.versionCode.toLong()
-                            }
-                            isEligible = rawCode > installedCode
-                        } catch (_: Exception) {
-                            isEligible = false
-                        }
-                    }
-                    if (isEligible) {
-                        apkNoticeUrl = rawUrl
-                        apkNoticeVer = rawVer
-                    }
-                }
                 when (resStatus) {
                     "updated" -> {
                         badgeText = "● Updated v$version"; badgeColor = UiTheme.ACCENT_GREEN_BRIGHT
@@ -2392,16 +2374,10 @@ class MainActivity : ComponentActivity() {
             val finalBadge = badgeText
             val finalColor = badgeColor
             val finalMessage = message
-            val finalApkUrl = apkNoticeUrl
-            val finalApkVer = apkNoticeVer
             runOnUiThread {
                 updateStatusBadge(finalBadge, finalColor)
                 if (finalMessage.isNotBlank()) toast(finalMessage)
-                // Updates arrive as Python files; an APK is only downloaded on
-                // purpose from the version picker, so this is just a hint.
-                if (finalApkUrl.isNotBlank() && !isFinishing) {
-                    toast("Android APK v$finalApkVer is available under Switch Version.")
-                }
+                // The app (APK) itself is updated by AppUpdater, not here.
                 isUpdateInFlight = false
                 loadEngineVersion()
             }
@@ -2463,20 +2439,11 @@ class MainActivity : ComponentActivity() {
                     AlertDialog.Builder(this)
                         .setTitle(if (isBeta) "🎯 Switch Target Version (Beta)" else "🎯 Switch Target Version (Stable)")
                         .setItems(displayNames) { _, which ->
-                            val (selectedTag, _, apkUrl) = items[which]
+                            val (selectedTag, _, _) = items[which]
                             if (selectedTag.startsWith("android-")) {
-                                if (apkUrl.isNotBlank()) {
-                                    toast("Opening APK download for $selectedTag...")
-                                    try {
-                                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
-                                    } catch (e: Exception) {
-                                        toast("Could not open browser: ${e.message}")
-                                    }
-                                } else {
-                                    toast("No APK file was published for $selectedTag.")
-                                }
+                                toast("The app is updated from App updates in this card.")
                             } else {
-                                promptConfirmInstallVersion(selectedTag, apkUrl)
+                                promptConfirmInstallVersion(selectedTag)
                             }
                         }
                         .setNeutralButton("Custom Tag") { _, _ ->
@@ -2493,27 +2460,15 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun promptConfirmInstallVersion(tag: String, apkUrl: String = "") {
-        val apkNote = if (apkUrl.isNotBlank()) {
-            "\n\nThis release also has an Android APK. Download it only if you want the newer app itself; the bot code updates without it."
-        } else ""
-        val dialog = AlertDialog.Builder(this)
+    private fun promptConfirmInstallVersion(tag: String) {
+        AlertDialog.Builder(this)
             .setTitle("Confirm Version Switch")
-            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.$apkNote")
+            .setMessage("Switch Python runtime to $tag?\n\nYour presets, secrets, and configurations will be kept intact.")
             .setPositiveButton("Install") { _, _ ->
                 installSpecificPythonVersion(tag)
             }
             .setNegativeButton("Cancel", null)
-        if (apkUrl.isNotBlank()) {
-            dialog.setNeutralButton("Download APK") { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)))
-                } catch (e: Exception) {
-                    toast("Could not open browser: ${e.message}")
-                }
-            }
-        }
-        dialog.show()
+            .show()
     }
 
     private fun promptCustomVersionInput() {

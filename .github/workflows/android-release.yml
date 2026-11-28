@@ -76,7 +76,12 @@ jobs:
           SRC="android/app/build/outputs/apk/ux/app-ux.apk"
           test -s "$SRC" || { echo "APK missing at $SRC"; exit 1; }
           cp "$SRC" "MudaFork-${VERSION}.apk"
+          # The checksum file the in-app updater checks the download against ("<hex>  <name>").
+          sha256sum "MudaFork-${VERSION}.apk" > "MudaFork-${VERSION}.apk.sha256"
+          test -s "MudaFork-${VERSION}.apk.sha256"
+          cat "MudaFork-${VERSION}.apk.sha256"
           echo "APK_NAME=MudaFork-${VERSION}.apk" >> "$GITHUB_ENV"
+          echo "APK_SHA_NAME=MudaFork-${VERSION}.apk.sha256" >> "$GITHUB_ENV"
           echo "APK_VERSION=${VERSION}" >> "$GITHUB_ENV"
           ls -lh "MudaFork-${VERSION}.apk"
 
@@ -113,7 +118,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: MudaFork-${{ env.APK_VERSION }}.apk
-          path: ${{ env.APK_NAME }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_SHA_NAME }}
 
       - name: Publish Android asset
         env:
@@ -122,12 +129,11 @@ jobs:
           TITLE: ${{ github.event.inputs.title || format('MudaFork {0}', github.ref_name) }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$APK_NAME" --clobber
+            gh release upload "$TAG" "$APK_NAME" "$APK_SHA_NAME" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file release_notes.md
             echo "Updated asset on existing release $TAG"
           else
-            gh release create "$TAG" "$APK_NAME" \
-              --prerelease \
+            gh release create "$TAG" "$APK_NAME" "$APK_SHA_NAME" \
               --target "$GITHUB_SHA" \
               --title "$TITLE" \
               --notes-file release_notes.md
@@ -149,4 +155,7 @@ jobs:
           name = os.environ["APK_NAME"]
           assets = [a for a in release["assets"] if a["name"] == name]
           assert len(assets) == 1 and assets[0]["size"] == Path(name).stat().st_size
+          sha_name = os.environ["APK_SHA_NAME"]
+          sha_assets = [a for a in release["assets"] if a["name"] == sha_name]
+          assert len(sha_assets) == 1 and sha_assets[0]["size"] == Path(sha_name).stat().st_size
           PY
