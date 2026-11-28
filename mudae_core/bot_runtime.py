@@ -501,6 +501,8 @@ class BotInstance:
             give_status = getattr(giver, "status", None)
             harem_giver = getattr(self._client, "harem_giver", None) if self._client else None
             harem_status = getattr(harem_giver, "status", None)
+            perk_upgrader = getattr(self._client, "perk_upgrader", None) if self._client else None
+            perk10_status = getattr(perk_upgrader, "status", None)
             active = _redact_credentials(copy.deepcopy(reload.active_preset), self._known_secrets) if reload else {}
             desired = _redact_credentials(copy.deepcopy(reload.desired_preset), self._known_secrets) if reload else {}
 
@@ -518,6 +520,7 @@ class BotInstance:
                 "totals": totals,
                 "auto_give_status": give_status if isinstance(give_status, str) else None,
                 "harem_give_status": harem_status if isinstance(harem_status, str) else None,
+                "perk10_status": perk10_status if isinstance(perk10_status, str) else None,
                 "give_all_kakera_status": (getattr(giver, "manual_status", None)
                                            if isinstance(getattr(giver, "manual_status", None), str) else None),
             }

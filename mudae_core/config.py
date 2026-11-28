@@ -265,6 +265,8 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
     errors.extend(validate_give_settings(data))
     from .harem_give import validate_harem_give_settings
     errors.extend(validate_harem_give_settings(data))
+    from .perk_upgrade import validate_perk10_settings
+    errors.extend(validate_perk10_settings(data))
     webhook_url = str(data.get("webhook_url", "") or "").strip()
     if webhook_url and not re.match(r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/", webhook_url):
         errors.append("Remote Log Webhook URL must be a Discord HTTPS webhook URL.")

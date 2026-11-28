@@ -688,6 +688,10 @@ DEFAULTS = {
     "harem_give_pages_text": "",
     "harem_keep_first_pages": 0,
     "harem_give_daily_cap": 1,
+    "auto_perk10": False,
+    "perk10_min_spheres": 2000,
+    "perk10_max_characters": 100,
+    "perk10_daily_cap": 3,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -973,7 +977,7 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10")
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
     ("give_kakera_daily_cap", "At most N gives per day", 1),
@@ -984,6 +988,9 @@ MUDAFORK_NUMBER_KEYS = (
     ("harem_check_hours", "Check every N hours", 1),
     ("harem_keep_first_pages", "Keep the first N pages", 0),
     ("harem_give_daily_cap", "At most N harem gives per day", 1),
+    ("perk10_min_spheres", "Upgrade when spheres reach", 1000),
+    ("perk10_max_characters", "Most characters per upgrade (0 = no limit)", 0),
+    ("perk10_daily_cap", "At most N upgrades per day", 1),
 )
 HAREM_TRIGGER_CHOICES = {
     "pages": "Pages: when my harem reaches X pages ($mm)",
@@ -3359,6 +3366,29 @@ class PresetEditor:
             self.harem_fields_frame, "harem_give_daily_cap", "At most N harem gives per day", 1,
             description="A safety limit. A long page list given in several rounds counts as one give.",
         )
+        # Automatic perk-10 upgrade (main and side accounts alike)
+        perk_frame = CollapsibleLabelFrame(frame, text="Perk 10 Upgrade", start_open=False)
+        perk_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_checkbox(
+            perk_frame.content, "auto_perk10", "Upgrade perk 10 automatically",
+            description="After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
+                        "extra $tu), takes names from $mmz- and sends $oic name $ name $ … $ 10, then confirms "
+                        "(1,000 spheres per character). Off by default.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_min_spheres", "Upgrade when spheres reach", 2000,
+            description="The minimum sphere stock to start. It then upgrades floor(stock / 1,000) characters "
+                        "(10,000 → 10). At least 1,000.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_max_characters", "Most characters per upgrade (0 = no limit)", 100,
+            description="Caps one upgrade; 0 means as many as the spheres and the $mmz- names allow.",
+        )
+        self.add_number_field(
+            perk_frame.content, "perk10_daily_cap", "At most N upgrades per day", 3,
+            description="A safety limit. A long name list sent in several commands counts as one upgrade.",
+        )
+
         role_var = self.widgets.get("account_role")
         if role_var is not None:
             role_var.trace_add("write", lambda *_: self._refresh_give_fields_state())

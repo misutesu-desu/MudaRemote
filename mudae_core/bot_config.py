@@ -319,6 +319,13 @@ def configure_client(
     client.harem_give_pages_text = str(preset_data.get("harem_give_pages_text", HAREM_GIVE_DEFAULTS["harem_give_pages_text"]) or "").strip()
     client.harem_keep_first_pages = harem.keep_first
     client.harem_give_daily_cap = harem.daily_cap
+    # Automatic perk-10 upgrade (main and side accounts; see perk_upgrade.py).
+    from .perk_upgrade import Perk10Settings
+    perk10 = Perk10Settings.from_preset(preset_data)
+    client.auto_perk10 = perk10.enabled
+    client.perk10_min_spheres = perk10.min_spheres
+    client.perk10_max_characters = perk10.max_characters
+    client.perk10_daily_cap = perk10.daily_cap
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -718,7 +725,7 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
     "give_kakera_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
     "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages",
-    "harem_give_daily_cap",
+    "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",

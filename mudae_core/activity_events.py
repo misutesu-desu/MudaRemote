@@ -34,6 +34,9 @@ _GIVE_OK = re.compile(r"^Auto-give: gave (?P<ka>[\d,]+) kakera to the main")
 _GIVE_ALL = re.compile(r"^Give all kakera: (?P<what>gave (?P<ka>[\d,]+) kakera to the main|not given \u2014 .+?)\.?(?: Bot said: .*)?$")
 _HAREM_GIVE_OK = re.compile(r"^Harem give: gave (?P<pages>[\d,]+) harem page\(s\) to the main")
 _HAREM_GIVE_STOP = re.compile(r"^Harem give stopped: (?P<why>.+?)\. Next try in")
+# Automatic perk-10 upgrade (see perk_upgrade.PerkUpgrader._finish).
+_PERK10_OK = re.compile(r"^Perk 10: upgraded (?P<n>[\d,]+) character\(s\) for (?P<sp>[\d,]+) spheres")
+_PERK10_STOP = re.compile(r"^Perk 10 stopped: (?P<why>.+?)\. Next try in")
 
 
 def _number(text: Optional[str]) -> Optional[int]:
@@ -110,6 +113,14 @@ class ActivityClassifier:
         found = _HAREM_GIVE_STOP.match(text)
         if found:
             return [("harem_give_stopped", {"message": "Harem give stopped: {}".format(found.group("why")[:200])})]
+        found = _PERK10_OK.match(text)
+        if found:
+            return [("perk10_upgrade", {"characters": _number(found.group("n")), "spheres": _number(found.group("sp")),
+                                        "message": "Perk 10: upgraded {} character(s) for {} spheres".format(
+                                            found.group("n"), found.group("sp"))})]
+        found = _PERK10_STOP.match(text)
+        if found:
+            return [("perk10_stopped", {"message": "Perk 10 stopped: {}".format(found.group("why")[:200])})]
         found = _ROLLING.match(text)
         if found:
             rolls = int(found.group("n"))
