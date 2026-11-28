@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_bot.py",
-      "sha256": "ff5791e205de13e923047ca7ea1fc45eb282e5af6919a15c205cef7be49d048e"
+      "sha256": "81907183768fe0b4b05f5aa7881ea96e68c5238c02e9bef5291a1d40f3449b4c"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_preset_editor.py",
-      "sha256": "e5341111c541c4410fa48f9a42a79378c7f076445f1f7aacd6e1ef143e55493e"
+      "sha256": "8e0cf376504a8716fc6f616002df47253cc5541de26ff5f3ad080b0f47ff0838"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -63,7 +63,7 @@
     {
       "path": "mudae_core/harem_give.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/harem_give.py",
-      "sha256": "61ec7232260abad9c1cc7694677cc625d4ce09e0b9da6540c4fd66c997ad7a6e"
+      "sha256": "abba0d4c7d27ae4cf9e311a63f9445188b1d9eec6ac91a60fe6214888f89406c"
     },
     {
       "path": "mudae_core/perk_upgrade.py",
@@ -91,6 +91,11 @@
       "sha256": "8d5aea4c20a4fd5d7c2a924bb8c25c5cdee8dd11eb34fa1b0e493460a584e75e"
     },
     {
+      "path": "mudae_core/main_alt_coop.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/main_alt_coop.py",
+      "sha256": "36d637bba0b2e812827e0006f54a2e83b7da077bba3fdc14521714aea6638706"
+    },
+    {
       "path": "mudae_core/logs.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/logs.py",
       "sha256": "1f78e2c20f2ed7c4f87327d06cd6bf5e9b3b9e3c0c080d839a37bdc4dbde7df8"
@@ -103,7 +108,7 @@
     {
       "path": "mudae_core/runtime.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/runtime.py",
-      "sha256": "6ff71ce2e58c6a47b9e8508e2d67adbb65a74bf2646f694f5b5ff592583a13a5"
+      "sha256": "30ce34dde46f25c621eef42d596db761333ab6ff40fe0d3011f43fade3c4bc30"
     },
     {
       "path": "mudae_core/secrets.py",
@@ -143,7 +148,7 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.1/mudae_core/bot_config.py",
-      "sha256": "2d7fa2f3106b9c737aa784b31e43721bbb754e4389e95a82b081af1296d90978"
+      "sha256": "1b48850f6c97bcc4ed522347e665c58381a53ba6efea5bb1acac3bc9097fc0f9"
     },
     {
       "path": "mudae_core/activity_events.py",

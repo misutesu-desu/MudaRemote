@@ -421,6 +421,12 @@ SIDE_LEFTOVER_DECISION_WAIT_SECONDS = 8.0
 # «Main claims good rolls made by its alts» (pure logic in mudae_core.alt_roll_claim).
 from mudae_core import alt_roll_claim as _alt_claim  # noqa: E402
 _alt_roll_board = _alt_claim.AltRollBoard()
+# 6.0.2: the main keeps rolling while an alt can claim, accounts take each
+# other's kakera, key mode rolls independently (pure logic in mudae_core.main_alt_coop).
+from mudae_core import main_alt_coop as _coop  # noqa: E402
+# One decision per kakera button offered between the accounts of a profile
+# (keys are (message id, row, column, emoji)); same board as the roll hand-off.
+_kakera_share_board = _alt_claim.AltRollBoard()
 
 
 def _cached_own_message(client, message_id):
@@ -451,7 +457,7 @@ from mudae_core.kakera_give import BotReply, GiveSettings, KakeraGiver  # noqa: 
 from mudae_core.totals import TotalsBook, account_key, parse_sphere_game_result  # noqa: E402
 # Harem list reader and auto-give harem pages to the main (pure logic in
 # mudae_core.harem_list / harem_give; this file only wires it).
-from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_receiving  # noqa: E402
+from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_confirming, main_receiving  # noqa: E402
 # Automatic perk-10 upgrade ($mmz- names → $oic … $ 10; pure logic in mudae_core.perk_upgrade).
 from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending  # noqa: E402
 # Auto-give spheres to the main ($givesp <@main> AMOUNT then Y; pure logic in mudae_core.sphere_give).
@@ -489,6 +495,7 @@ class _AccountLink:
         self.key = "{}#{}".format(source_name, id(client))
         self.roll_for_main = None
         self.judge_alt_roll = None
+        self.judge_kakera_share = None
 
     @property
     def profile_id(self):
@@ -603,8 +610,11 @@ class _AccountLink:
 
     # «Main claims good rolls made by its alts»: cheap reads by the alt, then
     # the judge runs on this (main) account's own loop.
-    def alt_roll_precheck(self):
-        """Why this main cannot take an alt's roll now (quick look), or None."""
+    def alt_roll_precheck(self, allow_restore=False):
+        """Why this account cannot take another account's roll now (quick look), or None.
+
+        ``allow_restore``: a roll of the main handed to an alt under «Main keeps
+        rolling while an alt can claim» may be taken with the alt's $rt."""
         client = self.client
         if self.judge_alt_roll is None or not self.is_ready():
             return "is not connected"
@@ -612,13 +622,73 @@ class _AccountLink:
             return "is paused"
         if key_limit_blocks(client, AREA_OTHER):
             return "is paused at the key limit"
-        if not getattr(client, "claim_right_available", False):
+        if not getattr(client, "claim_right_available", False) and not (
+                allow_restore and self.handoff_capacity() == _coop.CAPACITY_RT):
             return "has no claim now"
         if getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None:
             return "is busy claiming"
-        if getattr(client, "is_actively_rolling", False):
+        if (getattr(client, "is_actively_rolling", False)
+                and _coop.rolling_blocks_taking(getattr(client, "key_mode", False))):
             return "is rolling its own batch"
         return None
+
+    def handoff_capacity(self, channel_id=None):
+        """«claim», «rt» or None: can this alt take a roll of its main now?
+
+        Read from this account's live state only (never a $tu)."""
+        client = self.client
+        return _coop.alt_capacity(
+            ready=self.is_ready(),
+            paused=bool(getattr(client, "is_paused", False)),
+            key_limited=key_limit_blocks(client, AREA_OTHER),
+            same_channel=channel_id is None or self.channel_id == channel_id,
+            can_be_asked=self.judge_alt_roll is not None and bool(getattr(client, "main_rolls_while_alt_can_claim", False)),
+            busy_for_main=_side_roll_coordinator.handoff_for_side(self.key) is not None,
+            claim_available=getattr(client, "claim_right_available", None),
+            rt_available=getattr(client, "rt_available", None),
+            auto_rt_enabled=bool(getattr(client, "auto_rt_enabled", False)),
+            rt_only_self_rolls=bool(getattr(client, "rt_only_self_rolls", False)),
+        )
+
+    def kakera_share_precheck(self, channel_id):
+        """Why this account is not asked about a sibling's kakera now (quick look), or None."""
+        client = self.client
+        if self.judge_kakera_share is None or not self.is_ready():
+            return "is not connected"
+        if not getattr(client, "accounts_share_kakera_reacts", False):
+            return "has «take each other's kakera» off"
+        if getattr(client, "is_paused", False):
+            return "is paused"
+        if key_limit_blocks(client, AREA_OTHER):
+            return "is paused at the key limit"
+        if self.channel_id != channel_id:
+            return "does not roll in this channel"
+        return None
+
+    def _run_on_own_loop(self, coroutine):
+        """Schedule a coroutine on this account's own loop (False = could not)."""
+        try:
+            own_loop = self.client.loop
+        except Exception:
+            own_loop = None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if own_loop is None or own_loop is current_loop or not own_loop.is_running():
+            if current_loop is None:
+                coroutine.close()
+                return False
+            current_loop.create_task(coroutine)
+            return True
+        asyncio.run_coroutine_threadsafe(coroutine, own_loop)
+        return True
+
+    def start_kakera_share_judge(self, board_key, message_id, channel_id, position, emoji_name, roller_label):
+        judge = self.judge_kakera_share
+        if judge is None:
+            return False
+        return self._run_on_own_loop(judge(board_key, message_id, channel_id, position, emoji_name, roller_label))
 
     def start_alt_roll_judge(self, message_id, channel_id, alt_label, card, trusted_why=None):
         """Schedule the judge on this account's loop; the board carries the answer.
@@ -3364,6 +3434,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
             try:
                 last_message = None
+                # Key mode: the other accounts of this profile roll on their own; their
+                # messages never make this account wait for a quiet channel.
+                siblings = sibling_user_ids() if before_roll and getattr(client, "key_mode", False) else set()
                 async for recent_message in channel.history(limit=15 if before_roll else 1):
                     if before_roll:
                         author_id = getattr(getattr(recent_message, "author", None), "id", None)
@@ -3372,6 +3445,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                             continue
                         if author_id == TARGET_BOT_ID and is_tu_response_for_self(recent_message):
                             continue
+                        if siblings:
+                            interaction_user = getattr(getattr(recent_message, "interaction", None), "user", None)
+                            if _coop.quiet_wait_ignores(True, author_id=author_id,
+                                                        interaction_user_id=getattr(interaction_user, "id", None),
+                                                        sibling_ids=siblings):
+                                continue
                     last_message = recent_message
                     break
                 if last_message is None:
@@ -4086,7 +4165,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         decision = daily_rolls_decision(
             enabled=client.auto_rolls_enabled,
             only_claim_hour=client.auto_rolls_only_claim_hour,
-            claim_right_available=client.claim_right_available,
+            # «Main keeps rolling while an alt can claim»: an alt's claim/$rt counts here.
+            claim_right_available=bool(client.claim_right_available or alt_claim_counts()),
             key_mode=client.key_mode,
             auto_rolls_in_key_mode=client.auto_rolls_in_key_mode,
             next_claim_reset_at_utc=client.next_claim_reset_at_utc,
@@ -4326,7 +4406,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     def planned_saved_rolls():
         """Saved rolls Auto $us can still pull during this hour's dump."""
         if (not client.auto_us_enabled or client.us_failed_this_cycle
-                or (client.auto_us_stop_on_claim and not client.claim_right_available)):
+                or (client.auto_us_stop_on_claim and not client.claim_right_available
+                    and not alt_claim_counts())):
             return 0
         if client.auto_us_limit > 0:
             return max(0, client.auto_us_limit - client.us_pulled_this_cycle)
@@ -5019,7 +5100,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         power = get_current_dk_power()
         pending_us = (client.auto_us_enabled and not client._us_in_flight
                       and time.monotonic() >= client._us_retry_after
-                      and not (client.auto_us_stop_on_claim and not client.claim_right_available)
+                      and not (client.auto_us_stop_on_claim and not client.claim_right_available
+                               and not alt_claim_counts())
                       and not (client.auto_us_limit > 0 and client.us_pulled_this_cycle >= client.auto_us_limit)
                       and not client.us_failed_this_cycle)
         # process_mk_rolls stops at a claim interrupt; counting $mk as ready
@@ -5982,6 +6064,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 pending_us=pending_us,
                 claim_reset_minutes=claim_reset_minutes,
                 roll_reset_minutes=roll_reset_minutes,
+                # «Main keeps rolling while an alt can claim» (read only when the main's own state says no).
+                alt_can_claim=bool(not (can_claim or client.key_mode or client.rt_available) and alt_claim_counts()),
             )
 
             if (
@@ -6551,6 +6635,25 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 return await active_delay(1.0 + random.uniform(0.1, 0.4))
             return False
 
+    def receiver_holds_rolls():
+        """Does an alt's harem give hold this (main) account's own rolls now?
+
+        Key mode: only while the main answers «y»; otherwise for the whole give."""
+        key = client._account_link.key
+        return _coop.receiver_holds_rolls(client.key_mode, receiving=main_receiving(key),
+                                          confirming=main_confirming(key))
+
+    async def hold_while_answering_give():
+        """Key mode, inside a batch: wait (capped) while the main answers an alt's «y»."""
+        if not client.key_mode:
+            return True
+        waited = 0.0
+        while main_confirming(client._account_link.key) and waited < _coop.CONFIRM_HOLD_MAX_SECONDS:
+            if not await active_delay(0.2):
+                return False
+            waited += 0.2
+        return True
+
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
         # Say once per change why this account does not roll now (never silent).
@@ -6558,7 +6661,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             paused=client.is_paused, key_limit_hit=client.key_limit_hit, maintenance=is_maintenance_active(),
             rolling_for_main=_side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None,
             giving_kakera=client.kakera_giver.active, giving_harem=client.harem_giver.active,
-            main_receiving_harem=main_receiving(client._account_link.key),
+            main_receiving_harem=receiver_holds_rolls(),
             giving_spheres=client.sphere_giver.active, upgrading_perk10=client.perk_upgrader.active,
         ))
         if idle_line:
@@ -6575,8 +6678,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log("Own roll batch deferred: a kakera give to the main is in progress.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="kakera-give-busy")
             return
-        if client.harem_giver.active or main_receiving(client._account_link.key):
-            # A $give (harem pages) procedure is open on this account or its main answers one.
+        if client.harem_giver.active or receiver_holds_rolls():
+            # A $give (harem pages) procedure is open on this account or its main answers one
+            # (key mode: only while the main answers «y»).
             BotLogger.log("Own roll batch deferred: a harem give is in progress.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="harem-give-busy")
             return
@@ -6792,7 +6896,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         and not is_maintenance_active()
                     ):
                         await asyncio.sleep(0.05)
-                    if can_resume_claim_interrupted_rolls(client):
+                    if can_resume_claim_interrupted_rolls(client, alt_can_claim=bool(
+                            not (client.key_mode or client.claim_right_available or client.rt_available)
+                            and alt_claim_counts())):
                         client.interrupt_rolling = False
                         client._roll_interrupt_reason = None
                         BotLogger.log(
@@ -6815,6 +6921,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         break
                 mark_status_dirty(client, {"rolls"}, reason="rolling-interrupted")
                 client._roll_interrupt_reason = None
+                break
+            if not await hold_while_answering_give():
+                mark_status_dirty(client, {"rolls"}, reason="give-confirm-hold-interrupted")
                 break
             try:
                 client._last_automation_roll_command_token = None
@@ -7049,6 +7158,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     except Exception as e:
                         BotLogger.log(f"Kakera click error: {e}", preset_name, "ERROR")
 
+            # What this account left on its queued rolls may go to another account of the profile.
+            for msg in unique_messages_by_id(client.collected_kakera_rolls):
+                schedule_kakera_share(msg)
             client.collected_kakera_rolls.clear()
 
         if is_timing_mode_active:
@@ -7654,7 +7766,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                     own_rolls=True):
         claimed = await handle_collected_mudae_messages(
             client, channel, mudae_messages, ignore_limit_param, key_mode_only_kakera_param)
-        if own_rolls and getattr(client, "alts_claim_main_rolls", False):
+        if own_rolls and alt_handoff_on():
             # «Alts claim good rolls made by the main»: what the main passed on.
             try:
                 await offer_leftover_rolls_to_alts(mudae_messages)
@@ -7933,6 +8045,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 or getattr(client, "account_index", 1) != 1
                 or not getattr(client, "side_rolls_for_main", False)):
             return
+        if not _coop.side_turns_allowed(client.key_mode):
+            # Key mode: every account rolls on its own schedule; nobody takes turns
+            # (the main still takes good alt rolls through «Main claims good rolls…»).
+            note_key_mode_independent()
+            return
         if (not client.claim_right_available or client.is_paused or key_limit_blocks(client, AREA_OTHER)
                 or getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None
                 or is_key_mode_kakera_only() or is_maintenance_active()):
@@ -7993,6 +8110,79 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)):
                 return
             await claim_character(client, message.channel, message, is_kakera=True)
+        schedule_kakera_share(message)  # what this account left
+
+    # ------------------------------------------------------------------
+    # 6.0.2: main & alts together (mudae_core.main_alt_coop)
+    # ------------------------------------------------------------------
+    client._alt_capacity_note = _coop.ChangeNote(initial=None)
+    client._key_mode_note = _coop.ChangeNote(initial=False)
+
+    def alt_handoff_on():
+        """«Alts claim good rolls made by the main», also implied by «Main keeps rolling while an alt can claim»."""
+        return _coop.handoff_enabled(getattr(client, "alts_claim_main_rolls", False),
+                                     getattr(client, "main_rolls_while_alt_can_claim", False))
+
+    def alt_claim_capacity(channel_id=None):
+        """Main: ``(label, kind)`` of a running alt of this profile that could take its roll now, or None.
+
+        Live state of each alt only (never a $tu); unknown = not available."""
+        if not getattr(client, "main_rolls_while_alt_can_claim", False):
+            return None
+        if side_kind_for(client) is not None or getattr(client, "account_index", 1) != 1:
+            return None
+        link = getattr(client, "_account_link", None)
+        if link is None:
+            return None
+        if channel_id is None:
+            channel_id = client.target_channel_id
+        found = []
+        for side in _side_roll_coordinator.sides_for(link):
+            if getattr(side, "side_kind", None) != "alt":
+                continue
+            try:
+                kind = side.handoff_capacity(channel_id)
+            except Exception:
+                kind = None
+            found.append((account_label_for(side.client) or "an alt", kind))
+        return _coop.first_capacity(found)
+
+    def alt_claim_counts():
+        """Main: with option 1 on, does a running alt's claim/$rt count as claim capacity now?
+
+        Says it once per change: «main: rolling on — alt 1 has a claim»."""
+        if not getattr(client, "main_rolls_while_alt_can_claim", False):
+            return False
+        alt = alt_claim_capacity()
+        if client._alt_capacity_note.update(alt):
+            BotLogger.log(_coop.capacity_line(alt), preset_name, "INFO", client)
+        return alt is not None
+
+    def note_key_mode_independent():
+        """Say once (per change) that key mode lets every account roll on its own."""
+        on = _coop.independent_rolling(client.key_mode)
+        if client._key_mode_note.update(on) and on:
+            BotLogger.log(_coop.KEY_MODE_LINE, preset_name, "INFO", client)
+        return on
+
+    def sibling_links():
+        """The other running accounts of this profile: the main first, then the alts in order."""
+        link = getattr(client, "_account_link", None)
+        if link is None:
+            return []
+        others = [handle for handle in _side_roll_coordinator.accounts()
+                  if handle is not link and handle.key != link.key and handle.profile_id == link.profile_id]
+        order = _coop.share_order([(handle.key, handle.account_index) for handle in others], link.key)
+        by_key = {handle.key: handle for handle in others}
+        return [by_key[key] for key in order if key in by_key]
+
+    def sibling_user_ids():
+        ids = set()
+        for handle in sibling_links():
+            user_id = getattr(handle, "user_id", None)
+            if user_id is not None:
+                ids.add(user_id)
+        return ids
 
     # ------------------------------------------------------------------
     # «Main claims good rolls made by its alts» (mudae_core.alt_roll_claim)
@@ -8037,6 +8227,24 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         )
         return bool(is_lurking)
 
+    async def alt_restore_for_main_roll(message, k_val, trusted_why):
+        """Alt: may it spend its own $rt on this roll the main handed to it?"""
+        if not trusted_why or not getattr(client, "main_rolls_while_alt_can_claim", False):
+            return False
+        if side_kind_for(client) != "alt" or client.claim_right_available:
+            return False
+        own_wanted, own_why, _ = await roll_interest_for_this_account(message)
+        return _coop.alt_may_restore(
+            option_on=True, from_main=True,
+            claim_available=client.claim_right_available,
+            rt_available=client.rt_available,
+            auto_rt_enabled=client.auto_rt_enabled,
+            rt_only_self_rolls=client.rt_only_self_rolls,
+            kakera=k_val, restore_min_kakera=restore_min_kakera(),
+            own_wish=bool(own_wanted and not _alt_claim.is_value_reason(own_why)),
+            restore_for_wishlist=client.rt_ignore_min_kakera_for_wishlist,
+        ) and not rt_command_in_flight()
+
     async def judge_alt_roll_for_main(message_id, channel_id, alt_label, card, trusted_why=None):
         """Taker: judge a roll another account of this profile offered; claim it if good.
 
@@ -8079,16 +8287,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 BotLogger.log(_alt_claim.not_taken_line(card, alt_label, why), preset_name, "DEBUG", client)
                 return
             refresh_predicted_claim_and_rt()
+            # «Main keeps rolling while an alt can claim»: a roll of the main may be
+            # taken with this alt's $rt when its claim is spent (its own $rt rules).
+            use_restore = await alt_restore_for_main_roll(message, k_val, trusted_why)
             blocker = _alt_claim.claim_blocker(
                 ready=True,
                 paused=client.is_paused,
                 key_limited=key_limit_blocks(client, AREA_OTHER),
                 maintenance=is_maintenance_active(),
                 inactive_hour=is_inactive_hour(),
-                claim_available=client.claim_right_available,
+                claim_available=client.claim_right_available or use_restore,
                 key_mode_kakera_only=is_key_mode_kakera_only(),
                 claiming=bool(getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None),
-                rolling=bool(getattr(client, "is_actively_rolling", False) or getattr(client, "collected_rolls", None)
+                # Key mode: both accounts always roll, so a running batch does not stop a hand-off.
+                rolling=bool((getattr(client, "is_actively_rolling", False)
+                              and _coop.rolling_blocks_taking(client.key_mode))
+                             or getattr(client, "collected_rolls", None)
                              or getattr(client, "_claim_reset_rolls_pending", False)),
                 judging_sides=_side_roll_coordinator.handoff_for_main(my_key) is not None,
                 lurking=main_is_lurking(),
@@ -8107,13 +8321,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if not await snipe_delay_wait(client.snipe_delay):
                 reason = "paused before claiming"
                 return
-            if not client.claim_right_available:
+            if not client.claim_right_available and not (use_restore and bot_may_use_rt()):
                 reason = "the claim is gone"
                 return
-            # Never $rt here: it would send a command the player did not ask for.
-            claimed = bool(await claim_character(
-                client, message.channel, message, is_snipe=True, kakera_value=k_val, allow_rt=False,
-            ))
+            if use_restore and not client.claim_right_available:
+                # The one hand-off that may spend $rt: the existing $rt-then-claim path
+                # (it re-checks this alt's $rt minimum and «$rt only on own rolls»).
+                claimed = bool(await claim_character(
+                    client, message.channel, message, is_snipe=True, kakera_value=k_val, allow_rt=True,
+                ))
+                if claimed:
+                    BotLogger.log(_coop.rt_taken_line(card), preset_name, "CLAIM", client)
+            else:
+                # Never $rt here: it would send a command the player did not ask for.
+                claimed = bool(await claim_character(
+                    client, message.channel, message, is_snipe=True, kakera_value=k_val, allow_rt=False,
+                ))
             if not claimed:
                 reason = "the claim could not be sent"
         except asyncio.CancelledError:
@@ -8154,7 +8377,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         for side in _side_roll_coordinator.sides_for(link):
             if getattr(side, "side_kind", None) != "alt" or side.channel_id != channel_id:
                 continue
-            reason = side.alt_roll_precheck()
+            reason = side.alt_roll_precheck(allow_restore=getattr(client, "main_rolls_while_alt_can_claim", False))
             if reason:
                 BotLogger.log(f"{account_label_for(side.client) or 'alt'} cannot take this roll: {reason}.", preset_name, "DEBUG", client)
                 continue
@@ -8196,7 +8419,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def main_roll_verdict_for_alts(message):
         """Main: ``(card, why)`` when its own good roll goes to the alts, else None."""
-        if not getattr(client, "alts_claim_main_rolls", False) or side_kind_for(client) is not None:
+        if not alt_handoff_on() or side_kind_for(client) is not None:
             return None
         if getattr(client, "account_index", 1) != 1:
             return None
@@ -8226,7 +8449,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def offer_own_roll_to_alts(message, roll_origin):
         """Main: its own good roll that it will not or cannot claim goes to an alt."""
-        if not getattr(client, "alts_claim_main_rolls", False):
+        if not alt_handoff_on():
             return
         owner_id, owner_name = roll_origin[0], roll_origin[1]
         own_names = {
@@ -8244,7 +8467,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def offer_leftover_rolls_to_alts(messages):
         """Main: after its own batch, good rolls it passed on (its claim is spent) go to the alts."""
-        if not getattr(client, "alts_claim_main_rolls", False) or side_kind_for(client) is not None:
+        if not alt_handoff_on() or side_kind_for(client) is not None:
             return
         items = []
         for message in list(messages or ()):
@@ -8271,10 +8494,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             client.rt_ignore_min_kakera_for_wishlist,
         ))
 
-    async def offer_own_roll_to_main(message, roll_origin):
+    async def offer_own_roll_to_main(message, roll_origin, background=False):
         """Alt: offer its own roll to the main; True when the alt must leave it.
 
         Returns None when nothing was offered (the alt goes on exactly as before).
+        ``background`` (key mode): the offer is opened here, before this
+        account's own claim paths run; the wait for the main runs beside them
+        and None is returned at once.
         """
         if not getattr(client, "main_claims_alt_rolls", False) or side_kind_for(client) != "alt":
             return None
@@ -8318,6 +8544,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if not started:
             _alt_roll_board.alt_give_up(message.id, link.key)
             return None
+        if background:
+            client.loop.create_task(finish_offer_to_main_beside(message, card, alt_wants))
+            return None
+        return await finish_offer_to_main(message, card)
+
+    async def finish_offer_to_main(message, card):
+        """Alt: wait for the main's answer on an open offer; True when the alt must leave the card."""
+        link = client._account_link
         state = await _alt_roll_board.wait_for_main(message.id, link.key, sleep=active_delay)
         if state in (_alt_claim.CLAIMED, _alt_claim.TAKING):
             client.processed_claim_messages.add(message.id)
@@ -8331,6 +8565,178 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         elif state == _alt_claim.FAILED:
             BotLogger.log(f"the main could not claim \u2068{card}\u2069; following the alt's own rules.", preset_name, "INFO", client)
         return False
+
+    async def finish_offer_to_main_beside(message, card, alt_wanted):
+        """Alt, key mode: the wait for the main runs beside the alt's own handling.
+
+        When the main passes, the alt claims the card by its own rules afterwards
+        (its claim paths skipped the card while the offer was open)."""
+        try:
+            left = await finish_offer_to_main(message, card)
+            if left is False and alt_wanted and not _claim_coordinator.is_reserved(message.id):
+                fresh = _cached_own_message(client, message.id) or message
+                await handle_collected_mudae_messages(client, message.channel, [fresh], False, False)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Alt hand-off error: {e}", preset_name, "ERROR", client)
+
+    # ------------------------------------------------------------------
+    # «Main and alts take each other's kakera» (mudae_core.main_alt_coop)
+    # ------------------------------------------------------------------
+    def roll_owner_is_sibling(owner_id):
+        """Was this roll made by another running account of this profile?"""
+        return owner_id is not None and owner_id in sibling_user_ids()
+
+    def schedule_kakera_share(message):
+        """Roller: after its own kakera decision on its own roll, offer what it left."""
+        if not getattr(client, "accounts_share_kakera_reacts", False):
+            return
+        if not getattr(message, "components", None) or not getattr(message, "embeds", None):
+            return
+        client.loop.create_task(share_left_kakera(message))
+
+    async def share_left_kakera(message):
+        """Roller: each kakera button it did not take goes to ONE other account of the profile."""
+        try:
+            link = getattr(client, "_account_link", None)
+            if link is None:
+                return
+            fresh = _cached_own_message(client, message.id) or message
+            buttons = []
+            for row_index, component in enumerate(getattr(fresh, "components", None) or ()):
+                for child_index, button in enumerate(getattr(component, "children", ()) or ()):
+                    name = str(getattr(getattr(button, "emoji", None), "name", "") or "")
+                    buttons.append(((row_index, child_index), name, bool(getattr(button, "disabled", False)),
+                                    is_character_sphere_emoji(name)))
+            ledger = client.kakera_interaction_ledger
+            left = _coop.left_kakera_buttons(
+                buttons, lambda position, name: ledger.is_claimed(kakera_interaction_key(message.id, position, name)))
+            if not left:
+                return
+            roller_label = _alt_claim.roller_label_for(account_label_for(client) or "main")
+            embed = fresh.embeds[0] if getattr(fresh, "embeds", None) else None
+            character = ((embed.author.name if embed is not None and embed.author else "") or "a roll").strip()
+            for position, name in left:
+                takers = []
+                for handle in sibling_links():
+                    reason = handle.kakera_share_precheck(message.channel.id)
+                    if reason:
+                        BotLogger.log(f"{account_label_for(handle.client) or 'account'} is not asked about {name}: {reason}.",
+                                      preset_name, "DEBUG", client)
+                        continue
+                    takers.append(handle)
+                if not takers:
+                    continue
+                by_key = {handle.key: handle for handle in takers}
+                board_key = (message.id, position[0], position[1], name)
+                state, taker_key = await _kakera_share_board.offer_in_turn(
+                    board_key, offerer_key=link.key, offerer_label=roller_label, card=name,
+                    takers=[handle.key for handle in takers],
+                    start=lambda key, b=board_key, p=position, n=name: by_key[key].start_kakera_share_judge(
+                        b, message.id, message.channel.id, p, n, roller_label),
+                    sleep=active_delay,
+                )
+                taker = by_key.get(taker_key)
+                taker_label = (account_label_for(taker.client) if taker is not None else "") or "another account"
+                if state in (_alt_claim.CLAIMED, _alt_claim.TAKING):
+                    BotLogger.log(f"left kakera {name} on ⁨{character}⁩ for {taker_label}", preset_name, "DEBUG", client)
+                elif state == _alt_claim.GAVE_UP:
+                    BotLogger.log(f"{taker_label} did not answer in time about kakera {name}; nobody else tries.",
+                                  preset_name, "DEBUG", client)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Kakera share error: {e}", preset_name, "ERROR", client)
+
+    async def judge_kakera_share(board_key, message_id, channel_id, position, emoji_name, roller_label):
+        """Taker: take one kakera button a sibling left, by THIS account's own lists and power.
+
+        Runs on this account's loop. Never sends $dk for it (its power must
+        already allow the click); clicks through the normal kakera helper after
+        its kakera reaction delay."""
+        board = _kakera_share_board
+        my_key = _account_link_key(client)
+        committed = False
+        clicked = False
+        reason = ""
+        try:
+            message = None
+            waited = 0.0
+            while True:
+                message = _cached_own_message(client, message_id)
+                if message is not None or waited >= _alt_claim.MESSAGE_LOOKUP_SECONDS:
+                    break
+                await asyncio.sleep(0.1)
+                waited += 0.1
+            if message is None or not getattr(message, "embeds", None):
+                reason = "this account did not see the roll"
+                return
+            button = None
+            if message is not None:
+                button = find_refreshed_component_button(
+                    getattr(message, "components", None), custom_id=None, position=position, emoji_name=emoji_name)
+            interaction_key = kakera_interaction_key(message_id, position, emoji_name)
+            details = None
+            power_known = power_ok = True
+            if message is not None and getattr(message, "embeds", None) and button is not None:
+                details = kakera_click_details(message, button, is_snipe=True)
+                if details is not None and details[0] > 0:
+                    power_known = get_current_dk_power() is not None
+                    power_ok = bool(power_known and await prepare_kakera_click(
+                        message, button, is_snipe=True, allow_refill=False) is not None)
+            blocker = _coop.kakera_share_blocker(
+                ready=True,
+                option_on=bool(getattr(client, "accounts_share_kakera_reacts", False)),
+                paused=client.is_paused,
+                key_limited=key_limit_blocks(client, AREA_OTHER),
+                maintenance=is_maintenance_active(),
+                inactive_hour=is_inactive_hour(),
+                same_channel=message is not None and getattr(getattr(message, "channel", None), "id", None) == client.target_channel_id,
+                button_found=button is not None and not getattr(button, "disabled", False),
+                eligible=details is not None,
+                already_has=client.kakera_interaction_ledger.is_claimed(interaction_key),
+                power_known=power_known,
+                power_ok=power_ok,
+            )
+            if blocker is not None:
+                board.main_pass(board_key, my_key, blocker)
+                BotLogger.log(f"not taking kakera {emoji_name} on {_alt_claim.roller_label_for(roller_label)}'s roll: {blocker}",
+                              preset_name, "DEBUG", client)
+                return
+            if not board.main_commit(board_key, my_key):
+                return  # the roller stopped waiting
+            committed = True
+            remember_kakera_snipe_event(message_id)
+            delay = client.kakera_reaction_snipe_delay_value
+            if delay > 0 and not await active_delay(delay + random.uniform(0.05, 0.25)):
+                reason = "paused before clicking"
+                return
+            embed = message.embeds[0]
+            character = (embed.author.name if embed.author else "Unknown").strip()
+            async with get_kakera_action_lock():
+                clicked = bool(await click_kakera_with_confirmation(
+                    message.channel, message, button, custom_id=getattr(button, "custom_id", None),
+                    position=position, emoji_name=emoji_name, character_name=character, is_snipe=True,
+                ))
+            if clicked:
+                client._last_kakera_click_ts = time.time()
+                BotLogger.log(_coop.kakera_taken_line(emoji_name, roller_label), preset_name, "KAKERA", client)
+            else:
+                reason = "the click did not go through"
+        except asyncio.CancelledError:
+            reason = reason or "stopped"
+            raise
+        except Exception as e:
+            reason = reason or "error: {}".format(e)
+            BotLogger.log(f"Kakera share error: {e}", preset_name, "ERROR", client)
+        finally:
+            if committed:
+                board.main_finish(board_key, my_key, clicked, reason)
+            else:
+                board.main_pass(board_key, my_key, reason or "not judged")
+
+    client._account_link.judge_kakera_share = judge_kakera_share
 
     # ------------------------------------------------------------------
     # Totals ($tu / game results), Fast setup, auto-give kakera to the main
@@ -8486,8 +8892,25 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"Give all kakera error: {e}", preset_name, "ERROR")
 
     def any_procedure_busy_reason():
-        """Busy for a give partner: rolling/claiming/$tu/games, or a give procedure of its own."""
-        reason = auto_give_busy_reason()
+        """Busy for a give partner: rolling/claiming/$tu/games, or a give procedure of its own.
+
+        Key mode: the main's own rolling does not count (its rolls hold only
+        while it answers «y», see receiver_holds_rolls)."""
+        if client.key_mode:
+            reason = _coop.partner_busy_reason(
+                True,
+                paused=bool(client.is_paused or key_limit_blocks(client, AREA_OTHER)),
+                maintenance=is_maintenance_active(),
+                inactive=is_inactive_hour(),
+                loot=client.loot_automation is not None,
+                claiming=bool(getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None),
+                rolling=claim_critical_work_pending(),
+                reading_tu=bool(client.tu_lock is not None and client.tu_lock.locked()),
+                sphere_game=bool(client._sphere_game_lock is not None and client._sphere_game_lock.locked()),
+                rolling_for_main=_side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None,
+            )
+        else:
+            reason = auto_give_busy_reason()
         if reason:
             return reason
         if client.kakera_giver.active:
@@ -9991,8 +10414,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if character_roll_origin is not None and getattr(client, "main_claims_alt_rolls", False):
             # Kakera on the roll is still collected below; a card left to the
             # main is marked processed/completed so no claim path takes it.
-            await offer_own_roll_to_main(message, character_roll_origin)
-        if character_roll_origin is not None and getattr(client, "alts_claim_main_rolls", False):
+            # Key mode: the offer opens now, but the main decides beside this account's
+            # own handling (the board keeps this account's claim paths off the card).
+            if _coop.handoff_wait_inline(client.key_mode):
+                await offer_own_roll_to_main(message, character_roll_origin)
+            else:
+                await offer_own_roll_to_main(message, character_roll_origin, background=True)
+        if character_roll_origin is not None and alt_handoff_on():
             await offer_own_roll_to_alts(message, character_roll_origin)
 
         sync_main_id = (
@@ -10290,12 +10718,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         d_min, d_max = client.reactive_kakera_delay_range
                         if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                         await claim_character(client, message.channel, message, is_kakera=True)
+                        schedule_kakera_share(message)  # what this account left
                     else:
                         if has_purple:
                             d_min, d_max = client.reactive_kakera_delay_range
                             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                             await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
                         queue_collected_kakera_roll(message)
+                else:
+                    # Nothing this account may click: another account of the profile may.
+                    schedule_kakera_share(message)
             else:
                 refresh_predicted_claim_and_rt()
                 if not client.claim_right_available and not client.rt_available:
@@ -10371,12 +10803,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                         d_min, d_max = client.reactive_kakera_delay_range
                         if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                         await claim_character(client, message.channel, message, is_kakera=True)
+                        schedule_kakera_share(message)  # what this account left
                     else:
                         if has_purple:
                             d_min, d_max = client.reactive_kakera_delay_range
                             if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)): return
                             await claim_character(client, message.channel, message, is_kakera=True, is_purple_only=True)
                         queue_collected_kakera_roll(message)
+                else:
+                    # Nothing this account may click: another account of the profile may.
+                    schedule_kakera_share(message)
         else:
             c_name = embed.author.name.lower()
             process = True
@@ -10420,6 +10856,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             # Own rolls collect Kakera independently of other-user snipe toggle.
             kakera_task = None
             allow_kakera = is_manual_self_roll or client.kakera_reaction_snipe_mode_active
+            if (allow_kakera and not is_manual_self_roll and _coop.skip_own_snipe_of_sibling_roll(
+                    getattr(client, "accounts_share_kakera_reacts", False), roll_owner_is_sibling(owner_id))):
+                # «Main and alts take each other's kakera»: the roller decides first,
+                # then the share board picks one account; never a second click here.
+                allow_kakera = False
+            if (is_manual_self_roll and message.id not in client.kakera_reaction_sniped_messages
+                    and not has_collectible_kakera_button(message.components, get_all_collectible_kakera_emojis())):
+                schedule_kakera_share(message)
             if allow_kakera and message.id not in client.kakera_reaction_sniped_messages:
                  all_k = get_all_collectible_kakera_emojis()
                  has_btn = has_collectible_kakera_button(message.components, all_k)
@@ -10442,6 +10886,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                                 is_kakera=True,
                                 is_snipe=not is_manual_self_roll,
                             )
+                            if is_manual_self_roll:
+                                schedule_kakera_share(message)  # what this account left
 
                         # The Kakera delay and its click confirmation run beside
                         # the character snipe, so a contested claim never waits
@@ -10793,6 +11239,7 @@ def reset_mobile_runtime():
     """Reset process-wide mobile state after the previous workers have exited."""
     global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator, _totals_book
     global _alt_roll_board
+    global _kakera_share_board
     with _active_clients_lock:
         _active_clients.clear()
         _mobile_client_close_futures.clear()
@@ -10803,6 +11250,7 @@ def reset_mobile_runtime():
     _tu_interval_coordinator = GlobalIntervalCoordinator()
     _side_roll_coordinator = SideRollCoordinator()
     _alt_roll_board = _alt_claim.AltRollBoard()
+    _kakera_share_board = _alt_claim.AltRollBoard()
     _totals_book = TotalsBook()
 
 def parse_args(argv=None):

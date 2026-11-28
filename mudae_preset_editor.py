@@ -679,6 +679,8 @@ DEFAULTS = {
     "main_claims_alt_rolls": False,
     "main_claims_alt_rolls_mode": "when the alt would not claim",
     "alts_claim_main_rolls": False,
+    "main_rolls_while_alt_can_claim": False,
+    "accounts_share_kakera_reacts": False,
     "fast_setup": False,
     "fast_setup_round": 0,
     "auto_give_kakera": False,
@@ -1001,7 +1003,8 @@ def collect_account_role_fields(widgets, presets, data):
 
 
 MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres",
-                      "main_claims_alt_rolls", "alts_claim_main_rolls")
+                      "main_claims_alt_rolls", "alts_claim_main_rolls", "main_rolls_while_alt_can_claim",
+                      "accounts_share_kakera_reacts")
 # «Main claims good rolls made by its alts»: who gets a good alt roll (mudae_core.alt_roll_claim.MODES).
 ALT_ROLL_CLAIM_MODE_CHOICES = {
     "when the alt would not claim": "When the alt would not claim (the alt keeps its own good rolls)",
@@ -3379,6 +3382,13 @@ class PresetEditor:
             description="When the main's rolls end with its claim unused, an alt in the same channel rolls and the "
                         "main claims from those rolls with its own wishlist and kakera rules.",
         )
+        self.add_checkbox(
+            roles_frame.content, "main_rolls_while_alt_can_claim", "Main keeps rolling while an alt can claim",
+            description="When the main has no claim (and no $rt) but an alt in the same channel has a claim or $rt, "
+                        "the main still uses its rolls; a good roll it cannot claim goes to that alt (as with "
+                        "«Alts claim good rolls made by the main»), and an alt whose claim is spent may use its own "
+                        "$rt for it (its $rt settings apply). Off by default.",
+        )
         self.add_number_field(
             roles_frame.content, "side_rolls_max_per_reset", "Max alts per reset (1-10)", 1,
             description="How many alts may roll for the main in one claim reset (in the order of Account Tokens).",
@@ -3406,6 +3416,13 @@ class PresetEditor:
                         "cannot claim it (no claim now, key limit, its claim went to a better card), the first alt in "
                         "Account Tokens order whose claim is free claims it after its snipe delay. The main always "
                         "comes first on its own rolls. Off by default.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "accounts_share_kakera_reacts", "Main and alts take each other's kakera",
+            description="When the account that rolled does not take a kakera button (no power, its power rules, "
+                        "the emoji is not in its lists, paused), one other account of this profile that would take "
+                        "it by its own lists and power clicks it (the main first, then the alts in order), after "
+                        "its kakera reaction delay. Off by default.",
         )
         self.add_text_field(
             roles_frame.content, "main_account_id",
