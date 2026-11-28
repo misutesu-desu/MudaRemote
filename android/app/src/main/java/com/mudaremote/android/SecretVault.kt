@@ -26,7 +26,15 @@ class SecretVault(context: Context) {
         preferences.getString(name, null)?.let(::decrypt)
     }
 
-    private fun key(): SecretKey {
+    /**
+     * The Keystore handle is resolved once per process. Every put/get/read used to reopen
+     * the AndroidKeyStore (an IPC round trip) even though the key never changes.
+     */
+    private fun key(): SecretKey = cachedKey ?: synchronized(SecretVault::class.java) {
+        cachedKey ?: loadOrCreateKey().also { cachedKey = it }
+    }
+
+    private fun loadOrCreateKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
@@ -58,5 +66,8 @@ class SecretVault(context: Context) {
         return String(cipher.doFinal(all.copyOfRange(1 + ivLength, all.size)), Charsets.UTF_8)
     }
 
-    private companion object { const val KEY_ALIAS = "mudaremote.profile.v1" }
+    private companion object {
+        const val KEY_ALIAS = "mudaremote.profile.v1"
+        @Volatile private var cachedKey: SecretKey? = null
+    }
 }
