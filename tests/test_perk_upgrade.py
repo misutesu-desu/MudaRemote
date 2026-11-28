@@ -191,6 +191,8 @@ class CommandTests(unittest.TestCase):
             "Do you really want to spend **1,000** <:spR:1> for **1** character? (y/n/yes/no)",
             "TestUser, do you really want to spend 1,000 <:spR:1>? (y/n/yes/no)",
             "Do you really want to spend 1,000 <:spR:1> on **Made Up Name**? (y/n/yes/no)",
+            "Do you really want to spend **1,000** <:spR:1> for **Made Up Name**? (y/n/yes/no)\nPerks upgraded:\n\n"
+            "[10] The first $oh of the day generates **+20** spheres and has **+1%** chance to give 1 $oq",
         ]
         for text in ok:
             q = parse_oi_question(text, "Made Up Name", ("TestUser",))

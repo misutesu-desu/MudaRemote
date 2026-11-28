@@ -301,7 +301,10 @@ def parse_oi_question(text, name="", own_names=()) -> Optional[OicQuestion]:
         return None
     ours = normalize_name(name)
     mine = {normalize_name(item) for item in own_names or ()}
-    for bold in re.findall(r"\*\*([^*\n]+)\*\*", folded):
+    # Only the question sentence names a character; the «Perks upgraded» lines below it carry bold
+    # numbers such as «+20» and «+1%» that are not names.
+    sentence = folded[:_YES_NO.search(folded).start()]
+    for bold in re.findall(r"\*\*([^*\n]+)\*\*", sentence):
         said = normalize_name(bold)
         if not said or re.fullmatch(r"[\d.,\s]+", said) or said in mine or said in ("y", "n", "yes", "no"):
             continue
