@@ -682,6 +682,10 @@ DEFAULTS = {
     "give_kakera_daily_cap": 3,
     "give_kakera_button_minimum": 1000,
     "give_kakera_now_round": 0,
+    "auto_give_spheres": False,
+    "sphere_give_interval_min": 30,
+    "spheres_keep": 0,
+    "give_spheres_now_round": 0,
     "auto_give_harem": False,
     "harem_give_trigger": "pages",
     "harem_give_pages": 10,
@@ -986,11 +990,13 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "auto_give_spheres")
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
     ("give_kakera_daily_cap", "At most N gives per day", 1),
     ("give_kakera_button_minimum", "Minimum for the button", 1),
+    ("sphere_give_interval_min", "At most one sphere give every N minutes", 1),
+    ("spheres_keep", "Spheres to keep on this account", 0),
     ("harem_give_pages", "Give when my harem reaches X pages", 1),
     ("harem_give_characters", "Give when my harem reaches X characters", 1),
     ("harem_give_value", "Give when my harem value reaches X", 1),
@@ -1051,6 +1057,10 @@ def collect_mudafork_fields(widgets, data, previous, rearm_round=None):
         data["give_kakera_now_round"] = max(0, int((previous or {}).get("give_kakera_now_round", 0) or 0))
     except (TypeError, ValueError):
         data["give_kakera_now_round"] = 0
+    try:
+        data["give_spheres_now_round"] = max(0, int((previous or {}).get("give_spheres_now_round", 0) or 0))
+    except (TypeError, ValueError):
+        data["give_spheres_now_round"] = 0
     return errors
 
 
@@ -3406,6 +3416,31 @@ class PresetEditor:
             bg=give_now_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
         )
         self.give_now_status_label.pack(side=tk.LEFT)
+        self.add_checkbox(
+            self.give_fields_frame, "auto_give_spheres", "Give spheres to my main automatically (side accounts)",
+            description="Whenever this side has spheres (read from the $tu replies and sphere-game results the app already gets), "
+                        "it sends $givesp to its main and confirms. No minimum. Waits for the sphere games and the "
+                        "perk-10 upgrade first. Off by default.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "sphere_give_interval_min", "At most one sphere give every N minutes", 30,
+            description="Whole number, at least 1. Keeps a trickle of small results from spamming the chat.",
+        )
+        self.add_number_field(
+            self.give_fields_frame, "spheres_keep", "Spheres to keep on this account", 0,
+            description="0 gives everything. With 250 here and 1,250 in stock it gives 1,000.",
+        )
+        give_spheres_row = tk.Frame(self.give_fields_frame, bg=self._get_parent_bg(self.give_fields_frame))
+        give_spheres_row.pack(fill=tk.X, pady=(0, 8))
+        self.create_flat_button(
+            give_spheres_row, "Give all spheres now", self._request_give_all_spheres,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT,
+        ).pack(side=tk.LEFT, padx=(20, 10))
+        self.give_spheres_status_label = tk.Label(
+            give_spheres_row, text="Runs one give of all the spheres (minus the amount to keep) to the main.",
+            bg=give_spheres_row.cget("bg"), fg=TEXT_MUTED, font=("Segoe UI", 9), justify=tk.LEFT, wraplength=480,
+        )
+        self.give_spheres_status_label.pack(side=tk.LEFT)
 
         # Auto-give harem pages to the main (side only)
         harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to Main", start_open=False)
@@ -3853,6 +3888,27 @@ class PresetEditor:
                 label.configure(text="Requested: the running side gives its whole total once (see the log for the result).")
         else:
             saved["give_kakera_now_round"] = next_round - 1
+
+    def _request_give_all_spheres(self):
+        """«Give all spheres now»: raise the request counter and save, so the running side picks it up."""
+        if not self.current_preset:
+            return
+        role_var = self.widgets.get("account_role")
+        if (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE:
+            messagebox.showinfo("Give all spheres now", "Only a side account gives spheres to its main.", parent=self.root)
+            return
+        saved = self.presets.get(self.current_preset, {})
+        try:
+            next_round = int(saved.get("give_spheres_now_round", 0) or 0) + 1
+        except (TypeError, ValueError):
+            next_round = 1
+        saved["give_spheres_now_round"] = next_round
+        label = getattr(self, "give_spheres_status_label", None)
+        if self.save_current_preset(show_success=False):
+            if label is not None:
+                label.configure(text="Requested: the running side gives its spheres once (see the log for the result).")
+        else:
+            saved["give_spheres_now_round"] = next_round - 1
 
     def _refresh_give_fields_state(self):
         frame = getattr(self, "give_fields_frame", None)

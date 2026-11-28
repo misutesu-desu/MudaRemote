@@ -263,6 +263,8 @@ def validate_preset(data, resolved_token=None, require_runtime=True):
     from .kakera_give import validate_give_settings
     errors.extend(validate_fast_setup_settings(data))
     errors.extend(validate_give_settings(data))
+    from .sphere_give import validate_sphere_give_settings
+    errors.extend(validate_sphere_give_settings(data))
     from .harem_give import validate_harem_give_settings
     errors.extend(validate_harem_give_settings(data))
     from .perk_upgrade import validate_perk10_settings

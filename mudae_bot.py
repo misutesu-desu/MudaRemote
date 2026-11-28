@@ -421,6 +421,8 @@ from mudae_core.totals import TotalsBook, account_key, parse_sphere_game_result 
 from mudae_core.harem_give import HaremGiveSettings, HaremGiver, main_receiving  # noqa: E402
 # Automatic perk-10 upgrade ($mmz- names → $oic … $ 10; pure logic in mudae_core.perk_upgrade).
 from mudae_core.perk_upgrade import Perk10Settings, PerkUpgrader, sphere_games_pending  # noqa: E402
+# Auto-give spheres to the main ($givesp <@main> AMOUNT then Y; pure logic in mudae_core.sphere_give).
+from mudae_core.sphere_give import SphereGiveSettings, SphereGiver  # noqa: E402
 _totals_book = TotalsBook()
 _account_state_store = None
 _account_state_store_lock = threading.Lock()
@@ -1507,6 +1509,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         wait=lambda seconds: active_delay(seconds),
         log=lambda message, level: BotLogger.log(message, preset_name, level),
     )
+    client._sphere_give_task = None
+    client._sphere_give_last_skip = None
+    client.sphere_giver = SphereGiver(
+        key=client._totals_key, store=_get_account_state_store(),
+        send=lambda channel, content: guarded_send(channel, content),
+        wait=lambda seconds: active_delay(seconds),
+        log=lambda message, level: BotLogger.log(message, preset_name, level),
+    )
     client._perk10_task = None
     client._perk10_last_skip = None
     client._perk10_sphere_status_seen = False
@@ -1522,6 +1532,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     def apply_saved_settings(data):
         previous_give_now_round = getattr(client, "give_kakera_now_round", 0)
+        previous_sphere_now_round = getattr(client, "give_spheres_now_round", 0)
         changed = apply_live_config(
             client, data, bot_name=BOT_NAME, claim_emojis=CLAIM_EMOJIS,
             kakera_emojis=KAKERA_EMOJIS, sphere_emojis=SPHERE_EMOJIS,
@@ -1540,6 +1551,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 schedule_auto_give("settings changed")
             if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
                 client.loop.create_task(run_give_all_kakera_now())
+            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role"}:
+                schedule_sphere_give("settings changed")
+            if "give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round:
+                client.loop.create_task(run_give_all_spheres_now())
             if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
                           "harem_give_value", "account_role"}:
                 schedule_harem_give("settings changed")
@@ -3643,6 +3658,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if getattr(client, "account_role", "main") == "side":
             client.loop.create_task(harem_give_schedule_task())
         client.loop.create_task(perk10_schedule_task())
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(sphere_give_schedule_task())
 
         if client.rolling_enabled:
             if not client.skip_initial_commands:
@@ -6432,6 +6449,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log("Own roll batch deferred: a harem give is in progress.", preset_name, "DEBUG", client)
             mark_status_dirty(client, {"rolls"}, reason="harem-give-busy")
             return
+        if client.sphere_giver.active:
+            # A $givesp confirmation is in flight; rolls wait for the next status pass.
+            BotLogger.log("Own roll batch deferred: a sphere give to the main is in progress.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="sphere-give-busy")
+            return
         if client.perk_upgrader.active:
             # A $mmz-/$oic perk-10 upgrade is in flight; rolls wait for the next status pass.
             BotLogger.log("Own roll batch deferred: a perk-10 upgrade is in progress.", preset_name, "DEBUG", client)
@@ -7819,6 +7841,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if (client.account_totals.kakera, client.account_totals.spheres) != before:
             log_totals("from $tu")
         schedule_auto_give("$tu")
+        schedule_sphere_give("$tu")
 
     def observe_sphere_game_result(message):
         """Spheres from this account's own game-result message (new or edited)."""
@@ -7841,6 +7864,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if client.account_totals.apply_sphere_game_result(message_id, text):
             log_totals("from the sphere game")
             schedule_perk10("sphere game result")
+            schedule_sphere_give("sphere game result")
 
     def auto_give_busy_reason():
         if client.is_paused or client.key_limit_hit:
@@ -7898,6 +7922,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 main_totals=_totals_book.by_user_id(main_id),
                 prefix=client.mudae_prefix,
                 busy=lambda: (auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
                               or ("upgrading perk 10" if client.perk_upgrader.active else None)),
             )
             if outcome.status == "skipped":
@@ -7934,6 +7959,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 prefix=client.mudae_prefix,
                 # Waits for the next $tu the program already sends; never sends one.
                 busy=lambda: (auto_give_busy_reason() or ("giving harem pages" if client.harem_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
                               or ("upgrading perk 10" if client.perk_upgrader.active else None)),
                 total_wait_seconds=3600.0,
             )
@@ -7956,6 +7982,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return "giving kakera"
         if client.harem_giver.active:
             return "giving harem pages"
+        if client.sphere_giver.active:
+            return "giving spheres"
         if client.perk_upgrader.active:
             return "upgrading perk 10"
         return None
@@ -8006,7 +8034,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def run_harem_give(reason):
         try:
             waited = 0.0
-            while (auto_give_busy_reason() is not None or client.kakera_giver.active) and waited < 180.0:
+            while (auto_give_busy_reason() is not None or client.kakera_giver.active
+                   or client.sphere_giver.active) and waited < 180.0:
                 if not await active_delay(3.0):
                     return
                 waited += 3.0
@@ -8028,6 +8057,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 partner=partner,
                 prefix=client.mudae_prefix,
                 busy=lambda: (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
+                              or ("giving spheres" if client.sphere_giver.active else None)
                               or ("upgrading perk 10" if client.perk_upgrader.active else None)),
             )
             if outcome.status == "skipped":
@@ -8042,6 +8072,119 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             BotLogger.log(f"Harem give error: {e}", preset_name, "ERROR")
         finally:
             client._harem_give_task = None
+
+    def sphere_give_settings():
+        return SphereGiveSettings.from_preset({
+            "auto_give_spheres": client.auto_give_spheres,
+            "sphere_give_interval_min": client.sphere_give_interval_min,
+            "spheres_keep": client.spheres_keep,
+        })
+
+    def sphere_give_perk_first_reason():
+        """Perk 10 goes first: while it would still upgrade now, only the remainder is given later."""
+        if not getattr(client, "auto_perk10", False):
+            return None
+        if client.perk_upgrader.active or getattr(client, "_perk10_task", None) is not None:
+            return "the perk-10 upgrade comes first"
+        upgrade_blocker = client.perk_upgrader.blocker(
+            perk10_settings(), stock=client.account_totals.spheres, games_reason=None, busy_reason=None)
+        return "the perk-10 upgrade comes first" if upgrade_blocker is None else None
+
+    def sphere_give_busy_reason():
+        return (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
+                or ("giving harem pages" if client.harem_giver.active or main_receiving(client._account_link.key) else None)
+                or ("upgrading perk 10" if client.perk_upgrader.active else None))
+
+    def schedule_sphere_give(reason):
+        if not (getattr(client, "auto_give_spheres", False) and getattr(client, "account_role", "main") == "side"):
+            return
+        if client.sphere_giver.active or getattr(client, "_sphere_give_task", None) is not None:
+            return
+        client._sphere_give_task = client.loop.create_task(run_sphere_give(reason))
+
+    async def run_sphere_give(reason):
+        try:
+            waited = 0.0
+            while sphere_give_busy_reason() is not None and waited < 180.0:
+                if not await active_delay(3.0):
+                    return
+                waited += 3.0
+            if not await active_delay(2.0 + random.uniform(0.2, 1.0)):
+                return
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.sphere_giver.maybe_give(
+                channel, sphere_give_settings(),
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Never sends $tu: an unknown stock waits for the next one the program sends.
+                games=perk10_games_reason,
+                perk_first=sphere_give_perk_first_reason,
+                busy=sphere_give_busy_reason,
+            )
+            if outcome.status == "skipped":
+                if outcome.reason != getattr(client, "_sphere_give_last_skip", None):
+                    client._sphere_give_last_skip = outcome.reason
+                    BotLogger.log(f"Sphere give waits: {outcome.reason} ({reason}).", preset_name, "DEBUG", client)
+            else:
+                client._sphere_give_last_skip = None
+                log_totals("after the sphere give")
+                wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Sphere give error: {e}", preset_name, "ERROR")
+        finally:
+            client._sphere_give_task = None
+
+    async def run_give_all_spheres_now():
+        """«Give all spheres now» (button): one give of the whole stock (minus the keep) to the main."""
+        try:
+            channel = await _resolve_administrative_command_channel()
+            if channel is None:
+                BotLogger.log("Give all spheres: not given \u2014 no command channel.", preset_name, "WARN")
+                return
+            main_id = effective_main_account_id()
+            outcome = await client.sphere_giver.give_all_now(
+                channel,
+                keep=client.spheres_keep,
+                role=getattr(client, "account_role", "main"),
+                own_id=str(getattr(client.user, "id", "") or ""),
+                own_names=own_display_names(),
+                main_id=main_id,
+                totals=client.account_totals,
+                main_totals=_totals_book.by_user_id(main_id),
+                prefix=client.mudae_prefix,
+                # Waits for the next $tu the program already sends; never sends one.
+                busy=sphere_give_busy_reason,
+                games=perk10_games_reason,
+                total_wait_seconds=3600.0,
+            )
+            if outcome.status == "ignored":
+                BotLogger.log(f"Give all spheres: press ignored \u2014 {outcome.reason}.", preset_name, "INFO")
+                return
+            log_totals("after \u00abGive all spheres now\u00bb")
+            wake_status_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Give all spheres error: {e}", preset_name, "ERROR")
+
+    async def sphere_give_schedule_task():
+        """Wake every few minutes so a deferred give runs once games, perk 10 and busy work are done."""
+        while not client.is_closed():
+            schedule_sphere_give("schedule")
+            if not await active_delay(300.0):
+                if client.is_closed():
+                    return
+                await asyncio.sleep(60.0)
 
     def perk10_settings():
         return Perk10Settings.from_preset({
@@ -8067,6 +8210,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return "giving kakera"
         if client.harem_giver.active or main_receiving(client._account_link.key):
             return "a harem give is in progress"
+        if client.sphere_giver.active:
+            return "giving spheres"
         return None
 
     def schedule_perk10(reason):
@@ -8107,6 +8252,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 if outcome.status == "upgraded":
                     log_totals("after the perk-10 upgrade")
                 wake_status_loop()
+            # Spheres left after the upgrade (or when none was possible) go to the main.
+            client.loop.call_later(1.0, schedule_sphere_give, "perk 10 finished")
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -9042,6 +9189,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             client.kakera_giver.on_refused(message_id)
             client.harem_giver.on_refused(message_id)
             client.perk_upgrader.on_refused(message_id)
+            client.sphere_giver.on_refused(message_id)
             client._recent_mudae_command_rejections[message_id] = time.monotonic()
             while len(client._recent_mudae_command_rejections) > 200:
                 client._recent_mudae_command_rejections.pop(next(iter(client._recent_mudae_command_rejections)))
@@ -9053,6 +9201,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             return
         client._recent_mudae_command_acks[message_id] = time.monotonic()
         client.perk_upgrader.on_ack(message_id)  # ✅ on the account's «Y» to $oic
+        client.sphere_giver.on_ack(message_id)  # ✅ on the account's «Y» to $givesp
         while len(client._recent_mudae_command_acks) > 500:
             client._recent_mudae_command_acks.pop(next(iter(client._recent_mudae_command_acks)))
         operation = getattr(client, '_rt_command_in_flight', None)
@@ -9130,6 +9279,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if client.kakera_giver.active and message.author.id == TARGET_BOT_ID:
             reference = getattr(message, "reference", None)
             client.kakera_giver.on_reply(BotReply(
+                message.id, message.channel.id, bot_message_text(message),
+                getattr(reference, "message_id", None),
+            ))
+        if client.sphere_giver.active and message.author.id == TARGET_BOT_ID:
+            reference = getattr(message, "reference", None)
+            client.sphere_giver.on_reply(BotReply(
                 message.id, message.channel.id, bot_message_text(message),
                 getattr(reference, "message_id", None),
             ))

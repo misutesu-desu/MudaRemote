@@ -32,6 +32,9 @@ _SIDE_CLAIM = re.compile("^Main claimed \u2068(?P<name>.+?)\u2069 from \u2068(?P
 _TOTALS = re.compile(r"^Totals: kakera (?P<kakera>[\d,]+|unknown) \u00b7 spheres (?P<spheres>[\d,]+|unknown) \((?P<why>[^()]*)\)$")
 _GIVE_OK = re.compile(r"^Auto-give: gave (?P<ka>[\d,]+) kakera to the main")
 _GIVE_ALL = re.compile(r"^Give all kakera: (?P<what>gave (?P<ka>[\d,]+) kakera to the main|not given \u2014 .+?)\.?(?: Bot said: .*)?$")
+_SPHERE_GIVE_OK = re.compile(r"^Sphere give: gave (?P<sp>[\d,]+) spheres to the main")
+_SPHERE_GIVE_STOP = re.compile(r"^Sphere give stopped: (?P<why>.+?)\. Next try in")
+_GIVE_ALL_SPHERES = re.compile(r"^Give all spheres: (?P<what>gave (?P<sp>[\d,]+) spheres to the main|not given \u2014 .+?)\.?(?: Bot said: .*)?$")
 _HAREM_GIVE_OK = re.compile(r"^Harem give: gave (?P<pages>[\d,]+) harem page\(s\) to the main")
 _HAREM_GIVE_STOP = re.compile(r"^Harem give stopped: (?P<why>.+?)\. Next try in")
 # Automatic perk-10 upgrade (see perk_upgrade.PerkUpgrader._finish).
@@ -106,6 +109,17 @@ class ActivityClassifier:
         if found:
             return [("kakera_give_now", {"kakera": _number(found.group("ka")),
                                          "message": "Give all kakera: " + found.group("what")[:200]})]
+        found = _SPHERE_GIVE_OK.match(text)
+        if found:
+            return [("sphere_give", {"spheres": _number(found.group("sp")),
+                                     "message": "Gave {} spheres to the main".format(found.group("sp"))})]
+        found = _SPHERE_GIVE_STOP.match(text)
+        if found:
+            return [("sphere_give_stopped", {"message": "Sphere give stopped: {}".format(found.group("why")[:200])})]
+        found = _GIVE_ALL_SPHERES.match(text)
+        if found:
+            return [("sphere_give_now", {"spheres": _number(found.group("sp")),
+                                         "message": "Give all spheres: " + found.group("what")[:200]})]
         found = _HAREM_GIVE_OK.match(text)
         if found:
             pages = _number(found.group("pages"))

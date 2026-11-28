@@ -8,12 +8,12 @@
     {
       "path": "mudae_bot.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_bot.py",
-      "sha256": "2d37d4ca84f1e6c68f3ceb17156445c5fa798eae2a7deaa211f5edc80a4086ab"
+      "sha256": "237ce9dbd06e0a7c1279742e07561f3ca2e5a81e65341494ed97ed861f521868"
     },
     {
       "path": "mudae_preset_editor.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_preset_editor.py",
-      "sha256": "c566299a8f237718158e8b032cc5a3ae8857584495d55adf8e0b4938e2671b82"
+      "sha256": "a033b8fe6ad58484a30df9b9ac74a1d9c62bfb2aff26ce58ad80f909e2c77007"
     },
     {
       "path": "mudae_core/__init__.py",
@@ -28,7 +28,7 @@
     {
       "path": "mudae_core/config.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/config.py",
-      "sha256": "5c73b411604a4b6acc3d459b6249cd1973a9bd3f71ef94e28262c90e2c86091b"
+      "sha256": "9387173e1eba6448b4e78e167efd96689416042f282700772d2326ddacc0a213"
     },
     {
       "path": "mudae_core/kakera.py",
@@ -69,6 +69,11 @@
       "path": "mudae_core/perk_upgrade.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/perk_upgrade.py",
       "sha256": "54a60a10d1389a9af0fe59aff30a282815b22a5df8ededd9d5f463d5e450bc08"
+    },
+    {
+      "path": "mudae_core/sphere_give.py",
+      "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/sphere_give.py",
+      "sha256": "a0c5aabfe9ac2fbe3ffc4a846804d16e1924ecc854023eb3700e0a31eab8514c"
     },
     {
       "path": "mudae_core/logs.py",
@@ -123,17 +128,17 @@
     {
       "path": "mudae_core/bot_config.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/bot_config.py",
-      "sha256": "35e3e8bb5eaff5b1d86f514657d982ec07c07cb102b1e9f07fac50dc3e11925f"
+      "sha256": "428e94fec60844e26cdc0599819920b788e80ca6214f2ab0cf5a69eac8310136"
     },
     {
       "path": "mudae_core/activity_events.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/activity_events.py",
-      "sha256": "953dd279807f501506e9774a72613fa1cfd91d7b099534ffb782751562a8e43a"
+      "sha256": "e0e1cd90abb9f4d0772fb9331cf994a264b2666da71c7eb82ea23dafcc0d6c06"
     },
     {
       "path": "mudae_core/bot_runtime.py",
       "url": "https://raw.githubusercontent.com/YoRu72/MudaPersonalFork/v6.0.0/mudae_core/bot_runtime.py",
-      "sha256": "528e142230425af41cd0f3c8a2e7edbe048e316be31cf7449c80d7fb959a32fa"
+      "sha256": "028cb7729cad9f6766725f932f513006ccbedff4c4e7c099f53dce7b94331c82"
     },
     {
       "path": "mudae_core/worker.py",

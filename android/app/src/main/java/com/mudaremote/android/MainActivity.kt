@@ -1545,7 +1545,9 @@ class MainActivity : ComponentActivity() {
             })
         }
         container.addView(
-            createGitHubSmallBtn(meta.optString("label", "Give all kakera now"), UiTheme.ButtonStyle.TONAL) { _ -> requestGiveAllKakera() },
+            createGitHubSmallBtn(meta.optString("label", "Give all kakera now"), UiTheme.ButtonStyle.TONAL) { _ ->
+                if (key == "give_spheres_now_round") requestGiveAllSpheres() else requestGiveAllKakera()
+            },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = UiTheme.dp(this@MainActivity, 8) }
         )
         container.addView(counter)
@@ -1568,6 +1570,24 @@ class MainActivity : ComponentActivity() {
         counter.setText(next.toString())
         saveCurrentProfile(true)
         toast("Give all kakera requested; the result appears in the logs and the account's status.")
+    }
+
+    /** Raise the profile's «Give all spheres now» counter and save; the running side gives its spheres once. */
+    private fun requestGiveAllSpheres() {
+        val data = profiles[currentProfile] ?: return
+        if (data.optString("account_role", "main") != "side") {
+            toast("Give all spheres now: only a side account gives spheres to its main.")
+            return
+        }
+        val counter = fieldViews["give_spheres_now_round"] as? EditText
+        if (counter == null) {
+            toast("Give all spheres now: open this profile's settings first.")
+            return
+        }
+        val next = (counter.text.toString().toIntOrNull() ?: 0) + 1
+        counter.setText(next.toString())
+        saveCurrentProfile(true)
+        toast("Give all spheres requested; the result appears in the logs and the account's status.")
     }
 
     private fun buildFieldViewInner(key: String, value: Any?, meta: JSONObject?): View {

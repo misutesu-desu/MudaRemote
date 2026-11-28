@@ -307,6 +307,14 @@ def configure_client(
     )
     # «Give all kakera now»: a request counter raised by the editor/app button.
     client.give_kakera_now_round = _bounded_int(preset_data.get("give_kakera_now_round", 0), 0, 0, 1_000_000_000)
+    # Auto-give spheres to the main (side accounts; see sphere_give.py).
+    from .sphere_give import SphereGiveSettings
+    sphere_give = SphereGiveSettings.from_preset(preset_data)
+    client.auto_give_spheres = sphere_give.enabled
+    client.sphere_give_interval_min = sphere_give.interval_min
+    client.spheres_keep = sphere_give.keep
+    # «Give all spheres now»: a request counter raised by the editor/app button.
+    client.give_spheres_now_round = _bounded_int(preset_data.get("give_spheres_now_round", 0), 0, 0, 1_000_000_000)
     # Auto-give harem pages to the main (side accounts; see harem_give.py).
     from .harem_give import HAREM_GIVE_DEFAULTS, HaremGiveSettings
     harem = HaremGiveSettings.from_preset(preset_data)
@@ -723,7 +731,8 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "side_rolls_max_per_reset", "side_claim_leftovers",
     "fast_setup", "fast_setup_round", "auto_give_kakera", "give_kakera_threshold",
     "give_kakera_extra", "give_kakera_daily_cap", "give_kakera_button_minimum",
-    "give_kakera_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
+    "give_kakera_now_round", "auto_give_spheres", "sphere_give_interval_min", "spheres_keep",
+    "give_spheres_now_round", "auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
     "harem_give_value", "harem_check_hours", "harem_give_pages_text", "harem_keep_first_pages",
     "harem_give_daily_cap", "auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
