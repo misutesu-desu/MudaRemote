@@ -185,6 +185,49 @@ walk_expanded() {
   fi
 }
 
+# Scroll down until the visible text $1 (exact, or a prefix when it ends with *) is on screen. Returns 1 when never found.
+reveal_text() {
+  local tries=0
+  while [ "$tries" -le 10 ]; do
+    if [ -n "$(find_text "$1")" ]; then return 0; fi
+    swipe_up
+    sleep 0.8
+    tries=$((tries + 1))
+  done
+  log "text not found: $1"
+  return 1
+}
+
+# A short upward drag (about a quarter of the screen), to leave room under a row that was just found.
+nudge_up() {
+  adb shell input swipe $((W / 2)) $((H * 60 / 100)) $((W / 2)) $((H * 35 / 100)) 350 >/dev/null 2>&1
+  sleep 0.8
+}
+
+# The «Give harem» choice (a collapsible list; only the number of the chosen kind shows under it):
+# switch the harem give on (the choice and its numbers stay hidden while it is off), then capture the
+# row collapsed, expanded, and after choosing each kind. Files: harem-1-collapsed ... harem-5-pages.
+capture_harem_choice() {
+  scroll_top
+  if ! tap_text "The first token is the main*"; then
+    log "could not expand Main & alts for the harem choice"
+    return 1
+  fi
+  if ! tap_text "Alts give harem pages to the main"; then
+    log "could not find the harem switch"
+    return 1
+  fi
+  reveal_text "Give when my harem reaches" || return 1
+  nudge_up
+  shot "$OUT/harem-1-collapsed.png" || true
+  tap_text "Give when my harem reaches" || return 1
+  shot "$OUT/harem-2-expanded.png" || true
+  tap_text 'Characters ($mmi)' && shot "$OUT/harem-3-characters.png" || true
+  tap_text "Give when my harem reaches" && tap_text 'Harem value ($mmrk)' && shot "$OUT/harem-4-value.png" || true
+  tap_text "Give when my harem reaches" && tap_text 'Pages ($mm)' && shot "$OUT/harem-5-pages.png" || true
+  log "harem choice shots: $(ls "$OUT" | grep -c '^harem-')"
+}
+
 # ---------------------------------------------------------------- main
 
 adb wait-for-device
@@ -209,6 +252,10 @@ check_engine || true
 
 # 1) normal font
 walk fs100
+
+# 1b) the Give-harem choice: collapsed, expanded, and after choosing each kind; then a fresh launch
+capture_harem_choice || true
+launch_app
 
 # 2) header action «Keep running», then one dialog (Rename on a profile)
 scroll_top
