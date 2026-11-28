@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
     private val collapsedSections = mutableMapOf<String, Boolean>()
 
     private var currentProfile = ""
+    private val profileIdPattern = Regex("^[A-Za-z0-9_-]{1,64}$")
     private var storageHealthy = true
     private var isTokenVisible = false
     private var activeCategoryFilter = "All"
@@ -424,6 +425,7 @@ class MainActivity : ComponentActivity() {
         }
         actionsRow.addView(createGitHubSmallBtn("➕ New") { _ -> promptCreateProfile() })
         actionsRow.addView(createGitHubSmallBtn("📋 Fork") { _ -> duplicateCurrentProfile() })
+        actionsRow.addView(createGitHubSmallBtn("✏️ Rename") { _ -> promptRenameProfile() })
         actionsRow.addView(createGitHubSmallBtn("🗑️ Delete") { _ -> promptDeleteCurrentProfile() })
         actionsRow.addView(createGitHubSmallBtn("📦 Export") { _ -> shareCurrentProfile() })
         card.addView(actionsRow)
@@ -1021,11 +1023,13 @@ class MainActivity : ComponentActivity() {
                 if (!ensureWritableStorage()) return@setPositiveButton
                 val name = input.text.toString().trim()
                 if (name.isNotBlank()) {
-                    if (profiles.containsKey(name)) {
-                        toast("Branch '$name' already exists!")
+                    val nameError = profileNameError(name, null)
+                    if (nameError != null) {
+                        toast(nameError)
                     } else {
                         saveCurrentProfile(showStatus = false)
                         val newObj = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
+                            .put("profile_id", newProfileId())
                         profiles[name] = newObj
                         currentProfile = name
                         persist()
@@ -1046,12 +1050,14 @@ class MainActivity : ComponentActivity() {
         val copyName = "${currentProfile}_patch"
         var targetName = copyName
         var counter = 2
-        while (profiles.containsKey(targetName)) {
+        while (profiles.keys.any { it.equals(targetName, ignoreCase = true) }) {
             targetName = "${copyName}_$counter"
             counter++
         }
         val currentJson = profiles[currentProfile] ?: JSONObject()
         val clonedJson = JSONObject(currentJson.toString())
+        // A fork is a new profile: it never shares the stable id of its source.
+        clonedJson.put("profile_id", newProfileId())
         profiles[targetName] = clonedJson
         tokens[currentProfile]?.let { tokens[targetName] = it }
         currentProfile = targetName
@@ -1059,6 +1065,86 @@ class MainActivity : ComponentActivity() {
         refreshProfileTabs()
         renderCurrentProfile()
         toast("Forked to '$targetName'")
+    }
+
+    private fun newProfileId(): String =
+        "p" + java.util.UUID.randomUUID().toString().replace("-", "").take(15)
+
+    /**
+     * Every profile gets a stable id (tokens, side-account links and runtime
+     * keys follow the id, so a rename loses nothing). Profiles saved before
+     * roles existed and carrying a Main Account ID become Side accounts.
+     */
+    private fun ensureProfileIdentity(): Boolean {
+        var changed = false
+        val seen = HashSet<String>()
+        profiles.values.forEach { data ->
+            var id = data.optString("profile_id", "").trim()
+            if (!profileIdPattern.matches(id) || !seen.add(id)) {
+                do { id = newProfileId() } while (!seen.add(id))
+                data.put("profile_id", id)
+                changed = true
+            }
+            if (!data.has("account_role")) {
+                val legacyMain = data.optString("main_account_id", "").trim()
+                data.put("account_role", if (legacyMain.isNotEmpty()) "side" else "main")
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /** Same rules as the desktop editor: trimmed, 1-40 characters, unique ignoring case. */
+    private fun profileNameError(name: String, ignore: String?): String? {
+        if (name.isEmpty()) return "Profile name cannot be empty."
+        if (name.codePointCount(0, name.length) > 40) return "Profile name must be at most 40 characters."
+        if (name.any { it.code < 32 }) return "Profile name cannot contain control characters."
+        val clash = profiles.keys.firstOrNull { existing ->
+            existing.equals(name, ignoreCase = true) && (ignore == null || !existing.equals(ignore, ignoreCase = true))
+        }
+        return clash?.let { "A profile named '$it' already exists." }
+    }
+
+    private fun promptRenameProfile() {
+        if (currentProfile.isBlank() || !profiles.containsKey(currentProfile)) return
+        val oldName = currentProfile
+        val input = EditText(this).apply {
+            hint = "1-40 characters, any language"
+            setText(oldName)
+            setSelection(oldName.length)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename Profile")
+            .setMessage("The profile keeps its settings, tokens, schedule and side-account links.")
+            .setView(input)
+            .setPositiveButton("Rename") { _, _ -> renameProfile(oldName, input.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun renameProfile(oldName: String, rawName: String) {
+        if (!ensureWritableStorage()) return
+        if (!profiles.containsKey(oldName)) return
+        val newName = rawName.trim()
+        if (newName == oldName) return
+        profileNameError(newName, oldName)?.let { toast(it); return }
+        if (oldName == currentProfile) saveCurrentProfile(showStatus = false)
+        // Re-key both maps in place so the tab order stays the same.
+        val renamedProfiles = LinkedHashMap<String, JSONObject>()
+        profiles.forEach { (name, data) -> renamedProfiles[if (name == oldName) newName else name] = data }
+        val renamedTokens = LinkedHashMap<String, String>()
+        tokens.forEach { (name, value) -> renamedTokens[if (name == oldName) newName else name] = value }
+        profiles.clear(); profiles.putAll(renamedProfiles)
+        tokens.clear(); tokens.putAll(renamedTokens)
+        if (currentProfile == oldName) currentProfile = newName
+        persist()
+        refreshProfileTabs()
+        renderCurrentProfile()
+        val running = MudaRemoteService.runtimeState != MudaRemoteService.RuntimeState.STOPPED
+        toast(if (running) "Renamed to '$newName'. Restart the runtime to see the new name in logs."
+              else "Renamed to '$newName'")
     }
 
     private fun promptDeleteCurrentProfile() {
@@ -1113,7 +1199,7 @@ class MainActivity : ComponentActivity() {
         sectionHeaders.clear()
 
         val keys = (data.keys().asSequence().toList() + inheritedKakeraFields).distinct().asSequence()
-            .filter { it != "token" && it != "additional_tokens" }
+            .filter { it != "token" && it != "additional_tokens" && it != "profile_id" }
             .toList().sortedWith(
             compareBy<String> { sectionRank(schemaFields.optJSONObject(it)?.optString("section", "Advanced") ?: "Advanced") }
                 .thenBy { schemaFields.optJSONObject(it)?.optInt("order", 100) ?: 100 }.thenBy { it }
@@ -1207,6 +1293,66 @@ class MainActivity : ComponentActivity() {
         filterSettings()
     }
 
+    /** Pick another profile by name; the stable profile id is what gets stored. */
+    private fun buildProfilePicker(key: String, value: Any?, labelText: String, descriptionText: String, container: LinearLayout): View {
+        container.addView(TextView(this).apply {
+            text = labelText
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        })
+        val ownId = profiles[currentProfile]?.optString("profile_id", "").orEmpty()
+        val current = (value as? String).orEmpty()
+        val group = RadioGroup(this)
+        fun addChoice(tagValue: String, label: String) {
+            val radio = RadioButton(this).apply {
+                id = View.generateViewId()
+                tag = tagValue
+                text = label
+                textSize = 13f
+                setTextColor(UiTheme.TEXT_PRIMARY)
+                buttonTintList = ColorStateList.valueOf(UiTheme.ACCENT_BLUE)
+            }
+            group.addView(radio)
+            if (tagValue == current) group.check(radio.id)
+        }
+        addChoice("", "(none)")
+        profiles.forEach { (name, data) ->
+            val id = data.optString("profile_id", "")
+            val isSide = data.optString("account_role", "main") == "side"
+            if (id.isNotEmpty() && id != ownId && (!isSide || id == current)) {
+                addChoice(id, if (isSide) "$name (a side account: pick a main instead)" else name)
+            }
+        }
+        if (current.isNotEmpty() && profiles.values.none { it.optString("profile_id", "") == current }) {
+            addChoice(current, "(deleted profile: runs as an ordinary account)")
+        }
+        fieldViews[key] = group
+        container.addView(group)
+        if (descriptionText.isNotBlank()) {
+            container.addView(TextView(this).apply {
+                text = descriptionText
+                textSize = 11f
+                setTextColor(UiTheme.TEXT_SECONDARY)
+            })
+        }
+        return container
+    }
+
+    private fun sideRoleWarning(data: JSONObject): String? {
+        if (data.optString("account_role", "main") != "side") return null
+        val mainId = data.optString("main_profile_id", "")
+        if (mainId.isEmpty()) {
+            return if (data.optString("main_account_id", "").isBlank())
+                "No main profile is picked; this side runs as an ordinary account." else null
+        }
+        if (mainId == data.optString("profile_id", "")) return "A side account cannot be its own main."
+        val main = profiles.values.firstOrNull { it.optString("profile_id", "") == mainId }
+            ?: return "Its main profile no longer exists; this side runs as an ordinary account."
+        if (main.optString("account_role", "main") == "side") return "Its main is itself a side account; pick a main account."
+        return null
+    }
+
     private fun buildFieldView(key: String, value: Any?, meta: JSONObject?): View {
         val labelText = meta?.optString("label", key) ?: key
         val descriptionText = meta?.optString("description", "").orEmpty()
@@ -1215,6 +1361,10 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, UiTheme.dp(this@MainActivity, 5), 0, UiTheme.dp(this@MainActivity, 5))
             tag = "field_container_$key"
+        }
+
+        if (meta?.optString("picker", "") == "profile") {
+            return buildProfilePicker(key, value, labelText, descriptionText, container)
         }
 
         val choices = meta?.optJSONObject("choices")
@@ -1468,6 +1618,7 @@ class MainActivity : ComponentActivity() {
 
     private fun getSectionEmoji(section: String): String = when (section) {
         "Connection" -> "⚡"
+        "Main & Side Accounts" -> "👥"
         "Rolling" -> "🎲"
         "Claiming" -> "💖"
         "Character Sniping" -> "🎯"
@@ -1482,7 +1633,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sectionRank(section: String): Int = listOf(
-        "Connection", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
+        "Connection", "Main & Side Accounts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
         "Wishlist and Farming", "Spheres and Emoji", "Timing and Humanization", "Advanced"
     ).indexOf(section).let { if (it < 0) 99 else it }
 
@@ -1498,7 +1649,8 @@ class MainActivity : ComponentActivity() {
         if (!::fieldsContainer.isInitialized || currentProfile.isBlank()) return
         val data = profiles[currentProfile] ?: JSONObject()
         val oldKeys = data.keys().asSequence().toList()
-        oldKeys.filter { it != "token" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
+        oldKeys.filter { it != "token" && it != "profile_id" && !fieldViews.containsKey(it) }.forEach { data.remove(it) }
+        if (!profileIdPattern.matches(data.optString("profile_id", ""))) data.put("profile_id", newProfileId())
 
         for ((key, view) in fieldViews) {
             val oldValue = data.opt(key)
@@ -1519,8 +1671,9 @@ class MainActivity : ComponentActivity() {
         persist()
         if (showStatus) {
             val applying = MudaRemoteService.applySavedProfile(this, currentProfile, data, allTokensForProfile(currentProfile))
-            toast(if (applying) "Saved '$currentProfile'. Live update requested; see logs for the result."
-                  else "Committed changes to '$currentProfile' 💾")
+            val roleNote = sideRoleWarning(data)?.let { " ⚠ $it" }.orEmpty()
+            toast((if (applying) "Saved '$currentProfile'. Live update requested; see logs for the result."
+                  else "Committed changes to '$currentProfile' 💾") + roleNote)
         }
     }
 
@@ -2225,6 +2378,7 @@ class MainActivity : ComponentActivity() {
                 importedNames += name
             }
             if (importedNames.isNotEmpty()) {
+                ensureProfileIdentity()
                 currentProfile = importedNames.first()
                 persist()
                 refreshProfileTabs()
@@ -2255,8 +2409,13 @@ class MainActivity : ComponentActivity() {
                     it.startsWith("AQAAANCMnd8BFdER", ignoreCase = true)
                 }
                 encrypted += values.size - portable.size
+                // Desktop now stores tokens under "profile:<stable id>".
+                val targetName = if (name.startsWith("profile:")) {
+                    val wantedId = name.removePrefix("profile:")
+                    profiles.entries.firstOrNull { it.value.optString("profile_id", "") == wantedId }?.key ?: name
+                } else name
                 if (portable.isNotEmpty()) {
-                    setCanonicalTokens(name, portable)
+                    setCanonicalTokens(targetName, portable)
                     imported += portable.size
                 }
             }
@@ -2342,6 +2501,8 @@ class MainActivity : ComponentActivity() {
             }.onFailure { storageHealthy = false }
         }
         if (profiles.isEmpty()) profiles["MAIN"] = schemaDefaults().put("channel_id", "").put("roll_command", "wa").put("rolling", true)
+        // Before defaults are merged, so an old Main Account ID still marks a side.
+        ensureProfileIdentity()
         profiles.forEach { (name, data) ->
             mergeSchemaDefaults(data)
             normalizeProfileTokens(name, data)

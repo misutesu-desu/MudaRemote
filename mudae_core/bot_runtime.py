@@ -847,8 +847,12 @@ class RuntimeManager:
             raise ValueError("duplicate account tokens are not allowed")
 
         from .runtime import active_stagger_seconds
+        from .config import profile_id_of
+        # A profile's stable id keys its instances, so a rename keeps them;
+        # profiles saved before ids existed still use the display name.
+        id_prefix = profile_id_of(preset_data) or preset_name.replace(' ', '-')
         with self._lock:
-            if any(f"{preset_name.replace(' ', '-')}-{idx}" in self._instances
+            if any(f"{id_prefix}-{idx}" in self._instances
                    for idx in range(1, len(tokens) + 1)):
                 raise ValueError("an account instance ID already exists")
             start_index = len(self._instances)
@@ -860,9 +864,10 @@ class RuntimeManager:
             instance_id = self.start_instance(
                 preset_name=account_name,
                 preset_data={**copy.deepcopy(preset_data), "_source_preset_name": preset_name,
+                             "_account_index": idx,
                              "persistent_stagger_seconds": active_stagger_seconds(start_index + idx - 1)},
                 credentials={"token": token},
-                instance_id=f"{preset_name.replace(' ', '-')}-{idx}",
+                instance_id=f"{id_prefix}-{idx}",
                 block=block,
             )
             instance_ids.append(instance_id)

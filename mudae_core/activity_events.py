@@ -25,6 +25,9 @@ _DIVORCE = re.compile(r"^Auto-Divorce: Divorced (?P<name>.+?)(?: \(\+(?P<ka>\d+)
 _WISH = (re.compile(r"^Wish detected on edited roll: (?P<name>.+?)\. Checking claim\."),
          re.compile(r"^Main Account Sync \(wished by Main\): (?P<name>.+?)!"))
 _BONUS_ROLLS = re.compile(r"^Gained \+(?P<n>\d+) extra rolls from Kakera")
+# Main/Side hand-off lines; names sit inside Unicode isolates (U+2068 ... U+2069).
+_SIDE_ASK = re.compile("^Main found nothing \u2014 asking side \u2068(?P<side>.+?)\u2069 to roll$")
+_SIDE_CLAIM = re.compile("^Main claimed \u2068(?P<name>.+?)\u2069 from \u2068(?P<side>.+?)\u2069's roll$")
 
 
 def _number(text: Optional[str]) -> Optional[int]:
@@ -73,6 +76,15 @@ class ActivityClassifier:
             self._attempt[name] = kakera
             return [("claim_attempt", {"character": name, "kakera": kakera,
                                        "message": _with_kakera("Trying to claim {}".format(name), kakera)})]
+        found = _SIDE_ASK.match(text)
+        if found:
+            side = found.group("side")
+            return [("side_roll", {"side": side, "message": "Asking side account {} to roll".format(side)})]
+        found = _SIDE_CLAIM.match(text)
+        if found:
+            name, side = found.group("name"), found.group("side")
+            return [("side_roll", {"character": name, "side": side,
+                                   "message": "Claimed {} from {}'s roll".format(name, side)})]
         found = _ROLLING.match(text)
         if found:
             rolls = int(found.group("n"))

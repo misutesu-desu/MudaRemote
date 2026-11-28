@@ -29,6 +29,19 @@ try:
         parse_scheduled_times,
         validate_preset,
     )
+    from mudae_core.config import (
+        ACCOUNT_ROLE_MAIN,
+        ACCOUNT_ROLE_SIDE,
+        account_role_errors,
+        ensure_profile_ids,
+        new_profile_id,
+        profile_id_of,
+        profile_name_for_id,
+        rename_profile,
+        resolve_account_roles,
+        side_profiles_for,
+        validate_new_profile_name,
+    )
     from mudae_core.filters import split_dollar_names
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
@@ -48,6 +61,19 @@ except (ModuleNotFoundError, ImportError) as core_error:
     import mudae_bot  # noqa: F401
     from mudae_core import SecretStore, active_stagger_seconds, prepare_active_presets
     from mudae_core.config import atomic_write_json, load_json, parse_inactive_hours, parse_scheduled_times, validate_preset
+    from mudae_core.config import (
+        ACCOUNT_ROLE_MAIN,
+        ACCOUNT_ROLE_SIDE,
+        account_role_errors,
+        ensure_profile_ids,
+        new_profile_id,
+        profile_id_of,
+        profile_name_for_id,
+        rename_profile,
+        resolve_account_roles,
+        side_profiles_for,
+        validate_new_profile_name,
+    )
     from mudae_core.filters import split_dollar_names
     from mudae_core.secrets import SecretStoreError
     from mudae_core.versioning import (
@@ -631,6 +657,12 @@ DEFAULTS = {
     "max_dk_power": 100,
     "randomized_claim_reactions": ["💖", "💗", "💘", "❤️", "👍", "🔥"],
     "main_account_id": "",
+    "account_role": "main",
+    "main_profile_id": "",
+    "side_order": 1,
+    "side_rolls_for_main": False,
+    "side_rolls_max_per_reset": 1,
+    "side_claim_leftovers": False,
     "scheduled_roll_times": [],
     "kakera_priority_order": ["kakeraP", "kakeraC", "kakeraL", "kakeraW", "kakeraR", "kakeraO", "kakeraD", "kakeraY", "kakeraG", "kakeraT", "kakera"],
     "enable_snipe_chat_reactions": False,
@@ -859,6 +891,63 @@ RECOMMENDED_PRESET_OVERRIDES = {
 }
 
 
+PROFILE_PICKER_NONE = "(none)"
+
+
+# Tokens are stored under each profile's stable id (see SecretStore.profile_key);
+# stand-in stores without that API keep the older name-keyed calls.
+def _profile_tokens(store, name, data, legacy=None):
+    if isinstance(store, SecretStore):
+        return store.get_profile_tokens(name, data, legacy)
+    return store.get_tokens(name, legacy)
+
+
+def _store_profile_tokens(store, name, data, tokens):
+    if isinstance(store, SecretStore):
+        return store.set_profile_tokens(name, data, tokens)
+    return store.set_tokens(name, tokens)
+
+
+def _delete_profile_tokens(store, name, data):
+    if isinstance(store, SecretStore):
+        return store.delete_profile_tokens(name, data)
+    return store.delete_token(name)
+
+
+def _migrate_profile_tokens(store, name, data):
+    if isinstance(store, SecretStore):
+        return store.migrate_profile_tokens(name, data)
+    return False
+
+
+def collect_account_role_fields(widgets, presets, data):
+    """Read the Main/Side fields of the form into ``data``; return messages."""
+    errors = []
+    if "account_role" in widgets:
+        data["account_role"] = widgets["account_role"].get() or ACCOUNT_ROLE_MAIN
+    for key in ("side_rolls_for_main", "side_claim_leftovers"):
+        if key in widgets:
+            data[key] = bool(widgets[key].get())
+    for key, label in (("side_order", "Side Order"), ("side_rolls_max_per_reset", "Max side accounts per reset")):
+        widget = widgets.get(key)
+        if widget is None:
+            continue
+        value = str(widget.get() or "").strip()
+        if not value:
+            data[key] = DEFAULTS[key]
+        elif re.fullmatch(r"[0-9]+", value):
+            data[key] = int(value)
+        else:
+            errors.append("{} must be a whole number.".format(label))
+    if "main_profile_id" in widgets:
+        picked = widgets["main_profile_id"].get()
+        if picked in ("", PROFILE_PICKER_NONE):
+            data["main_profile_id"] = ""
+        else:
+            data["main_profile_id"] = profile_id_of((presets or {}).get(picked, {}))
+    return errors
+
+
 def build_recommended_preset():
     """Return a complete, independent preset for the mainstream workflow."""
     data = copy.deepcopy(DEFAULTS)
@@ -877,6 +966,7 @@ def build_recommended_preset():
     })
     data.pop("additional_tokens", None)
     data["token"] = ""
+    data["profile_id"] = new_profile_id()
     return data
 
 
@@ -1623,7 +1713,17 @@ class PresetEditor:
             try:
                 self.presets = load_json(PRESETS_FILE, {})
                 migrated = False
+                # Stable profile ids (renames keep settings, tokens and links)
+                # and the Main/Side roles that replace a bare main_account_id.
+                if ensure_profile_ids(self.presets):
+                    migrated = True
+                    self._backup_presets_before_migration()
                 for preset_name, data in self.presets.items():
+                    try:
+                        if _migrate_profile_tokens(self.secret_store, preset_name, data):
+                            migrated = True
+                    except SecretStoreError:
+                        pass
                     if not data.get("farm_characters") and data.get("farm_character"):
                         data["farm_characters"] = [data["farm_character"]]
                         migrated = True
@@ -1637,7 +1737,7 @@ class PresetEditor:
                     legacy_token = str(data.get("token", "") or "")
                     if legacy_token:
                         try:
-                            self.secret_store.set_token(preset_name, legacy_token)
+                            _store_profile_tokens(self.secret_store, preset_name, data, [legacy_token])
                             data["token"] = ""
                             migrated = True
                         except SecretStoreError:
@@ -1656,6 +1756,17 @@ class PresetEditor:
                 self.presets = {}
         else:
             self.presets = {}
+
+    def _backup_presets_before_migration(self):
+        """Keep the untouched presets.json once before the profile-id migration."""
+        backup_path = PRESETS_FILE + ".before-profile-ids.bak"
+        if os.path.exists(backup_path) or not os.path.exists(PRESETS_FILE):
+            return
+        try:
+            import shutil
+            shutil.copy2(PRESETS_FILE, backup_path)
+        except OSError as exc:
+            print(f"Could not back up presets.json before migrating it: {exc}")
 
     def save_presets(self):
         """Save presets to JSON file."""
@@ -1746,6 +1857,11 @@ class PresetEditor:
             sidebar_btns, "Copy Selected", self.duplicate_preset,
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.create_flat_button(
+            sidebar, "✏ Rename Selected", self.rename_preset,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT, font=("Segoe UI", 9, "bold")
+        ).pack(fill=tk.X, pady=(5, 0))
 
         self.create_flat_button(
             sidebar, "📤 Share Preset", self.share_preset,
@@ -2316,8 +2432,9 @@ class PresetEditor:
         primary = self._quick_value("token")
         additional_widget = self.quick_widgets.get("additional_tokens")
         if additional_widget is None and self.current_preset:
-            stored = self.secret_store.get_tokens(
+            stored = _profile_tokens(self.secret_store,
                 self.current_preset,
+                self.presets.get(self.current_preset, {}),
                 self.presets.get(self.current_preset, {}).get("token", ""),
             )
             additional_candidates = stored[1:]
@@ -3001,8 +3118,46 @@ class PresetEditor:
         self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")
         self.add_list_field(power_frame.content, "webhook_log_types", "Webhook Log Types (ERROR, WARN, CLAIM, KAKERA, INFO, CHECK, RESET, DEBUG or ALL)")
 
-        # [NEW] Task 6: Main account ID for wishlist syncing
-        self.add_text_field(power_frame.content, "main_account_id", "Main Account ID (Alt accounts will auto-claim wishlist characters rolled by this account)")
+        # Main / Side ("alt") accounts
+        roles_frame = CollapsibleLabelFrame(frame, text="Main & Side Accounts", start_open=False)
+        roles_frame.pack(fill=tk.X, pady=(0, 15))
+        self.add_choice_field(
+            roles_frame.content, "account_role", "Account Role",
+            {"main": "Main account", "side": "Side account (alt)"},
+            description="A side account works for the main profile you pick below. "
+                        "Hand-offs work when the main and its sides run together (one Run All, or Android).",
+        )
+        self.add_profile_picker(
+            roles_frame.content, "main_profile_id", "Main Profile (for a side account)",
+            description="Pick the main profile this side account works for. A side cannot point at itself or at another side.",
+        )
+        self.add_number_field(
+            roles_frame.content, "side_order", "Side Order (1 = asked first)", 1,
+            description="When a main has several sides, lower numbers are asked to roll first.",
+        )
+        self.role_status_label = tk.Label(
+            roles_frame.content, text="", bg=self._get_parent_bg(roles_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        )
+        self.role_status_label.pack(anchor=tk.W, pady=(0, 6))
+        self.add_checkbox(
+            roles_frame.content, "side_rolls_for_main", "Ask side accounts to roll when I find nothing",
+            description="Main accounts only. When your rolls end with your claim unused, a side account in the same "
+                        "channel rolls and you claim from its rolls with your own wishlist and kakera rules.",
+        )
+        self.add_number_field(
+            roles_frame.content, "side_rolls_max_per_reset", "Max side accounts per reset (1-10)", 1,
+            description="How many side accounts may roll for you in one claim reset.",
+        )
+        self.add_checkbox(
+            roles_frame.content, "side_claim_leftovers", "Sides may claim leftovers for themselves",
+            description="After you pass on a card a side rolled for you, the side may claim it with its own rules and its own claim.",
+        )
+        self.add_text_field(
+            roles_frame.content, "main_account_id",
+            "Main Account ID (legacy; Discord user ID of the main)",
+            description="Old way to link an alt. Leave empty when a Main Profile is picked; the main's ID is then known automatically.",
+        )
 
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
@@ -3084,6 +3239,7 @@ class PresetEditor:
         identity_keys = {
             "channel_id", "command_channel_id", "forcedivorce_channel_id",
             "prefix", "mudae_prefix", "main_account_id", "autostart",
+            "account_role", "main_profile_id", "side_order",
         }
         for preset_name, existing in list(self.presets.items()):
             if preset_name == self.current_preset:
@@ -3091,6 +3247,8 @@ class PresetEditor:
             replacement = copy.deepcopy(source)
             replacement["token"] = ""
             replacement.pop("tokens", None)
+            # A profile's stable id is never copied: it keys its tokens and links.
+            replacement["profile_id"] = existing.get("profile_id") or new_profile_id()
             if preserve_identity:
                 for key in identity_keys:
                     if key in existing:
@@ -3214,6 +3372,68 @@ class PresetEditor:
             Tooltip(entry, tooltip_msg)
 
         return entry
+
+    PROFILE_PICKER_NONE = PROFILE_PICKER_NONE
+
+    def add_profile_picker(self, parent, key, label, description=None):
+        """A drop-down of the other profiles; the stable profile id is stored."""
+        container = tk.Frame(parent, bg=self._get_parent_bg(parent))
+        container.pack(fill=tk.X, pady=5)
+        tk.Label(container, text=label, bg=container.cget("bg"), fg=TEXT_MAIN, font=("Segoe UI", 10)).pack(anchor=tk.W)
+        if description:
+            tk.Label(
+                container, text=description, bg=container.cget("bg"), fg=TEXT_MUTED,
+                font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+            ).pack(anchor=tk.W)
+        var = tk.StringVar(value=self.PROFILE_PICKER_NONE)
+        combo = ttk.Combobox(container, textvariable=var, state="readonly", width=42)
+        combo.pack(anchor=tk.W, ipady=2)
+        combo.bind("<<ComboboxSelected>>", lambda _event: self.mark_dirty())
+        self.widgets[key] = var
+        if not hasattr(self, "profile_pickers"):
+            self.profile_pickers = {}
+        self.profile_pickers[key] = combo
+        self._register_settings_widget(parent, container, label + " " + (description or ""), key)
+        return combo
+
+    def _populate_account_roles(self, preset_name, data):
+        """Show the role fields and why a side would run as an ordinary account."""
+        widgets = self.widgets
+        if "account_role" in widgets:
+            widgets["account_role"].set(data.get("account_role", ACCOUNT_ROLE_MAIN))
+        for key in ("side_rolls_for_main", "side_claim_leftovers"):
+            if key in widgets:
+                widgets[key].set(bool(data.get(key, DEFAULTS[key])))
+        for key in ("side_order", "side_rolls_max_per_reset"):
+            widget = widgets.get(key)
+            if isinstance(widget, (ttk.Entry, tk.Entry)):
+                widget.delete(0, tk.END)
+                widget.insert(0, str(data.get(key, DEFAULTS[key])))
+        combo = getattr(self, "profile_pickers", {}).get("main_profile_id")
+        if combo is not None:
+            choices = [self.PROFILE_PICKER_NONE] + [
+                name for name, other in self.presets.items()
+                if name != preset_name and (other or {}).get("account_role", ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE
+            ]
+            combo.configure(values=choices)
+            current = profile_name_for_id(self.presets, str(data.get("main_profile_id") or ""))
+            if current and current not in choices:
+                choices.append(current)
+                combo.configure(values=choices)
+            widgets["main_profile_id"].set(current or self.PROFILE_PICKER_NONE)
+        label = getattr(self, "role_status_label", None)
+        if label is not None:
+            info = resolve_account_roles(self.presets).get(preset_name) or {}
+            if info.get("reason"):
+                text = "⚠ " + info["reason"]
+            elif info.get("role") == ACCOUNT_ROLE_SIDE:
+                text = ("Side of '{}'.".format(info["main"]) if info.get("main")
+                        else "Side of the Discord user in Main Account ID (legacy).")
+            else:
+                sides = side_profiles_for(self.presets, preset_name)
+                text = ("Main account. Sides: {}.".format(", ".join(sides)) if sides
+                        else "Main account. No side profile points at it yet.")
+            label.configure(text=text)
 
     def add_choice_field(self, parent, key, label, choices, description=None):
         container = ttk.Frame(parent)
@@ -3521,8 +3741,9 @@ class PresetEditor:
 
         # Populate text/number fields
         # [NEW] Include max_dk_power and main_account_id in text/number population
-        stored_tokens = self.secret_store.get_tokens(
+        stored_tokens = _profile_tokens(self.secret_store,
             preset_name,
+            data,
             data.get("tokens") or data.get("token", ""),
         )
         for key in ["token", "additional_tokens", "prefix", "mudae_prefix", "channel_id", "command_channel_id", "forcedivorce_channel_id",
@@ -3698,6 +3919,8 @@ class PresetEditor:
 
         self._populate_quick_setup(data, stored_tokens=stored_tokens)
 
+        self._populate_account_roles(preset_name, data)
+
         # Update listbox selection
         for i in range(self.preset_listbox.size()):
             if self.preset_listbox.get(i) == preset_name:
@@ -3712,12 +3935,16 @@ class PresetEditor:
             resolved_token=resolved_tokens,
             require_runtime=require_runtime,
         )
+        if not validation_errors and isinstance(getattr(self, "presets", None), dict):
+            draft = dict(self.presets)
+            draft[self.current_preset] = data
+            validation_errors = account_role_errors(draft, self.current_preset)
         if validation_errors:
             messagebox.showerror("Validation Error", "\n".join(validation_errors), parent=self.root)
             return False
 
         try:
-            self.secret_store.set_tokens(self.current_preset, resolved_tokens)
+            _store_profile_tokens(self.secret_store, self.current_preset, data, resolved_tokens)
         except SecretStoreError as exc:
             messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
             return False
@@ -3745,7 +3972,7 @@ class PresetEditor:
         try:
             self._populate_quick_setup(
                 data,
-                stored_tokens=self.secret_store.get_tokens(self.current_preset, ""),
+                stored_tokens=_profile_tokens(self.secret_store, self.current_preset, data, ""),
             )
         finally:
             self.loading_preset = was_loading
@@ -4028,6 +4255,14 @@ class PresetEditor:
 
         data["claim_rounds_thresholds"] = claim_rounds_thresholds
 
+        # The stable id is not a form field; keep it so tokens and links follow.
+        known_presets = getattr(self, "presets", None) or {}
+        data["profile_id"] = profile_id_of(known_presets.get(self.current_preset, {})) or new_profile_id()
+        role_errors = collect_account_role_fields(self.widgets, known_presets, data)
+        if role_errors:
+            messagebox.showerror("Validation Error", "\n".join(role_errors), parent=self.root)
+            return False
+
         return self._persist_preset_data(
             data,
             resolved_tokens,
@@ -4077,8 +4312,9 @@ class PresetEditor:
                         )
             except Exception as e:
                 print(f"Failed to create autostart script for '{active_name}': {e}")
-            active_tokens = self.secret_store.get_tokens(
+            active_tokens = _profile_tokens(self.secret_store,
                 active_name,
+                self.presets.get(active_name, {}),
                 self.presets.get(active_name, {}).get("token", ""),
             )
             active_index += max(1, len(active_tokens))
@@ -4089,9 +4325,9 @@ class PresetEditor:
             return
         name = simpledialog.askstring("New Configuration", "What would you like to name this new config?", parent=self.root)
         if name:
-            name = name.strip()
-            if name in self.presets:
-                messagebox.showwarning("Name Taken", f"You already have a config named '{name}'. Please choose a different name.")
+            name, name_error = validate_new_profile_name(self.presets, name)
+            if name_error:
+                messagebox.showwarning("Name Taken", name_error, parent=self.root)
                 return
 
             self.presets[name] = build_recommended_preset()
@@ -4114,30 +4350,33 @@ class PresetEditor:
                                       f"Enter name for copy of '{self.current_preset}':",
                                       parent=self.root)
         if name:
-            name = name.strip()
-            if name in self.presets:
-                messagebox.showwarning("Warning", f"Preset '{name}' already exists.")
+            name, name_error = validate_new_profile_name(self.presets, name)
+            if name_error:
+                messagebox.showwarning("Warning", name_error, parent=self.root)
                 return
 
-            # Deep copy
+            # Deep copy; the copy is a new profile with its own stable id.
             import copy
-            self.presets[name] = copy.deepcopy(self.presets[self.current_preset])
+            source_data = self.presets[self.current_preset]
+            self.presets[name] = copy.deepcopy(source_data)
+            self.presets[name]["profile_id"] = new_profile_id()
             try:
-                source_tokens = self.secret_store.get_tokens(
+                source_tokens = _profile_tokens(self.secret_store,
                     self.current_preset,
-                    self.presets[self.current_preset].get("token", ""),
+                    source_data,
+                    source_data.get("token", ""),
                 )
                 if source_tokens:
-                    self.secret_store.set_tokens(name, source_tokens)
+                    _store_profile_tokens(self.secret_store, name, self.presets[name], source_tokens)
             except SecretStoreError as exc:
                 del self.presets[name]
                 messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
                 return
             self.presets[name]["token"] = ""
             if not self.save_presets():
-                del self.presets[name]
+                copied_data = self.presets.pop(name)
                 try:
-                    self.secret_store.delete_token(name)
+                    _delete_profile_tokens(self.secret_store, name, copied_data)
                 except SecretStoreError:
                     pass
                 return
@@ -4160,6 +4399,9 @@ class PresetEditor:
         clean_data = copy.deepcopy(preset_data)
         clean_data["token"] = ""
         clean_data.pop("tokens", None)
+        # Identity and links to this computer's other profiles mean nothing elsewhere.
+        clean_data.pop("profile_id", None)
+        clean_data["main_profile_id"] = ""
 
         json_str = json.dumps(clean_data, indent=4, ensure_ascii=False)
 
@@ -4170,6 +4412,57 @@ class PresetEditor:
             messagebox.showinfo("Success", "Preset copied to clipboard without token!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to copy preset to clipboard:\n{e}")
+
+    def rename_preset(self):
+        """Rename the current profile; its id, settings, tokens and links stay."""
+        if not self.current_preset:
+            messagebox.showwarning("Warning", "No preset selected.")
+            return
+        if not self.prompt_unsaved_changes():
+            return
+        old_name = self.current_preset
+        new_name = simpledialog.askstring(
+            "Rename Profile",
+            f"New name for '{old_name}' (1-40 characters, any language):",
+            initialvalue=old_name,
+            parent=self.root,
+        )
+        if new_name is None:
+            return
+        self._rename_profile_to(old_name, new_name)
+
+    def _rename_profile_to(self, old_name, new_name):
+        """Apply a rename (separate from the dialog so it can be tested)."""
+        clean, error = validate_new_profile_name(self.presets, new_name, current=old_name)
+        if error:
+            messagebox.showwarning("Rename Profile", error, parent=self.root)
+            return False
+        if clean == old_name:
+            return True
+        data = self.presets[old_name]
+        if not profile_id_of(data):
+            data["profile_id"] = new_profile_id()
+        try:
+            # Tokens follow the stable id, never the display name.
+            _migrate_profile_tokens(self.secret_store, old_name, data)
+        except SecretStoreError as exc:
+            messagebox.showerror("Secure Token Storage", str(exc), parent=self.root)
+            return False
+        previous = list(self.presets.items())
+        rename_profile(self.presets, old_name, clean)
+        if not self.save_presets():
+            self.presets.clear()
+            self.presets.update(previous)
+            return False
+        if old_name in self.bot_processes:
+            self.bot_processes[clean] = self.bot_processes.pop(old_name)
+        if data.get("autostart", False):
+            # Replaces the old Startup script and writes one for the new name.
+            self._manage_autostart(old_name, False)
+        self.current_preset = clean
+        self.refresh_preset_list()
+        self.select_preset(clean)
+        return True
 
     def delete_preset(self):
         """Delete the current preset."""
@@ -4189,7 +4482,7 @@ class PresetEditor:
                 process.terminate()
             self._manage_autostart(preset_name, False)
             try:
-                self.secret_store.delete_token(preset_name)
+                _delete_profile_tokens(self.secret_store, preset_name, deleted_data)
             except SecretStoreError as exc:
                 messagebox.showwarning("Secure Token Storage", f"Preset was deleted, but its stored token could not be removed:\n{exc}")
             self.current_preset = None
@@ -4231,8 +4524,9 @@ class PresetEditor:
             stagger_index = sum(
                 max(
                     1,
-                    len(self.secret_store.get_tokens(
+                    len(_profile_tokens(self.secret_store,
                         name,
+                        self.presets.get(name, {}),
                         self.presets.get(name, {}).get("token", ""),
                     )),
                 )
@@ -4604,8 +4898,9 @@ def run_headless(preset_names, start_index=0):
             print(f"[MudaRemote] Preset '{name}' not found. Skipping.")
             continue
         preset_data = dict(all_presets[name])
-        preset_data["tokens"] = SecretStore(get_base_path()).get_tokens(
+        preset_data["tokens"] = SecretStore(get_base_path()).get_profile_tokens(
             name,
+            preset_data,
             preset_data.get("tokens") or preset_data.get("token", ""),
         )
         preset_data["token"] = preset_data["tokens"][0] if preset_data["tokens"] else ""

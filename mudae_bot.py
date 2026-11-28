@@ -402,6 +402,128 @@ _original_terminal_settings = None
 _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
+from mudae_core.coordinator import SideRollCoordinator  # noqa: E402
+# Main/Side accounts running in this process (Android, Run All, multi-token).
+_side_roll_coordinator = SideRollCoordinator()
+SIDE_HANDOFF_TIMEOUT_SECONDS = 600.0
+SIDE_LEFTOVER_DECISION_WAIT_SECONDS = 8.0
+
+
+def _account_link_key(client):
+    link = getattr(client, "_account_link", None)
+    return getattr(link, "key", None)
+
+
+class _AccountLink:
+    """How the side-roll coordinator sees one running account.
+
+    Settings are read from the client each time, so a live preset reload
+    (role, main profile, options) applies without a restart.
+    """
+
+    def __init__(self, client, preset_name, preset_data):
+        self.client = client
+        self.name = preset_name
+        source_name = str(preset_data.get("_source_preset_name") or preset_name)
+        self._fallback_profile_id = "name:" + source_name
+        self.key = "{}#{}".format(source_name, id(client))
+        self.roll_for_main = None
+
+    @property
+    def profile_id(self):
+        return getattr(self.client, "profile_id", "") or self._fallback_profile_id
+
+    @property
+    def account_index(self):
+        return getattr(self.client, "account_index", 1)
+
+    @property
+    def role(self):
+        return getattr(self.client, "account_role", "main")
+
+    @property
+    def main_profile_id(self):
+        return getattr(self.client, "main_profile_id", "")
+
+    @property
+    def main_account_id(self):
+        return getattr(self.client, "main_account_id", "")
+
+    @property
+    def side_order(self):
+        return getattr(self.client, "side_order", 1)
+
+    @property
+    def user_id(self):
+        user = getattr(self.client, "user", None)
+        return getattr(user, "id", None)
+
+    @property
+    def channel_id(self):
+        try:
+            return int(getattr(self.client, "target_channel_id", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def is_ready(self):
+        try:
+            return bool(self.client.is_ready()) and self.user_id is not None
+        except Exception:
+            return False
+
+    def is_paused(self):
+        return bool(getattr(self.client, "is_paused", False) or getattr(self.client, "key_limit_hit", False))
+
+    def is_rolling(self):
+        return bool(getattr(self.client, "is_actively_rolling", False))
+
+    def rolls_left(self):
+        try:
+            return int(getattr(self.client, "rolls_left", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # Main side of the hand-off.
+    def options(self):
+        return {
+            "enabled": bool(getattr(self.client, "side_rolls_for_main", False)),
+            "max_sides": getattr(self.client, "side_rolls_max_per_reset", 1),
+            "leftovers": bool(getattr(self.client, "side_claim_leftovers", False)),
+        }
+
+    def claim_open(self):
+        client = self.client
+        return bool(
+            getattr(client, "claim_right_available", False)
+            and not getattr(client, "is_paused", False)
+        )
+
+    def claim_reset_key(self):
+        cycle_id = getattr(self.client, "current_claim_cycle_id", None)
+        if cycle_id is not None:
+            return ("cycle", cycle_id)
+        deadline = getattr(self.client, "next_claim_reset_at_utc", None)
+        if deadline is None:
+            return ("unknown",)
+        return ("deadline", deadline.replace(second=0, microsecond=0))
+
+    # Side side of the hand-off: run the rolls on this account's own loop.
+    async def run_handoff_rolls(self, handoff):
+        if self.roll_for_main is None:
+            raise RuntimeError("this account is not ready to roll for a main")
+        try:
+            side_loop = self.client.loop
+        except Exception:
+            side_loop = None
+        current_loop = asyncio.get_running_loop()
+        if side_loop is None or side_loop is current_loop or not side_loop.is_running():
+            return await self.roll_for_main(handoff)
+        future = asyncio.run_coroutine_threadsafe(self.roll_for_main(handoff), side_loop)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
 TU_GLOBAL_INTERVAL_SECONDS = 2.0
 # A permanently busy channel must never stall status refreshes (and therefore
 # rolling) forever; after this much cumulative quiet-channel waiting, send $tu
@@ -1017,7 +1139,7 @@ def load_desktop_presets():
         loaded = load_json(presets_path, {})
         store = SecretStore(get_base_path())
         for name, data in loaded.items():
-            data["tokens"] = store.get_tokens(name, data.get("tokens") or data.get("token", ""))
+            data["tokens"] = store.get_profile_tokens(name, data, data.get("tokens") or data.get("token", ""))
             data["token"] = data["tokens"][0] if data["tokens"] else ""
         # Android injects into this mapping before launching account threads.
         presets.clear()
@@ -1266,6 +1388,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     )
     client._live_preset_ready = False
     client._scheduled_roll_task = None
+    client._account_link = _AccountLink(client, preset_name, preset_data)
+    _side_roll_coordinator.register(client._account_link)
     client._runtime_mode = bool(preset_data.get("_runtime_mode", False))
     client._runtime_instance_id = preset_data.get("_runtime_instance_id")
 
@@ -3294,6 +3418,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         BotLogger.log(f"MudaRemote v{CURRENT_VERSION} | {runtime_mode}", preset_name, "INFO")
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
         client.loop.create_task(health_monitor_task())
+        if getattr(client, "account_role", "main") == "side":
+            client.loop.create_task(report_account_role())
 
         try: target_ch_id = int(target_channel_id)
         except Exception:
@@ -6135,6 +6261,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
         if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
+        if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
+            # This account is rolling for its main right now; its own batch
+            # waits for the status refresh that follows the hand-off.
+            BotLogger.log("Own roll batch skipped: this side account is rolling for its main.", preset_name, "DEBUG", client)
+            mark_status_dirty(client, {"rolls"}, reason="side-handoff-busy")
+            return
         client.interrupt_rolling = False
         client._roll_interrupt_reason = None
         if channel.id != client.target_channel_id:
@@ -6666,6 +6798,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 client.collected_rolls.clear()
         client.is_timing_mode_active = False
         await active_delay(1.0 + random.uniform(0.1, 0.5))
+        if (not is_us_pull and client._rolls_sent > 0
+                and not (not is_timing_mode_active and auto_rolls_will_extend)):
+            await ask_sides_to_roll_for_main()
 
     async def execute_auto_divorce(client, channel, char_name):
         try:
@@ -7345,6 +7480,152 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 finally:
                     _claim_coordinator.release_all(msg_rt.id)
         return bool(msg_claimed_id != -1)
+
+    # ------------------------------------------------------------------
+    # Main / Side accounts
+    # ------------------------------------------------------------------
+    def side_handoff_log(message, level="INFO"):
+        BotLogger.log(message, preset_name, level, client)
+
+    def effective_main_account_id():
+        """The Main's Discord id for wish sync: the pasted id, else the Main profile's."""
+        if client.main_account_id:
+            return client.main_account_id
+        link = getattr(client, "_account_link", None)
+        main_link = _side_roll_coordinator.resolve_main(link) if link is not None else None
+        user_id = getattr(main_link, "user_id", None) if main_link is not None else None
+        return str(user_id) if user_id else ""
+
+    async def report_account_role():
+        """Say once, after the accounts had time to connect, how this account's role resolved."""
+        if getattr(client, "account_role", "main") != "side":
+            return
+        if not await active_delay(45.0):
+            return
+        main_link = _side_roll_coordinator.resolve_main(client._account_link)
+        if main_link is not None:
+            BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+        elif client.main_account_id:
+            BotLogger.log("Side account: its main (Main Account ID) is not running in this app; wish sync still works, roll hand-offs need both accounts running together.", preset_name, "INFO")
+        else:
+            BotLogger.log("Side account: its main profile is not running here (or was not picked); this account runs as an ordinary account.", preset_name, "WARN")
+
+    async def roll_for_main(handoff):
+        """Side: roll this account's own rolls so the Main can claim from them.
+
+        Uses the normal roll sender, pacing, pause and maintenance checks. The
+        Side's own claim is not spent here (see the on_message hand-off branch).
+        """
+        if client.is_paused or client.key_limit_hit or is_maintenance_active():
+            return 0
+        channel = client.get_channel(client.target_channel_id) or client._main_channel
+        if channel is None:
+            raise RuntimeError("roll channel is not available")
+        ready, _ = await wait_for_tu_inactivity(channel, before_roll=True)
+        if not ready:
+            return 0
+        to_send = max(0, int(client.rolls_left or 0))
+        if to_send <= 0 or handoff.should_stop():
+            return 0
+        BotLogger.log(f"Rolling {to_send} times for main \u2068{handoff.main_name}\u2069", preset_name, "INFO")
+        client.is_actively_rolling = True
+        client.interrupt_rolling = False
+        client._rolls_sent = client._rolls_received = 0
+        sent = 0
+        try:
+            while to_send > 0:
+                if client.is_paused or is_maintenance_active() or client.interrupt_rolling or handoff.should_stop():
+                    break
+                if not await send_roll_command(
+                    channel, roll_command,
+                    expected_reset_boundary_utc=client.roll_reset_at_utc,
+                ):
+                    break
+                sent += 1
+                client._rolls_sent += 1
+                to_send -= 1
+                client.rolls_left = to_send
+                roll_delay = (max(2.0, client.roll_speed) if effective_slash_rolls() else client.roll_speed) + random.uniform(0.05, 0.25)
+                if not await active_delay(roll_delay):
+                    break
+            poll_start = time.time()
+            while (not client.is_paused and time.time() - poll_start < 5.0
+                   and client._rolls_received < client._rolls_sent and not handoff.should_stop()):
+                if not await active_delay(0.05):
+                    break
+        finally:
+            client.is_actively_rolling = False
+            # The local count is a best guess once another account claimed
+            # mid-batch; let the next $tu settle it.
+            mark_status_dirty(client, {"rolls"}, reason="side-handoff-rolls")
+            request_status_refresh({"rolls"}, reason="side-handoff-rolls")
+        return sent
+
+    client._account_link.roll_for_main = roll_for_main
+
+    async def ask_sides_to_roll_for_main():
+        """Main: rolls ended with the claim unused and nothing claimable."""
+        if (getattr(client, "account_role", "main") != "main"
+                or getattr(client, "account_index", 1) != 1
+                or not getattr(client, "side_rolls_for_main", False)):
+            return
+        if (not client.claim_right_available or client.is_paused or client.key_limit_hit
+                or getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None
+                or is_key_mode_kakera_only() or is_maintenance_active()):
+            return
+        if getattr(client, "_account_link", None) is None:
+            return
+        try:
+            await _side_roll_coordinator.run_for_main(
+                client._account_link,
+                log=side_handoff_log,
+                settle=lambda: active_delay(1.5 + random.uniform(0.1, 0.4)),
+                timeout_seconds=SIDE_HANDOFF_TIMEOUT_SECONDS,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            BotLogger.log(f"Side hand-off error: {e}", preset_name, "ERROR")
+
+    async def judge_side_roll_for_main(handoff, message):
+        """Main: judge a card a Side rolled with the Main's own rules."""
+        embed = message.embeds[0]
+        card = (embed.author.name if embed.author else "Unknown").strip()
+        claimed = False
+        try:
+            if client.claim_right_available and not handoff.should_stop():
+                claimed = await handle_mudae_messages(client, message.channel, [message], False, False)
+        except Exception as e:
+            BotLogger.log(f"Side roll processing error: {e}", preset_name, "ERROR")
+        handoff.record_main_decision(message.id, claimed, card if claimed else None)
+        if claimed:
+            BotLogger.log(f"Main claimed \u2068{card}\u2069 from \u2068{handoff.side_name}\u2069's roll", preset_name, "CLAIM")
+
+    async def process_own_roll_for_main(handoff, message):
+        """Side: a card this account rolled for its Main."""
+        handoff.note_side_roll()
+        if client.is_actively_rolling:
+            client._rolls_received += 1
+        if handoff.claim_leftovers:
+            waited = 0.0
+            while (handoff.main_decision(message.id) is None and not handoff.closed
+                   and waited < SIDE_LEFTOVER_DECISION_WAIT_SECONDS):
+                if not await active_delay(0.1):
+                    return
+                waited += 0.1
+            if handoff.main_decision(message.id) is False:
+                try:
+                    if await handle_mudae_messages(client, message.channel, [message], False, False):
+                        card = (message.embeds[0].author.name if message.embeds[0].author else "Unknown").strip()
+                        BotLogger.log(f"Side kept leftover \u2068{card}\u2069 the main passed on.", preset_name, "CLAIM")
+                except Exception as e:
+                    BotLogger.log(f"Leftover claim error: {e}", preset_name, "ERROR")
+        # Kakera on this account's own roll is still collected as usual.
+        if has_collectible_kakera_button(message.components, get_all_collectible_kakera_emojis()):
+            d_min, d_max = client.reactive_kakera_delay_range
+            if d_max > 0 and not await active_delay(random.uniform(d_min, d_max)):
+                return
+            await claim_character(client, message.channel, message, is_kakera=True)
 
     def regular_kakera_filter_reason(client, msg, embed, *, button=None, is_mk_roll=False, is_external_roll=False):
         """Explain why ordinary Kakera is blocked without blocking spheres or purple."""
@@ -8454,8 +8735,13 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         schedule_farm_release_after_other_claim(message)
 
-        if client.main_account_id:
-            try: main_id = int(client.main_account_id)
+        sync_main_id = (
+            effective_main_account_id()
+            if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is None
+            else ""
+        )
+        if sync_main_id:
+            try: main_id = int(sync_main_id)
             except ValueError: main_id = None
             if main_id is not None and message.embeds:
                 embed_ma = message.embeds[0]
@@ -8546,6 +8832,14 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             str(getattr(client.user, "display_name", "") or "").casefold(),
         }
         is_self_roll = owner_id == client.user.id or bool(owner_name and owner_name in self_names)
+        main_handoff = _side_roll_coordinator.handoff_for_main(_account_link_key(client))
+        if main_handoff is not None and not is_self_roll and main_handoff.is_side_roll(owner_id, message.channel.id):
+            await judge_side_roll_for_main(main_handoff, message)
+            return
+        side_handoff = _side_roll_coordinator.handoff_for_side(_account_link_key(client))
+        if side_handoff is not None and is_self_roll and message.channel.id == side_handoff.channel_id:
+            await process_own_roll_for_main(side_handoff, message)
+            return
         roll_context = "normal-self" if is_self_roll else "external"
         BotLogger.log(
             f"Roll context: {roll_context} (command={origin_command or 'unknown'}, message={message.id}).",
@@ -9003,6 +9297,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         with _active_clients_lock:
             if client in _active_clients:
                 _active_clients.remove(client)
+        _side_roll_coordinator.unregister(client._account_link)
         return
 
     if IS_TERMUX:
@@ -9031,6 +9326,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         if "set_wakeup_fd" not in str(e):
             BotLogger.log(f"Crash: {e}\n{traceback.format_exc()}", preset_name, "ERROR")
     finally:
+        _side_roll_coordinator.unregister(client._account_link)
         with _active_clients_lock:
             if client in _active_clients: _active_clients.remove(client)
             _mobile_client_close_futures.pop(id(client), None)
@@ -9232,7 +9528,7 @@ def shutdown_mobile_runtime(timeout_seconds=8.0):
 
 def reset_mobile_runtime():
     """Reset process-wide mobile state after the previous workers have exited."""
-    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator
+    global _global_paused, _claim_coordinator, _server_reset_coordinator, _tu_interval_coordinator, _side_roll_coordinator
     with _active_clients_lock:
         _active_clients.clear()
         _mobile_client_close_futures.clear()
@@ -9241,6 +9537,7 @@ def reset_mobile_runtime():
     _claim_coordinator = ClaimCoordinator()
     _server_reset_coordinator = ServerResetCoordinator()
     _tu_interval_coordinator = GlobalIntervalCoordinator()
+    _side_roll_coordinator = SideRollCoordinator()
 
 def parse_args(argv=None):
     import argparse

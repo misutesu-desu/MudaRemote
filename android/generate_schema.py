@@ -33,7 +33,7 @@ def main(project_root, output_dir):
                     if isinstance(item, (list, tuple)) and len(item) >= 3:
                         settings.setdefault(str(item[0]), {})["default"] = item[2]
 
-    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field", "add_choice_field"}
+    wanted = {"add_text_field", "add_number_field", "add_checkbox", "add_list_field", "add_optional_list_field", "add_choice_field", "add_profile_picker"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr not in wanted:
             continue
@@ -99,7 +99,8 @@ def main(project_root, output_dir):
     settings.pop("additional_tokens", None)
 
     section_groups = {
-        "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "main_account_id", "webhook_url", "webhook_log_types"},
+        "Connection": {"token", "tokens", "channel_id", "command_channel_id", "prefix", "mudae_prefix", "roll_command", "webhook_url", "webhook_log_types"},
+        "Main & Side Accounts": {"account_role", "main_profile_id", "side_order", "side_rolls_for_main", "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id"},
         "Rolling": {"hourly_tu_refresh", "rolling", "pause_on_key_limit", "roll_speed", "roll_interval", "delay_seconds", "start_delay", "use_slash_rolls", "slash_claim_target", "slash_claim_limit", "slash_claim_window_minutes", "auto_rolls_enabled", "auto_rolls_limit", "auto_rolls_in_key_mode", "auto_rolls_only_claim_hour", "auto_us_enabled", "auto_us_limit", "auto_us_stop_on_claim", "bulk_us_enabled", "skip_initial_commands"},
         "Kakera Loot": {"loot_mode", "kl_amount", "scrap_target_id", "scrap_amount", "loot_min_cooldown", "loot_max_cooldown"},
         "Claiming": {"min_kakera", "claim_interval", "max_claim_rank", "max_like_rank", "lurker_mode", "lurker_final_round_only", "panic_roll_minutes", "auto_free_claim", "auto_rt_enabled", "auto_rt_after_claim", "rt_ignore_min_kakera_for_wishlist", "rt_only_self_rolls", "rt_in_command_channel", "rt_min_kakera"},
@@ -111,6 +112,13 @@ def main(project_root, output_dir):
         "Advanced": {"debug_mode", "debug_log_categories", "autostart", "op_perk_5_only", "mk_only", "auto_mk_enabled", "auto_mk_full_power_only", "mk_bypass_power_check", "dk_power_management", "auto_p_enabled", "enable_hybrid_panic_claim", "hybrid_panic_instant_claim_min_kakera", "hybrid_panic_instant_claim_max_rank", "claim_rounds_thresholds", "wish_starwish_kakera_only", "randomized_claim_reactions"},
     }
     sections = {key: section for section, keys in section_groups.items() for key in keys}
+    # The Android app fills this field with a picker of the other profiles and
+    # stores the picked profile's stable id (see MainActivity.buildFieldView).
+    settings.setdefault("main_profile_id", {})["picker"] = "profile"
+    role_order = ["account_role", "main_profile_id", "side_order", "side_rolls_for_main",
+                  "side_rolls_max_per_reset", "side_claim_leftovers", "main_account_id"]
+    for order, key in enumerate(role_order):
+        settings.setdefault(key, {})["order"] = order
     filter_keys = ["kakera_filter_match_mode", "only_chaos", "perk_eight_only", "shop_perk_7_only", "mk_only", "op_perk_5_only", "wish_starwish_kakera_only"]
     for order, key in enumerate(filter_keys):
         sections[key] = "Kakera Reactions"

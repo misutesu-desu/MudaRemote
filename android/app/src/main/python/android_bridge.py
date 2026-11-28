@@ -841,7 +841,7 @@ def _inject_runtime_presets(mudae_bot, files_dir, token_overrides=None):
         store = mudae_bot.SecretStore(str(files_dir))
         for name in loaded:
             try:
-                tokens_by_preset[name] = store.get_tokens(name, "")
+                tokens_by_preset[name] = store.get_profile_tokens(name, loaded.get(name) or {}, "")
             except Exception as exc:
                 _log("Token store error for '{}': {}".format(name, exc), "ANDROID", "WARN")
                 tokens_by_preset[name] = []

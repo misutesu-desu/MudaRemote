@@ -27,6 +27,16 @@ from mudae_core.spheres import SphereButtonBudget
 from mudae_core.status import ResetAnchor, initialize_status_tracking
 
 
+def _bounded_int(value, default, minimum, maximum):
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, number))
+
+
 def configure_client(
     client,
     preset_name,
@@ -270,6 +280,19 @@ def configure_client(
         "randomized_claim_reactions"
     ) or ["💖", "💗", "💘", "❤️", "👍", "🔥"]
     client.main_account_id = str(preset_data.get("main_account_id") or "").strip()
+    # Main / Side accounts (see coordinator.SideRollCoordinator).
+    client.profile_id = str(preset_data.get("profile_id") or "").strip()
+    client.account_index = _bounded_int(preset_data.get("_account_index", 1), 1, 1, 1000)
+    client.account_role = (
+        "side" if preset_data.get("account_role") == "side" else "main"
+    )
+    client.main_profile_id = str(preset_data.get("main_profile_id") or "").strip()
+    client.side_order = _bounded_int(preset_data.get("side_order", 1), 1, 1, 999)
+    client.side_rolls_for_main = bool(preset_data.get("side_rolls_for_main", False))
+    client.side_rolls_max_per_reset = _bounded_int(
+        preset_data.get("side_rolls_max_per_reset", 1), 1, 1, 10
+    )
+    client.side_claim_leftovers = bool(preset_data.get("side_claim_leftovers", False))
     client.scheduled_roll_times = preset_data.get("scheduled_roll_times") or []
     client.kakera_priority_order = preset_data.get("kakera_priority_order") or [
         "kakeraP",
@@ -663,6 +686,8 @@ LIVE_CONFIG_ATTRIBUTES = frozenset({
     "snipe_ignore_min_kakera_reset", "wishlist", "series_snipe_mode",
     "series_snipe_only_self_rolls", "series_snipe_delay", "series_wishlist",
     "snipe_channels", "kakera_snipe_channels", "main_account_id",
+    "account_role", "main_profile_id", "side_order", "side_rolls_for_main",
+    "side_rolls_max_per_reset", "side_claim_leftovers",
     "avoid_list", "base_max_claim_rank", "base_max_like_rank",
     "kakera_snipe_mode_active", "kakera_snipe_threshold",
     "enable_reactive_self_snipe", "reactive_snipe_delay",
