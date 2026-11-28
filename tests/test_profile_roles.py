@@ -229,10 +229,22 @@ class ClientAndSchemaTests(unittest.TestCase):
                          ("palt", "side", "pmain", 3, 10, 2))
         self.assertFalse(client.side_rolls_for_main)
         self.assertFalse(client.side_claim_leftovers)
+        # A1: the reload drops the legacy «side of another profile» setting, but
+        # this account is the profile's 2nd token, so it stays an alt (side) by
+        # position; only the saved role and the option change.
         changed = apply_live_config(client, {"channel_id": 1, "account_role": "main",
                                              "side_rolls_for_main": True}, **OPTIONS)
-        self.assertTrue({"account_role", "side_rolls_for_main"} <= changed)
-        self.assertEqual((client.account_role, client.side_rolls_for_main), ("main", True))
+        self.assertTrue({"stored_account_role", "side_rolls_for_main"} <= changed)
+        self.assertEqual((client.account_role, client.stored_account_role, client.side_rolls_for_main, client.side_order),
+                         ("side", "main", True, 1))
+        # The primary token of such a profile does become a main again.
+        first = SimpleNamespace(command_prefix="old", hourly_tu_refresh=False)
+        configure_client(first, "Alt", {"channel_id": 1, "account_role": "side", "main_profile_id": "pmain",
+                                        "_account_index": 1}, **OPTIONS)
+        self.assertEqual(first.account_role, "side")
+        changed = apply_live_config(first, {"channel_id": 1, "account_role": "main"}, **OPTIONS)
+        self.assertIn("account_role", changed)
+        self.assertEqual(first.account_role, "main")
 
     def test_android_schema_has_the_role_section_and_profile_picker(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -245,10 +257,14 @@ class ClientAndSchemaTests(unittest.TestCase):
         }
         for key, (default, kind) in expected.items():
             self.assertEqual((fields[key]["default"], fields[key]["type"]), (default, kind), key)
-            self.assertEqual(fields[key]["section"], "Main & Side Accounts", key)
+            self.assertEqual(fields[key]["section"], "Main & alts", key)  # A1: one «Main & alts» group
         self.assertEqual(set(fields["account_role"]["choices"]), {"main", "side"})
         self.assertEqual(fields["main_profile_id"]["picker"], "profile")
-        self.assertEqual(fields["side_rolls_for_main"]["label"], "Ask side accounts to roll when I find nothing")
+        self.assertEqual(fields["side_rolls_for_main"]["label"], "Alts roll for the main when it finds nothing")
+        # The old separate-profile fields are kept but marked and ordered last.
+        for key in ("account_role", "main_profile_id", "side_order"):
+            self.assertTrue(fields[key]["label"].startswith("Advanced: separate profiles"), key)
+            self.assertGreater(fields[key]["order"], fields["perk10_daily_cap"]["order"], key)
         self.assertNotIn("profile_id", fields)
 
 

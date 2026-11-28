@@ -405,6 +405,15 @@ _claim_coordinator = ClaimCoordinator()
 _server_reset_coordinator = ServerResetCoordinator()
 _tu_interval_coordinator = GlobalIntervalCoordinator()
 from mudae_core.coordinator import SideRollCoordinator  # noqa: E402
+# «Pause on Key Limit»: scope, line and status text (mudae_core.key_limit).
+from mudae_core.key_limit import (  # noqa: E402
+    AREA_OTHER, end_key_limit_pause, key_limit_blocks, key_limit_pause_text, start_key_limit_pause,
+)
+# Main = the profile's primary token, alts = its extra tokens (mudae_core.account_roles).
+from mudae_core.account_roles import (  # noqa: E402
+    IdleNote, account_label_for, account_role_for, labelled_message, perk10_enabled_for,
+    roll_batch_blocker, side_kind_for,
+)
 # Main/Side accounts running in this process (Android, Run All, multi-token).
 _side_roll_coordinator = SideRollCoordinator()
 SIDE_HANDOFF_TIMEOUT_SECONDS = 600.0
@@ -466,7 +475,11 @@ class _AccountLink:
 
     @property
     def role(self):
-        return getattr(self.client, "account_role", "main")
+        return account_role_for(self.client)
+
+    @property
+    def side_kind(self):
+        return side_kind_for(self.client)
 
     @property
     def main_profile_id(self):
@@ -1444,6 +1457,22 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
         BotLogger = RuntimeLogger
 
+    # A profile with several tokens: every line says which account it is
+    # («main» / «alt 1» …), never the token.
+    _account_log_label = account_label_for(preset_data)
+    if _account_log_label:
+        _unlabelled_logger = BotLogger
+
+        class LabelledLogger:
+            @staticmethod
+            def log(message, *args, **kwargs):
+                return _unlabelled_logger.log(labelled_message(_account_log_label, message), *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(_unlabelled_logger, name)
+
+        BotLogger = LabelledLogger()
+
     token = preset_data.get("token")
     prefix = preset_data.get("prefix", "/////////////")
     target_channel_id = preset_data.get("channel_id")
@@ -1517,6 +1546,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         wait=lambda seconds: active_delay(seconds),
         log=lambda message, level: BotLogger.log(message, preset_name, level),
     )
+    client._idle_note = IdleNote()
     client._perk10_task = None
     client._perk10_last_skip = None
     client._perk10_sphere_status_seen = False
@@ -1545,20 +1575,28 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         preset_data.update(data)
         if changed:
             update_dynamic_thresholds()
+            if "pause_on_key_limit" in changed and not client.pause_on_key_limit and client.key_limit_hit:
+                finish_key_limit_pause("«Pause on Key Limit» was turned off")
+            if "key_limit_pause_scope" in changed and client.key_limit_hit:
+                client.key_limit_status = key_limit_pause_text(client.key_limit_resume_at, client.key_limit_pause_scope)
             if changed & {"fast_setup", "fast_setup_round"} and client._live_preset_ready:
                 client.loop.create_task(run_fast_setup())
             if changed & {"auto_give_kakera", "give_kakera_threshold", "give_kakera_extra", "account_role"}:
                 schedule_auto_give("settings changed")
-            if "give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round:
+            # One profile holds the main and its alts: a «Give all … now» press
+            # reaches every account of it, and only the alts act on it.
+            if ("give_kakera_now_round" in changed and client.give_kakera_now_round > previous_give_now_round
+                    and account_role_for(client) == "side"):
                 client.loop.create_task(run_give_all_kakera_now())
-            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10"}:
+            if changed & {"auto_give_spheres", "sphere_give_interval_min", "spheres_keep", "account_role", "auto_perk10", "side_perk10"}:
                 schedule_sphere_give("settings changed")
-            if "give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round:
+            if ("give_spheres_now_round" in changed and client.give_spheres_now_round > previous_sphere_now_round
+                    and account_role_for(client) == "side"):
                 client.loop.create_task(run_give_all_spheres_now())
             if changed & {"auto_give_harem", "harem_give_trigger", "harem_give_pages", "harem_give_characters",
                           "harem_give_value", "account_role"}:
                 schedule_harem_give("settings changed")
-            if changed & {"auto_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
+            if changed & {"auto_perk10", "side_perk10", "perk10_min_spheres", "perk10_max_characters", "perk10_daily_cap"}:
                 schedule_perk10("settings changed")
             if "scheduled_roll_times" in changed:
                 task = client._scheduled_roll_task
@@ -1614,6 +1652,12 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         event = getattr(client, '_immediate_check_event', None)
         if event is not None:
             event.set()
+
+    def finish_key_limit_pause(why):
+        """End this account's key-limit pause and look at the status again."""
+        BotLogger.log(f"{end_key_limit_pause(client)} ({why})", preset_name, "INFO", client)
+        request_status_refresh({"claim", "rolls"}, reason="key-limit-recovery", urgent=True)
+        wake_status_loop()
 
     def request_status_refresh(fields=None, reason="state-change", urgent=False):
         _is_new, is_coalesced = coalesce_status_request(
@@ -3573,7 +3617,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         BotLogger.log(f"Ready: {client.user}", preset_name, "INFO")
         _totals_book.note_user_id(client._totals_key, getattr(client.user, "id", None))
         client.loop.create_task(health_monitor_task())
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(report_account_role())
 
         try: target_ch_id = int(target_channel_id)
@@ -3655,10 +3699,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             await run_fast_setup()
         except Exception as e:
             BotLogger.log(f"Fast setup error: {e}", preset_name, "ERROR")
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(harem_give_schedule_task())
         client.loop.create_task(perk10_schedule_task())
-        if getattr(client, "account_role", "main") == "side":
+        if account_role_for(client) == "side":
             client.loop.create_task(sphere_give_schedule_task())
 
         if client.rolling_enabled:
@@ -4965,7 +5009,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def check_status(client, channel, mudae_prefix, proceed_to_rolls: bool = True, scheduler_cycle_id=None):
         request_hourly_status_refresh()
-        if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
+        # «rolls only»: the $tu pass (claims, $daily, $dk, sphere games) goes on; rolls stay gated further down.
+        if client.is_paused or key_limit_blocks(client, AREA_OTHER) or is_maintenance_active(): return
         if getattr(client, 'is_claiming', False): return
         if getattr(client, 'is_processing_cycle', False): return
         if (
@@ -6432,6 +6477,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def start_roll_commands(client, channel, rolls_left, ignore_limit_for_post_roll, key_mode_only_kakera_for_post_roll, logical_roll_cycle_id=None,
                                   is_us_pull: bool = False):
+        # Say once per change why this account does not roll now (never silent).
+        idle_line = client._idle_note.update(roll_batch_blocker(
+            paused=client.is_paused, key_limit_hit=client.key_limit_hit, maintenance=is_maintenance_active(),
+            rolling_for_main=_side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None,
+            giving_kakera=client.kakera_giver.active, giving_harem=client.harem_giver.active,
+            main_receiving_harem=main_receiving(client._account_link.key),
+            giving_spheres=client.sphere_giver.active, upgrading_perk10=client.perk_upgrader.active,
+        ))
+        if idle_line:
+            BotLogger.log(idle_line, preset_name, "INFO")
         if client.is_paused or client.key_limit_hit or is_maintenance_active(): return
         if _side_roll_coordinator.handoff_for_side(_account_link_key(client)) is not None:
             # This account is rolling for its main right now; its own batch
@@ -7689,15 +7744,40 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         user_id = getattr(main_link, "user_id", None) if main_link is not None else None
         return str(user_id) if user_id else ""
 
+    def give_receiver_id():
+        """Who the gives go to: an alt gives to its profile's running main (its own
+        user id); «Main Account ID» is the fallback when that main is not running
+        here. A legacy side profile keeps the 6.0.0 order (pasted id first)."""
+        if side_kind_for(client) != "alt":
+            return effective_main_account_id()
+        link = getattr(client, "_account_link", None)
+        main_link = _side_roll_coordinator.resolve_main(link) if link is not None else None
+        user_id = getattr(main_link, "user_id", None) if main_link is not None else None
+        if user_id:
+            pasted = str(client.main_account_id or "").strip()
+            if pasted and pasted != str(user_id) and not getattr(client, "_main_id_mismatch_logged", False):
+                client._main_id_mismatch_logged = True
+                BotLogger.log("Main Account ID differs from this profile's running main; gives go to the running main "
+                              "(the first token).", preset_name, "WARN")
+            return str(user_id)
+        return str(client.main_account_id or "").strip()
+
     async def report_account_role():
         """Say once, after the accounts had time to connect, how this account's role resolved."""
-        if getattr(client, "account_role", "main") != "side":
+        if account_role_for(client) != "side":
             return
         if not await active_delay(45.0):
             return
         main_link = _side_roll_coordinator.resolve_main(client._account_link)
+        is_alt = side_kind_for(client) == "alt"
         if main_link is not None:
-            BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+            if is_alt:
+                BotLogger.log("Alt of this profile's main: gives and side rolls go to it.", preset_name, "INFO")
+            else:
+                BotLogger.log(f"Side account of \u2068{main_link.name}\u2069: ready to roll for it when asked.", preset_name, "INFO")
+        elif is_alt:
+            BotLogger.log("Alt: the main (this profile's first token) is not running yet; gives use Main Account ID "
+                          "if it is set, and side rolls and harem gives wait for the main.", preset_name, "INFO")
         elif client.main_account_id:
             BotLogger.log("Side account: its main (Main Account ID) is not running in this app; wish sync still works, roll hand-offs need both accounts running together.", preset_name, "INFO")
         else:
@@ -7758,15 +7838,18 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     async def ask_sides_to_roll_for_main():
         """Main: rolls ended with the claim unused and nothing claimable."""
-        if (getattr(client, "account_role", "main") != "main"
+        if (account_role_for(client) != "main"
                 or getattr(client, "account_index", 1) != 1
                 or not getattr(client, "side_rolls_for_main", False)):
             return
-        if (not client.claim_right_available or client.is_paused or client.key_limit_hit
+        if (not client.claim_right_available or client.is_paused or key_limit_blocks(client, AREA_OTHER)
                 or getattr(client, "is_claiming", False) or getattr(client, "pending_claim", None) is not None
                 or is_key_mode_kakera_only() or is_maintenance_active()):
             return
         if getattr(client, "_account_link", None) is None:
+            return
+        if not _side_roll_coordinator.sides_for(client._account_link):
+            # No alt tokens (and no legacy side profile) running: nothing to ask, nothing to report.
             return
         try:
             await _side_roll_coordinator.run_for_main(
@@ -7867,7 +7950,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             schedule_sphere_give("sphere game result")
 
     def auto_give_busy_reason():
-        if client.is_paused or client.key_limit_hit:
+        if client.is_paused or key_limit_blocks(client, AREA_OTHER):
             return "paused"
         if is_maintenance_active():
             return "maintenance"
@@ -7886,7 +7969,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return None
 
     def schedule_auto_give(reason):
-        if not (client.auto_give_kakera and getattr(client, "account_role", "main") == "side"):
+        if not (client.auto_give_kakera and account_role_for(client) == "side"):
             return
         if client.kakera_giver.active or getattr(client, "_auto_give_task", None) is not None:
             return
@@ -7905,7 +7988,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             channel = await _resolve_administrative_command_channel()
             if channel is None:
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             user = client.user
             outcome = await client.kakera_giver.maybe_give(
                 channel, GiveSettings.from_preset({
@@ -7914,7 +7997,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                     "give_kakera_extra": client.give_kakera_extra,
                     "give_kakera_daily_cap": client.give_kakera_daily_cap,
                 }),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(user, "id", "") or ""),
                 own_names=[getattr(user, "name", None), getattr(user, "display_name", None), getattr(user, "global_name", None)],
                 main_id=main_id,
@@ -7946,11 +8029,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if channel is None:
                 BotLogger.log("Give all kakera: not given — no command channel.", preset_name, "WARN")
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.kakera_giver.give_all_now(
                 channel,
                 minimum=client.give_kakera_button_minimum,
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8025,7 +8108,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return [name for name in dict.fromkeys(names) if name]
 
     def schedule_harem_give(reason):
-        if not (getattr(client, "auto_give_harem", False) and getattr(client, "account_role", "main") == "side"):
+        if not (getattr(client, "auto_give_harem", False) and account_role_for(client) == "side"):
             return
         if client.harem_giver.active or getattr(client, "_harem_give_task", None) is not None:
             return
@@ -8050,10 +8133,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 partner = None
             outcome = await client.harem_giver.maybe_give(
                 channel, harem_give_settings(),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
-                main_id=effective_main_account_id(),
+                main_id=give_receiver_id(),
                 partner=partner,
                 prefix=client.mudae_prefix,
                 busy=lambda: (auto_give_busy_reason() or ("giving kakera" if client.kakera_giver.active else None)
@@ -8078,7 +8161,9 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             "auto_give_spheres": client.auto_give_spheres,
             "sphere_give_interval_min": client.sphere_give_interval_min,
             "spheres_keep": client.spheres_keep,
-            "auto_perk10": getattr(client, "auto_perk10", False),
+            # Off only while perk 10 really runs on THIS account (main: auto_perk10;
+            # alt: auto_perk10 + «Let side accounts upgrade too»).
+            "auto_perk10": perk10_enabled_for(client),
         })
 
     def sphere_give_busy_reason():
@@ -8087,7 +8172,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
                 or ("upgrading perk 10" if client.perk_upgrader.active else None))
 
     def schedule_sphere_give(reason):
-        if not (getattr(client, "auto_give_spheres", False) and getattr(client, "account_role", "main") == "side"):
+        if not (getattr(client, "auto_give_spheres", False) and account_role_for(client) == "side"):
             return
         if client.sphere_giver.active or getattr(client, "_sphere_give_task", None) is not None:
             return
@@ -8105,10 +8190,10 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             channel = await _resolve_administrative_command_channel()
             if channel is None:
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.sphere_giver.maybe_give(
                 channel, sphere_give_settings(),
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8144,11 +8229,11 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if channel is None:
                 BotLogger.log("Give all spheres: not given \u2014 no command channel.", preset_name, "WARN")
                 return
-            main_id = effective_main_account_id()
+            main_id = give_receiver_id()
             outcome = await client.sphere_giver.give_all_now(
                 channel,
                 keep=client.spheres_keep,
-                role=getattr(client, "account_role", "main"),
+                role=account_role_for(client),
                 own_id=str(getattr(client.user, "id", "") or ""),
                 own_names=own_display_names(),
                 main_id=main_id,
@@ -8181,7 +8266,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
 
     def perk10_settings():
         return Perk10Settings.from_preset({
-            "auto_perk10": client.auto_perk10,
+            "auto_perk10": perk10_enabled_for(client),
             "perk10_min_spheres": client.perk10_min_spheres,
             "perk10_max_characters": client.perk10_max_characters,
             "perk10_daily_cap": client.perk10_daily_cap,
@@ -8208,7 +8293,7 @@ def run_bot(preset_name, preset_data, log_function=print_log):
         return None
 
     def schedule_perk10(reason):
-        if not getattr(client, "auto_perk10", False):
+        if not perk10_enabled_for(client):
             return
         if client.perk_upgrader.active or getattr(client, "_perk10_task", None) is not None:
             return
@@ -9652,13 +9737,16 @@ def run_bot(preset_name, preset_data, log_function=print_log):
             if client.pause_on_key_limit and not client.key_limit_hit and re.search(REGEX_PATTERNS["KEY_LIMIT"], desc, re.IGNORECASE):
                 client.interrupt_rolling = True
                 client._roll_interrupt_reason = "key-limit"
-                client.key_limit_hit = True
-                BotLogger.log("Key Limit Hit. Pausing 1h.", preset_name, "ERROR")
+                pause_seconds = 3600 + random.randint(0, 600)
+                client._key_limit_generation = getattr(client, "_key_limit_generation", 0) + 1
+                generation = client._key_limit_generation
+                # Per account: the flag, the resume time and this task belong to this client only.
+                BotLogger.log(start_key_limit_pause(client, pause_seconds), preset_name, "ERROR", client)
                 async def _key_limit_recovery():
-                    await asyncio.sleep(3600 + random.randint(0, 600))
-                    client.key_limit_hit = False
-                    request_status_refresh({"claim", "rolls"}, reason="key-limit-recovery", urgent=True)
-                    if client._immediate_check_event: client._immediate_check_event.set()
+                    await asyncio.sleep(pause_seconds)
+                    if getattr(client, "_key_limit_generation", 0) != generation or not client.key_limit_hit:
+                        return  # already ended (e.g. «Pause on Key Limit» was turned off)
+                    finish_key_limit_pause("the hour is over")
                 client.loop.create_task(_key_limit_recovery())
                 # The notice roll itself still carries collectible Kakera and
                 # spheres, so processing continues instead of returning early.

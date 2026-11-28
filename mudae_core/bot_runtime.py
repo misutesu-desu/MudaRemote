@@ -526,6 +526,11 @@ class BotInstance:
                 "give_all_spheres_status": (getattr(sphere_giver, "manual_status", None)
                                             if isinstance(getattr(sphere_giver, "manual_status", None), str) else None),
                 "perk10_status": perk10_status if isinstance(perk10_status, str) else None,
+                # «paused for about 1 h — the key limit was reached (resumes about HH:MM)…» or None.
+                "pause_status": (getattr(self._client, "key_limit_status", None)
+                                 if self._client is not None
+                                 and getattr(self._client, "key_limit_hit", False)
+                                 and isinstance(getattr(self._client, "key_limit_status", None), str) else None),
                 "give_all_kakera_status": (getattr(giver, "manual_status", None)
                                            if isinstance(getattr(giver, "manual_status", None), str) else None),
             }
@@ -884,7 +889,7 @@ class RuntimeManager:
             instance_id = self.start_instance(
                 preset_name=account_name,
                 preset_data={**copy.deepcopy(preset_data), "_source_preset_name": preset_name,
-                             "_account_index": idx,
+                             "_account_index": idx, "_account_count": len(tokens),
                              "persistent_stagger_seconds": active_stagger_seconds(start_index + idx - 1)},
                 credentials={"token": token},
                 instance_id=f"{id_prefix}-{idx}",

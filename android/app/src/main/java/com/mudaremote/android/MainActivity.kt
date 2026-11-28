@@ -542,10 +542,15 @@ class MainActivity : ComponentActivity() {
     private fun refreshProfileSummary() {
         if (!::profileSummaryTitle.isInitialized) return
         val data = profiles[currentProfile]
-        val isSide = data?.optString("account_role", "main") == "side"
+        val isLegacySide = data != null && isLegacySideProfile(data)
+        val alts = if (currentProfile.isBlank()) 0 else altCount(currentProfile)
         val hasToken = currentProfile.isNotBlank() && allTokensForProfile(currentProfile).isNotEmpty()
         setTextIfChanged(profileSummaryTitle, if (hasToken) currentProfile else "$currentProfile · no token")
-        setTextIfChanged(profileRoleChip, if (isSide) "Side" else "Main")
+        setTextIfChanged(profileRoleChip, when {
+            isLegacySide -> "Side"
+            alts > 0 -> "Main + $alts alt" + (if (alts == 1) "" else "s")
+            else -> "Main"
+        })
         val (runText, runColor) = when (MudaRemoteService.runtimeState) {
             MudaRemoteService.RuntimeState.RUNNING -> "Bot running" to UiTheme.PRIMARY
             MudaRemoteService.RuntimeState.STARTING -> "Starting" to UiTheme.TERTIARY
@@ -556,7 +561,7 @@ class MainActivity : ComponentActivity() {
             profileRunChip.text = runText
             UiTheme.styleStatusChip(profileRunChip, runColor)
         }
-        val kakeraVisibility = if (isSide) View.VISIBLE else View.GONE
+        val kakeraVisibility = if (isLegacySide || alts > 0) View.VISIBLE else View.GONE
         if (giveKakeraQuickBtn.visibility != kakeraVisibility) giveKakeraQuickBtn.visibility = kakeraVisibility
     }
 
@@ -1039,7 +1044,7 @@ class MainActivity : ComponentActivity() {
         profiles.forEach { (name, data) ->
             val isSelected = (name == currentProfile)
             val hasToken = allTokensForProfile(name).isNotEmpty()
-            val isSide = data.optString("account_role", "main") == "side"
+            val isSide = isLegacySideProfile(data)
             val pill = TextView(this).apply {
                 text = name + (if (isSide) " · Side" else "") + (if (hasToken) "" else " · no token")
                 UiTheme.styleChip(this, isSelected)
@@ -1420,6 +1425,18 @@ class MainActivity : ComponentActivity() {
         return container
     }
 
+    /** The 6.0.0 way: a separate profile saved as a side of another profile. */
+    private fun isLegacySideProfile(data: JSONObject): Boolean =
+        data.optString("account_role", "main") == "side" && data.optString("main_profile_id", "").isNotBlank()
+
+    /** Extra tokens of a profile: its alts (the first token is the main). */
+    private fun altCount(name: String): Int = (allTokensForProfile(name).size - 1).coerceAtLeast(0)
+
+    private fun profileUsesAlts(name: String): Boolean {
+        val data = profiles[name] ?: return false
+        return altCount(name) > 0 || isLegacySideProfile(data)
+    }
+
     private fun sideRoleWarning(data: JSONObject): String? {
         if (data.optString("account_role", "main") != "side") return null
         val mainId = data.optString("main_profile_id", "")
@@ -1446,13 +1463,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         val view = buildFieldViewInner(key, shown, meta)
-        if (meta?.optBoolean("side_only", false) == true) {
-            val role = profiles[currentProfile]?.optString("account_role", "main") ?: "main"
-            if (role != "side") {
-                setViewTreeEnabled(view, false)
-                view.alpha = 0.55f
-                note = "Side accounts only: this profile is a Main account, so this setting is disabled."
-            }
+        if (meta?.optBoolean("side_only", false) == true && !profileUsesAlts(currentProfile)) {
+            // Still editable: the alts added later under Account Tokens pick it up.
+            note = NO_ALTS_HINT
         }
         note?.let { text ->
             (view as? LinearLayout)?.addView(TextView(this).apply {
@@ -1556,9 +1569,9 @@ class MainActivity : ComponentActivity() {
 
     /** Raise the profile's «Give all kakera now» counter and save; the running side gives its whole total once. */
     private fun requestGiveAllKakera() {
-        val data = profiles[currentProfile] ?: return
-        if (data.optString("account_role", "main") != "side") {
-            toast("Give all kakera now: only a side account gives kakera to its main.")
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give all kakera now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_kakera_now_round"] as? EditText
@@ -1574,9 +1587,9 @@ class MainActivity : ComponentActivity() {
 
     /** Raise the profile's «Give all spheres now» counter and save; the running side gives its spheres once. */
     private fun requestGiveAllSpheres() {
-        val data = profiles[currentProfile] ?: return
-        if (data.optString("account_role", "main") != "side") {
-            toast("Give all spheres now: only a side account gives spheres to its main.")
+        if (profiles[currentProfile] == null) return
+        if (!profileUsesAlts(currentProfile)) {
+            toast("Give all spheres now: $NO_ALTS_HINT.")
             return
         }
         val counter = fieldViews["give_spheres_now_round"] as? EditText
@@ -1760,7 +1773,7 @@ class MainActivity : ComponentActivity() {
         categoryTabs.removeAllViews()
 
         val categories = listOf(
-            "All", "Connection", "Main & Side Accounts", "Rolling", "Claiming", "Character Sniping",
+            "All", "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping",
             "Kakera Reactions", "Kakera Loot", "Wishlist and Farming", "Spheres and Emoji",
             "Timing and Humanization", "Advanced"
         )
@@ -1849,7 +1862,7 @@ class MainActivity : ComponentActivity() {
     /** One line under each settings card's title. */
     private fun getSectionDescription(section: String): String = when (section) {
         "Connection" -> "Channel, commands and how the bot connects."
-        "Main & Side Accounts" -> "Whether this profile is a main or a side account."
+        "Main & alts" -> "The first token is the main; extra tokens are its alts. Set once here, the alts act on it."
         "Rolling" -> "When and how the bot rolls."
         "Claiming" -> "Which characters to claim and when."
         "Character Sniping" -> "Catching wished characters from other rolls."
@@ -1863,7 +1876,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sectionRank(section: String): Int = listOf(
-        "Connection", "Main & Side Accounts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
+        "Connection", "Main & alts", "Rolling", "Claiming", "Character Sniping", "Kakera Reactions", "Kakera Loot",
         "Wishlist and Farming", "Spheres and Emoji", "Timing and Humanization", "Advanced"
     ).indexOf(section).let { if (it < 0) 99 else it }
 
@@ -3134,5 +3147,7 @@ class MainActivity : ComponentActivity() {
         val LOG_ENTRY_START = Regex("^(?:\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} \\||\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG))")
         val LOG_LINE_SHAPE = Regex("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) \\| (.*?) \\| ([A-Z]+) \\| (.*)$")
         val LOG_KINDS = listOf("ROLL", "CLAIM", "KAKERA", "GIVE", "PERK", "SIDE", "SETUP", "SPHERE", "STATUS", "SYSTEM", "WARN", "ERROR")
+        // Same text as mudae_core.account_roles.NO_ALTS_HINT.
+        const val NO_ALTS_HINT = "Add alt tokens under Account Tokens to use this"
     }
 }

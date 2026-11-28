@@ -43,6 +43,7 @@ try:
         validate_new_profile_name,
     )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_roles import ALTS_GROUP_INTRO, NO_ALTS_HINT, TOKENS_FIELD_DESCRIPTION, alt_count, is_legacy_side
     from mudae_core.account_state import AccountStateStore, default_state_path
     from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
     from mudae_core.totals import account_key
@@ -80,6 +81,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         validate_new_profile_name,
     )
     from mudae_core.filters import split_dollar_names
+    from mudae_core.account_roles import ALTS_GROUP_INTRO, NO_ALTS_HINT, TOKENS_FIELD_DESCRIPTION, alt_count, is_legacy_side
     from mudae_core.account_state import AccountStateStore, default_state_path
     from mudae_core.fast_setup import FastSetup, rearm as rearm_fast_setup
     from mudae_core.totals import account_key
@@ -696,6 +698,7 @@ DEFAULTS = {
     "harem_keep_first_pages": 0,
     "harem_give_daily_cap": 1,
     "auto_perk10": False,
+    "side_perk10": False,
     "perk10_min_spheres": 2000,
     "perk10_max_characters": 100,
     "perk10_daily_cap": 3,
@@ -713,6 +716,7 @@ DEFAULTS = {
     "farm_forcedivorce_after_other_claim": False,
     "op_perk_5_only": False,
     "kakera_filter_match_mode": "all",
+    "key_limit_pause_scope": "everything",
     "auto_divorce_enabled": False,
     "auto_divorce_protect_wishes": True,
     "auto_divorce_max_kakera": 50,
@@ -990,7 +994,7 @@ def collect_account_role_fields(widgets, presets, data):
     return errors
 
 
-MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "auto_give_spheres")
+MUDAFORK_BOOL_KEYS = ("fast_setup", "auto_give_kakera", "give_kakera_extra", "auto_give_harem", "auto_perk10", "side_perk10", "auto_give_spheres")
 MUDAFORK_NUMBER_KEYS = (
     ("give_kakera_threshold", "Give kakera to my main when I reach", 1),
     ("give_kakera_daily_cap", "At most N gives per day", 1),
@@ -2855,6 +2859,7 @@ class PresetEditor:
             "additional_tokens",
             "Additional Tokens (Optional, comma-separated; securely encrypted)",
             show="*",
+            description=TOKENS_FIELD_DESCRIPTION,
         )
         self.add_text_field(core_frame.content, "channel_id", "Discord Channel ID (Where the bot should roll)")
         self.add_text_field(core_frame.content, "command_channel_id", "Command Channel ID (Optional: For $tu, $daily, $dk — leave empty to use roll channel)")
@@ -2882,6 +2887,13 @@ class PresetEditor:
         self.add_checkbox(
             roll_sub, "pause_on_key_limit", "Pause on Key Limit",
             description="Pause for 60-70 minutes at the key limit.\nTurn off to keep rolling and collecting Kakera; Mudae's key cap still applies."
+        )
+        self.add_choice_field(
+            roll_sub, "key_limit_pause_scope", "When the key limit is reached, pause", {
+                "everything": "Everything (rolls, $tu, claims from it, gives) — as before",
+                "rolls only": "Rolls only ($tu, claims, snipes, kakera and sphere games go on)",
+            },
+            description="Only matters with «Pause on Key Limit» on. The account that hit the limit says so in the log.",
         )
         self.add_number_field(roll_sub, "roll_speed", "Rolling Speed (Seconds between each roll)", 0.4)
         self.add_number_field(roll_sub, "roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60)
@@ -3318,54 +3330,61 @@ class PresetEditor:
         self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")
         self.add_list_field(power_frame.content, "webhook_log_types", "Webhook Log Types (ERROR, WARN, CLAIM, KAKERA, INFO, CHECK, RESET, DEBUG or ALL)")
 
-        # Main / Side ("alt") accounts
-        roles_frame = CollapsibleLabelFrame(frame, text="Main & Side Accounts", start_open=False)
+        # Main & alts: the primary token is the main, extra tokens are its alts.
+        roles_frame = CollapsibleLabelFrame(frame, text="Main & alts", start_open=False)
         roles_frame.pack(fill=tk.X, pady=(0, 15))
-        self.add_choice_field(
-            roles_frame.content, "account_role", "Account Role",
-            {"main": "Main account", "side": "Side account (alt)"},
-            description="A side account works for the main profile you pick below. "
-                        "Hand-offs work when the main and its sides run together (one Run All, or Android).",
-        )
-        self.add_profile_picker(
-            roles_frame.content, "main_profile_id", "Main Profile (for a side account)",
-            description="Pick the main profile this side account works for. A side cannot point at itself or at another side.",
-        )
-        self.add_number_field(
-            roles_frame.content, "side_order", "Side Order (1 = asked first)", 1,
-            description="When a main has several sides, lower numbers are asked to roll first.",
-        )
+        tk.Label(
+            roles_frame.content, text=ALTS_GROUP_INTRO, bg=self._get_parent_bg(roles_frame.content), fg=TEXT_MUTED,
+            font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
+        ).pack(anchor=tk.W, pady=(0, 6))
         self.role_status_label = tk.Label(
             roles_frame.content, text="", bg=self._get_parent_bg(roles_frame.content), fg=TEXT_MUTED,
             font=("Segoe UI", 9), justify=tk.LEFT, wraplength=600,
         )
         self.role_status_label.pack(anchor=tk.W, pady=(0, 6))
         self.add_checkbox(
-            roles_frame.content, "side_rolls_for_main", "Ask side accounts to roll when I find nothing",
-            description="Main accounts only. When your rolls end with your claim unused, a side account in the same "
-                        "channel rolls and you claim from its rolls with your own wishlist and kakera rules.",
+            roles_frame.content, "side_rolls_for_main", "Alts roll for the main when it finds nothing",
+            description="When the main's rolls end with its claim unused, an alt in the same channel rolls and the "
+                        "main claims from those rolls with its own wishlist and kakera rules.",
         )
         self.add_number_field(
-            roles_frame.content, "side_rolls_max_per_reset", "Max side accounts per reset (1-10)", 1,
-            description="How many side accounts may roll for you in one claim reset.",
+            roles_frame.content, "side_rolls_max_per_reset", "Max alts per reset (1-10)", 1,
+            description="How many alts may roll for the main in one claim reset (in the order of Account Tokens).",
         )
         self.add_checkbox(
-            roles_frame.content, "side_claim_leftovers", "Sides may claim leftovers for themselves",
-            description="After you pass on a card a side rolled for you, the side may claim it with its own rules and its own claim.",
+            roles_frame.content, "side_claim_leftovers", "Alts may claim leftovers for themselves",
+            description="After the main passes on a card an alt rolled for it, the alt may claim it with its own claim.",
         )
         self.add_text_field(
             roles_frame.content, "main_account_id",
-            "Main Account ID (legacy; Discord user ID of the main)",
-            description="Old way to link an alt. Leave empty when a Main Profile is picked; the main's ID is then known automatically.",
+            "Main Account ID (optional override)",
+            description="Normally empty: the main's ID is known from the first token when it runs here. "
+                        "Used as the receiver when the main is not running in this app.",
+        )
+        # The 6.0.0 way (a separate profile marked side): kept for old profiles only.
+        legacy_frame = CollapsibleLabelFrame(roles_frame.content, text="Advanced: separate profiles", start_open=False)
+        legacy_frame.pack(fill=tk.X, pady=(6, 0))
+        self.add_choice_field(
+            legacy_frame.content, "account_role", "Separate-profile role (old way)",
+            {"main": "Normal profile", "side": "Side of another profile"},
+            description="Only for profiles set up before alts lived under Account Tokens. Leave on «Normal profile».",
+        )
+        self.add_profile_picker(
+            legacy_frame.content, "main_profile_id", "Main profile (old way)",
+            description="Used only with «Side of another profile». A side cannot point at itself or at another side.",
+        )
+        self.add_number_field(
+            legacy_frame.content, "side_order", "Side order (old way; 1 = asked first)", 1,
+            description="Old separate side profiles only. Alts are asked in the order of Account Tokens.",
         )
 
         # «Fast setup» (main and side) and auto-give kakera to the main (side only)
-        fork_frame = CollapsibleLabelFrame(frame, text="Fast Setup & Kakera to Main", start_open=False)
+        fork_frame = CollapsibleLabelFrame(frame, text="Fast Setup & Kakera to the Main", start_open=False)
         fork_frame.pack(fill=tk.X, pady=(0, 15))
         self.add_checkbox(
             fork_frame.content, "fast_setup", "Fast setup (send the $ta setup message once)",
-            description="Sends one $ta message in the command channel so $tu shows kakera and sphere stock, "
-                        "then turns itself off for good. «Send again» repeats it once.",
+            description="Each account (the main and every alt) sends one $ta message in the command channel so $tu "
+                        "shows kakera and sphere stock, then it turns itself off for good. «Send again» repeats it once.",
         )
         fast_row = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
         fast_row.pack(fill=tk.X, pady=(0, 8))
@@ -3385,8 +3404,8 @@ class PresetEditor:
         self.give_fields_frame = tk.Frame(fork_frame.content, bg=self._get_parent_bg(fork_frame.content))
         self.give_fields_frame.pack(fill=tk.X)
         self.add_checkbox(
-            self.give_fields_frame, "auto_give_kakera", "Give kakera to my main automatically (side accounts)",
-            description="When this side's kakera (read from the $tu replies the app already gets) reaches the amount "
+            self.give_fields_frame, "auto_give_kakera", "Alts give kakera to the main",
+            description="When an alt's kakera (read from the $tu replies the app already gets) reaches the amount "
                         "below, it sends $givek to its main and confirms. Off by default.",
         )
         self.add_number_field(
@@ -3417,15 +3436,15 @@ class PresetEditor:
         )
         self.give_now_status_label.pack(side=tk.LEFT)
         self.add_checkbox(
-            self.give_fields_frame, "auto_give_spheres", "Give spheres to my main automatically (side accounts)",
-            description="Whenever this side has spheres (read from the $tu replies and sphere-game results the app already gets), "
+            self.give_fields_frame, "auto_give_spheres", "Alts give spheres to the main",
+            description="Whenever an alt has spheres (read from the $tu replies and sphere-game results the app already gets), "
                         "it sends $givesp to its main and confirms. No minimum. Waits for the sphere games first. "
-                        "Has no effect while «Upgrade perk 10 automatically» is on for this account "
+                        "Has no effect on an alt that upgrades perk 10 («Let side accounts upgrade too») "
                         "(your saved choice here is kept). Off by default.",
         )
         self._sphere_give_checkbox_container = self.give_fields_frame.winfo_children()[-1]
         self.sphere_give_perk_label = tk.Label(
-            self.give_fields_frame, text="Off while perk-10 upgrade is on for this account.",
+            self.give_fields_frame, text="Off on the alts while «Let side accounts upgrade too» is on.",
             bg=self._get_parent_bg(self.give_fields_frame), fg=TEXT_MUTED, font=("Segoe UI", 9, "italic"),
             justify=tk.LEFT, wraplength=600,
         )
@@ -3450,7 +3469,7 @@ class PresetEditor:
         self.give_spheres_status_label.pack(side=tk.LEFT)
 
         # Auto-give harem pages to the main (side only)
-        harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to Main", start_open=False)
+        harem_frame = CollapsibleLabelFrame(frame, text="Harem Pages to the Main", start_open=False)
         harem_frame.pack(fill=tk.X, pady=(0, 15))
         self.harem_reason_label = tk.Label(
             harem_frame.content, text="", bg=self._get_parent_bg(harem_frame.content), fg=TEXT_MUTED,
@@ -3460,8 +3479,8 @@ class PresetEditor:
         self.harem_fields_frame = tk.Frame(harem_frame.content, bg=self._get_parent_bg(harem_frame.content))
         self.harem_fields_frame.pack(fill=tk.X)
         self.add_checkbox(
-            self.harem_fields_frame, "auto_give_harem", "Give harem pages to my main automatically (side accounts)",
-            description="Checks this side's own harem list on its own schedule (never $tu), then sends $give to the main "
+            self.harem_fields_frame, "auto_give_harem", "Alts give harem pages to the main",
+            description="Checks each alt's own harem list on its own schedule (never $tu), then sends $give to the main "
                         "with the pages; the main (running in this app) confirms. Off by default.",
         )
         self.add_choice_field(
@@ -3506,10 +3525,14 @@ class PresetEditor:
         perk_frame.pack(fill=tk.X, pady=(0, 15))
         self.add_checkbox(
             perk_frame.content, "auto_perk10", "Upgrade perk 10 automatically",
-            description="On a side account: lets it upgrade its own characters. Turns off automatic sphere giving. "
-                        "On a main account it only upgrades. After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
+            description="Upgrades the main's characters. After every sphere game the $tu shows is played, it reads the final sphere stock (never an "
                         "extra $tu), takes names from $mmz- and sends $oic name $ name $ … $ 10, then confirms "
                         "(1,000 spheres per character). Off by default.",
+        )
+        self.add_checkbox(
+            perk_frame.content, "side_perk10", "Let side accounts upgrade too (turns off their automatic sphere giving)",
+            description="With «Upgrade perk 10 automatically» on, each alt also upgrades its own characters and keeps its "
+                        "spheres for that. Off by default: alts give their spheres to the main instead.",
         )
         self.add_number_field(
             perk_frame.content, "perk10_min_spheres", "Upgrade when spheres reach", 2000,
@@ -3525,12 +3548,13 @@ class PresetEditor:
             description="A safety limit. A long name list sent in several commands counts as one upgrade.",
         )
 
-        role_var = self.widgets.get("account_role")
-        if role_var is not None:
-            role_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
-        perk_var = self.widgets.get("auto_perk10")
-        if perk_var is not None:
-            perk_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
+        tokens_entry = self.widgets.get("additional_tokens")
+        if tokens_entry is not None:
+            tokens_entry.bind("<KeyRelease>", lambda _event: self._refresh_give_fields_state(), add="+")
+        for trigger_key in ("account_role", "auto_perk10", "side_perk10"):
+            trigger_var = self.widgets.get(trigger_key)
+            if trigger_var is not None:
+                trigger_var.trace_add("write", lambda *_: self._refresh_give_fields_state())
 
         # [NEW] Task 7: Scheduled roll times
         sched_row = tk.Frame(power_frame.content, bg=BG_DARK)
@@ -3807,15 +3831,19 @@ class PresetEditor:
         label = getattr(self, "role_status_label", None)
         if label is not None:
             info = resolve_account_roles(self.presets).get(preset_name) or {}
-            if info.get("reason"):
+            alts = self._current_alt_count()  # the token fields are filled before this runs
+            legacy = is_legacy_side(data.get("account_role"), data.get("main_profile_id"))
+            if legacy and info.get("reason"):
                 text = "⚠ " + info["reason"]
-            elif info.get("role") == ACCOUNT_ROLE_SIDE:
-                text = ("Side of '{}'.".format(info["main"]) if info.get("main")
-                        else "Side of the Discord user in Main Account ID (legacy).")
+            elif legacy:
+                text = "Old separate side profile of '{}' (Advanced: separate profiles).".format(info.get("main") or "?")
+            elif alts:
+                text = "Main + {} alt{} (the extra tokens under Account Tokens).".format(alts, "" if alts == 1 else "s")
             else:
-                sides = side_profiles_for(self.presets, preset_name)
-                text = ("Main account. Sides: {}.".format(", ".join(sides)) if sides
-                        else "Main account. No side profile points at it yet.")
+                text = NO_ALTS_HINT + "."
+            sides = side_profiles_for(self.presets, preset_name)
+            if sides and not legacy:
+                text += " Old separate side profiles: {}.".format(", ".join(sides))
             label.configure(text=text)
 
     def _fast_setup_record(self, data):
@@ -3879,13 +3907,32 @@ class PresetEditor:
             label.configure(text="Will be sent once more after you save.")
         self.mark_dirty()
 
+    def _current_alt_count(self):
+        """How many alts (extra tokens) the open profile has, from the token fields as typed."""
+        widgets = self.widgets
+        primary = widgets["token"].get().strip() if "token" in widgets else ""
+        extra = widgets["additional_tokens"].get().strip() if "additional_tokens" in widgets else ""
+        if not primary and not extra:
+            saved = self.presets.get(self.current_preset, {}) if self.current_preset else {}
+            return alt_count(saved.get("token", ""), saved.get("tokens") or ())
+        return alt_count(primary, (), extra)
+
+    def _current_uses_alts(self):
+        """Alts under Account Tokens, or an old separate side profile (legacy path)."""
+        if self._current_alt_count() > 0:
+            return True
+        role_var = self.widgets.get("account_role")
+        role = role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN
+        picked = self.widgets.get("main_profile_id")
+        picked_name = picked.get() if picked is not None else ""
+        return is_legacy_side(role, "" if picked_name in ("", self.PROFILE_PICKER_NONE) else picked_name)
+
     def _request_give_all_kakera(self):
-        """«Give all kakera now»: raise the request counter and save, so the running side picks it up."""
+        """«Give all kakera now»: raise the request counter and save, so the running alts pick it up."""
         if not self.current_preset:
             return
-        role_var = self.widgets.get("account_role")
-        if (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE:
-            messagebox.showinfo("Give all kakera now", "Only a side account gives kakera to its main.", parent=self.root)
+        if not self._current_uses_alts():
+            messagebox.showinfo("Give all kakera now", NO_ALTS_HINT + ".", parent=self.root)
             return
         saved = self.presets.get(self.current_preset, {})
         try:
@@ -3896,17 +3943,16 @@ class PresetEditor:
         label = getattr(self, "give_now_status_label", None)
         if self.save_current_preset(show_success=False):
             if label is not None:
-                label.configure(text="Requested: the running side gives its whole total once (see the log for the result).")
+                label.configure(text="Requested: each running alt gives its whole total once (see the log for the result).")
         else:
             saved["give_kakera_now_round"] = next_round - 1
 
     def _request_give_all_spheres(self):
-        """«Give all spheres now»: raise the request counter and save, so the running side picks it up."""
+        """«Give all spheres now»: raise the request counter and save, so the running alts pick it up."""
         if not self.current_preset:
             return
-        role_var = self.widgets.get("account_role")
-        if (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) != ACCOUNT_ROLE_SIDE:
-            messagebox.showinfo("Give all spheres now", "Only a side account gives spheres to its main.", parent=self.root)
+        if not self._current_uses_alts():
+            messagebox.showinfo("Give all spheres now", NO_ALTS_HINT + ".", parent=self.root)
             return
         saved = self.presets.get(self.current_preset, {})
         try:
@@ -3917,49 +3963,52 @@ class PresetEditor:
         label = getattr(self, "give_spheres_status_label", None)
         if self.save_current_preset(show_success=False):
             if label is not None:
-                label.configure(text="Requested: the running side gives its spheres once (see the log for the result).")
+                label.configure(text="Requested: each running alt gives its spheres once (see the log for the result).")
         else:
             saved["give_spheres_now_round"] = next_round - 1
 
     def _refresh_give_fields_state(self):
+        """The give settings stay editable; without alts they only show a one-line hint."""
         frame = getattr(self, "give_fields_frame", None)
         if frame is None:
             return
-        role_var = self.widgets.get("account_role")
-        is_side = (role_var.get() if role_var is not None else ACCOUNT_ROLE_MAIN) == ACCOUNT_ROLE_SIDE
-        self._set_children_enabled(frame, is_side)
+        uses_alts = self._current_uses_alts()
+        self._set_children_enabled(frame, True)
         harem_frame = getattr(self, "harem_fields_frame", None)
         if harem_frame is not None:
-            self._set_children_enabled(harem_frame, is_side)
+            self._set_children_enabled(harem_frame, True)
         harem_label = getattr(self, "harem_reason_label", None)
         if harem_label is not None:
             harem_label.configure(text=(
-                "The receiver is the main (Main Profile or Main Account ID); it must run in this app to confirm."
-                if is_side else
-                "Harem Pages to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
+                "Each alt gives to the main (the first token); the main must run in this app to confirm."
+                if uses_alts else NO_ALTS_HINT + "."
             ))
-        self._refresh_sphere_give_perk_state(is_side)
+        self._refresh_sphere_give_perk_state()
         label = getattr(self, "give_reason_label", None)
         if label is not None:
             label.configure(text=(
-                "Totals come from the $tu replies the app already gets (see the «Totals:» log lines)."
-                if is_side else
-                "Kakera to Main is for side accounts only: this profile is a Main account, so these settings are disabled."
+                "Set once for all alts. Totals come from the $tu replies the app already gets (see the «Totals:» log lines)."
+                if uses_alts else NO_ALTS_HINT + "."
             ))
 
-    def _refresh_sphere_give_perk_state(self, is_side):
-        """On a side account with perk 10 on, show the automatic sphere give as overridden (its saved value is kept)."""
+    def _refresh_sphere_give_perk_state(self, is_side=None):
+        """With perk 10 on for the alts, show their automatic sphere give as overridden (its saved value is kept)."""
         perk_var = self.widgets.get("auto_perk10")
+        side_perk_var = self.widgets.get("side_perk10")
         container = getattr(self, "_sphere_give_checkbox_container", None)
         label = getattr(self, "sphere_give_perk_label", None)
         if container is None or label is None:
             return
-        overridden = bool(is_side and perk_var is not None and perk_var.get())
+        perk_on = bool(perk_var is not None and perk_var.get())
+        # An old separate side profile keeps its own perk-10 switch (as in 6.0.0).
+        legacy_side = self._current_alt_count() == 0 and self._current_uses_alts()
+        overridden = perk_on and (bool(side_perk_var is not None and side_perk_var.get()) or legacy_side)
         if overridden:
             self._set_children_enabled(container, False)
             if not label.winfo_ismapped():
                 label.pack(after=container, anchor=tk.W, padx=20)
         else:
+            self._set_children_enabled(container, True)
             label.pack_forget()
 
     def _set_children_enabled(self, widget, enabled):
@@ -4312,6 +4361,9 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             self.widgets["kakera_filter_match_mode"].set(data.get("kakera_filter_match_mode", "all"))
+        if "key_limit_pause_scope" in self.widgets:
+            scope = str(data.get("key_limit_pause_scope", "everything") or "everything")
+            self.widgets["key_limit_pause_scope"].set(scope if scope in ("everything", "rolls only") else "everything")
         if "loot_mode" in self.widgets:
             self.widgets["loot_mode"].set(data.get("loot_mode", "off"))
 
@@ -4630,6 +4682,8 @@ class PresetEditor:
 
         if "kakera_filter_match_mode" in self.widgets:
             data["kakera_filter_match_mode"] = self.widgets["kakera_filter_match_mode"].get()
+        if "key_limit_pause_scope" in self.widgets:
+            data["key_limit_pause_scope"] = self.widgets["key_limit_pause_scope"].get() or "everything"
         if "loot_mode" in self.widgets:
             data["loot_mode"] = self.widgets["loot_mode"].get()
 

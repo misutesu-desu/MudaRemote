@@ -212,9 +212,12 @@ class SideRollCoordinator:
     """Process-wide registry of running accounts and their Side hand-offs.
 
     Accounts register a small handle (see ``tests/test_side_roll_handoff.py``
-    for the fake used in tests). Main/Side links come from the profiles: a
-    Side names its Main by stable profile id (the Main is that profile's first
-    account) or, for old configs, by the Main's Discord user id.
+    for the fake used in tests). Main/Side links come from the profiles: an
+    alt (an extra token of a profile, ``side_kind == "alt"``) belongs to the
+    primary token of the same profile; a legacy side profile names its Main
+    by stable profile id (that profile's first account) or, for old configs,
+    by the Main's Discord user id. All accounts of one profile always run in
+    one process, so an alt's main is found here whenever it is running.
     """
 
     def __init__(self):
@@ -248,10 +251,18 @@ class SideRollCoordinator:
         """The running Main handle of a Side, or None."""
         if getattr(side, "role", None) != "side":
             return None
+        kind = getattr(side, "side_kind", None)
         main_profile_id = str(getattr(side, "main_profile_id", "") or "")
         legacy_main = str(getattr(side, "main_account_id", "") or "").strip()
         for handle in self.accounts():
             if handle is side or handle.key == side.key:
+                continue
+            if kind == "alt":
+                # An alt's main is the primary token of its own profile.
+                if (handle.profile_id == side.profile_id
+                        and getattr(handle, "account_index", 1) == 1
+                        and getattr(handle, "role", "main") == "main"):
+                    return handle
                 continue
             if main_profile_id:
                 if (handle.profile_id == main_profile_id
