@@ -267,6 +267,7 @@ try:
     from mudae_core.preset_reload import LivePresetReload, clean_preset, validate_live_preset
     from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.loot import LootAutomation
+    from mudae_core.logs import DailyLogWriter, LogSettings, build_line as build_log_line, logs_dir_for
     from mudae_core.roll_mode import adaptive_slash_ledger
 except (ModuleNotFoundError, ImportError) as core_error:
     missing_module = str(getattr(core_error, "name", ""))
@@ -305,6 +306,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.config import atomic_write_json, load_json, seconds_until_window_end, validate_preset
     from mudae_core.roll_mode import adaptive_slash_ledger
     from mudae_core.loot import LootAutomation
+    from mudae_core.logs import DailyLogWriter, LogSettings, build_line as build_log_line, logs_dir_for
 
 if os.name == 'nt':
     import msvcrt
@@ -728,6 +730,38 @@ class BotLogger:
                 return category
         return "other"
 
+    _daily_writer = None
+    _daily_writer_error_shown = False
+
+    @classmethod
+    def configure_files(cls, preset_data=None):
+        """Apply save_logs_txt / logs_keep_days / logs_max_mb (last profile wins)."""
+        try:
+            settings = LogSettings.from_data(preset_data or {})
+            if cls._daily_writer is None:
+                cls._daily_writer = DailyLogWriter(
+                    logs_dir_for(get_log_data_dir()), settings,
+                    on_error=cls._daily_writer_failed, autoflush=True)
+            else:
+                cls._daily_writer.configure(settings)
+        except Exception:
+            pass
+
+    @classmethod
+    def _daily_writer_failed(cls, text):
+        if not cls._daily_writer_error_shown:
+            cls._daily_writer_error_shown = True
+            try:
+                print(console_text(text))
+            except Exception:
+                pass
+
+    @classmethod
+    def write_daily_file(cls, preset_name, line, when):
+        writer = cls._daily_writer
+        if writer is not None:
+            writer.write(preset_name, line, when)
+
     @classmethod
     def log(cls, message, preset_name="MudaRemote", log_type="INFO", client=None):
         original_log_type = str(log_type or "INFO").upper()
@@ -744,10 +778,11 @@ class BotLogger:
             msg_clean = f"[DEBUG] {msg_clean}"
             log_type_upper = "INFO"
 
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        preset_aligned = f"[{preset_name[:12]:<12}]"
-        prefix = cls.PREFIXES.get(log_type_upper, "ℹ️  [INFO]   ")
-        formatted = f"[{timestamp}] {preset_aligned} {prefix} {msg_clean}"
+        now = datetime.datetime.now()
+        # One line shape everywhere (mudae_core.logs): redacted, classified,
+        # then shown, stored in logs.txt, written to the daily TXT file and
+        # sent to the webhook.
+        formatted = build_log_line(now, preset_name, original_log_type, msg_clean)
 
         color_code = cls.COLORS.get(log_type_upper, cls.COLORS["INFO"])
         console_line = console_text(f"{color_code}{formatted}{cls.COLORS['ENDC']}")
@@ -769,6 +804,7 @@ class BotLogger:
                     f.write(formatted + "\n")
         except Exception:
             pass
+        cls.write_daily_file(preset_name, formatted, now)
         webhook_types = set(getattr(client, "webhook_log_types", ()) or ())
         if (
             getattr(client, "webhook_url", "")
@@ -864,6 +900,10 @@ def get_base_path():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
+
+def get_log_data_dir():
+    """Desktop: beside the config; Android: the app files directory."""
+    return os.environ.get("MUDAREMOTE_RUNTIME_HOME") or get_base_path()
 
 
 MUDAE_EMOJI_ASSET_DIR = os.path.join(get_base_path(), "mudae_emoji_assets")
@@ -1381,6 +1421,8 @@ def run_bot(preset_name, preset_data, log_function=print_log):
     # uses BotLogger's console/file/webhook behavior; concurrent accounts cannot
     # change one another's logging policy.
     BotLogger = globals()["BotLogger"]
+    if not preset_data.get("_runtime_mode"):
+        BotLogger.configure_files(preset_data)
     if preset_data.get("_runtime_mode"):
         secret = str(preset_data.get("token") or "")
         other_secrets = [str(value) for value in (preset_data.get("tokens") or ()) if value]

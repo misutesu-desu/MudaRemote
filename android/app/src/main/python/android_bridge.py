@@ -104,8 +104,18 @@ def _configure_storage(files_dir):
     _log_path = os.path.join(files_dir, "mudaremote_android.log")
 
 
+def _format_log_line(message, preset, kind):
+    """The shared line shape (mudae_core.logs); the old shape if it cannot load."""
+    try:
+        import datetime
+        from mudae_core.logs import build_line
+        return build_line(datetime.datetime.now(), preset, kind, message)
+    except Exception:
+        return "[{}] [{}] {}".format(kind, preset, message)
+
+
 def _log(message, preset="ANDROID", kind="INFO"):
-    line = "[{}] [{}] {}".format(kind, preset, message)
+    line = _format_log_line(message, preset, kind)
     print(line, flush=True)
     if _log_path and not _tee_active:
         # While the CLI tee is active it captures this print() and mirrors it

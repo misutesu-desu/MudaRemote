@@ -50,3 +50,4 @@ android/*.jks
 # Packaging / session artifacts
 *.egg-info/
 pi-session-*.html
+logs/

@@ -649,9 +649,32 @@ class MudaRemoteService : Service() {
         manager?.notify(NOTIFICATION_ID, notification(status))
     }
 
+    // Same line shape as the Python engine: "YYYY-MM-DD HH:MM:SS | profile | KIND | message".
+    // Callers still pass "[LEVEL] [PROFILE] message"; it is converted here.
     private fun appendLocalLog(line: String) {
         runCatching {
-            File(filesDir, LOG_FILE).appendText(line + "\n")
+            val now = java.util.Date()
+            val parsed = LOCAL_LOG_OLD_SHAPE.matchEntire(line.trim())
+            val level = parsed?.groupValues?.get(1) ?: "INFO"
+            val profile = parsed?.groupValues?.get(2)?.replace("|", "/")?.ifBlank { "ANDROID" } ?: "ANDROID"
+            val message = (parsed?.groupValues?.get(3) ?: line)
+                .replace(Regex("\\s*[\\r\\n]+\\s*"), " / ")
+                .replace(" | ", " / ")
+                .replace(Regex("\\d{15,22}")) { "\u2026" + it.value.takeLast(4) }
+            val kind = when (level) {
+                "ERROR" -> "ERROR"
+                "WARN" -> "WARN"
+                else -> "SYSTEM"
+            }
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(now)
+            val formatted = "$stamp | $profile | $kind | $message"
+            File(filesDir, LOG_FILE).appendText(formatted + "\n")
+            // The daily TXT copy (one file per profile per day, see mudae_core/logs.py).
+            val logsDir = File(filesDir, "logs")
+            logsDir.mkdirs()
+            val day = stamp.substring(0, 10)
+            val safeProfile = profile.replace(Regex("[\\\\/:*?\"<>|]+"), "_").trim(' ', '.', '_').ifBlank { "profile" }
+            File(logsDir, "${safeProfile}_$day.txt").appendText(formatted + "\n")
         }
     }
 
@@ -697,6 +720,7 @@ class MudaRemoteService : Service() {
         private const val CHANNEL_ID = "mudaremote_runtime"
         private const val NOTIFICATION_ID = 41
         internal const val LOG_FILE = "mudaremote_android.log"
+        private val LOCAL_LOG_OLD_SHAPE = Regex("^\\[([A-Z]+)\\]\\s+\\[([^\\]]*)\\]\\s*(.*)$")
         private const val WAKE_LOCK_TIMEOUT_MS = 24L * 60L * 60L * 1000L
         private const val ACTIVE_PROFILES_KEY = "active_runtime_profiles"
         private const val ACTIVE_TOKENS_KEY = "active_runtime_tokens"

@@ -132,12 +132,12 @@ object UiTheme {
 
     // --- Log highlighting (regexes precompiled once; refreshLogs runs at 1 Hz on large text) ---
     private val LOG_RULES: List<Pair<Regex, Int>> = listOf(
-        Regex("(?i)\\[CLAIM[^\\]]*\\]|💖|💞") to ACCENT_PINK,
-        Regex("(?i)\\[KAKERA[^\\]]*\\]|💎|🔷|🟩|🟨|🟧|🟥") to ACCENT_CYAN,
-        Regex("(?i)\\[SPHERE[^\\]]*\\]|✨|🔮") to ACCENT_PURPLE,
-        Regex("(?i)\\[INFO[^\\]]*\\]|ℹ️") to ACCENT_BLUE,
-        Regex("(?i)\\[WARN(?:ING)?[^\\]]*\\]|⚠️") to ACCENT_YELLOW,
-        Regex("(?i)\\[ERROR[^\\]]*\\]|❌|⛔|failed") to ACCENT_RED_BRIGHT,
+        Regex("(?i)\\[CLAIM[^\\]]*\\]|\\| CLAIM \\||💖|💞") to ACCENT_PINK,
+        Regex("(?i)\\[KAKERA[^\\]]*\\]|\\| (?:KAKERA|GIVE) \\||💎|🔷|🟩|🟨|🟧|🟥") to ACCENT_CYAN,
+        Regex("(?i)\\[SPHERE[^\\]]*\\]|\\| (?:SPHERE|PERK) \\||✨|🔮") to ACCENT_PURPLE,
+        Regex("(?i)\\[INFO[^\\]]*\\]|\\| (?:ROLL|STATUS|SYSTEM|SIDE|SETUP) \\||ℹ️") to ACCENT_BLUE,
+        Regex("(?i)\\[WARN(?:ING)?[^\\]]*\\]|\\| WARN \\||⚠️") to ACCENT_YELLOW,
+        Regex("(?i)\\[ERROR[^\\]]*\\]|\\| ERROR \\||❌|⛔|failed") to ACCENT_RED_BRIGHT,
         Regex("(?i)\\[UPDATER[^\\]]*\\]|🚀|🌟") to ACCENT_GREEN_BRIGHT,
         Regex("(?i)\\[CHECK[^\\]]*\\]|🔍") to Color.parseColor("#a5d6ff"),
         Regex("(?i)\\[RESET[^\\]]*\\]|⏰") to ACCENT_YELLOW,

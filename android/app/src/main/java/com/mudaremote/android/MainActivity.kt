@@ -99,6 +99,11 @@ class MainActivity : ComponentActivity() {
     private var logsVisibleForSession = false
     private var logSessionStartBytes = 0L
     private var displayedLogText = ""
+    // Log filters (profile, kind, errors only, search text); empty = no filter.
+    private var logFilterProfile = ""
+    private var logFilterKind = ""
+    private var logFilterErrorsOnly = false
+    private var logFilterSearch = ""
     private var isAutoScrollEnabled = true
     private var isLogsExpanded = false
     private var isUpdateInFlight = false
@@ -125,6 +130,10 @@ class MainActivity : ComponentActivity() {
     }
     private val secretsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { importSecrets(it) }
+    }
+    // "Save as TXT": the system "create document" picker; the filtered lines are written to the chosen file.
+    private val logExportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let { writeLogExport(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -853,6 +862,16 @@ class MainActivity : ComponentActivity() {
         }
         toolRow.addView(createGitHubSmallBtn("📋 Raw logs") { _ -> copyLogsToClipboard() })
         toolRow.addView(createGitHubSmallBtn("🗑️ Clear logs") { _ -> clearRuntimeLogs() })
+        toolRow.addView(createGitHubSmallBtn("💾 Save as TXT") { _ -> exportLogsAsTxt() })
+        toolRow.addView(createGitHubSmallBtn("📤 Share") { _ -> shareLogs() })
+        toolRow.addView(createGitHubSmallBtn("👤 Profile: All") { btn -> pickLogProfile(btn) })
+        toolRow.addView(createGitHubSmallBtn("🏷️ Kind: All") { btn -> pickLogKind(btn) })
+        toolRow.addView(createGitHubSmallBtn("⚠️ Errors only: off") { btn ->
+            logFilterErrorsOnly = !logFilterErrorsOnly
+            btn.text = if (logFilterErrorsOnly) "⚠️ Errors only: on" else "⚠️ Errors only: off"
+            refreshLogs(force = true)
+        })
+        toolRow.addView(createGitHubSmallBtn("🔎 Search") { btn -> askLogSearch(btn) })
         val scrollToggleBtn = createGitHubSmallBtn("📜 Auto-scroll: on") { btn ->
             isAutoScrollEnabled = !isAutoScrollEnabled
             btn.text = if (isAutoScrollEnabled) "📜 Auto-scroll: on" else "📜 Auto-scroll: off"
@@ -2034,12 +2053,14 @@ class MainActivity : ComponentActivity() {
     // LOGS CONSOLE HUB (ACTIONS VIEWER)
     // =========================================================================
 
-    private fun refreshLogs() {
+    private fun refreshLogs(force: Boolean = false) {
         if (!::logView.isInitialized) return
         if (!logsVisibleForSession) return
 
-        val rawText = formatSessionLogs(readSessionLog()).ifBlank { "Waiting for workflow output..." }
-        if (rawText != displayedLogText) {
+        val rawText = formatSessionLogs(readSessionLog()).ifBlank {
+            if (logFiltersActive()) "No log lines match the filters." else "Waiting for workflow output..."
+        }
+        if (force || rawText != displayedLogText) {
             displayedLogText = rawText
             val highlighted = UiTheme.highlightLogs(rawText)
             logView.text = highlighted
@@ -2103,9 +2124,123 @@ class MainActivity : ComponentActivity() {
                 entries.last().add(line)
             }
         }
-        return entries.takeLast(200).asReversed().joinToString("\n\n") { entry ->
+        return entries.filter { entryMatchesLogFilters(it) }.takeLast(200).asReversed().joinToString("\n\n") { entry ->
             entry.joinToString("\n")
         }
+    }
+
+    private fun logFiltersActive(): Boolean =
+        logFilterProfile.isNotEmpty() || logFilterKind.isNotEmpty() || logFilterErrorsOnly || logFilterSearch.isNotEmpty()
+
+    // One entry = its first line plus any continuation lines. A line that is not in the shared
+    // "date | profile | KIND | message" shape is kept only while no profile/kind/errors filter is set.
+    private fun entryMatchesLogFilters(entry: List<String>): Boolean {
+        val first = entry.firstOrNull() ?: return false
+        val parsed = LOG_LINE_SHAPE.matchEntire(first)
+        if (parsed == null) {
+            if (logFilterProfile.isNotEmpty() || logFilterKind.isNotEmpty() || logFilterErrorsOnly) return false
+        } else {
+            val profile = parsed.groupValues[2]
+            val kind = parsed.groupValues[3]
+            if (logFilterProfile.isNotEmpty() && !profile.equals(logFilterProfile, ignoreCase = true)) return false
+            if (logFilterErrorsOnly && kind != "ERROR") return false
+            if (logFilterKind.isNotEmpty() && kind != logFilterKind) return false
+        }
+        if (logFilterSearch.isNotEmpty() && entry.none { it.contains(logFilterSearch, ignoreCase = true) }) return false
+        return true
+    }
+
+    // The session's lines, oldest first, with the current filters applied (what is saved or shared).
+    private fun filteredLogLines(): List<String> {
+        val raw = LOG_ANSI_REGEX.replace(readSessionLog(), "").replace("\r", "")
+        val entries = mutableListOf<MutableList<String>>()
+        raw.lineSequence().forEach { line ->
+            if (line.isBlank()) return@forEach
+            if (entries.isEmpty() || LOG_ENTRY_START.containsMatchIn(line)) entries.add(mutableListOf(line))
+            else entries.last().add(line)
+        }
+        return entries.filter { entryMatchesLogFilters(it) }.flatten()
+    }
+
+    private fun pickLogProfile(btn: TextView) {
+        val names = LOG_ANSI_REGEX.replace(readSessionLog(), "").lineSequence()
+            .mapNotNull { LOG_LINE_SHAPE.matchEntire(it)?.groupValues?.get(2) }
+            .distinct().sortedBy { it.lowercase() }.toList()
+        val choices = (listOf("All profiles") + names).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Show one profile")
+            .setItems(choices) { _, which ->
+                logFilterProfile = if (which == 0) "" else choices[which]
+                btn.text = if (which == 0) "👤 Profile: All" else "👤 ${choices[which]}"
+                refreshLogs(force = true)
+            }
+            .show()
+    }
+
+    private fun pickLogKind(btn: TextView) {
+        val choices = (listOf("All kinds") + LOG_KINDS).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Show one kind")
+            .setItems(choices) { _, which ->
+                logFilterKind = if (which == 0) "" else choices[which]
+                btn.text = if (which == 0) "🏷️ Kind: All" else "🏷️ Kind: ${choices[which]}"
+                refreshLogs(force = true)
+            }
+            .show()
+    }
+
+    private fun askLogSearch(btn: TextView) {
+        val input = EditText(this).apply {
+            setText(logFilterSearch)
+            setSingleLine(true)
+            hint = "Text to find (empty = show all)"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Search the logs")
+            .setView(input)
+            .setPositiveButton("Search") { _, _ ->
+                logFilterSearch = input.text?.toString()?.trim().orEmpty()
+                btn.text = if (logFilterSearch.isEmpty()) "🔎 Search" else "🔎 \"$logFilterSearch\""
+                refreshLogs(force = true)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun exportLogsAsTxt() {
+        if (filteredLogLines().isEmpty()) {
+            toast("No log lines to save.")
+            return
+        }
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        logExportPicker.launch("mudaremote_logs_$day.txt")
+    }
+
+    private fun writeLogExport(uri: Uri) {
+        val lines = filteredLogLines()
+        val ok = runCatching {
+            contentResolver.openOutputStream(uri)?.use { out ->
+                out.write((lines.joinToString("\n") + "\n").toByteArray(Charsets.UTF_8))
+            } != null
+        }.getOrDefault(false)
+        toast(if (ok) "Saved ${lines.size} log lines." else "Could not save the log file.")
+    }
+
+    private fun shareLogs() {
+        val lines = filteredLogLines()
+        if (lines.isEmpty()) {
+            toast("No log lines to share.")
+            return
+        }
+        // Keep the newest part so the text stays within what an intent can carry.
+        var text = lines.joinToString("\n")
+        if (text.length > 200_000) text = text.takeLast(200_000).substringAfter('\n', "")
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "MudaRemote logs")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, "Share logs"))
     }
 
     // =========================================================================
@@ -2952,6 +3087,8 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         val LOG_ANSI_REGEX = Regex("\u001B\\[[;\\d]*m")
-        val LOG_ENTRY_START = Regex("^\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG)")
+        val LOG_ENTRY_START = Regex("^(?:\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} \\||\\[(?:\\d{4}-\\d{2}-\\d{2}|INFO|ERROR|WARN|CHECK|RESET|CLAIM|KAKERA|UPDATER|ANDROID|DEBUG))")
+        val LOG_LINE_SHAPE = Regex("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) \\| (.*?) \\| ([A-Z]+) \\| (.*)$")
+        val LOG_KINDS = listOf("ROLL", "CLAIM", "KAKERA", "GIVE", "PERK", "SIDE", "SETUP", "SPHERE", "STATUS", "SYSTEM", "WARN", "ERROR")
     }
 }

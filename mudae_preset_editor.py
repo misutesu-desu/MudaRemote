@@ -4,7 +4,7 @@ A graphical interface for managing mudae_bot.py presets.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import copy
 import json
 import os
@@ -48,6 +48,7 @@ try:
     from mudae_core.totals import account_key
     from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
     from mudae_core.versioning import (
         CURRENT_VERSION,
         load_startup_update_check_setting,
@@ -84,6 +85,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
     from mudae_core.totals import account_key
     from mudae_core.harem_give import parse_page_selection
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
     from mudae_core.versioning import (
         CURRENT_VERSION,
         load_startup_update_check_setting,
@@ -93,6 +95,7 @@ except (ModuleNotFoundError, ImportError) as core_error:
         save_update_channel_setting,
     )
     from mudae_core.secrets import SecretStoreError
+    from mudae_core import logs as log_tools
 
 def get_base_path():
     """Get the base path for file operations.
@@ -734,6 +737,9 @@ DEFAULTS = {
     "webhook_url": "",
     "webhook_log_types": ["ERROR", "WARN", "CLAIM", "KAKERA"],
     "debug_log_categories": ["all"],
+    "save_logs_txt": True,
+    "logs_keep_days": 14,
+    "logs_max_mb": 50,
     "character_snipe_targets": [],
     "snipe_ignore_users": [],
     "auto_free_claim": True,
@@ -784,6 +790,7 @@ BOOL_SETTINGS = [
     ("auto_rolls_in_key_mode", "Use Daily Rolls for Keys (Use $rolls even when you can't claim)", False),
     ("autostart", "Start with Windows", False),
     ("debug_mode", "Expert Logs (Show technical data for every single roll)", False),
+    ("save_logs_txt", "Save logs as TXT files (one file per profile per day, in the logs folder)", True),
     ("auto_mk_enabled", "Automatically Use Extra Kakera Rolls ($mk)", True),
     ("auto_mk_full_power_only", "Use $mk Only at Full Power (Wait for power regeneration/reset checks)", False),
     ("lurker_mode", "Lurker Strategy (Wait for others to roll while sniping - Panic dump at the end)", False),
@@ -827,6 +834,8 @@ NUMERIC_SETTINGS = [
     ("humanization_inactivity_seconds", "Patience (Wait for X seconds of no chat before rolling)", 5, int),
     ("reactive_snipe_delay", "Self-Claim Delay (Seconds to wait before claiming your own rolls)", 0, float),
     ("claim_interval", "Claim Timer (Minutes until you get a new claim right)", 180, int),
+    ("logs_keep_days", "Keep log files for N days", 14, int),
+    ("logs_max_mb", "Log folder size limit in MB (oldest files are deleted first)", 50, int),
     ("roll_interval", "Roll Timer (Minutes until your rolls refresh)", 60, int),
     ("auto_us_limit", "Maximum Saved Rolls to Use per Hour", 0, int),
     ("auto_rolls_limit", "Maximum times to use daily rolls (0 = unlimited)", 0, int),
@@ -1065,6 +1074,81 @@ def build_recommended_preset():
     data["token"] = ""
     data["profile_id"] = new_profile_id()
     return data
+
+
+class LogViewerWindow:
+    """Reads the daily TXT logs: filters, search, errors only, save, open folder."""
+
+    def __init__(self, parent, logs_folder, profiles, current=None):
+        self.folder = logs_folder
+        self.lines = []
+        self.window = tk.Toplevel(parent)
+        self.window.title("MudaRemote - Logs")
+        self.window.geometry("900x560")
+        self.window.configure(bg=BG_DARK)
+        bar = tk.Frame(self.window, bg=BG_DARK)
+        bar.pack(fill=tk.X, padx=10, pady=(10, 4))
+        self.profile_var = tk.StringVar(value=current or "All profiles")
+        self.kind_var = tk.StringVar(value="All kinds")
+        self.search_var = tk.StringVar()
+        self.errors_var = tk.BooleanVar(value=False)
+        names = ["All profiles"] + sorted(set(profiles), key=str.casefold)
+        ttk.Combobox(bar, textvariable=self.profile_var, values=names, state="readonly", width=22).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Combobox(bar, textvariable=self.kind_var, values=["All kinds"] + list(log_tools.KINDS),
+                     state="readonly", width=10).pack(side=tk.LEFT, padx=(0, 6))
+        entry = tk.Entry(bar, textvariable=self.search_var, bg=BG_INPUT, fg=TEXT_MAIN, insertbackground=TEXT_MAIN, relief="flat", width=24)
+        entry.pack(side=tk.LEFT, padx=(0, 6), ipady=3)
+        ttk.Checkbutton(bar, text="Errors only", variable=self.errors_var, command=self.refresh).pack(side=tk.LEFT, padx=(0, 6))
+        for text, command in (("Refresh", self.reload), ("Save as TXT", self.save_as), ("Open logs folder", self.open_folder)):
+            tk.Button(bar, text=text, command=command, bg=BG_PANEL, fg=TEXT_MAIN, relief="flat").pack(side=tk.LEFT, padx=3)
+        self.text = tk.Text(self.window, bg=BG_INPUT, fg=TEXT_MAIN, relief="flat", wrap="none", font=("Consolas", 10))
+        scroll = ttk.Scrollbar(self.window, command=self.text.yview)
+        self.text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=(10, 0), pady=(0, 10))
+        for variable in (self.profile_var, self.kind_var, self.search_var):
+            variable.trace_add("write", lambda *_: self.refresh())
+        self.reload()
+
+    def reload(self):
+        self.lines = log_tools.read_log_lines(self.folder)
+        self.refresh()
+
+    def visible_lines(self):
+        profile = self.profile_var.get()
+        kind = self.kind_var.get()
+        return log_tools.filter_lines(
+            self.lines,
+            profile=None if profile == "All profiles" else profile,
+            kind=None if kind == "All kinds" else kind,
+            search=self.search_var.get(),
+            errors_only=self.errors_var.get(),
+        )
+
+    def refresh(self):
+        shown = self.visible_lines()[-5000:]
+        self.text.configure(state="normal")
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, "\n".join(shown) if shown else "No log lines match.")
+        self.text.configure(state="disabled")
+        self.text.see(tk.END)
+
+    def save_as(self):
+        path = filedialog.asksaveasfilename(
+            parent=self.window, defaultextension=".txt", filetypes=[("Text file", "*.txt")],
+            initialfile="mudaremote_logs.txt")
+        if path and not log_tools.save_export(path, self.visible_lines()):
+            messagebox.showerror("Save as TXT", "The file could not be written.", parent=self.window)
+
+    def open_folder(self):
+        try:
+            os.makedirs(self.folder, exist_ok=True)
+            if hasattr(os, "startfile"):
+                os.startfile(self.folder)  # noqa: S606 - Windows only
+            else:
+                webbrowser.open("file://" + self.folder)
+        except OSError as exc:
+            messagebox.showerror("Open logs folder", str(exc), parent=self.window)
 
 
 class VersionSelectorDialog:
@@ -3211,6 +3295,15 @@ class PresetEditor:
             description="Optional extra power requirement for listed Kakera types. Types not listed still follow normal collection rules.",
         )
         self.add_checkbox(power_frame.content, "debug_mode", "Expert Logs (Show technical data for every single roll)")
+        self.add_checkbox(
+            power_frame.content, "save_logs_txt", "Save logs as TXT files",
+            description="One file per profile per day in the logs folder: profile_YYYY-MM-DD.txt. Tokens are never written and ids are shortened.",
+        )
+        self.add_number_field(power_frame.content, "logs_keep_days", "Keep log files for N days", 14)
+        self.add_number_field(
+            power_frame.content, "logs_max_mb", "Log folder size limit in MB", 50,
+            description="When the folder grows past this, the oldest files are deleted first. Changes apply the next time the bot starts.",
+        )
         self.add_list_field(power_frame.content, "debug_log_categories", "Expert Log Categories (all, claim, kakera, roll, status, sphere, coordination, other)")
         self.add_text_field(power_frame.content, "webhook_url", "Remote Log Discord Webhook URL (Optional)")
         self.add_list_field(power_frame.content, "webhook_log_types", "Webhook Log Types (ERROR, WARN, CLAIM, KAKERA, INFO, CHECK, RESET, DEBUG or ALL)")
@@ -3449,6 +3542,16 @@ class PresetEditor:
             self.btn_frame, "Apply to All", self.apply_current_to_all_presets,
             bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT
         ).pack(side=tk.RIGHT, padx=(0, 10))
+        self.create_flat_button(
+            self.btn_frame, "Logs", self.open_log_viewer,
+            bg_color=BG_PANEL, fg_color=TEXT_MAIN, hover_bg=BG_INPUT
+        ).pack(side=tk.RIGHT, padx=(0, 10))
+
+    def open_log_viewer(self):
+        """Show the daily TXT logs with filters, search, save and open-folder."""
+        LogViewerWindow(
+            self.root, log_tools.logs_dir_for(get_base_path()),
+            list(self.presets.keys()), current=self.current_preset)
 
     def apply_current_to_all_presets(self):
         """Copy the current preset settings to every preset without copying secrets."""
@@ -4814,6 +4917,11 @@ class PresetEditor:
             self.presets.clear()
             self.presets.update(previous)
             return False
+        # The profile's daily TXT logs follow the new name.
+        try:
+            log_tools.rename_profile_logs(log_tools.logs_dir_for(get_base_path()), old_name, clean)
+        except Exception:
+            pass
         if old_name in self.bot_processes:
             self.bot_processes[clean] = self.bot_processes.pop(old_name)
         if data.get("autostart", False):
